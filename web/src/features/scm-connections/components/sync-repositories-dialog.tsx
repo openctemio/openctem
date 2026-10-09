@@ -25,6 +25,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -368,7 +369,7 @@ export function SyncRepositoriesDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <RefreshCw className="h-5 w-5" />
@@ -386,148 +387,150 @@ export function SyncRepositoriesDialog({
         </DialogHeader>
 
         {/* Import Progress */}
-        {isImporting && importProgress && (
-          <div className="space-y-2 py-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Importing: {importProgress.current}</span>
-              <span className="text-muted-foreground">
-                {importProgress.completed + importProgress.failed} / {importProgress.total}
-              </span>
-            </div>
-            <Progress value={progressPercent} className="h-2" />
-            {importProgress.failed > 0 && (
-              <p className="text-xs text-red-500">{importProgress.failed} failed</p>
-            )}
-          </div>
-        )}
-
-        {/* Search and Select All */}
-        <div className="flex items-center gap-3 py-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search repositories..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                setPage(1)
-              }}
-              className="ps-9"
-              disabled={isImporting}
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isLoading || isImporting}
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-
-        {/* Repository List */}
-        <div className="border rounded-lg overflow-hidden">
-          {/* Header with Select All */}
-          <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/30">
-            <button
-              onClick={handleSelectAll}
-              className="flex items-center gap-2 hover:text-primary transition-colors disabled:opacity-50"
-              disabled={filteredRepos.length === 0 || isImporting}
-            >
-              {allSelected ? (
-                <CheckSquare className="h-4 w-4 text-primary" />
-              ) : indeterminate ? (
-                <MinusSquare className="h-4 w-4 text-primary" />
-              ) : (
-                <Square className="h-4 w-4" />
+        <DialogBody className="grid gap-4">
+          {isImporting && importProgress && (
+            <div className="space-y-2 py-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Importing: {importProgress.current}</span>
+                <span className="text-muted-foreground">
+                  {importProgress.completed + importProgress.failed} / {importProgress.total}
+                </span>
+              </div>
+              <Progress value={progressPercent} className="h-2" />
+              {importProgress.failed > 0 && (
+                <p className="text-xs text-destructive">{importProgress.failed} failed</p>
               )}
-              <span className="text-sm font-medium">
-                {allSelected ? 'Deselect All' : 'Select All'}
-              </span>
-            </button>
-            <span className="text-sm text-muted-foreground ms-auto">
-              {repoData?.total ?? 0} repositories
-              {availableToImport < (repoData?.total ?? 0) && (
-                <span className="text-muted-foreground"> ({availableToImport} available)</span>
-              )}
-              {selectedRepos.size > 0 && (
-                <span className="text-primary font-medium"> - {selectedRepos.size} selected</span>
-              )}
-            </span>
-          </div>
-
-          {/* Repository List Content */}
-          <ScrollArea className="h-[280px]">
-            {isLoading ? (
-              <div className="flex items-center justify-center h-full py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                <span className="ms-2 text-muted-foreground">Loading repositories...</span>
-              </div>
-            ) : error ? (
-              <div className="flex flex-col items-center justify-center h-full py-12 text-center">
-                <p className="text-sm text-red-500">
-                  {error instanceof Error ? error.message : 'Failed to load repositories'}
-                </p>
-                <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
-                  <RefreshCw className="h-4 w-4 me-2" />
-                  Retry
-                </Button>
-              </div>
-            ) : filteredRepos.length === 0 ? (
-              <div className="flex items-center justify-center h-full py-12">
-                <p className="text-sm text-muted-foreground">
-                  {searchQuery ? 'No repositories match your search' : 'No repositories found'}
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y">
-                {filteredRepos.map((repo) => {
-                  const alreadyImported = isRepoImported(repo)
-                  return (
-                    <RepositoryItem
-                      key={repo.id}
-                      repo={repo}
-                      selected={selectedRepos.has(repo.id)}
-                      onSelect={() => handleSelectRepo(repo.id)}
-                      disabled={isImporting || alreadyImported}
-                      isImported={alreadyImported}
-                    />
-                  )
-                })}
-              </div>
-            )}
-          </ScrollArea>
-
-          {/* Pagination */}
-          {repoData && repoData.has_more && (
-            <div className="flex items-center justify-center gap-2 px-4 py-2 border-t">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1 || isLoading || isImporting}
-              >
-                Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">Page {page}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={!repoData.has_more || isLoading || isImporting}
-              >
-                Next
-              </Button>
             </div>
           )}
-        </div>
 
-        <DialogFooter className="gap-2 pt-4">
+          {/* Search and Select All */}
+          <div className="flex items-center gap-3 py-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search repositories..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setPage(1)
+                }}
+                className="ps-9"
+                disabled={isImporting}
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isLoading || isImporting}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+
+          {/* Repository List */}
+          <div className="border rounded-lg overflow-hidden">
+            {/* Header with Select All */}
+            <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/30">
+              <button
+                onClick={handleSelectAll}
+                className="flex items-center gap-2 hover:text-primary transition-colors disabled:opacity-50"
+                disabled={filteredRepos.length === 0 || isImporting}
+              >
+                {allSelected ? (
+                  <CheckSquare className="h-4 w-4 text-primary" />
+                ) : indeterminate ? (
+                  <MinusSquare className="h-4 w-4 text-primary" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+                <span className="text-sm font-medium">
+                  {allSelected ? 'Deselect All' : 'Select All'}
+                </span>
+              </button>
+              <span className="text-sm text-muted-foreground ms-auto">
+                {repoData?.total ?? 0} repositories
+                {availableToImport < (repoData?.total ?? 0) && (
+                  <span className="text-muted-foreground"> ({availableToImport} available)</span>
+                )}
+                {selectedRepos.size > 0 && (
+                  <span className="text-primary font-medium"> - {selectedRepos.size} selected</span>
+                )}
+              </span>
+            </div>
+
+            {/* Repository List Content */}
+            <ScrollArea className="h-[280px]">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ms-2 text-muted-foreground">Loading repositories...</span>
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center justify-center h-full py-12 text-center">
+                  <p className="text-sm text-destructive">
+                    {error instanceof Error ? error.message : 'Failed to load repositories'}
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
+                    <RefreshCw className="h-4 w-4 me-2" />
+                    Retry
+                  </Button>
+                </div>
+              ) : filteredRepos.length === 0 ? (
+                <div className="flex items-center justify-center h-full py-12">
+                  <p className="text-sm text-muted-foreground">
+                    {searchQuery ? 'No repositories match your search' : 'No repositories found'}
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {filteredRepos.map((repo) => {
+                    const alreadyImported = isRepoImported(repo)
+                    return (
+                      <RepositoryItem
+                        key={repo.id}
+                        repo={repo}
+                        selected={selectedRepos.has(repo.id)}
+                        onSelect={() => handleSelectRepo(repo.id)}
+                        disabled={isImporting || alreadyImported}
+                        isImported={alreadyImported}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </ScrollArea>
+
+            {/* Pagination */}
+            {repoData && repoData.has_more && (
+              <div className="flex items-center justify-center gap-2 px-4 py-2 border-t">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1 || isLoading || isImporting}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">Page {page}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={!repoData.has_more || isLoading || isImporting}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogBody>
+
+        <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={isImporting}>
             Cancel
           </Button>

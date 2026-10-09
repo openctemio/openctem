@@ -20,6 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -203,7 +204,7 @@ export function SensorGrantEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Edit grant</DialogTitle>
           <DialogDescription>
@@ -212,181 +213,186 @@ export function SensorGrantEditDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={mode} onValueChange={(v) => setMode(v as 'profile' | 'dimensions')}>
-          <TabsList>
-            <TabsTrigger value="profile">Apply a profile</TabsTrigger>
-            <TabsTrigger value="dimensions">Edit dimensions</TabsTrigger>
-          </TabsList>
+        <DialogBody className="grid gap-4">
+          <Tabs value={mode} onValueChange={(v) => setMode(v as 'profile' | 'dimensions')}>
+            <TabsList>
+              <TabsTrigger value="profile">Apply a profile</TabsTrigger>
+              <TabsTrigger value="dimensions">Edit dimensions</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="profile" className="mt-4 space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor={ids.profile}>Profile</Label>
-              <Select value={profile} onValueChange={setProfile}>
-                <SelectTrigger id={ids.profile} data-testid="grant-profile-select">
-                  <SelectValue placeholder="Choose a profile" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles.map((p) => (
-                    <SelectItem key={p.name} value={p.name}>
-                      {profileLabel(p.name)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedProfile && (
-                <p className="text-xs text-muted-foreground">
-                  {TIER_LABELS[selectedProfile.tier_ceiling]} ·{' '}
-                  {TARGET_NETWORK_LABELS[selectedProfile.target_network] ??
-                    selectedProfile.target_network}
-                  {selectedProfile.allow_credentials ? ' · credentials' : ''}
-                  {selectedProfile.allow_push_ingest ? ' · results without a job' : ''}. The zones
-                  stay as they are; the trust level does not change.
-                </p>
-              )}
-            </div>
-            {selectedProfile?.parameterised && (
+            <TabsContent value="profile" className="mt-4 space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor={ids.integration}>Integration</Label>
-                <Input
-                  id={ids.integration}
-                  value={integration}
-                  maxLength={64}
-                  placeholder="e.g. github"
-                  onChange={(e) => setIntegration(e.target.value)}
-                />
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Whether a profile narrows or widens this grant is decided by the server; widening
-              needs the permission to widen sensor grants.
-            </p>
-          </TabsContent>
-
-          <TabsContent value="dimensions" className="mt-4 space-y-4">
-            {listDim('job_types', 'Job types', {
-              options: GRANT_JOB_TYPES.map((t) => ({ value: t, label: t.replace('_', ' ') })),
-            })}
-            {listDim('zone_ids', 'Zones', { options: zoneOptions })}
-            {listDim('tools', 'Tools', { placeholder: 'nuclei, httpx' })}
-            {listDim('capabilities', 'Capabilities', { placeholder: 'scan:dast' })}
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor={ids.tier}>Tier ceiling</Label>
-                <Select
-                  value={String(draft.tier_ceiling)}
-                  onValueChange={(v) => set('tier_ceiling', Number(v))}
-                >
-                  <SelectTrigger id={ids.tier}>
-                    <SelectValue />
+                <Label htmlFor={ids.profile}>Profile</Label>
+                <Select value={profile} onValueChange={setProfile}>
+                  <SelectTrigger id={ids.profile} data-testid="grant-profile-select">
+                    <SelectValue placeholder="Choose a profile" />
                   </SelectTrigger>
                   <SelectContent>
-                    {[0, 1, 2].map((t) => (
-                      <SelectItem key={t} value={String(t)}>
-                        {TIER_LABELS[t]}
+                    {profiles.map((p) => (
+                      <SelectItem key={p.name} value={p.name}>
+                        {profileLabel(p.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedProfile && (
+                  <p className="text-xs text-muted-foreground">
+                    {TIER_LABELS[selectedProfile.tier_ceiling]} ·{' '}
+                    {TARGET_NETWORK_LABELS[selectedProfile.target_network] ??
+                      selectedProfile.target_network}
+                    {selectedProfile.allow_credentials ? ' · credentials' : ''}
+                    {selectedProfile.allow_push_ingest ? ' · results without a job' : ''}. The zones
+                    stay as they are; the trust level does not change.
+                  </p>
+                )}
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor={ids.network}>Target network</Label>
-                <Select
-                  value={draft.target_network}
-                  onValueChange={(v) => set('target_network', v as TargetNetwork)}
-                >
-                  <SelectTrigger id={ids.network}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(['any', 'public', 'none'] as const).map((n) => (
-                      <SelectItem key={n} value={n}>
-                        {TARGET_NETWORK_LABELS[n]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <ListDimension
-              label="Target CIDRs"
-              value={draft.target_cidrs}
-              onChange={(v) => set('target_cidrs', v)}
-              placeholder="10.0.0.0/8, 192.0.2.10"
-            />
-            <ListDimension
-              label="Target domains"
-              value={draft.target_domains}
-              onChange={(v) => set('target_domains', v)}
-              placeholder="example.com"
-            />
-
-            <div className="space-y-3">
-              {(
-                [
-                  ['allow_credentials', 'May receive jobs with credentials'],
-                  ['allow_push_ingest', 'May send results without a job'],
-                ] as const
-              ).map(([k, label]) => (
-                <div key={k} className="flex items-center justify-between gap-4">
-                  <Label htmlFor={`${ids.tier}-${k}`} className="font-normal">
-                    {label}
-                  </Label>
-                  <Switch
-                    id={`${ids.tier}-${k}`}
-                    checked={draft[k]}
-                    onCheckedChange={(c) => set(k, c)}
+              {selectedProfile?.parameterised && (
+                <div className="space-y-1.5">
+                  <Label htmlFor={ids.integration}>Integration</Label>
+                  <Input
+                    id={ids.integration}
+                    value={integration}
+                    maxLength={64}
+                    placeholder="e.g. github"
+                    onChange={(e) => setIntegration(e.target.value)}
                   />
                 </div>
-              ))}
-            </div>
-
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-medium">Remote actions</legend>
+              )}
               <p className="text-xs text-muted-foreground">
-                Pause, resume, drain and cancel are always allowed.
+                Whether a profile narrows or widens this grant is decided by the server; widening
+                needs the permission to widen sensor grants.
               </p>
-              <div className="flex flex-wrap gap-2">
-                {GATED_REMOTE_ACTIONS.map((a) => {
-                  const cur = draft.remote_actions ?? []
-                  const on = cur.includes(a)
-                  return (
-                    <ToggleChip
-                      key={a}
-                      pressed={on}
-                      onToggle={() =>
-                        set('remote_actions', on ? cur.filter((x) => x !== a) : [...cur, a].sort())
-                      }
-                    >
-                      {a.replace('_', ' ')}
-                    </ToggleChip>
-                  )
-                })}
+            </TabsContent>
+
+            <TabsContent value="dimensions" className="mt-4 space-y-4">
+              {listDim('job_types', 'Job types', {
+                options: GRANT_JOB_TYPES.map((t) => ({ value: t, label: t.replace('_', ' ') })),
+              })}
+              {listDim('zone_ids', 'Zones', { options: zoneOptions })}
+              {listDim('tools', 'Tools', { placeholder: 'nuclei, httpx' })}
+              {listDim('capabilities', 'Capabilities', { placeholder: 'scan:dast' })}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor={ids.tier}>Tier ceiling</Label>
+                  <Select
+                    value={String(draft.tier_ceiling)}
+                    onValueChange={(v) => set('tier_ceiling', Number(v))}
+                  >
+                    <SelectTrigger id={ids.tier}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[0, 1, 2].map((t) => (
+                        <SelectItem key={t} value={String(t)}>
+                          {TIER_LABELS[t]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={ids.network}>Target network</Label>
+                  <Select
+                    value={draft.target_network}
+                    onValueChange={(v) => set('target_network', v as TargetNetwork)}
+                  >
+                    <SelectTrigger id={ids.network}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(['any', 'public', 'none'] as const).map((n) => (
+                        <SelectItem key={n} value={n}>
+                          {TARGET_NETWORK_LABELS[n]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </fieldset>
-          </TabsContent>
-        </Tabs>
 
-        {widened.length > 0 && (
-          <div data-testid="grant-widens">
-            <DetailCallout
-              tone={canWiden ? 'warning' : 'destructive'}
-              icon={AlertTriangle}
-              title={`This widens the grant: ${widened.join(', ')}`}
-            >
-              {canWiden
-                ? 'Widening is audited at high severity and every administrator is notified.'
-                : 'You can only narrow grants; saving this will be refused. Ask someone with the permission to widen sensor grants.'}
-            </DetailCallout>
-          </div>
-        )}
+              <ListDimension
+                label="Target CIDRs"
+                value={draft.target_cidrs}
+                onChange={(v) => set('target_cidrs', v)}
+                placeholder="10.0.0.0/8, 192.0.2.10"
+              />
+              <ListDimension
+                label="Target domains"
+                value={draft.target_domains}
+                onChange={(v) => set('target_domains', v)}
+                placeholder="example.com"
+              />
 
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
+              <div className="space-y-3">
+                {(
+                  [
+                    ['allow_credentials', 'May receive jobs with credentials'],
+                    ['allow_push_ingest', 'May send results without a job'],
+                  ] as const
+                ).map(([k, label]) => (
+                  <div key={k} className="flex items-center justify-between gap-4">
+                    <Label htmlFor={`${ids.tier}-${k}`} className="font-normal">
+                      {label}
+                    </Label>
+                    <Switch
+                      id={`${ids.tier}-${k}`}
+                      checked={draft[k]}
+                      onCheckedChange={(c) => set(k, c)}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Remote actions</legend>
+                <p className="text-xs text-muted-foreground">
+                  Pause, resume, drain and cancel are always allowed.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {GATED_REMOTE_ACTIONS.map((a) => {
+                    const cur = draft.remote_actions ?? []
+                    const on = cur.includes(a)
+                    return (
+                      <ToggleChip
+                        key={a}
+                        pressed={on}
+                        onToggle={() =>
+                          set(
+                            'remote_actions',
+                            on ? cur.filter((x) => x !== a) : [...cur, a].sort()
+                          )
+                        }
+                      >
+                        {a.replace('_', ' ')}
+                      </ToggleChip>
+                    )
+                  })}
+                </div>
+              </fieldset>
+            </TabsContent>
+          </Tabs>
+
+          {widened.length > 0 && (
+            <div data-testid="grant-widens">
+              <DetailCallout
+                tone={canWiden ? 'warning' : 'destructive'}
+                icon={AlertTriangle}
+                title={`This widens the grant: ${widened.join(', ')}`}
+              >
+                {canWiden
+                  ? 'Widening is audited at high severity and every administrator is notified.'
+                  : 'You can only narrow grants; saving this will be refused. Ask someone with the permission to widen sensor grants.'}
+              </DetailCallout>
+            </div>
+          )}
+
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>

@@ -40,6 +40,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -390,21 +391,23 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               Apply a criticality to {count} selected asset{count === 1 ? '' : 's'}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>Criticality</Label>
-            <Select value={criticality} onValueChange={(v) => setCriticality(v as Criticality)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ASSET_CRITICALITY_LEVELS.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {CRITICALITY_LABELS[c]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <DialogBody>
+            <div className="space-y-2">
+              <Label>Criticality</Label>
+              <Select value={criticality} onValueChange={(v) => setCriticality(v as Criticality)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ASSET_CRITICALITY_LEVELS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {CRITICALITY_LABELS[c]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
               Cancel
@@ -425,18 +428,20 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               Add a tag to {count} selected asset{count === 1 ? '' : 's'}. Existing tags are kept.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="bulk-tag">Tag</Label>
-            <Input
-              id="bulk-tag"
-              value={tag}
-              onChange={(e) => setTag(e.target.value)}
-              placeholder="e.g. pci, external, team-payments"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !submitting) handleAddTag()
-              }}
-            />
-          </div>
+          <DialogBody>
+            <div className="space-y-2">
+              <Label htmlFor="bulk-tag">Tag</Label>
+              <Input
+                id="bulk-tag"
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
+                placeholder="e.g. pci, external, team-payments"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !submitting) handleAddTag()
+                }}
+              />
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
               Cancel
@@ -450,171 +455,173 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
 
       {/* Assign owner */}
       <Dialog open={dialog === 'owner'} onOpenChange={(o) => !o && closeDialog()}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign owner</DialogTitle>
             <DialogDescription>
               Assign a user or group to {count} selected asset{count === 1 ? '' : 's'}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Owner</Label>
-              <Popover
-                open={pickerOpen}
-                onOpenChange={(open) => {
-                  setPickerOpen(open)
-                  if (!open) setPickerSearch('')
-                }}
-                modal
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={pickerOpen}
-                    className="w-full min-w-0 justify-between overflow-hidden font-normal"
-                    title={selectedOption?.label}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center gap-2 text-start text-sm">
-                      {selectedOption ? (
-                        <>
-                          {selectedOption.kind === 'user' ? (
-                            <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          ) : (
-                            <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          )}
-                          <span className="truncate">{selectedOption.label}</span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">Select a user or group…</span>
-                      )}
-                    </span>
-                    <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-[var(--radix-popover-trigger-width)] p-0"
-                  align="start"
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Owner</Label>
+                <Popover
+                  open={pickerOpen}
+                  onOpenChange={(open) => {
+                    setPickerOpen(open)
+                    if (!open) setPickerSearch('')
+                  }}
+                  modal
                 >
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      value={pickerSearch}
-                      onValueChange={setPickerSearch}
-                      placeholder="Search by name, email, or group…"
-                    />
-                    <CommandList>
-                      {pickerLoading ? (
-                        <div className="py-6 text-center text-sm text-muted-foreground">
-                          Loading…
-                        </div>
-                      ) : totalOptions === 0 ? (
-                        <CommandEmpty>
-                          {debouncedSearch
-                            ? `No users or groups match "${debouncedSearch}".`
-                            : 'No users or groups available.'}
-                        </CommandEmpty>
-                      ) : (
-                        <>
-                          {userOptions.length > 0 && (
-                            <CommandGroup heading="Users">
-                              {userOptions.map((option) => (
-                                <CommandItem
-                                  key={`user:${option.id}`}
-                                  value={`user:${option.id}`}
-                                  onSelect={() => {
-                                    setSelectedOption(option)
-                                    setPickerOpen(false)
-                                    setPickerSearch('')
-                                  }}
-                                  className="flex items-start gap-2"
-                                >
-                                  <Check
-                                    className={cn(
-                                      'mt-1 h-4 w-4 shrink-0',
-                                      selectedOption?.kind === 'user' &&
-                                        selectedOption.id === option.id
-                                        ? 'opacity-100'
-                                        : 'opacity-0'
-                                    )}
-                                  />
-                                  <User className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm">{option.label}</p>
-                                    {option.sublabel && (
-                                      <p className="truncate text-xs text-muted-foreground">
-                                        {option.sublabel}
-                                      </p>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          )}
-                          {groupOptions.length > 0 && (
-                            <CommandGroup heading="Groups">
-                              {groupOptions.map((option) => (
-                                <CommandItem
-                                  key={`group:${option.id}`}
-                                  value={`group:${option.id}`}
-                                  onSelect={() => {
-                                    setSelectedOption(option)
-                                    setPickerOpen(false)
-                                    setPickerSearch('')
-                                  }}
-                                  className="flex items-start gap-2"
-                                >
-                                  <Check
-                                    className={cn(
-                                      'mt-1 h-4 w-4 shrink-0',
-                                      selectedOption?.kind === 'group' &&
-                                        selectedOption.id === option.id
-                                        ? 'opacity-100'
-                                        : 'opacity-0'
-                                    )}
-                                  />
-                                  <Building2 className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm">{option.label}</p>
-                                    {option.sublabel && (
-                                      <p className="truncate text-xs text-muted-foreground">
-                                        {option.sublabel}
-                                      </p>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          )}
-                        </>
-                      )}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={pickerOpen}
+                      className="w-full min-w-0 justify-between overflow-hidden font-normal"
+                      title={selectedOption?.label}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-2 text-start text-sm">
+                        {selectedOption ? (
+                          <>
+                            {selectedOption.kind === 'user' ? (
+                              <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            ) : (
+                              <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            )}
+                            <span className="truncate">{selectedOption.label}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">Select a user or group…</span>
+                        )}
+                      </span>
+                      <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-[var(--radix-popover-trigger-width)] p-0"
+                    align="start"
+                  >
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        value={pickerSearch}
+                        onValueChange={setPickerSearch}
+                        placeholder="Search by name, email, or group…"
+                      />
+                      <CommandList>
+                        {pickerLoading ? (
+                          <div className="py-6 text-center text-sm text-muted-foreground">
+                            Loading…
+                          </div>
+                        ) : totalOptions === 0 ? (
+                          <CommandEmpty>
+                            {debouncedSearch
+                              ? `No users or groups match "${debouncedSearch}".`
+                              : 'No users or groups available.'}
+                          </CommandEmpty>
+                        ) : (
+                          <>
+                            {userOptions.length > 0 && (
+                              <CommandGroup heading="Users">
+                                {userOptions.map((option) => (
+                                  <CommandItem
+                                    key={`user:${option.id}`}
+                                    value={`user:${option.id}`}
+                                    onSelect={() => {
+                                      setSelectedOption(option)
+                                      setPickerOpen(false)
+                                      setPickerSearch('')
+                                    }}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <Check
+                                      className={cn(
+                                        'mt-1 h-4 w-4 shrink-0',
+                                        selectedOption?.kind === 'user' &&
+                                          selectedOption.id === option.id
+                                          ? 'opacity-100'
+                                          : 'opacity-0'
+                                      )}
+                                    />
+                                    <User className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm">{option.label}</p>
+                                      {option.sublabel && (
+                                        <p className="truncate text-xs text-muted-foreground">
+                                          {option.sublabel}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            )}
+                            {groupOptions.length > 0 && (
+                              <CommandGroup heading="Groups">
+                                {groupOptions.map((option) => (
+                                  <CommandItem
+                                    key={`group:${option.id}`}
+                                    value={`group:${option.id}`}
+                                    onSelect={() => {
+                                      setSelectedOption(option)
+                                      setPickerOpen(false)
+                                      setPickerSearch('')
+                                    }}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <Check
+                                      className={cn(
+                                        'mt-1 h-4 w-4 shrink-0',
+                                        selectedOption?.kind === 'group' &&
+                                          selectedOption.id === option.id
+                                          ? 'opacity-100'
+                                          : 'opacity-0'
+                                      )}
+                                    />
+                                    <Building2 className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm">{option.label}</p>
+                                      {option.sublabel && (
+                                        <p className="truncate text-xs text-muted-foreground">
+                                          {option.sublabel}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            )}
+                          </>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-            <div className="space-y-2">
-              <Label>Ownership role</Label>
-              <Select
-                value={ownershipType}
-                onValueChange={(v) => setOwnershipType(v as OwnershipType)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
-                    ([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Label>Ownership role</Label>
+                <Select
+                  value={ownershipType}
+                  onValueChange={(v) => setOwnershipType(v as OwnershipType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
+                      ([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
               Cancel

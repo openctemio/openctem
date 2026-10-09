@@ -15,6 +15,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -144,7 +146,7 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Edit SLA Policy' : 'New SLA Policy'}</DialogTitle>
           <DialogDescription>
@@ -156,156 +158,177 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Production SLA" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Applied to production-facing assets"
-                      className="resize-none"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <Separator />
-
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <h4 className="text-sm font-medium">Priority-class windows (days)</h4>
-                <p className="text-xs text-muted-foreground">
-                  Used for every finding that has a priority class.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {PRIORITY_WINDOWS.map((pw) => (
-                  <FormField
-                    key={pw.key}
-                    control={form.control}
-                    name={pw.key}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{pw.label}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={365}
-                            {...field}
-                            value={Number.isNaN(field.value) ? '' : field.value}
-                            onChange={numberChange(field)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <h4 className="text-sm font-medium">Severity windows (days)</h4>
-                <p className="text-xs text-muted-foreground">
-                  Used only for findings that have no priority class yet. Info 0 = informational
-                  findings get no SLA (the default), whatever their priority class.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
-                {SEVERITY_WINDOWS.map((sev) => (
-                  <FormField
-                    key={sev.key}
-                    control={form.control}
-                    name={sev.key}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-1.5">
-                          <span
-                            className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS[sev.dot])}
-                          />
-                          {sev.label}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={sev.key === 'info_days' ? NO_SLA : 1}
-                            max={365}
-                            {...field}
-                            value={Number.isNaN(field.value) ? '' : field.value}
-                            onChange={numberChange(field)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <FormField
-              control={form.control}
-              name="warning_threshold_pct"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Warning threshold (%)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={100}
-                      className="max-w-[140px]"
-                      {...field}
-                      value={Number.isNaN(field.value) ? '' : field.value}
-                      onChange={numberChange(field)}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    A finding is flagged &quot;warning&quot; once this percentage of its window has
-                    elapsed.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <Separator />
-
-            {/* Only an existing non-default policy can be promoted; the default
-                cannot be demoted here (that would leave no policy in force). */}
-            {isEdit && policy && !policy.is_default && (
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
+            <DialogBody className="space-y-6">
               <FormField
                 control={form.control}
-                name="is_default"
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Production SLA" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Applied to production-facing assets"
+                        className="resize-none"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <Separator />
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium">Priority-class windows (days)</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Used for every finding that has a priority class.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  {PRIORITY_WINDOWS.map((pw) => (
+                    <FormField
+                      key={pw.key}
+                      control={form.control}
+                      name={pw.key}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{pw.label}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={365}
+                              {...field}
+                              value={Number.isNaN(field.value) ? '' : field.value}
+                              onChange={numberChange(field)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium">Severity windows (days)</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Used only for findings that have no priority class yet. Info 0 = informational
+                    findings get no SLA (the default), whatever their priority class.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                  {SEVERITY_WINDOWS.map((sev) => (
+                    <FormField
+                      key={sev.key}
+                      control={form.control}
+                      name={sev.key}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-1.5">
+                            <span
+                              className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS[sev.dot])}
+                            />
+                            {sev.label}
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={sev.key === 'info_days' ? NO_SLA : 1}
+                              max={365}
+                              {...field}
+                              value={Number.isNaN(field.value) ? '' : field.value}
+                              onChange={numberChange(field)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <FormField
+                control={form.control}
+                name="warning_threshold_pct"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Warning threshold (%)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        className="max-w-[140px]"
+                        {...field}
+                        value={Number.isNaN(field.value) ? '' : field.value}
+                        onChange={numberChange(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      A finding is flagged &quot;warning&quot; once this percentage of its window
+                      has elapsed.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <Separator />
+
+              {/* Only an existing non-default policy can be promoted; the default
+                cannot be demoted here (that would leave no policy in force). */}
+              {isEdit && policy && !policy.is_default && (
+                <FormField
+                  control={form.control}
+                  name="is_default"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel>Make this the default policy</FormLabel>
+                        <FormDescription>
+                          This policy applies to nothing until it is the default. The current
+                          default stops applying.
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              <FormField
+                control={form.control}
+                name="escalation_enabled"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
-                      <FormLabel>Make this the default policy</FormLabel>
+                      <FormLabel>Deadline notifications</FormLabel>
                       <FormDescription>
-                        This policy applies to nothing until it is the default. The current default
-                        stops applying.
+                        Notify when a finding reaches the warning threshold and when it breaches its
+                        deadline. When off, the SLA status still changes but nobody is notified.
                       </FormDescription>
                     </div>
                     <FormControl>
@@ -314,34 +337,15 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                   </FormItem>
                 )}
               />
-            )}
 
-            <FormField
-              control={form.control}
-              name="escalation_enabled"
-              render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="space-y-0.5">
-                    <FormLabel>Deadline notifications</FormLabel>
-                    <FormDescription>
-                      Notify when a finding reaches the warning threshold and when it breaches its
-                      deadline. When off, the SLA status still changes but nobody is notified.
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                </FormItem>
+              {seedMissing && (
+                <p className="text-sm text-muted-foreground" role="status">
+                  {effectiveLoading
+                    ? 'Loading the current windows…'
+                    : 'The current windows could not be loaded; try again in a moment.'}
+                </p>
               )}
-            />
-
-            {seedMissing && (
-              <p className="text-sm text-muted-foreground" role="status">
-                {effectiveLoading
-                  ? 'Loading the current windows…'
-                  : 'The current windows could not be loaded; try again in a moment.'}
-              </p>
-            )}
+            </DialogBody>
             <DialogFooter>
               <Button
                 type="button"
@@ -356,7 +360,7 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                 {isEdit ? 'Save changes' : 'Create policy'}
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>

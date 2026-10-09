@@ -31,6 +31,7 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
+  SheetBody,
 } from '@/components/ui/sheet'
 import {
   Table,
@@ -236,95 +237,97 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
   const v = run?.verdict_detail
   return (
     <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+      <SheetContent className="w-full sm:max-w-xl">
         <SheetHeader>
           <SheetTitle>{run?.repository ?? 'CI run'}</SheetTitle>
           <SheetDescription>
             {run ? `${run.branch || run.ref} at ${shortSHA(run.commit_sha)}` : ''}
           </SheetDescription>
         </SheetHeader>
-        {error ? (
-          <div className="p-4">
-            <ErrorState title="the run" error={error} />
-          </div>
-        ) : !run ? (
-          <div className="space-y-2 p-4">
-            <Skeleton className="h-6 w-1/2" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-        ) : (
-          <div className="space-y-5 p-4 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <VerdictBadge verdict={run.verdict} wouldFail={v?.would_fail} />
-              {v?.policy?.source && (
-                <span className="text-muted-foreground">policy: {v.policy.source}</span>
+        <SheetBody className="p-0">
+          {error ? (
+            <div className="p-4">
+              <ErrorState title="the run" error={error} />
+            </div>
+          ) : !run ? (
+            <div className="space-y-2 p-4">
+              <Skeleton className="h-6 w-1/2" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-5 p-4 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <VerdictBadge verdict={run.verdict} wouldFail={v?.would_fail} />
+                {v?.policy?.source && (
+                  <span className="text-muted-foreground">policy: {v.policy.source}</span>
+                )}
+                {run.pipeline_url && (
+                  <SafeExternalLink
+                    href={run.pipeline_url}
+                    urlOptions={{ allowRelative: false }}
+                    className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                  >
+                    Pipeline <ExternalLink className="size-3.5" aria-hidden />
+                  </SafeExternalLink>
+                )}
+              </div>
+              <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
+                <dt className="text-muted-foreground">Provider</dt>
+                <dd>{PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}</dd>
+                <dt className="text-muted-foreground">Event</dt>
+                <dd>{run.event}</dd>
+                <dt className="text-muted-foreground">Actor</dt>
+                <dd>{run.actor}</dd>
+                <dt className="text-muted-foreground">Default branch</dt>
+                <dd>{run.default_branch}</dd>
+                {run.environment && (
+                  <>
+                    <dt className="text-muted-foreground">Environment</dt>
+                    <dd>{run.environment}</dd>
+                  </>
+                )}
+                <dt className="text-muted-foreground">Reports</dt>
+                <dd>{run.reports_count ?? 0}</dd>
+              </dl>
+              {v?.summary && (
+                <p className="text-muted-foreground">
+                  {v.summary.evaluated ?? 0} findings judged: {v.summary.new ?? 0} new,{' '}
+                  {v.summary.pre_existing ?? 0} already on{' '}
+                  {v.baseline?.branch || 'the default branch'}, {v.summary.accepted ?? 0} accepted,{' '}
+                  {v.summary.blocking ?? 0} blocking.
+                </p>
               )}
-              {run.pipeline_url && (
-                <SafeExternalLink
-                  href={run.pipeline_url}
-                  urlOptions={{ allowRelative: false }}
-                  className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
-                >
-                  Pipeline <ExternalLink className="size-3.5" aria-hidden />
-                </SafeExternalLink>
+              {v?.reasons && v.reasons.length > 0 && (
+                <ul className="space-y-2" aria-label="Reasons">
+                  {v.reasons.map((r, i) => (
+                    <li key={`${r.code}-${r.fingerprint ?? i}`} className="rounded-md border p-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{REASON_LABEL[r.code ?? ''] ?? r.code}</Badge>
+                        {r.severity && <span className="text-muted-foreground">{r.severity}</span>}
+                      </div>
+                      <p className="mt-1">{r.title || r.message}</p>
+                      {r.title && <p className="text-muted-foreground">{r.message}</p>}
+                      {r.file && (
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {r.file}
+                          {r.line ? `:${r.line}` : ''}
+                        </p>
+                      )}
+                      {r.finding_id && (
+                        <Link
+                          href={`/findings/${r.finding_id}`}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Open finding
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
-            <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
-              <dt className="text-muted-foreground">Provider</dt>
-              <dd>{PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}</dd>
-              <dt className="text-muted-foreground">Event</dt>
-              <dd>{run.event}</dd>
-              <dt className="text-muted-foreground">Actor</dt>
-              <dd>{run.actor}</dd>
-              <dt className="text-muted-foreground">Default branch</dt>
-              <dd>{run.default_branch}</dd>
-              {run.environment && (
-                <>
-                  <dt className="text-muted-foreground">Environment</dt>
-                  <dd>{run.environment}</dd>
-                </>
-              )}
-              <dt className="text-muted-foreground">Reports</dt>
-              <dd>{run.reports_count ?? 0}</dd>
-            </dl>
-            {v?.summary && (
-              <p className="text-muted-foreground">
-                {v.summary.evaluated ?? 0} findings judged: {v.summary.new ?? 0} new,{' '}
-                {v.summary.pre_existing ?? 0} already on{' '}
-                {v.baseline?.branch || 'the default branch'}, {v.summary.accepted ?? 0} accepted,{' '}
-                {v.summary.blocking ?? 0} blocking.
-              </p>
-            )}
-            {v?.reasons && v.reasons.length > 0 && (
-              <ul className="space-y-2" aria-label="Reasons">
-                {v.reasons.map((r, i) => (
-                  <li key={`${r.code}-${r.fingerprint ?? i}`} className="rounded-md border p-2">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{REASON_LABEL[r.code ?? ''] ?? r.code}</Badge>
-                      {r.severity && <span className="text-muted-foreground">{r.severity}</span>}
-                    </div>
-                    <p className="mt-1">{r.title || r.message}</p>
-                    {r.title && <p className="text-muted-foreground">{r.message}</p>}
-                    {r.file && (
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {r.file}
-                        {r.line ? `:${r.line}` : ''}
-                      </p>
-                    )}
-                    {r.finding_id && (
-                      <Link
-                        href={`/findings/${r.finding_id}`}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        Open finding
-                      </Link>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+          )}
+        </SheetBody>
       </SheetContent>
     </Sheet>
   )

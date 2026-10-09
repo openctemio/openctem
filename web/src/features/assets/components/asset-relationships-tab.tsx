@@ -29,6 +29,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -365,7 +366,6 @@ export function AssetRelationshipsTab({
         }}
       >
         <DialogContent
-          className="max-h-[90vh] overflow-y-auto"
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
@@ -376,94 +376,96 @@ export function AssetRelationshipsTab({
               changed — delete and recreate if you need to change those.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Read-only context — shows the user *which* relationship they
+          <DialogBody>
+            <div className="space-y-4">
+              {/* Read-only context — shows the user *which* relationship they
                 are editing. Without this they have to remember which row
                 they clicked, especially when an asset has many edges of
                 the same type. */}
-            {editTarget && (
-              <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5">
-                <div className="flex items-center gap-2 flex-wrap text-sm">
-                  <Badge variant="secondary" className="max-w-[180px] truncate">
-                    {editTarget.sourceAssetName}
-                  </Badge>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <Badge variant="outline">
-                    {RELATIONSHIP_LABELS[editTarget.type]?.direct ?? editTarget.type}
-                  </Badge>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <Badge variant="secondary" className="max-w-[180px] truncate">
-                    {editTarget.targetAssetName}
-                  </Badge>
+              {editTarget && (
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap text-sm">
+                    <Badge variant="secondary" className="max-w-[180px] truncate">
+                      {editTarget.sourceAssetName}
+                    </Badge>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <Badge variant="outline">
+                      {RELATIONSHIP_LABELS[editTarget.type]?.direct ?? editTarget.type}
+                    </Badge>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <Badge variant="secondary" className="max-w-[180px] truncate">
+                      {editTarget.targetAssetName}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    These fields are immutable. To change the source, target, or type, remove this
+                    relationship and create a new one.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  These fields are immutable. To change the source, target, or type, remove this
-                  relationship and create a new one.
-                </p>
-              </div>
-            )}
+              )}
 
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                rows={3}
-                placeholder="Optional context for this relationship…"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Confidence</Label>
-                <Select
-                  value={editConfidence}
-                  onValueChange={(v) => setEditConfidence(v as RelationshipConfidence)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Impact Weight: {editImpactWeight}</Label>
-                <Slider
-                  value={[editImpactWeight]}
-                  onValueChange={([v]) => setEditImpactWeight(v)}
-                  min={1}
-                  max={10}
-                  step={1}
-                  className="mt-2"
+                <Label>Description</Label>
+                <Textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Optional context for this relationship…"
                 />
               </div>
-            </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Confidence</Label>
+                  <Select
+                    value={editConfidence}
+                    onValueChange={(v) => setEditConfidence(v as RelationshipConfidence)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Impact Weight: {editImpactWeight}</Label>
+                  <Slider
+                    value={[editImpactWeight]}
+                    onValueChange={([v]) => setEditImpactWeight(v)}
+                    min={1}
+                    max={10}
+                    step={1}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
 
-            {/* Control-plane dependency flag (CTEM Scoping, api #467). */}
-            <div className="flex items-start gap-2 rounded-lg border p-3">
-              <Checkbox
-                id="edit-is-control-plane"
-                checked={editIsControlPlane}
-                onCheckedChange={(checked) => setEditIsControlPlane(checked === true)}
-                className="mt-0.5"
-              />
-              <div className="space-y-0.5">
-                <Label
-                  htmlFor="edit-is-control-plane"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Control-plane dependency (IdP / secrets / CI-CD / SIEM)
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Flag when the target governs this asset&apos;s security posture, so scoping can
-                  trace blast radius.
-                </p>
+              {/* Control-plane dependency flag (CTEM Scoping, api #467). */}
+              <div className="flex items-start gap-2 rounded-lg border p-3">
+                <Checkbox
+                  id="edit-is-control-plane"
+                  checked={editIsControlPlane}
+                  onCheckedChange={(checked) => setEditIsControlPlane(checked === true)}
+                  className="mt-0.5"
+                />
+                <div className="space-y-0.5">
+                  <Label
+                    htmlFor="edit-is-control-plane"
+                    className="text-sm font-normal cursor-pointer"
+                  >
+                    Control-plane dependency (IdP / secrets / CI-CD / SIEM)
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Flag when the target governs this asset&apos;s security posture, so scoping can
+                    trace blast radius.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditTarget(null)}>
               Cancel
