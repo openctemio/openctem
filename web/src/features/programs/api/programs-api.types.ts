@@ -12,12 +12,52 @@ export interface ProgramHeader {
   value: string
 }
 
+export type WeekDay = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat'
+
+/** When a program allows testing: days, HH:MM start to end, IANA zone. */
+export interface TestingWindow {
+  days: WeekDay[]
+  start: string
+  end: string
+  timezone: string
+}
+
 export interface ProgramRules {
   rate_limit_rps?: number
   required_headers?: ProgramHeader[]
   user_agent?: string
   forbidden?: ForbiddenTechnique[]
   notes?: string
+  testing_windows?: TestingWindow[]
+}
+
+export type ProgramScopeSource = 'paste' | 'program_api' | 'program_file'
+
+/** Where a program's scope comes from; the API token is never returned. */
+export interface ProgramSync {
+  url?: string
+  handle?: string
+  username?: string
+  has_token: boolean
+  last_synced_at?: string
+  last_error?: string
+}
+
+export interface ProgramSourceInput {
+  scope_source: ProgramScopeSource
+  url?: string
+  handle?: string
+  username?: string
+  /** Empty keeps the stored token. */
+  token?: string
+}
+
+export interface ProgramSyncResult {
+  program: Program
+  removed_entries: number
+  added_exclusions: number
+  pending_additions: number
+  suspended: boolean
 }
 
 export interface ProgramActorRef {
@@ -44,6 +84,9 @@ export interface Program {
   created_by?: ProgramActorRef
   created_at: string
   updated_at: string
+  sync?: ProgramSync
+  /** A sync found new scope: nothing is added until someone accepts these terms. */
+  pending_terms_sha256?: string
 }
 
 export interface ProgramItem {

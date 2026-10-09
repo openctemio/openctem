@@ -168,6 +168,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.ScopeConfig,
   },
+  // Letters of authorization (RFC-065 §13).
+  '/scope/letters': {
+    permission: Permission.ScopeRead,
+    module: Module.ScopeConfig,
+  },
   // Bug-bounty programs (RFC-065); the API filters what each caller sees.
   '/programs': {
     permission: Permission.ProgramsRead,

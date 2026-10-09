@@ -73,6 +73,13 @@ export interface CreateScopeTargetInput {
   expires_in_days?: number
   /** Probe ceiling; the organization's default_max_tier when omitted. */
   max_tier?: ScopeTier
+  /**
+   * Why the entry authorizes probes: ownership (default) or a letter of
+   * authorization (RFC-065 §13), named by letter_id. Program entries come
+   * from Programs.
+   */
+  authorization_source?: 'ownership' | 'authorization_letter'
+  letter_id?: string
 }
 
 /** Probe tiers (RFC-036): t0 passive, t1 safe active, t2 intrusive. */
