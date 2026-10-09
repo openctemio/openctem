@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ShieldOff } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { TonePill, type PillTone } from '@/features/shared'

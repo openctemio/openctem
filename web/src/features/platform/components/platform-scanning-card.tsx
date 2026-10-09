@@ -9,7 +9,7 @@
  * use platform scanning: no upsell.
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Cloud } from 'lucide-react'
 
 import { useScopeSettingsApi } from '@/features/scope'

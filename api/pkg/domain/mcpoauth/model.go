@@ -103,6 +103,9 @@ type Grant struct {
 	ExpiresAt     time.Time
 	RevokedAt     *time.Time
 	RevokedReason string
+	// DPoPJKT is the thumbprint of the client key the grant is bound to
+	// (RFC 9449), or "" for a bearer grant.
+	DPoPJKT string
 }
 
 // Active reports whether the grant can still be used at now.
