@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useCallback, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { Loader2, MailCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { submitAccessRequestAction } from '../actions/local-auth-actions'
+import { useAuthProviders } from '../api/use-auth-providers'
+import { TurnstileWidget } from './turnstile-widget'
 import { isSignupNotAvailable } from '../lib/signup-outcome'
 
 const MAX_COMPANY = 200
@@ -28,8 +30,15 @@ export function RequestAccessForm() {
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const { data: providers } = useAuthProviders()
+  const siteKey = providers?.captcha_site_key ?? ''
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaFailed, setCaptchaFailed] = useState(false)
+  const onCaptchaToken = useCallback((token: string) => setCaptchaToken(token), [])
+  const onCaptchaError = useCallback(() => setCaptchaFailed(true), [])
 
   const valid =
+    (!siteKey || captchaToken !== '') &&
     company.trim().length > 0 &&
     company.length <= MAX_COMPANY &&
     note.length <= MAX_NOTE &&
@@ -44,6 +53,7 @@ export function RequestAccessForm() {
         company: company.trim(),
         email: email.trim(),
         note: note.trim(),
+        ...(siteKey ? { captcha_token: captchaToken } : {}),
       })
       if (res.success) {
         setSent(true)
@@ -51,6 +61,8 @@ export function RequestAccessForm() {
         setError(t('auth.requestAccess.closed', 'Requests are not accepted at the moment.'))
       } else {
         setError(res.error)
+        // A token is single use: ask for a new one.
+        setCaptchaToken('')
       }
     })
   }
@@ -130,6 +142,24 @@ export function RequestAccessForm() {
               rows={3}
             />
           </div>
+          {siteKey && (
+            <div className="space-y-1">
+              <TurnstileWidget
+                key={error ?? 'captcha'}
+                siteKey={siteKey}
+                onToken={onCaptchaToken}
+                onError={onCaptchaError}
+              />
+              {captchaFailed && (
+                <p className="text-center text-xs text-muted-foreground">
+                  {t(
+                    'auth.requestAccess.captchaFailed',
+                    'The security check could not load. Allow challenges.cloudflare.com, or try another network.'
+                  )}
+                </p>
+              )}
+            </div>
+          )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}

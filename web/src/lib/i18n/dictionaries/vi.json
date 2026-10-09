@@ -781,5 +781,6 @@
   "auth.requestAccess.confirming": "Đang xác nhận yêu cầu...",
   "auth.requestAccess.confirmed": "Yêu cầu của bạn đã được xác nhận và đang chờ quản trị viên.",
   "auth.requestAccess.confirmFailed": "Liên kết này không hợp lệ hoặc đã hết hạn.",
-  "admin.nav.access-requests": "Yêu cầu truy cập"
+  "admin.nav.access-requests": "Yêu cầu truy cập",
+  "auth.requestAccess.captchaFailed": "Không tải được bước kiểm tra bảo mật. Hãy cho phép challenges.cloudflare.com hoặc thử mạng khác."
 }

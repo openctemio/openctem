@@ -101,8 +101,15 @@ page offers **Request access** (`/request-access`, en/vi):
   requests are deleted after 24 hours, decided ones after 90 days.
 - CAPTCHA: `CAPTCHA_TURNSTILE_SECRET` makes the API require a Cloudflare
   Turnstile token on submissions; `CAPTCHA_TURNSTILE_SITE_KEY` is published as
-  `captcha_site_key` on `/auth/providers`. The web widget is not wired yet:
-  leave the secret unset until it is, or every submission is refused.
+  `captcha_site_key` on `/auth/providers`. The request-access form then shows
+  the Turnstile widget and sends its token; sending stays disabled until the
+  widget gives one, and an expired or failed check disables it again. Set the
+  secret and the site key together.
+- CSP: only the CAPTCHA pages (`/request-access`, `/register`, and pages
+  below them) allow `https://challenges.cloudflare.com` in `script-src`,
+  `frame-src` and `connect-src`; every other page keeps `frame-src 'none'`
+  and no third-party origin. The script nonce and `'strict-dynamic'` stay in
+  force (`web/src/lib/middleware/csp.ts`, `isCaptchaRoute`).
 
 ### Invitation tokens stay out of URLs
 

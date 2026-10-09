@@ -20,8 +20,25 @@
  * hosts. Narrowing it needs an image proxy; the URLs themselves go through
  * safeImageSrc (src/lib/safe-href.ts).
  *
+ * CAPTCHA (Cloudflare Turnstile): only the pages that show the widget
+ * (CAPTCHA_ROUTES) also allow https://challenges.cloudflare.com for scripts,
+ * frames and connections. Every other page keeps frame-src 'none' and no
+ * third-party origin. The widget script is added by our own (nonce-trusted)
+ * code, which 'strict-dynamic' allows; the host entry is the CSP2 fallback.
+ *
  * Design: RFC-040 (platform/sensor mutual distrust), section 5.4.
  */
+
+/** The Cloudflare Turnstile origin (script, challenge frame, verification). */
+export const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
+
+/** Pages that may show the CAPTCHA widget: request access and sign-up. */
+export const CAPTCHA_ROUTES = ['/request-access', '/register'] as const
+
+/** True for a CAPTCHA page or a page below it, on a path-segment boundary. */
+export function isCaptchaRoute(pathname: string): boolean {
+  return CAPTCHA_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`))
+}
 
 export interface CspOptions {
   nonce: string
@@ -32,6 +49,8 @@ export interface CspOptions {
   backendUrl?: string
   /** NEXT_PUBLIC_WS_BASE_URL */
   wsUrl?: string
+  /** Allow the Turnstile origin (set only for CAPTCHA_ROUTES). */
+  captcha?: boolean
 }
 
 /** A 128-bit random nonce, base64. Works in the Node and Edge runtimes. */
@@ -43,9 +62,10 @@ export function generateNonce(): string {
   return btoa(bin)
 }
 
-function connectSrc({ isDev, appUrl, backendUrl, wsUrl }: CspOptions): string {
+function connectSrc({ isDev, appUrl, backendUrl, wsUrl, captcha }: CspOptions): string {
   if (isDev) return "connect-src 'self' http: ws: wss:" // HMR
   const origins: string[] = ["'self'"]
+  if (captcha) origins.push(TURNSTILE_ORIGIN)
   if (appUrl) {
     try {
       const u = new URL(appUrl)
@@ -71,13 +91,14 @@ function connectSrc({ isDev, appUrl, backendUrl, wsUrl }: CspOptions): string {
     }
   }
   // No URL configured: self-hosted, the backend's auth is the gate.
-  if (origins.length === 1) origins.push('https:', 'wss:')
+  if (origins.length === (captcha ? 2 : 1)) origins.push('https:', 'wss:')
   return `connect-src ${origins.join(' ')}`
 }
 
 export function buildCsp(options: CspOptions): string {
-  const { nonce, isDev } = options
+  const { nonce, isDev, captcha } = options
   const script = [`'self'`, `'nonce-${nonce}'`, `'strict-dynamic'`]
+  if (captcha) script.push(TURNSTILE_ORIGIN)
   if (isDev) script.push(`'unsafe-eval'`)
   return [
     "default-src 'self'",
@@ -88,17 +109,18 @@ export function buildCsp(options: CspOptions): string {
     "font-src 'self' data: https://fonts.gstatic.com",
     connectSrc(options),
     "object-src 'none'",
-    "frame-src 'none'",
+    captcha ? `frame-src ${TURNSTILE_ORIGIN}` : "frame-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
   ].join('; ')
 }
 
-/** The policy for this process, from its environment. */
-export function cspForRequest(nonce: string): string {
+/** The policy for this request: this process's environment and the page. */
+export function cspForRequest(nonce: string, pathname = ''): string {
   return buildCsp({
     nonce,
+    captcha: isCaptchaRoute(pathname),
     isDev: process.env.NODE_ENV === 'development',
     appUrl: process.env.NEXT_PUBLIC_APP_URL,
     backendUrl: process.env.BACKEND_API_URL,
