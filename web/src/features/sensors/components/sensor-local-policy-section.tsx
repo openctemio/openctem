@@ -54,7 +54,17 @@ export function SensorLocalPolicySection({ sensor }: { sensor: Pick<Sensor, 'loc
           switch is released on the host.
         </DetailCallout>
       )}
-      {p.state === 'absent' && (
+      {p.state === 'absent' && p.required && (
+        <DetailCallout
+          tone="destructive"
+          icon={ShieldAlert}
+          title="Local policy required but missing"
+        >
+          This sensor refuses every job with a network target, custom templates and callbacks until
+          the network owner installs a policy (the Local policy tab of the install commands).
+        </DetailCallout>
+      )}
+      {p.state === 'absent' && !p.required && (
         <DetailCallout tone="warning" icon={ShieldAlert} title="No local policy">
           This sensor accepts any target outside its built-in deny list. Install the policy from the
           Install tab so the network owner decides what it may scan.

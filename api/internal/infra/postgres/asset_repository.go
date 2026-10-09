@@ -1237,6 +1237,30 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 			strings.Join(placeholders, ", ")))
 	}
 
+	// Asset group membership. The group must be the asset's tenant's, so an
+	// id of another tenant's group matches nothing.
+	if len(filter.AssetGroupIDs) > 0 {
+		conditions = append(conditions, fmt.Sprintf(
+			`EXISTS (SELECT 1 FROM asset_group_members agm
+				JOIN asset_groups fg ON fg.id = agm.asset_group_id AND fg.tenant_id = a.tenant_id
+				WHERE agm.asset_id = a.id AND agm.asset_group_id::text = ANY($%d))`, argIndex))
+		args = append(args, pq.Array(filter.AssetGroupIDs))
+		argIndex++
+	}
+
+	// Owned by these users or groups (asset_owners has no tenant_id: the
+	// owner is pinned to the asset's tenant, as the owner-presence filter
+	// below does).
+	if len(filter.OwnerIDs) > 0 {
+		conditions = append(conditions, fmt.Sprintf(
+			`EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id AND (
+				(ao.user_id::text = ANY($%d) AND ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = a.tenant_id))
+				OR (ao.group_id::text = ANY($%d) AND ao.group_id IN (SELECT id FROM groups WHERE tenant_id = a.tenant_id))))`,
+			argIndex, argIndex))
+		args = append(args, pq.Array(filter.OwnerIDs))
+		argIndex++
+	}
+
 	// Owner-presence filter (asset_owners). Tenant-scoped through the principal,
 	// mirroring AssetOwnershipLookupRepo — asset_owners has no tenant_id column.
 	// Requires a tenant filter; skipped otherwise so it can never span tenants.
