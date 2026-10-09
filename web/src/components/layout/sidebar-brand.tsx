@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { PanelLeftIcon } from 'lucide-react'
 import { Logo } from '@/assets/logo'
 import { ShortcutKeys } from '@/components/layout/keyboard-shortcuts-dialog'

@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import Link from 'next/link'
+import Link from '@/components/link'
 import useSWR from 'swr'
 import { CircleAlert, Hash } from 'lucide-react'
 import { toast } from 'sonner'
