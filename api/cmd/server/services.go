@@ -592,6 +592,8 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
+	// ScopeSnapshots stores the scope each scan run relied on (RFC-065 §9).
+	ScopeSnapshots *postgres.ScopeSnapshotRepository
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
@@ -704,6 +706,7 @@ type Services struct {
 	// Access Control
 	Group          *accesscontrol.GroupService
 	Role           *accesscontrol.RoleService
+	ServiceAccount *accesscontrol.ServiceAccountService
 	AssignmentRule *assignment.RuleService
 	ScopeRule      *scope.RuleService
 
@@ -984,6 +987,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetProgramExclusions(programRepo)
+	s.Scope.SetProgramLister(programRepo)
+	s.ScopeSnapshots = postgres.NewScopeSnapshotRepository(&postgres.DB{DB: deps.DB})
 	letterRepo := postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetLetters(letterRepo)
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
@@ -1303,6 +1308,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
 	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
 		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdmins)
+	// A revoked letter's entries leave the job signer's ledger at once.
+	s.ScopeLetters.OnRevoke(s.Scope.NarrowLetter)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
 	storageResolver := auth.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
 	// "local" is always the operator storage above, never a tenant-chosen
@@ -1803,6 +1810,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScanProfile = scan.NewScanProfileService(repos.ScanProfile, log)
 	s.ScannerTemplate = app.NewScannerTemplateService(repos.ScannerTemplate, cfg.Encryption.Key, log)
 	s.ScannerTemplate.SetSigningKeys(s.TemplateKeys)
+	if s.JobSigner != nil {
+		// RFC-040 §11.5: a custom template version reaches sensors only
+		// once approved under the scope policy and recorded by the signer.
+		s.ScannerTemplate.SetLedger(s.JobSigner, s.Scope)
+		s.Scope.SetLedgerTemplates(s.ScannerTemplate)
+	}
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
 
 	// Initialize credential service for template sources
@@ -1902,6 +1915,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope)),
+		scan.WithScopeSnapshots(scope.NewSnapshotRecorder(s.Scope, s.ScopeSnapshots)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
@@ -2250,6 +2264,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Group != nil {
 		s.Group.SetRoleBindings(repos.GroupRoleBinding, s.Role)
 	}
+	// Service accounts: organization-owned identities that act only through
+	// API keys, held to the external-member role ceiling.
+	s.ServiceAccount = accesscontrol.NewServiceAccountService(repos.ServiceAccount, s.Audit, log)
+	s.Role.SetServiceAccountReader(repos.ServiceAccount)
 
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {

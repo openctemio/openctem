@@ -678,6 +678,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/scim': {
     permission: Permission.MembersRead,
   },
+  // Service accounts: listed with team:members:read, like members (api
+  // routes/access_control.go registerServiceAccountRoutes).
+  '/settings/service-accounts': {
+    permission: Permission.MembersRead,
+  },
 
   // ========================================
   // Settings - Integrations (Module: integrations)

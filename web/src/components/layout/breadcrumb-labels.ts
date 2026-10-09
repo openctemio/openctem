@@ -48,6 +48,7 @@ const FALLBACK_LABELS: Record<string, string> = {
   builder: 'Builder',
   api: 'API',
   'api-keys': 'API keys',
+  'service-accounts': 'Service accounts',
   cicd: 'CI/CD',
   siem: 'SIEM',
   scm: 'SCM',
