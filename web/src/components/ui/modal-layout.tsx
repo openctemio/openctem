@@ -128,23 +128,31 @@ function useScrollEdges(el: HTMLElement | null) {
     }
     update()
     el.addEventListener('scroll', update, { passive: true })
+    // Content that grows or shrinks (a field revealed by a toggle) resizes a
+    // child of the body, not the body: watch the children's sizes, and only
+    // the body's own child list for new children. Never the whole subtree: a
+    // long form re-renders constantly while typing.
+    let frame = 0
+    const later = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(update)
+    }
     let ro: ResizeObserver | undefined
     if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(update)
+      ro = new ResizeObserver(later)
       ro.observe(el)
       for (const child of Array.from(el.children)) ro.observe(child)
     }
-    // Content that appears later (a field revealed by a toggle) changes the
-    // scroll height without resizing the body itself.
     let mo: MutationObserver | undefined
     if (typeof MutationObserver !== 'undefined') {
       mo = new MutationObserver(() => {
-        update()
+        later()
         if (ro) for (const child of Array.from(el.children)) ro.observe(child)
       })
-      mo.observe(el, { childList: true, subtree: true })
+      mo.observe(el, { childList: true })
     }
     return () => {
+      cancelAnimationFrame(frame)
       el.removeEventListener('scroll', update)
       ro?.disconnect()
       mo?.disconnect()
