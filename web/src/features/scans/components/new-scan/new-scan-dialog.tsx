@@ -29,7 +29,12 @@ import { TargetsStep } from './targets-step'
 import { OptionsStep } from './options-step'
 import { ScheduleStep } from './schedule-step'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
-import { basicInfoError, formDataToCreateRequest, targetsError } from '../../lib/scan-form'
+import {
+  basicInfoError,
+  directTargets,
+  formDataToCreateRequest,
+  targetsError,
+} from '../../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
@@ -68,8 +73,13 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const { data: zonesData } = useScanZones(canReadZones && open)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
+  // The previews take names: the picked assets by name, with the typed ones.
   const previewRequest = useMemo(
-    () => toZonePreviewRequest(formDataToCreateRequest(formData), formData.scanZoneId),
+    () =>
+      toZonePreviewRequest(
+        { ...formDataToCreateRequest(formData), targets: directTargets(formData) },
+        formData.scanZoneId
+      ),
     [formData]
   )
 
@@ -144,15 +154,6 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     try {
       // Map form data to API request format
       const request = formDataToCreateRequest(formData)
-
-      // Validate the mapped request has targets
-      // This can happen if asset IDs couldn't be resolved to names
-      const requestHasAssetGroups = request.asset_group_ids && request.asset_group_ids.length > 0
-      const requestHasTargets = request.targets && request.targets.length > 0
-      if (!requestHasAssetGroups && !requestHasTargets) {
-        toast.error('Unable to resolve selected assets. Please try selecting them again.')
-        return
-      }
 
       // Create the scan configuration
       const scanConfig = await createScanConfig(request)
