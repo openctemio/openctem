@@ -75,7 +75,7 @@
   7. `VulnerabilityService.guardNotPentestManaged` / `assertPentestMember` on
      generic update/delete/bulk paths.
   8. (gone) `ctem_cycle_handler.go` no longer joins a pentest table; the
-     deprecated `pentest_findings` table was dropped in migration 001550.
+     deprecated `pentest_findings` table was dropped in migration 001555.
   9. Attachment handler access-checker = `svc.Pentest`.
   10. `compliance_service.go` / `tenant_service.go` type-alias shims.
   11. `permission` (13 constants), `module` presets + hard `pentest→findings`
@@ -92,7 +92,7 @@ MITRE technique, CVSS version) live in `findings.metadata` (`SourceMetadata()`,
 get/update/status/delete, retests (`pentest_retests.finding_id` references
 `findings`), campaign stats (`PentestCampaignRepository.GetStats`/`GetStatsByIDs`,
 tenant-scoped aggregates over `findings`), reports/PDF, exports and the MCP
-tools. The deprecated `pentest_findings` table had no writer; migration 001550
+tools. The deprecated `pentest_findings` table had no writer; migration 001555
 copied its rows into `findings` (same id, tenant and campaign; an assignee,
 author or reviewer outside the tenant is dropped; a row whose campaign is in
 another tenant is not copied) and dropped it. The `pentest:findings:*`
