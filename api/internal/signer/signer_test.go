@@ -438,3 +438,36 @@ func TestServe_UnixSocketOnly(t *testing.T) {
 		t.Fatal("listened over a regular file")
 	}
 }
+
+// A refused statement may carry anything: its log line stays bounded and
+// holds only well-formed ids, so the log still verifies on restart.
+func TestSigningLog_RefusalsAreBounded(t *testing.T) {
+	dir, key := t.TempDir(), newKey(t)
+	s := newService(t, dir, key, nil)
+	huge := strings.Repeat("x", 200<<10)
+	if _, ref := s.Sign(statement(func(m map[string]any) {
+		m["kind"] = "bad"
+		m["tool"] = huge
+		m["command_type"] = huge
+		m["payload_sha256"] = huge
+		m["sensor_id"] = "evil\nline"
+	})); ref == nil || ref.reason != ReasonBadKind {
+		t.Fatalf("refusal %+v", ref)
+	}
+	_ = s.Close()
+	raw, err := os.ReadFile(filepath.Join(dir, "signing.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 4<<10 {
+		t.Fatalf("a refusal wrote a %d-byte log line", len(raw))
+	}
+	var e LogEntry
+	if err := json.Unmarshal(bytes.TrimSpace(raw), &e); err != nil {
+		t.Fatal(err)
+	}
+	if e.SensorID != "" || e.TenantID != tTenant {
+		t.Fatalf("logged ids %q %q", e.SensorID, e.TenantID)
+	}
+	newService(t, dir, key, nil) // the log verifies
+}

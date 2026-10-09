@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 // SeqStore hands out a strictly increasing sequence number per sensor. Each
@@ -30,9 +32,11 @@ func OpenSeqStore(dir string) (*SeqStore, error) {
 }
 
 // Next is sensorID's next sequence number (1 for a sensor never seen).
-// sensorID must already be a validated UUID: it names the file.
+// sensorID must be a canonical lower-case UUID; the file is named by its
+// parsed form, so no other string can reach the file system.
 func (s *SeqStore) Next(sensorID string) (uint64, error) {
-	if !isUUID(sensorID) {
+	sensorID = canonicalID(sensorID)
+	if sensorID == "" {
 		return 0, errors.New("signer seq store: invalid sensor id")
 	}
 	s.mu.Lock()
@@ -114,23 +118,20 @@ func syncDir(dir string) error {
 	return nil
 }
 
-// isUUID reports whether s is a canonical lower-case UUID (one spelling per
-// id: an upper-case variant would start a second sequence).
-func isUUID(s string) bool {
-	if len(s) != 36 {
-		return false
+// canonicalID is s re-encoded from its parsed UUID when s is already a
+// canonical lower-case UUID, else "". One spelling per id: an upper-case or
+// braced variant would otherwise start a second sequence.
+func canonicalID(s string) string {
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return ""
 	}
-	for i, c := range s {
-		switch i {
-		case 8, 13, 18, 23:
-			if c != '-' {
-				return false
-			}
-		default:
-			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-				return false
-			}
-		}
+	c := u.String()
+	if c != s {
+		return ""
 	}
-	return true
+	return c
 }
+
+// isUUID reports whether s is a canonical lower-case UUID.
+func isUUID(s string) bool { return canonicalID(s) != "" }
