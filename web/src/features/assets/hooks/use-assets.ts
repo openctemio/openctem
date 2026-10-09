@@ -721,16 +721,13 @@ export function useAssetStats({ types, lenses, tags, subType, countBy }: AssetSt
   if (countBy && countBy.length > 0) params.set('count_by', countBy.join(','))
   const queryString = params.toString()
   const querySuffix = queryString ? `?${queryString}` : ''
-  const cacheKey = shouldFetch ? `asset-stats${querySuffix}` : null
+  // Keyed by the endpoint URL (shared with every reader, and the dashboard
+  // overview hands its answer over under it).
+  const cacheKey = shouldFetch ? `${endpoints.assets.stats()}${querySuffix}` : null
 
   const { data, error, isLoading, mutate } = useSWR<BackendAssetStats>(
     cacheKey,
-    async () => {
-      // Fetch from dedicated asset stats endpoint with optional filters
-      const url = `${endpoints.assets.stats()}${querySuffix}`
-      const response = await get<BackendAssetStats>(url)
-      return response
-    },
+    (url: string) => get<BackendAssetStats>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000,

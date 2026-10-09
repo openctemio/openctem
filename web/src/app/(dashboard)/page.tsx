@@ -34,6 +34,7 @@ import {
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { CtemDashboard } from '@/features/dashboard/components/ctem-dashboard'
+import { DashboardOverviewProvider } from '@/features/dashboard/api/dashboard-overview'
 import {
   useMyDashboards,
   useRevalidateDashboards,
@@ -82,7 +83,19 @@ const BUILTIN_LABEL: Record<string, string> = { ctem: 'CTEM', classic: 'Classic'
  * one "Switch Dashboard" menu; the chosen view persists in localStorage and falls
  * back to the user's default custom dashboard on first load.
  */
-export default function Dashboard() {
+/**
+ * The dashboard's reads come in one request (GET /dashboard/overview) and are
+ * handed to its widgets' hooks; widgets of other views fetch their own.
+ */
+export default function DashboardPage() {
+  return (
+    <DashboardOverviewProvider loading={<DashboardViewSkeleton />}>
+      <Dashboard />
+    </DashboardOverviewProvider>
+  )
+}
+
+function Dashboard() {
   const { data, isLoading } = useMyDashboards()
   const revalidate = useRevalidateDashboards()
   const { mutate } = useSWRConfig()
