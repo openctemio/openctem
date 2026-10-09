@@ -592,8 +592,13 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
-	AttackSurface *attack.SurfaceService
-	ThreatModel   *threatmodel.Service
+	// ProgramAssigner keeps program group assignments current (the
+	// periodic pass, RFC-065 §7).
+	ProgramAssigner controller.ProgramAssignments
+	AttackSurface   *attack.SurfaceService
+	ThreatModel     *threatmodel.Service
+	// ScopeLetters manages authorization letters (RFC-065 §13).
+	ScopeLetters *scope.LetterService
 
 	// Configuration (read-only system config)
 	FindingSource      *finding.FindingSourceService
@@ -977,7 +982,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetProgramExclusions(programRepo)
+	letterRepo := postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB})
+	s.Scope.SetLetters(letterRepo)
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
+	s.BountyProgram.SetAssigner(programRepo)
+	s.ProgramAssigner = programRepo
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
 	// RFC-040 §11.5: program entries reach the job signer's ledger through
@@ -1289,6 +1298,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		return nil, fmt.Errorf("unsupported STORAGE_PROVIDER %q (local, s3 or minio)", cfg.Storage.Provider)
 	}
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
+	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
+	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
+		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdmins)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
 	storageResolver := auth.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
 	// "local" is always the operator storage above, never a tenant-chosen
@@ -1308,7 +1320,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
 	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
-	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames), s.DataScope)
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -1707,6 +1719,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.BountyProgram.SetJoiner(joinScheduler)
 		stamper := easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)
 		stamper.SetScopeJoin(s.ScopeJoin)
+		stamper.SetProgramAssigner(programRepo)
 		s.Ingest.SetScanAttributionStamper(stamper)
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
@@ -1887,7 +1900,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
-		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames)),
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
