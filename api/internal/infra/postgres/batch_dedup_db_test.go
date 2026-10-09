@@ -151,7 +151,7 @@ func TestEPSSUpsertBatch_RepeatedCVE(t *testing.T) {
 	db, pdb := openBatchDedupDB(t)
 	ctx := context.Background()
 	repo := &EPSSRepository{db: pdb}
-	cve := "CVE-2099-" + shared.NewID().String()[:5]
+	cve := "CVE-2099-" + shared.NewID().String()[31:]
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM epss_scores WHERE cve_id = $1`, cve) })
 
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)

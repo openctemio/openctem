@@ -57,7 +57,6 @@ type Repositories struct {
 	// Pentest
 	PentestCampaign       *postgres.PentestCampaignRepository
 	PentestCampaignMember *postgres.PentestCampaignMemberRepository
-	PentestFinding        *postgres.PentestFindingRepository
 	PentestRetest         *postgres.PentestRetestRepository
 	PentestTemplate       *postgres.PentestTemplateRepository
 	PentestReport         *postgres.PentestReportRepository
@@ -158,11 +157,11 @@ type Repositories struct {
 	StepRun          *postgres.StepRunRepository
 
 	// Workflows
-	Workflow        *postgres.WorkflowRepository
-	WorkflowNode    *postgres.WorkflowNodeRepository
-	WorkflowEdge    *postgres.WorkflowEdgeRepository
-	WorkflowRun     *postgres.WorkflowRunRepository
-	WorkflowNodeRun *postgres.WorkflowNodeRunRepository
+	Workflow        *postgres.AutomationRepository
+	WorkflowNode    *postgres.AutomationNodeRepository
+	WorkflowEdge    *postgres.AutomationEdgeRepository
+	WorkflowRun     *postgres.AutomationRunRepository
+	WorkflowNodeRun *postgres.AutomationRunStepRepository
 
 	// Suppressions
 	Suppression *postgres.SuppressionRepository
@@ -171,11 +170,13 @@ type Repositories struct {
 	Group *postgres.GroupRepository
 	// GroupRoleBinding: team role bindings (decisions G1-G12).
 	GroupRoleBinding *postgres.GroupRoleBindingRepository
-	AccessControl    *postgres.AccessControlRepository
-	DataScope        *postgres.DataScopeRepository
-	MemberLifecycle  *postgres.MemberLifecycleRepository
-	Role             *postgres.RoleRepository
-	RolePermission   *postgres.PermissionRepository
+	// ServiceAccount: organization-owned identities for integrations.
+	ServiceAccount  *postgres.ServiceAccountRepository
+	AccessControl   *postgres.AccessControlRepository
+	DataScope       *postgres.DataScopeRepository
+	MemberLifecycle *postgres.MemberLifecycleRepository
+	Role            *postgres.RoleRepository
+	RolePermission  *postgres.PermissionRepository
 
 	// Session (raw *sql.DB required)
 	Session      *postgres.SessionRepository
@@ -335,7 +336,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Pentest
 		PentestCampaign:       postgres.NewPentestCampaignRepository(db),
 		PentestCampaignMember: postgres.NewPentestCampaignMemberRepository(db),
-		PentestFinding:        postgres.NewPentestFindingRepository(db),
 		PentestRetest:         postgres.NewPentestRetestRepository(db),
 		PentestTemplate:       postgres.NewPentestTemplateRepository(db),
 		PentestReport:         postgres.NewPentestReportRepository(db),
@@ -418,11 +418,11 @@ func newRepositories(db *postgres.DB) *Repositories {
 		StepRun:          postgres.NewStepRunRepository(db),
 
 		// Workflows
-		Workflow:        postgres.NewWorkflowRepository(db),
-		WorkflowNode:    postgres.NewWorkflowNodeRepository(db),
-		WorkflowEdge:    postgres.NewWorkflowEdgeRepository(db),
-		WorkflowRun:     postgres.NewWorkflowRunRepository(db),
-		WorkflowNodeRun: postgres.NewWorkflowNodeRunRepository(db),
+		Workflow:        postgres.NewAutomationRepository(db),
+		WorkflowNode:    postgres.NewAutomationNodeRepository(db),
+		WorkflowEdge:    postgres.NewAutomationEdgeRepository(db),
+		WorkflowRun:     postgres.NewAutomationRunRepository(db),
+		WorkflowNodeRun: postgres.NewAutomationRunStepRepository(db),
 
 		// Suppressions
 		Suppression: postgres.NewSuppressionRepository(db),
@@ -430,6 +430,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Access Control
 		Group:            postgres.NewGroupRepository(db),
 		GroupRoleBinding: postgres.NewGroupRoleBindingRepository(db),
+		ServiceAccount:   postgres.NewServiceAccountRepository(db),
 		AccessControl:    postgres.NewAccessControlRepository(db),
 		DataScope:        postgres.NewDataScopeRepository(db),
 		MemberLifecycle:  postgres.NewMemberLifecycleRepository(db),

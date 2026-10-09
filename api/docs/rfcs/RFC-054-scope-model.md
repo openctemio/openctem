@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -64,10 +64,10 @@ Every lookup error refuses (fail closed).
 |---|---|
 | S1 | (a) `*.x` = `x` + all subdomains; exclusion `x` carves the apex out |
 | S2 | (a) proof for active probes is an operator setting `SCOPE_ACTIVE_PROOF`: SaaS default `platform_sensors`, self-hosted `off`; intrusive (T2) always needs proof |
-| S3 | (a) widening approvals are a tenant setting 0/1/2, default `min(1, admins − 1)`, never 0 for T2 (amends RFC-040 Q2 (a)) |
+| S3 | (a) widening approvals are a tenant setting 0/1/2, default `min(1, admins − 1)`, never 0 for T2 (amends RFC-040 Q2 (a)). Revised 2026-10-09 (§12): approvers are named and reminded; an owner with no other approver self-approves with a fresh authenticator code; a platform policy may make approvals tenant-controlled or off |
 | S4 | yes, refined 2026-10-07: an active, non-expiring scope entry or seed confirms the names it covers (`matches_scope_target`, no review); IPs only through IP entries; one-off entries never confirm; tombstones and exclusions win; removal keeps the asset and stops scanning; backfill of existing `needs_review` rows |
 | S5 | tenant knobs (§7); no global scope-off switch, ever |
-| S6 | one-off = a scope entry with `expires_at` + `reason`; admins create, members request; default 7 days, max 30 |
+| S6 | one-off = a scope entry with `expires_at` + `reason`; admins create, members request; default 7 days, max 30. Revised 2026-10-09 (§12): T2 entries have an owner-set maximum (7/30/90/365 days or permanent, default 30) and long ones are re-attested every 90 days or downgraded to T1 |
 
 ## 4. Semantics
 
@@ -734,6 +734,8 @@ scope target covers and no exclusion removes:
   `min(1, admins − 1)` when unset; at least 1 when the tenant has two or more
   admins; at least 1 for `t2`; capped at `admins − 1` only for the default.
 - Approvers hold `scope:approve`, differ from the requester, and count once.
+  A pending entry names them (§12.2); an owner with no other approver may
+  approve their own entry with a fresh authenticator code (§12.3).
 - Widening events notify every active owner and admin in-app and on the
   tenant's channels: entry created active, approved, activated, expiry
   extended, tier raised, exclusion removed or shortened, settings changed;
@@ -841,3 +843,161 @@ are gated by zones and are not capped.
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
 | Refusals | codes, fixes, `POST /check` dry run |
 | Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step proof for intrusive workflow steps |
+
+## 12. Amendment 2026-10-09: approvers, long intrusive grants, platform policy
+
+Owner feedback on the P0: "Who is the other approver? I'm an admin." and
+"This time limit is too tight; sometimes it must be open permanently, not
+everyone has time to come back every 7 days." Then: "the platform admin side
+should have a function to turn this approval requirement on/off." Decisions
+A1–A5 (owner, 2026-10-09) revise S3 and S6.
+
+### 12.1 Threat model of the revision
+
+| Risk | Control |
+|---|---|
+| A pending entry waits forever because nobody knows who approves | the entry names its approvers and the approvals it still needs; they are notified in-app, by email and on the organization's channels, and anyone with `scope:write` may remind them (once an hour per entry) |
+| A single-owner organization cannot use T2 at all (S3 says T2 never needs 0 approvals, and there is no second person) | the owner approves their own entry, only when no other approver exists, with a fresh authenticator code and a reason; high-severity audit, every administrator and the channels told. Never automatic |
+| A stolen session self-approves | a session cookie or a recent sign-in is not enough: the code must come from the owner's authenticator app in the same request, and a used code cannot be replayed |
+| A forgotten permanent intrusive grant keeps authorizing T2 probes for years | re-attestation (§12.5): every 90 days (30–180) an owner or administrator confirms "keep T2"; without an answer within 14 days the entry is downgraded to T1 (never deleted), with notification and audit |
+| A long intrusive grant set by an administrator against the owner's intent | the T2 maximum duration is an owner-only setting (step-up, audit, every administrator told) |
+| An operator relaxes approvals for a tenant silently | the platform approval policy (§12.6) is a platform administrator's explicit choice: super_admin, fresh console TOTP code, reason, critical admin audit, the other platform administrators and the tenant's administrators told |
+| Relaxed approvals become "scope off" | they do not: step-up on every widening, the dry run, ownership proof for T2 and platform sensors, the platform deny list, public-suffix refusal, CIDR caps, audit and notification of every tenant administrator all stay. Only the second person is relaxed |
+
+Approvals protect against a typo and against a single stolen session. They
+do not protect against an organization that wants to scan a third party
+(colluding administrators approve each other): ownership proof and the
+platform guardrails do (§2). Relaxing approvals is therefore an operator's
+explicit, audited choice, never a tenant's.
+
+### 12.2 A1: name the approvers
+
+Approvers of a scope entry are the organization's active members (active
+account, unexpired membership) whose role is owner or admin, or who hold
+`attack_surface:scope:approve` through a role. A pending entry's response
+carries:
+
+```json
+"approval": {
+  "remaining": 1,
+  "eligible_approver_count": 2,
+  "eligible_approvers": [{"kind": "user", "id": "…", "name": "Adam"}],
+  "self_approval_available": false,
+  "reminded_at": "…", "can_remind_at": "…"
+}
+```
+
+- `eligible_approvers` excludes the requester and anyone who already
+  approved. Names are returned only to a caller who may see the members
+  (`team:members:read`); everyone else gets the count. No email is ever
+  returned.
+- A new pending entry notifies every administrator in-app, every eligible
+  approver in-app and by email, and the channels (`approval_requested`).
+- **`POST /scope/targets/{id}/remind`** (`scope:write`): the same request
+  again to the eligible approvers. At most once per hour per entry, checked
+  atomically in the database (`429 REMINDER_TOO_SOON`). Audited
+  (`scope_target.approvers_reminded`).
+- The email links to the Scope page and carries no capability: sign-in and
+  the approval permission authorize, so a forwarded email grants nothing.
+
+### 12.3 A2: an owner without another approver
+
+**`POST /scope/targets/{id}/self-approve`** (`scope:approve`)
+`{"reason": "…", "totp_code": "123456"}` puts the caller's own pending entry
+into effect when all of these hold, else `403 SELF_APPROVAL_NOT_ALLOWED`:
+
+- the caller requested the entry (created or last widened it);
+- the caller is an owner of the organization (read from the membership, not
+  the token);
+- the eligible approvers cannot give the remaining approvals (in practice:
+  nobody else can approve).
+
+The code must come from the caller's authenticator app in this request
+(`SELF_APPROVAL_NEEDS_TOTP` without one, `SELF_APPROVAL_INVALID_CODE` for a
+wrong or reused code; a wrong code counts towards the lockout). A password or
+an open step-up window is not enough. The approval row records
+`self_approved` and the reason (migration `001615`); the audit event
+`scope_target.self_approved` is high severity; every administrator and the
+channels (`security_alert`) are told. S3 is unchanged in substance: a T2
+entry still needs one approval, which here is the owner's own, proven with
+the second factor.
+
+### 12.4 A3: the T2 maximum duration
+
+S6 bounded every expiring entry by `one_off_max_days` (1–30, default 7), and
+T2 entries had to expire. Revised: T2 entries have their own bound, the
+owner-only setting `t2_max_duration`: `7d`, `30d` (default), `90d`, `365d` or
+`permanent`. **`PUT /scope/settings/intrusive`** (`scope:approve`, owner
+role, step-up) `{"t2_max_duration": "90d", "reason": "…"}` changes it:
+high-severity `scope.settings_updated` with the reason, every administrator
+told. `PUT /scope/settings` never changes it. `GET /scope/settings` adds
+`t2_max_duration`, `t2_max_days` (the most `expires_in_days` a t2 entry may
+ask for; 365 when permanent is allowed) and `t2_permanent_allowed`. The
+bound is enforced on create, on update and when only the tier is raised
+(`400 INTRUSIVE_TOO_LONG`; `INTRUSIVE_NEEDS_EXPIRY` for a permanent t2 entry
+when not allowed). The one-off policy (`one_off_targets: disabled`) does
+not apply to t2 expiries. Lowering the bound does not shorten existing
+entries; attestation (§12.5) covers the long ones. A T2 entry still needs a verified domain for its probes (§8.1)
+and one approval at creation and on every widening. T0/T1 one-off entries
+keep `one_off_max_days`; T0/T1 entries may still be permanent.
+
+### 12.5 A4: re-attestation instead of re-review
+
+An active T2 entry whose life runs past its next attestation (permanent, or
+expiring after it) is attested every `t2_attestation_days` (30–180, default
+90, owner-only) from its approval or last attestation:
+
+1. when an attestation falls due, the owners and administrators are asked
+   "Keep T2 for `<pattern>`?" (in-app, email, channels);
+2. **`POST /scope/targets/{id}/attest`** (`scope:approve`) confirms it and
+   starts the next period. One click, sign-in required; the link carries no
+   capability;
+3. without a confirmation within 14 days the attestation job downgrades the
+   entry to T1 (never deletes it): system audit
+   `scope_target.t2_downgraded`, every administrator and the channels told.
+   The job is idempotent (it only changes T2 entries that are overdue).
+   Raising the entry back to T2 is an ordinary widening (step-up, approval).
+
+Implementation: migration `001620` adds `attested_at`, `attested_by` and
+`attestation_requested_at` to `scope_targets`. The `scope-attestation`
+controller runs hourly (`scope.Service.ReconcileAttestations`); every write
+is tenant-scoped and conditional (a request opens only when none is open; the
+downgrade happens only while the request it saw is still open), so a rerun,
+a second replica or a concurrent confirmation never downgrades a confirmed
+entry. A request is audited as `scope_target.attestation_requested`, a
+confirmation as `scope_target.attested`. An active T2 entry's response
+carries `attestation: {due_at, requested_at, downgrade_at, attested_at,
+attested_by}`; the web lists due entries on the Approvals tab with "Keep T2".
+`t2_attestation_days` is part of the owner-only `PUT
+/scope/settings/intrusive`. An existing T2 entry's first period starts at its
+approval.
+
+### 12.6 A5: platform policy for widening approvals
+
+A platform administrator sets, as a platform default and per organization
+(an override), how widening approvals work:
+
+| Mode | Effect |
+|---|---|
+| `required` (default) | §7 as amended: the tenant's 0/1/2, at least 1 with two or more administrators and for T2 |
+| `tenant_controlled` | the organization's owner may set 0, 1 or 2 for every tier, T2 included |
+| `disabled` | no approvals for any tier; a member's request still needs an approver |
+
+`GET/PUT /api/v1/admin/settings/scope-policy` (platform default) and
+`GET/PUT /api/v1/admin/tenants/{tenantId}/scope-policy` (override; `null`
+inherits). Reads: any platform administrator. Changes: super_admin, a fresh
+console TOTP code and a reason; critical admin audit; the other platform
+administrators emailed; the organization's administrators told in-app. No
+tenant route can read the override's audit trail or change it. The tenant's
+`GET /scope/settings` shows the effective mode and its source, and the web
+says "Approvals disabled by your platform administrator" or "Your
+organization requires N approvals"; the widening warning adapts.
+
+### 12.7 Implementation
+
+| PR | Content |
+|---|---|
+| Approvers | A1, A2: approver directory, `approval` on pending entries, notify and remind, self-approval with a fresh authenticator code (migration `001615`) |
+| T2 duration | A3: `t2_max_duration`, owner-only `PUT /scope/settings/intrusive`, server-side bound, entry dialogs |
+| Attestation | A4: attestation timestamps, `POST /attest`, the attestation and downgrade job |
+| Platform policy | A5: platform default and per-organization override, console section, effective policy on the tenant settings |

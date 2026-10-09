@@ -2392,7 +2392,8 @@ func (s *TenantService) UpdateScopeSettings(
 	var before tenantdom.ScopeSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionScope, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Scope
-		return t.UpdateScopeSettings(ss)
+		// The owner-only fields are never changed here.
+		return t.UpdateScopeSettings(ss.WithIntrusive(before.Intrusive()))
 	})
 	if err != nil {
 		return nil, err
@@ -2401,6 +2402,40 @@ func (s *TenantService) UpdateScopeSettings(
 	event := auditapp.NewSuccessEvent(audit.ActionScopeSettingsUpdated, audit.ResourceTypeTenant, tenantID).
 		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Scope)).
 		WithMessage("Scope settings updated").
+		WithSeverity(audit.SeverityHigh)
+	s.logAudit(ctx, actx, event)
+	out := t.TypedSettings().Scope
+	return &out, nil
+}
+
+// UpdateIntrusiveScopeSettings changes the owner-only scope settings (the t2
+// maximum duration, RFC-054 §12.4) and audits the change at high severity
+// with the reason. The route requires the owner role and step-up; the
+// caller notifies the administrators.
+func (s *TenantService) UpdateIntrusiveScopeSettings(
+	ctx context.Context,
+	tenantID string,
+	in tenantdom.IntrusiveScopeSettings,
+	reason string,
+	actx auditapp.AuditContext,
+) (*tenantdom.ScopeSettings, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, fmt.Errorf("%w: a reason is required", shared.ErrValidation)
+	}
+	var before tenantdom.ScopeSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionScope, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Scope
+		return t.UpdateScopeSettings(before.WithIntrusive(in))
+	})
+	if err != nil {
+		return nil, err
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionScopeSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Scope)).
+		WithMessage("Intrusive (t2) scope settings updated by an owner").
+		WithMetadata("reason", reason).
 		WithSeverity(audit.SeverityHigh)
 	s.logAudit(ctx, actx, event)
 	out := t.TypedSettings().Scope

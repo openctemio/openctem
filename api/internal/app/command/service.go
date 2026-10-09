@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/metrics"
 
+	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -50,6 +51,9 @@ type Service struct {
 	failures  FailureObserver
 	// now is the clock (tests replace it).
 	now func() time.Time
+	// programRules applies bug-bounty program rules at delivery
+	// (program_rules.go); nil: not applied.
+	programRules ProgramRuleSource
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
 }
@@ -304,7 +308,10 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	}
 	// Scope may have changed since the jobs were queued (scope_recheck.go).
 	cmds = s.recheckScope(ctx, tenantID, sensorID, cmds)
-	return s.deliver(ctx, input.SensorID, cmds)
+	// Program rules: testing windows, conflicts, headers and rate caps
+	// (program_rules.go).
+	cmds, rules := s.programHold(ctx, tenantID, sensorID, cmds)
+	return s.deliver(ctx, input.SensorID, cmds, rules)
 }
 
 // ClaimInput is a claim-N poll: the sensor takes its work in one request.
@@ -371,6 +378,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	// The scope may have changed since the jobs were queued: their targets
 	// pass the dispatch gate again before the claim (scope_recheck.go).
 	cands = s.recheckScope(ctx, tenantID, &sensorID, cands)
+	cands, rules := s.programHold(ctx, tenantID, &sensorID, cands)
 	if len(cands) == 0 {
 		return nil, nil
 	}
@@ -403,7 +411,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	}
 	// The organization's HTTP policy and the template signatures go into the
 	// payload first, so the job signature covers them.
-	delivered, err := s.deliver(ctx, input.SensorID, out)
+	delivered, err := s.deliver(ctx, input.SensorID, out, rules)
 	if err != nil {
 		return nil, err
 	}
@@ -424,11 +432,12 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 }
 
 // deliver prepares the commands a sensor gets: the tenant's tool HTTP layer
-// on every scan command, then the custom template signatures. Both work on
-// copies; the stored commands are never changed. A tenant policy that
-// cannot be read fails the delivery (the claimed commands go back when
-// their lease ends): a job never leaves without the organization's layer.
-func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command) ([]*commanddom.Command, error) {
+// on every scan command, the bug-bounty program rules over it, then the
+// custom template signatures. All work on copies; the stored commands are
+// never changed. A tenant policy that cannot be read fails the delivery (the
+// claimed commands go back when their lease ends): a job never leaves
+// without the organization's layer.
+func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules) ([]*commanddom.Command, error) {
 	if s.httpPolicy != nil {
 		for i, c := range cmds {
 			if c.Type != commanddom.CommandTypeScan {
@@ -447,6 +456,9 @@ func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commandd
 			cmds[i] = &cp
 		}
 	}
+	// Bug-bounty program rules go over the organization's layer: a
+	// program's headers and User-Agent win (program_rules.go).
+	cmds = s.withProgramRules(cmds, rules)
 	return s.signTemplates(sensorID, cmds), nil
 }
 
@@ -520,6 +532,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 		return nil, err
 	}
 
+	var rules *bp.JobRules
 	if !cmd.CanBeAcknowledged() {
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
 	}
@@ -535,6 +548,9 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 		// Scope may have changed since the job was queued, or polled
 		// (scope_recheck.go): its targets pass the dispatch gate again.
 		if cmd, err = s.recheckOne(ctx, sid, cmd); err != nil {
+			return nil, err
+		}
+		if rules, err = s.programHoldOne(ctx, sid, cmd); err != nil {
 			return nil, err
 		}
 	}
@@ -553,8 +569,16 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 	metrics.CommandClaimsTotal.WithLabelValues("claim").Inc()
 
-	// Return the freshly-claimed state.
-	return s.Get(ctx, tenantID, commandID)
+	// Return the freshly-claimed state, with its programs' rules.
+	got, err := s.Get(ctx, tenantID, commandID)
+	if err != nil || rules == nil {
+		return got, err
+	}
+	out := s.withProgramRules([]*commanddom.Command{got}, map[shared.ID]*bp.JobRules{got.ID: rules})
+	if len(out) != 1 {
+		return nil, ErrScopeRecheckUnavailable
+	}
+	return out[0], nil
 }
 
 // Start marks a command as running.
