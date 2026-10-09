@@ -184,3 +184,18 @@ func TestScopePolicyService(t *testing.T) {
 		t.Fatalf("an unreadable policy did not fail closed: %s", m)
 	}
 }
+
+// A widening reaches the job signer's ledger labeled with the platform
+// approval policy in force.
+func TestScopeApprovalPolicy_LedgerCarriesThePolicy(t *testing.T) {
+	svc, _, _ := entryService(t, 3, tenant.ScopeSettings{})
+	svc.SetApprovalPolicy(fixedMode{tenant.ScopeApprovalDisabled})
+	led := &fakeLedger{}
+	svc.SetLedger(led)
+	if _, err := create(svc, shared.NewID(), approverA, "*.policy-ledger.example", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(led.changes) != 1 || led.changes[0].PlatformPolicy != string(tenant.ScopeApprovalDisabled) || led.changes[0].RequiredApprovals != 0 {
+		t.Fatalf("ledger changes %+v, want one widening labeled disabled with 0 approvals", led.changes)
+	}
+}

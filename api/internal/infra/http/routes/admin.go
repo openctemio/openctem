@@ -24,6 +24,8 @@ import (
 //	------------------------  ----------------  --------------------------
 //	/admin/auth/validate      any admin         —
 //	/admin/overview           any admin         —
+//	/admin/operations         any admin         —
+//	/admin/announcements      any admin         ops_admin+ + reason (audited)
 //	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
 //	                                            code (audited high)
 //	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
@@ -46,6 +48,8 @@ import (
 //	/admin/tenants/{id}/audit-chain
 //	                          any admin         rebaseline: super_admin + fresh
 //	                                            TOTP code (audited, both logs)
+//	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
+//	                                            code (audited with the reason)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
@@ -118,6 +122,29 @@ func registerAdminRoutes(
 	if h.AdminOverview != nil {
 		router.GET("/api/v1/admin/overview", h.AdminOverview.Get, adminMiddlewares...)
 	}
+	// System > Announcements: any admin reads; ops_admin+ publishes or ends
+	// one with a reason (audited).
+	if h.Announcement != nil {
+		opsAnn := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		annAudit := func(action string) []Middleware {
+			out := cloneMW(opsAnn)
+			if h.AdminAuditMiddleware != nil {
+				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "announcement", "announcement_id"))
+			}
+			return out
+		}
+		router.Group("/api/v1/admin/announcements", func(r Router) {
+			r.GET("/", h.Announcement.AdminList)
+			r.POST("/", h.Announcement.AdminCreate, annAudit("announcement.create")...)
+			r.POST("/{announcement_id}/cancel", h.Announcement.AdminEnd, annAudit("announcement.cancel")...)
+		}, adminMiddlewares...)
+	}
+
+	// Console > Operations (any admin role): build, schema, database, Redis,
+	// work queues, sensor versions, controllers. Infrastructure facts only.
+	if h.AdminOperations != nil {
+		router.GET("/api/v1/admin/operations", h.AdminOperations.Get, adminMiddlewares...)
+	}
 
 	// Plan defaults (Console > System > Plans): any admin reads; a super admin
 	// changes them with a fresh authenticator code (checked in the handler,
@@ -170,6 +197,29 @@ func registerAdminRoutes(
 			r.GET("/", h.AccessRequest.List)
 			r.POST("/{id}/approve", h.AccessRequest.Approve, decide("access_request.approve")...)
 			r.POST("/{id}/reject", h.AccessRequest.Reject, decide("access_request.reject")...)
+		}, adminMiddlewares...)
+	}
+
+	// Platform content packs (RFC-061): any admin reads; ingesting (upload or
+	// an upstream release by URL with a required digest), revoking and moving
+	// a channel need super_admin and are audited. A platform pack reaches the
+	// platform's sensors of every organization.
+	if h.PlatformContentPack != nil {
+		// Writes: super_admin here; the handler adds the reason, a fresh
+		// console authenticator code (confirmAdminStepUp) and its own admin
+		// audit row carrying the reason.
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		p := h.PlatformContentPack
+		router.Group("/api/v1/admin/content-packs", func(r Router) {
+			r.GET("/", p.List)
+			r.GET("/channels", p.Channels)
+			r.GET("/signing-key", p.SigningKey)
+			r.GET("/{id}", p.Get)
+			r.GET("/{id}/download", p.Download)
+			r.POST("/", p.Upload, requireSuper)
+			r.POST("/import", p.Import, requireSuper)
+			r.POST("/{id}/revoke", p.Revoke, requireSuper)
+			r.PUT("/channels/{channel}", p.SetChannel, requireSuper)
 		}, adminMiddlewares...)
 	}
 

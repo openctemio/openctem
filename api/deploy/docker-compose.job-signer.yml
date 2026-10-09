@@ -22,6 +22,30 @@
 # 3. Check: the API logs "sensor jobs are signed by the job signer", and
 #    GET /api/v2/sensor/hello lists the signed_jobs feature and the key.
 #
+# 4. Optional, recommended: a key set signed by an offline root key, so
+#    sensors pin the root and signer keys can be rotated and revoked
+#    without pairing sensors again (docs/architecture/job-signing.md, "Key
+#    sets and the offline root"). On a machine that is NOT this host:
+#
+#      openctem-signer root keygen -out root.key
+#      openctem-signer keyset sign -root root.key -version 1 -days 30 \
+#        -key <public_key printed by step 1> -out keyset.json
+#
+#    Copy keyset.json (public) next to this file, uncomment the
+#    SIGNER_KEYSET_FILE line and the keyset.json mount below, and restart
+#    the signer. Renew it before not_after (sign version 2, replace the
+#    file, docker compose kill -s HUP signer).
+# Scope ledger (RFC-040 P2): the signer signs a job only inside the scope
+# people approved, as the scope service sent it (job-signing.md "Scope
+# ledger"). A new signer enforces it at once; one that signed before this
+# release audits until the ledger is bootstrapped:
+#
+#      docker compose exec api ./server -signer-ledger-export /tmp/ledger.json
+#      docker compose cp api:/tmp/ledger.json ./ledger.json   # review it
+#      docker compose stop signer
+#      docker compose run --rm -T signer ledger import -file /dev/stdin < ledger.json
+#      docker compose start signer
+#
 # Back up the signer-keys volume offline; the signer-state volume holds the
 # per-sensor sequence numbers (losing it would let sequence numbers repeat
 # for sensors that kept their last seen value) and the hash-chained signing
@@ -41,16 +65,23 @@ services:
       SIGNER_KEY_FILE: /var/lib/openctem-signer/keys/signer.pem
       SIGNER_SOCKET: /run/openctem-signer/signer.sock
       SIGNER_STATE_DIR: /var/lib/openctem-signer/state
+      # SIGNER_KEYSET_FILE: /etc/openctem-signer/keyset.json
       # Signing ceilings (token buckets); defaults 50/s burst 500 per
       # organization, 20/s burst 200 per sensor.
       # SIGNER_TENANT_RATE: "50"
       # SIGNER_TENANT_BURST: "500"
       # SIGNER_SENSOR_RATE: "20"
       # SIGNER_SENSOR_BURST: "200"
+      # Scope ledger: enforce, audit or off (unset: enforce for a new
+      # signer, audit for one upgraded to the ledger, enforce after an
+      # import). A floor under every widening's approval count (0-2).
+      # SIGNER_LEDGER: enforce
+      # SIGNER_LEDGER_MIN_APPROVALS: "0"
     volumes:
       - signer-keys:/var/lib/openctem-signer/keys
       - signer-state:/var/lib/openctem-signer/state
       - signer-socket:/run/openctem-signer
+      # - ./keyset.json:/etc/openctem-signer/keyset.json:ro
     healthcheck:
       test: ["CMD", "test", "-S", "/run/openctem-signer/signer.sock"]
       interval: 10s
