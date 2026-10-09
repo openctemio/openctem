@@ -82,6 +82,7 @@ func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
+	ingestSvc.SetReachSource(postgres.NewSensorReachRepository(db))
 	cmdRepo := postgres.NewCommandRepository(db)
 	cmdSvc := command.NewService(cmdRepo, log, opts...)
 	sensorSvc.SetCancelFinder(cmdRepo)

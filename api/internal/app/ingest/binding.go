@@ -367,13 +367,22 @@ func (s *alterScope) mayAlter(a *asset.Asset) bool {
 	if s == nil || s.all {
 		return true
 	}
-	if len(s.targets) == 0 || a == nil {
+	if a == nil {
+		return false
+	}
+	return s.coversLocated(a.Name(), a.Properties())
+}
+
+// coversLocated reports whether a target covers an asset with this name and
+// these properties (its name, or one of its IP addresses).
+func (s *alterScope) coversLocated(name string, properties map[string]any) bool {
+	if s == nil || len(s.targets) == 0 {
 		return false
 	}
 	locators := [][2]string{}
-	host, path := parseLocator(a.Name())
+	host, path := parseLocator(name)
 	locators = append(locators, [2]string{host, path})
-	for _, ip := range ExtractAllIPs(a.Properties(), a.Name()) {
+	for _, ip := range ExtractAllIPs(properties, name) {
 		locators = append(locators, [2]string{strings.ToLower(ip), ""})
 	}
 	for _, t := range s.targets {
