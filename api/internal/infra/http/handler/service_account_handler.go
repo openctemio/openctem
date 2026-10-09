@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/apikey"
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -21,13 +22,15 @@ import (
 // ServiceAccountHandler serves /api/v1/service-accounts.
 type ServiceAccountHandler struct {
 	service   *accesscontrol.ServiceAccountService
+	keys      *apikey.Service
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
-// NewServiceAccountHandler creates the handler.
-func NewServiceAccountHandler(svc *accesscontrol.ServiceAccountService, v *validator.Validator, log *logger.Logger) *ServiceAccountHandler {
-	return &ServiceAccountHandler{service: svc, validator: v, logger: log}
+// NewServiceAccountHandler creates the handler. keys mints and lists the
+// accounts' API keys; nil answers those routes 503.
+func NewServiceAccountHandler(svc *accesscontrol.ServiceAccountService, keys *apikey.Service, v *validator.Validator, log *logger.Logger) *ServiceAccountHandler {
+	return &ServiceAccountHandler{service: svc, keys: keys, validator: v, logger: log}
 }
 
 // ServiceAccountResponse is one service account.
@@ -64,8 +67,13 @@ func (h *ServiceAccountHandler) writeError(w http.ResponseWriter, err error) {
 		apierror.NotFound("Service account").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, apikey.ErrScopeNotHeld):
+		apierror.Forbidden("Cannot grant a scope you do not hold").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrAlreadyExists):
+		apierror.Conflict("An API key with this name already exists").WriteJSON(w)
+	case WritePlanLimitError(w, err):
 	default:
 		h.logger.Error("service account error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

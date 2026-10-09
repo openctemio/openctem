@@ -108,3 +108,17 @@ func (s *ServiceAccountService) Delete(ctx context.Context, id string, actx audi
 		WithSeverity(audit.SeverityHigh))
 	return nil
 }
+
+// Get returns one of the organization's service accounts; another
+// organization's account, or a person, reads as not found.
+func (s *ServiceAccountService) Get(ctx context.Context, tenantID, id string) (*serviceaccount.ServiceAccount, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	aid, err := shared.IDFromString(id)
+	if err != nil {
+		return nil, serviceaccount.ErrNotFound
+	}
+	return s.repo.Get(ctx, tid, aid)
+}

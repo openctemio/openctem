@@ -221,5 +221,11 @@ func registerServiceAccountRoutes(
 		r.GET("/", h.List, middleware.Require(permission.MembersRead))
 		r.POST("/", h.Create, middleware.Require(permission.MembersWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.MembersWrite))
+		// Its API keys: each action needs both the member and the API key
+		// permission; minting and deleting need a recent sign-in, as they do
+		// for your own keys.
+		r.GET("/{id}/api-keys", h.ListKeys, middleware.RequireAll(permission.MembersRead, permission.APIKeysRead))
+		r.POST("/{id}/api-keys", h.CreateKey, middleware.RequireAll(permission.MembersWrite, permission.APIKeysWrite), requireStepUp())
+		r.DELETE("/{id}/api-keys/{key_id}", h.DeleteKey, middleware.RequireAll(permission.MembersWrite, permission.APIKeysDelete), requireStepUp())
 	}, tenantMiddlewares...)
 }
