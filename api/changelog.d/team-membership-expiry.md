@@ -9,4 +9,4 @@
 - Within a minute of the end date the membership is removed (controller
   `team-membership-expiry`), the member's data scope is recomputed, the
   removal is audited (`member.removed`, reason `expired`) and the member is
-  told (migration 001459, RFC-050 W22).
+  told (migration 001502, RFC-050 W22).
