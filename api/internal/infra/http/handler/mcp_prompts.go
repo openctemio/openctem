@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -57,7 +58,10 @@ type mcpPrompt struct {
 	Description  string
 	Arguments    []mcpPromptArg
 	RequiredPerm string
-	build        func(ctx context.Context, tenantID string, args map[string]string) (mcpPromptResult, error)
+	// Module is the module the prompt belongs to ("" = core); a prompt of a
+	// module the organization has off is neither listed nor built.
+	Module string
+	build  func(ctx context.Context, tenantID string, args map[string]string) (mcpPromptResult, error)
 }
 
 // sectionAll is the finding_writeup section value covering all report sections.
@@ -92,6 +96,7 @@ func (h *MCPHandler) buildPrompts() []mcpPrompt {
 			Description:  "Draft an executive summary for a pentest campaign from its context and severity stats.",
 			Arguments:    []mcpPromptArg{{Name: "campaign_id", Description: "campaign UUID", Required: true}},
 			RequiredPerm: string(permission.PentestCampaignsRead),
+			Module:       moduledom.ModulePentest,
 			build:        h.promptExecSummary,
 		},
 		{
@@ -102,6 +107,7 @@ func (h *MCPHandler) buildPrompts() []mcpPrompt {
 				{Name: "section", Description: "description | impact | remediation | all (default all)"},
 			},
 			RequiredPerm: string(permission.PentestFindingsRead),
+			Module:       moduledom.ModulePentest,
 			build:        h.promptFindingWriteup,
 		},
 		{
@@ -109,6 +115,7 @@ func (h *MCPHandler) buildPrompts() []mcpPrompt {
 			Description:  "Expand a finding's terse remediation + CWE/OWASP into client-ready steps.",
 			Arguments:    []mcpPromptArg{{Name: "finding_id", Description: "pentest finding UUID", Required: true}},
 			RequiredPerm: string(permission.PentestFindingsRead),
+			Module:       moduledom.ModulePentest,
 			build:        h.promptRemediationGuidance,
 		},
 		{
@@ -116,6 +123,7 @@ func (h *MCPHandler) buildPrompts() []mcpPrompt {
 			Description:  "Write the attack-path narrative for a campaign from its ordered findings.",
 			Arguments:    []mcpPromptArg{{Name: "campaign_id", Description: "campaign UUID", Required: true}},
 			RequiredPerm: string(permission.PentestCampaignsRead),
+			Module:       moduledom.ModulePentest,
 			build:        h.promptAttackNarrative,
 		},
 	}
@@ -126,8 +134,12 @@ func (h *MCPHandler) buildPrompts() []mcpPrompt {
 // keys are never admin), mirroring tools/list.
 func (h *MCPHandler) promptsListResult(ctx context.Context) map[string]any {
 	list := make([]map[string]any, 0, len(h.prompts))
+	tenantID := middleware.GetTenantID(ctx)
 	for _, p := range h.prompts {
 		if p.RequiredPerm != "" && !middleware.HasPermission(ctx, p.RequiredPerm) {
+			continue
+		}
+		if !h.moduleEnabled(ctx, tenantID, p.Module) {
 			continue
 		}
 		list = append(list, map[string]any{
@@ -163,6 +175,14 @@ func (h *MCPHandler) handlePromptsGet(w http.ResponseWriter, r *http.Request, re
 	}
 
 	rawArgs, _ := json.Marshal(p.Arguments)
+
+	// A prompt of a module the organization has off answers as the REST
+	// routes of that module do.
+	if !h.moduleEnabled(ctx, tenantID, prompt.Module) {
+		h.auditPromptGet(r, tenantID, prompt.Name, rawArgs, auditdom.ResultDenied, true)
+		h.writeError(w, req.ID, rpcInvalidParams, mcpModuleNotEnabled)
+		return
+	}
 
 	// Enforce the key's scope — same gate as tools. API keys are never admin.
 	if prompt.RequiredPerm != "" && !middleware.HasPermission(ctx, prompt.RequiredPerm) {
