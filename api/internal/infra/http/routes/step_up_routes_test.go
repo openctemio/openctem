@@ -80,6 +80,8 @@ var stepUpRoutes = []string{
 	"POST /api/v1/programs",
 	"PUT /api/v1/programs/{id}/scope",
 	"POST /api/v1/programs/{id}/reactivate",
+	"PUT /api/v1/programs/{id}/source",
+	"POST /api/v1/programs/{id}/pending/apply",
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
