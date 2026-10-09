@@ -968,7 +968,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Scope.SetGuardrails(scopeGuardrails)
 	s.ScopeGuardrails = scopeGuardrails
 	s.Scope.SetCoverage(postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}), s.DataScope)
-	s.BountyProgram = bountyprogramapp.NewService(postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB}), s.DataScope, log)
+	// Program entries (RFC-065) cover nothing a program lists as out of
+	// scope: the authority check reads the program exclusions.
+	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
+	s.Scope.SetProgramExclusions(programRepo)
+	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
