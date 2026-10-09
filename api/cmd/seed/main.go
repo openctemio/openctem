@@ -86,8 +86,6 @@ func cleanDatabase(ctx context.Context, db *sql.DB) error {
 	tables := []string{
 		"findings",
 		"exposures",
-		"attack_path_nodes",
-		"attack_paths",
 		"components",
 		"assets",
 		"tenant_invitations",
