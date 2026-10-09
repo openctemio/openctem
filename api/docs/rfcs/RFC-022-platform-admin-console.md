@@ -70,7 +70,7 @@
 **Schema.** Migration `000225` added `admin_credentials` and `admin_sessions`;
 `000226` (rev. 2) links administrators to accounts. The console password
 columns (`admin_credentials.password_hash`, `password_changed_at`) are no longer
-used and are dropped in a later release (expand-contract):
+used; migration 001483 dropped them:
 
 - `admin_users.user_id` (unique, FK `users`, cascade). Rows without it were
   API-key identities; migration 000227 deactivated them (rev. 3).

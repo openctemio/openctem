@@ -1100,10 +1100,7 @@ and every by-id read answers 404. There is no per-organization switch back.
      `members_without_group_see = 'nothing'`, so `everything` can never be
      stored again; its down migration restores the `000247` CHECK and does
      **not** flip any organization back;
-  3. **follow-up (contract), after the release that ships `000910`:** drop the
-     column and its CHECK (`ALTER TABLE tenants DROP COLUMN
-     members_without_group_see`), once no deployed binary can still select
-     it.
+  3. migration `001483` (contract) drops the column and its CHECK.
 
 **One enforcement point.** `internal/app/datascope.Enforcer` resolves the
 caller's scope (caller and admin flag come from the HTTP auth context, wired in
@@ -1282,6 +1279,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
+| `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values. The group list itself stays tenant configuration |
 | `GET /attack-surface/attack-paths` | **bypass** | `top_assets` filtered |
 | `GET /attack-surface/exposure-chains`, MCP `get_exposure_chains` | **bypass** | a chain is returned only when every hop is in scope |
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
@@ -1671,9 +1669,7 @@ deliberately.
    inherit them. The `/api/v1/permission-sets` and
    `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
    writes their tables, and `team:permission_sets:*` left the catalog
-   (migration 000670 archives those catalog rows and role grants in
-   `access_control_removed_archive`). The tables themselves are dropped by a
-   later contract migration, after a release (expand-contract).
+   (migration 000670). The tables are dropped.
    `GET /api/v1/me/permissions` now returns the caller's role-derived
    permissions (it used to return the group-derived set).
 
@@ -1884,9 +1880,8 @@ route checked them. Each is now either enforced or removed.
 
 **Enforced on top of the route's existing gate** (`RequireAll(old, new)`, so no
 role gains anything). Migration 000771 grants the new permission to every role,
-system or custom, that held the old gate, recording each grant in
-`granular_permission_backfill` (its down removes exactly those), so every
-role keeps its abilities. An administrator can now remove the new permission
+system or custom, that held the old gate, so every role keeps its
+abilities. An administrator can now remove the new permission
 from a custom role to deny that one action.
 
 | Permission | Routes | Old gate |
@@ -1922,8 +1917,7 @@ role. A custom role created later needs them explicitly for those reads.
 
 `findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
 
-**Removed** (000772; catalog rows and grants archived in
-`access_control_removed_archive`, restored by its down):
+**Removed** (000772):
 
 | Permission | Why it is meaningless |
 |---|---|

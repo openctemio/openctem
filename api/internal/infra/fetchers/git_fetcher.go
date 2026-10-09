@@ -435,6 +435,7 @@ func (f *GitFetcher) cloneRepo(ctx context.Context) (*git.Repository, error) {
 		ReferenceName: plumbing.NewBranchReferenceName(branch),
 		SingleBranch:  true,
 		Depth:         1, // Shallow clone for efficiency
+		ProxyOptions:  sshProxyOptions(f.config.URL),
 	}
 
 	clone := func(c context.Context) (*git.Repository, error) {
@@ -471,8 +472,9 @@ func (f *GitFetcher) pullRepo(ctx context.Context) error {
 	}
 
 	err := f.worktree.PullContext(ctx, &git.PullOptions{
-		Auth:       f.auth,
-		RemoteName: "origin",
+		Auth:         f.auth,
+		RemoteName:   "origin",
+		ProxyOptions: sshProxyOptions(f.config.URL),
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return err
@@ -484,10 +486,9 @@ func (f *GitFetcher) pullRepo(ctx context.Context) error {
 // checkCloneURL refuses repository URLs the server must not clone: anything
 // but https, http and ssh (file://, a bare local path and git:// would read
 // the server's own disk or open an unguarded TCP connection), and any host
-// that resolves into a blocked range. http(s) is additionally pinned at dial
-// time by the SSRF-guarded transport installed in init. ssh is checked here
-// only: go-git's ssh transport dials on its own, so a rebinding DNS answer
-// between this check and the dial is not covered for ssh.
+// that resolves into a blocked range. Both are pinned again at dial time:
+// http(s) by the SSRF-guarded transport installed in init, ssh by the
+// guarded proxy dialer of git_ssh_guard.go.
 func checkCloneURL(ctx context.Context, rawURL string) error {
 	if allowLocalRepos {
 		return nil

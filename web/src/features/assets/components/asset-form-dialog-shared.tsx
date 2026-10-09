@@ -14,6 +14,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -311,7 +312,7 @@ export function AssetFormDialogShared({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {/*
@@ -327,149 +328,151 @@ export function AssetFormDialogShared({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {fields.map((field) => (
-            <div key={field.name} className={field.fullWidth ? '' : ''}>
-              {field.type !== 'boolean' && (
-                <Label htmlFor={field.name} className="text-sm font-medium">
-                  {field.label}
-                  {field.required && <span className="text-red-500 ms-1">*</span>}
-                </Label>
-              )}
-              <div className="mt-1.5">{renderField(field)}</div>
-              {errors[field.name] && (
-                <p className="text-xs text-red-500 mt-1">{errors[field.name]}</p>
-              )}
-              {/* Normalize preview for name field (RFC-001) */}
-              {field.name === 'name' &&
-                assetType &&
-                formData.name &&
-                (() => {
-                  const normalized = normalizeAssetName(String(formData.name), assetType)
-                  if (normalized && normalized !== String(formData.name)) {
-                    return (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Will be saved as:{' '}
-                        <code className="bg-muted px-1 rounded">{normalized}</code>
-                      </p>
-                    )
-                  }
-                  return null
-                })()}
-            </div>
-          ))}
-
-          {/* Universal CTEM classification — settable on every asset type. The
-              backend infers these on ingest; here the operator can override. */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {(
-              [
-                { name: 'criticality', label: 'Criticality', options: CRITICALITY_OPTIONS },
-                { name: 'scope', label: 'Scope', options: SCOPE_OPTIONS },
-                { name: 'exposure', label: 'Exposure', options: EXPOSURE_OPTIONS },
-              ] as const
-            ).map((f) => (
-              <div key={f.name}>
-                <Label className="text-sm font-medium">{f.label}</Label>
-                <div className="mt-1.5">
-                  <Select
-                    value={String(formData[f.name] ?? '')}
-                    onValueChange={(v) => handleChange(f.name, v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={`Select ${f.label.toLowerCase()}`} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {f.options.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+        <DialogBody>
+          <div className="space-y-4 py-4">
+            {fields.map((field) => (
+              <div key={field.name} className={field.fullWidth ? '' : ''}>
+                {field.type !== 'boolean' && (
+                  <Label htmlFor={field.name} className="text-sm font-medium">
+                    {field.label}
+                    {field.required && <span className="text-destructive ms-1">*</span>}
+                  </Label>
+                )}
+                <div className="mt-1.5">{renderField(field)}</div>
+                {errors[field.name] && (
+                  <p className="text-xs text-destructive mt-1">{errors[field.name]}</p>
+                )}
+                {/* Normalize preview for name field (RFC-001) */}
+                {field.name === 'name' &&
+                  assetType &&
+                  formData.name &&
+                  (() => {
+                    const normalized = normalizeAssetName(String(formData.name), assetType)
+                    if (normalized && normalized !== String(formData.name)) {
+                      return (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Will be saved as:{' '}
+                          <code className="bg-muted px-1 rounded">{normalized}</code>
+                        </p>
+                      )
+                    }
+                    return null
+                  })()}
               </div>
             ))}
-          </div>
 
-          {/* CTEM Scoping — CIA business-impact ratings (api #467). Each
+            {/* Universal CTEM classification — settable on every asset type. The
+              backend infers these on ingest; here the operator can override. */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {(
+                [
+                  { name: 'criticality', label: 'Criticality', options: CRITICALITY_OPTIONS },
+                  { name: 'scope', label: 'Scope', options: SCOPE_OPTIONS },
+                  { name: 'exposure', label: 'Exposure', options: EXPOSURE_OPTIONS },
+                ] as const
+              ).map((f) => (
+                <div key={f.name}>
+                  <Label className="text-sm font-medium">{f.label}</Label>
+                  <div className="mt-1.5">
+                    <Select
+                      value={String(formData[f.name] ?? '')}
+                      onValueChange={(v) => handleChange(f.name, v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={`Select ${f.label.toLowerCase()}`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {f.options.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* CTEM Scoping — CIA business-impact ratings (api #467). Each
               dimension is optional; "Not rated" leaves it unset. Distinct
               from Criticality above (one overall level) — these capture the
               consequence of losing Confidentiality, Integrity, or
               Availability independently. */}
-          <div>
-            <Label className="text-sm font-medium">Business Impact (CIA)</Label>
-            <div className="mt-1.5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {CIA_FIELDS.map((f) => {
-                const current = String(formData[f.name] ?? '')
-                return (
-                  <div key={f.name}>
-                    <Label htmlFor={f.name} className="text-xs text-muted-foreground">
-                      {f.label}
-                    </Label>
-                    <div className="mt-1">
-                      <Select
-                        value={current === '' ? IMPACT_UNRATED : current}
-                        onValueChange={(v) => handleChange(f.name, v === IMPACT_UNRATED ? '' : v)}
-                      >
-                        <SelectTrigger id={f.name}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={IMPACT_UNRATED}>Not rated</SelectItem>
-                          {IMPACT_RATING_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+            <div>
+              <Label className="text-sm font-medium">Business Impact (CIA)</Label>
+              <div className="mt-1.5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {CIA_FIELDS.map((f) => {
+                  const current = String(formData[f.name] ?? '')
+                  return (
+                    <div key={f.name}>
+                      <Label htmlFor={f.name} className="text-xs text-muted-foreground">
+                        {f.label}
+                      </Label>
+                      <div className="mt-1">
+                        <Select
+                          value={current === '' ? IMPACT_UNRATED : current}
+                          onValueChange={(v) => handleChange(f.name, v === IMPACT_UNRATED ? '' : v)}
+                        >
+                          <SelectTrigger id={f.name}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={IMPACT_UNRATED}>Not rated</SelectItem>
+                            {IMPACT_RATING_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Optional — how severe the impact would be if this asset&apos;s confidentiality,
+                integrity, or availability were compromised.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Optional — how severe the impact would be if this asset&apos;s confidentiality,
-              integrity, or availability were compromised.
-            </p>
-          </div>
 
-          {/* Owner reference — universal field for all asset types. Free-text
+            {/* Owner reference — universal field for all asset types. Free-text
               label like a team name, contact email, or cost center. */}
-          <div>
-            <Label htmlFor="ownerRef" className="text-sm font-medium">
-              Owner Reference
-            </Label>
-            <div className="mt-1.5">
-              <Input
-                id="ownerRef"
-                value={String(formData.ownerRef ?? '')}
-                onChange={(e) => handleChange('ownerRef', e.target.value)}
-                placeholder="Team / contact / cost center"
-                maxLength={500}
-              />
+            <div>
+              <Label htmlFor="ownerRef" className="text-sm font-medium">
+                Owner Reference
+              </Label>
+              <div className="mt-1.5">
+                <Input
+                  id="ownerRef"
+                  value={String(formData.ownerRef ?? '')}
+                  onChange={(e) => handleChange('ownerRef', e.target.value)}
+                  placeholder="Team / contact / cost center"
+                  maxLength={500}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Optional. If it is the email of a member, that member becomes a primary owner (see
+                the Owners tab).
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Optional. If it is the email of a member, that member becomes a primary owner (see the
-              Owners tab).
-            </p>
-          </div>
 
-          {/* Group is a create-time convenience only. On edit we have no way to
+            {/* Group is a create-time convenience only. On edit we have no way to
               show/reconcile an asset's *current* group membership (it isn't part
               of the asset record and is many-to-many), so showing the picker
               there would imply a change that silently no-ops. Manage membership
               of an existing asset from the Asset Groups page instead. */}
-          {includeGroupSelect && !asset && (
-            <div>
-              <Label className="text-sm font-medium">Group</Label>
-              <div className="mt-1.5">
-                <AssetGroupSelect value={groupId} onValueChange={setGroupId} />
+            {includeGroupSelect && !asset && (
+              <div>
+                <Label className="text-sm font-medium">Group</Label>
+                <div className="mt-1.5">
+                  <AssetGroupSelect value={groupId} onValueChange={setGroupId} />
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
