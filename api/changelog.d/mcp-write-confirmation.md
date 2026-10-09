@@ -11,4 +11,4 @@
   `mcp:findings.write` in its MCP policy. Applications ask for the scope
   only when they need it (`insufficient_scope` step-up).
 - Audited: `mcp_action.requested`, `mcp_action.confirmed`,
-  `mcp_action.refused`. Migration `001387_mcp_action_confirmations`.
+  `mcp_action.refused`. Migration `001458_mcp_action_confirmations`.
