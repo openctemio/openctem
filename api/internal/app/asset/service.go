@@ -1268,6 +1268,8 @@ type ListAssetsInput struct {
 	Providers            []string `validate:"max=20,dive,max=50"`
 	LastSeenAfter        *time.Time
 	LastSeenBefore       *time.Time
+	ExpiresAfter         *time.Time
+	ExpiresBefore        *time.Time
 	// Attribution: attribution states (confirmed, needs_review, candidate,
 	// dependency, monitor_only, rejected) or the aliases unknown, unconfirmed
 	// and approved (RFC-036). Validated by attribution.ParseFilter.
@@ -1455,6 +1457,8 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	if input.LastSeenBefore != nil {
 		filter = filter.WithLastSeenBefore(*input.LastSeenBefore)
 	}
+	filter.ExpiresAfter = input.ExpiresAfter
+	filter.ExpiresBefore = input.ExpiresBefore
 
 	// Layer 2: Data Scope - non-admin users only see assets in their groups
 	access, err := s.listAccessScope(ctx, input.TenantID, input.ActingUserID, input.IsAdmin)
