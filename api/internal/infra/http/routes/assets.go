@@ -684,3 +684,13 @@ func registerAssetImportRoutes(
 		r.POST("/csv", h.ImportCSV, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
 	}, tenantMiddlewares...)
 }
+
+// registerAssetSoftwareRoutes registers the asset's software list (RFC-066).
+func registerAssetSoftwareRoutes(router Router, h *handler.AssetSoftwareHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/assets/{id}/software", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
