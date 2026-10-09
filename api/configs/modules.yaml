@@ -144,6 +144,9 @@
     - {id: assets, kind: hard, reason: "scope rules select assets"}
   routes:
     - /api/v1/scope
+    - /api/v1/programs
+  jobs:
+    - ProgramAssignmentController
 - id: business_services
   const: ModuleBusinessServices
   slug: "business-services"
@@ -229,6 +232,7 @@
   routes:
     - "/api/v1/scanner-templates"
     - "/api/v1/content-packs"
+    - "/api/v1/platform-content-packs"
 - id: business_units
   const: ModuleBusinessUnits
   slug: "business-units"
@@ -806,6 +810,7 @@
   permission: "team:read"
   jobs:
     - MemberAccessExpiryController
+    - TeamMembershipExpiryController
     - AccessRequestRetentionController
     - RoleSyncController
     - IdleWorkspaceController
