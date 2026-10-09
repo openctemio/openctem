@@ -12,6 +12,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogFooter,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -321,7 +324,7 @@ export function EditNotificationDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <div
@@ -339,9 +342,8 @@ export function EditNotificationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
-          {/* Scrollable content area */}
-          <div className="space-y-4 py-4 overflow-y-auto flex-1 pe-1">
+        <DialogForm onSubmit={handleSubmit(onSubmit)}>
+          <DialogBody className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input id="name" placeholder="e.g., Security Alerts" {...register('name')} />
@@ -677,10 +679,9 @@ export function EditNotificationDialog({
                 </div>
               </CollapsibleContent>
             </Collapsible>
-          </div>
+          </DialogBody>
 
-          {/* Fixed footer with buttons */}
-          <div className="flex justify-end gap-2 pt-4 border-t mt-2">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
             </Button>
@@ -688,8 +689,8 @@ export function EditNotificationDialog({
               {isSubmitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               Save Changes
             </Button>
-          </div>
-        </form>
+          </DialogFooter>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )

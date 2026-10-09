@@ -10,7 +10,8 @@ import (
 // planLimits is embedded by the repositories whose inserts count against an
 // organization's plan limit (docs/architecture/plans-and-limits.md). The
 // check sits at the insert so every path that adds a member, an invitation,
-// an asset, a sensor, an API key or a CI trust passes it. Nil: no plans.
+// an asset, a sensor, an API key, a CI trust or a finding passes it. Nil: no
+// plans.
 //
 // The check reads usage before the insert, outside its transaction: two
 // concurrent additions can each pass at limit-1. The limit is a commercial
@@ -28,4 +29,19 @@ func (p *planLimits) checkLimit(ctx context.Context, tenantID shared.ID, key pla
 		return nil
 	}
 	return p.limits.Check(ctx, tenantID, key, delta)
+}
+
+// headroom returns how many more of key may be added: plan.Unlimited when
+// no limit applies (or no plans are wired).
+func (p *planLimits) headroom(ctx context.Context, tenantID shared.ID, key plan.Key) (int, error) {
+	if p.limits == nil {
+		return plan.Unlimited, nil
+	}
+	return p.limits.Headroom(ctx, tenantID, key)
+}
+
+func (p *planLimits) recordRefusals(key plan.Key, n int) {
+	if p.limits != nil {
+		p.limits.RecordRefusals(key, n)
+	}
 }

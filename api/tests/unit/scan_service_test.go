@@ -311,7 +311,7 @@ func (m *mockAssetGroupRepo) Count(_ context.Context, _ assetgroup.Filter) (int6
 func (m *mockAssetGroupRepo) ExistsByName(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
-func (m *mockAssetGroupRepo) GetStats(_ context.Context, _ shared.ID) (*assetgroup.Stats, error) {
+func (m *mockAssetGroupRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.DataScope) (*assetgroup.Stats, error) {
 	return nil, nil
 }
 func (m *mockAssetGroupRepo) AddAssets(_ context.Context, _ shared.ID, ids []shared.ID) (int, error) {

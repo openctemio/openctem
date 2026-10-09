@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { Loader2, UserPlus, Search, Mail, Users, Check } from 'lucide-react'
@@ -151,7 +152,7 @@ export function AddMemberToRoleDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="h-5 w-5" />
@@ -162,108 +163,110 @@ export function AddMemberToRoleDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search members..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="ps-9"
-            />
-          </div>
-
-          {/* Selection actions */}
-          {availableMembers.length > 0 && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                {selectedUserIds.size} of {availableMembers.length} selected
-              </span>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={selectAll}>
-                  Select All
-                </Button>
-                {selectedUserIds.size > 0 && (
-                  <Button variant="ghost" size="sm" onClick={clearSelection}>
-                    Clear
-                  </Button>
-                )}
-              </div>
+        <DialogBody>
+          <div className="space-y-4 py-2">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search members..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="ps-9"
+              />
             </div>
-          )}
 
-          {/* Members list */}
-          <ScrollArea className="h-[300px] border rounded-md">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : isMembersError ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-                <Users className="h-8 w-8 text-red-400/50 mb-2" />
-                <p className="text-sm text-red-400">Failed to load team members</p>
-              </div>
-            ) : tenantMembers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-                <Users className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                <p className="text-sm text-muted-foreground">No team members found</p>
-              </div>
-            ) : availableMembers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-                <Users className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  {searchQuery
-                    ? 'No members match your search'
-                    : 'All team members already have this role'}
-                </p>
-              </div>
-            ) : (
-              <div className="p-2 space-y-1">
-                {availableMembers.map((member) => {
-                  const isSelected = selectedUserIds.has(member.user_id)
-                  return (
-                    <button
-                      key={member.user_id}
-                      onClick={() => toggleMember(member.user_id)}
-                      className={cn(
-                        'w-full flex items-center gap-3 p-2 rounded-md transition-colors text-start',
-                        isSelected
-                          ? 'bg-primary/10 border border-primary/30'
-                          : 'hover:bg-muted/50 border border-transparent'
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          'h-5 w-5 rounded border flex items-center justify-center shrink-0',
-                          isSelected ? 'bg-primary border-primary' : 'border-muted-foreground/30'
-                        )}
-                      >
-                        {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
-                      </div>
-                      <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                          {getInitials(member.name, member.email || '')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">
-                          {member.name || member.email}
-                        </p>
-                        {member.name && (
-                          <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                            <Mail className="h-3 w-3 shrink-0" />
-                            {member.email}
-                          </p>
-                        )}
-                      </div>
-                    </button>
-                  )
-                })}
+            {/* Selection actions */}
+            {availableMembers.length > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  {selectedUserIds.size} of {availableMembers.length} selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" onClick={selectAll}>
+                    Select All
+                  </Button>
+                  {selectedUserIds.size > 0 && (
+                    <Button variant="ghost" size="sm" onClick={clearSelection}>
+                      Clear
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
-          </ScrollArea>
-        </div>
+
+            {/* Members list */}
+            <ScrollArea className="h-[300px] border rounded-md">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : isMembersError ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                  <Users className="h-8 w-8 text-destructive/50 mb-2" />
+                  <p className="text-sm text-destructive">Failed to load team members</p>
+                </div>
+              ) : tenantMembers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                  <Users className="h-8 w-8 text-muted-foreground/50 mb-2" />
+                  <p className="text-sm text-muted-foreground">No team members found</p>
+                </div>
+              ) : availableMembers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                  <Users className="h-8 w-8 text-muted-foreground/50 mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    {searchQuery
+                      ? 'No members match your search'
+                      : 'All team members already have this role'}
+                  </p>
+                </div>
+              ) : (
+                <div className="p-2 space-y-1">
+                  {availableMembers.map((member) => {
+                    const isSelected = selectedUserIds.has(member.user_id)
+                    return (
+                      <button
+                        key={member.user_id}
+                        onClick={() => toggleMember(member.user_id)}
+                        className={cn(
+                          'w-full flex items-center gap-3 p-2 rounded-md transition-colors text-start',
+                          isSelected
+                            ? 'bg-primary/10 border border-primary/30'
+                            : 'hover:bg-muted/50 border border-transparent'
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            'h-5 w-5 rounded border flex items-center justify-center shrink-0',
+                            isSelected ? 'bg-primary border-primary' : 'border-muted-foreground/30'
+                          )}
+                        >
+                          {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                        </div>
+                        <Avatar className="h-8 w-8 shrink-0">
+                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                            {getInitials(member.name, member.email || '')}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {member.name || member.email}
+                          </p>
+                          {member.name && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                              <Mail className="h-3 w-3 shrink-0" />
+                              {member.email}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
