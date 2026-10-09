@@ -22,6 +22,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -110,7 +111,7 @@ export function ImportResultsDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Import results</DialogTitle>
           <DialogDescription>
@@ -121,70 +122,72 @@ export function ImportResultsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {!result && (
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="import-file">File</Label>
-              <Input
-                id="import-file"
-                type="file"
-                accept={ACCEPT}
-                onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null)
-                  setPreview(null)
-                  setError(null)
-                }}
-              />
+        <DialogBody className="grid gap-4">
+          {!result && (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="import-file">File</Label>
+                <Input
+                  id="import-file"
+                  type="file"
+                  accept={ACCEPT}
+                  onChange={(e) => {
+                    setFile(e.target.files?.[0] ?? null)
+                    setPreview(null)
+                    setError(null)
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="import-kb">
+                  Qualys KnowledgeBase <span className="text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="import-kb"
+                  type="file"
+                  accept=".xml,application/xml,text/xml"
+                  onChange={(e) => {
+                    setKb(e.target.files?.[0] ?? null)
+                    setPreview(null)
+                  }}
+                />
+                {needsKb && !kb && (
+                  <p className="text-muted-foreground text-xs">
+                    Without the KnowledgeBase, Qualys detections keep their QID but have no title,
+                    CVEs or CVSS.
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="import-kb">
-                Qualys KnowledgeBase <span className="text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
-                id="import-kb"
-                type="file"
-                accept=".xml,application/xml,text/xml"
-                onChange={(e) => {
-                  setKb(e.target.files?.[0] ?? null)
-                  setPreview(null)
-                }}
-              />
-              {needsKb && !kb && (
-                <p className="text-muted-foreground text-xs">
-                  Without the KnowledgeBase, Qualys detections keep their QID but have no title,
-                  CVEs or CVSS.
-                </p>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="border-destructive/50 text-destructive rounded-md border p-3 text-sm"
+            >
+              <div className="flex items-center gap-2 font-medium">
+                <AlertTriangle className="h-4 w-4" />
+                <span>{error.message}</span>
+              </div>
+              {error.file?.issues && error.file.issues.length > 0 && (
+                <IssueList issues={error.file.issues} />
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {error && (
-          <div
-            role="alert"
-            className="border-destructive/50 text-destructive rounded-md border p-3 text-sm"
-          >
-            <div className="flex items-center gap-2 font-medium">
-              <AlertTriangle className="h-4 w-4" />
-              <span>{error.message}</span>
+          {shown && (
+            <div className="space-y-3" data-testid="import-summary">
+              <p className="text-muted-foreground text-xs">
+                {shown.dry_run ? 'Preview: nothing was written. ' : ''}
+                {vexModeText(shown.vex_mode, shown.vex_can_close)}
+              </p>
+              {(shown.files ?? []).map((f, i) => (
+                <FileSummary key={`${f.name}-${i}`} file={f} dryRun={shown.dry_run ?? false} />
+              ))}
             </div>
-            {error.file?.issues && error.file.issues.length > 0 && (
-              <IssueList issues={error.file.issues} />
-            )}
-          </div>
-        )}
-
-        {shown && (
-          <div className="space-y-3" data-testid="import-summary">
-            <p className="text-muted-foreground text-xs">
-              {shown.dry_run ? 'Preview: nothing was written. ' : ''}
-              {vexModeText(shown.vex_mode, shown.vex_can_close)}
-            </p>
-            {(shown.files ?? []).map((f, i) => (
-              <FileSummary key={`${f.name}-${i}`} file={f} dryRun={shown.dry_run ?? false} />
-            ))}
-          </div>
-        )}
+          )}
+        </DialogBody>
 
         <DialogFooter>
           {result ? (

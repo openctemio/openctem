@@ -1864,3 +1864,28 @@ func (r *CommandRepository) ReleaseForSensor(ctx context.Context, tenantID, comm
 	}
 	return n > 0, nil
 }
+
+// UnclaimForSensor returns a command sensorID acknowledged to pending, for a
+// claim the job signer did not sign (command.Unclaimer). keepPin keeps it
+// addressed to the sensor (it was pinned there before the claim); otherwise
+// it is unpinned as before the claim. The lease epoch is not rewound, so a
+// stale holder stays fenced. Sensors are not woken: a signer that is down
+// would only turn the wake into another refused claim.
+func (r *CommandRepository) UnclaimForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID string, keepPin bool) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET status = 'pending',
+		    sensor_id = CASE WHEN $4 THEN sensor_id ELSE NULL END,
+		    acknowledged_at = NULL, lease_expires_at = NULL
+		WHERE id = $1 AND tenant_id = $2 AND sensor_id = $3
+		  AND status = 'acknowledged'`,
+		commandID.String(), tenantID.String(), sensorID, keepPin)
+	if err != nil {
+		return false, fmt.Errorf("failed to unclaim command: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	return n > 0, nil
+}

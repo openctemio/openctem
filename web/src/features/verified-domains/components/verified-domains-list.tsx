@@ -13,6 +13,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { DataTable } from '@/features/shared/components/data-table'
 import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
@@ -99,14 +100,16 @@ function DomainActions({
 
       {domain.instructions && (
         <Dialog open={dnsOpen} onOpenChange={setDnsOpen}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>DNS record for {domain.domain}</DialogTitle>
               <DialogDescription>
                 Publish this TXT record, then choose Verify now.
               </DialogDescription>
             </DialogHeader>
-            <DnsInstructions instructions={domain.instructions} />
+            <DialogBody>
+              <DnsInstructions instructions={domain.instructions} />
+            </DialogBody>
           </DialogContent>
         </Dialog>
       )}
