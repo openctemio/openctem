@@ -79,7 +79,7 @@ var stepUpRoutes = []string{
 	// program's entries into effect.
 	"POST /api/v1/programs",
 	"PUT /api/v1/programs/{id}/scope",
-	"POST /api/v1/programs/{id}/resume",
+	"POST /api/v1/programs/{id}/reactivate",
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",

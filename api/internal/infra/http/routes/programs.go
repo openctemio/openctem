@@ -20,8 +20,8 @@ func registerProgramRoutes(router Router, h *handler.BountyProgramHandler, authM
 		r.POST("/", h.Import, middleware.Require(permission.ProgramsWrite), requireStepUp())
 		r.GET("/{id}", h.Get, middleware.Require(permission.ProgramsRead))
 		r.PUT("/{id}/scope", h.Reimport, middleware.Require(permission.ProgramsWrite), requireStepUp())
-		r.POST("/{id}/pause", h.Pause, middleware.Require(permission.ProgramsWrite))
+		r.POST("/{id}/suspend", h.Pause, middleware.Require(permission.ProgramsWrite))
 		r.POST("/{id}/end", h.End, middleware.Require(permission.ProgramsWrite))
-		r.POST("/{id}/resume", h.Resume, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		r.POST("/{id}/reactivate", h.Resume, middleware.Require(permission.ProgramsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }
