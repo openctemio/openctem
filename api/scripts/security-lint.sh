@@ -111,7 +111,7 @@ check_http_client() {
         # Workflow HTTPRequestHandler implements its own SSRF guard
         # inline (validateURL + safeDialer + CheckRedirect). Functionally
         # equivalent to SafeHTTPClient; consolidation is a follow-up.
-        'api/internal/app/workflow/handlers.go'
+        'api/internal/app/automation/handlers.go'
     )
 
     local hits
@@ -420,7 +420,7 @@ check_client_ip_headers() {
         # Outbound workflow HTTP action: refuses to let a workflow author SET
         # these headers on the request it sends. Nothing is read from a
         # client request.
-        'api/internal/app/workflow/handlers.go'
+        'api/internal/app/automation/handlers.go'
     )
 
     local hits

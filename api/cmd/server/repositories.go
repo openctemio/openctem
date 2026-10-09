@@ -152,11 +152,11 @@ type Repositories struct {
 	StepRun          *postgres.StepRunRepository
 
 	// Workflows
-	Workflow        *postgres.WorkflowRepository
-	WorkflowNode    *postgres.WorkflowNodeRepository
-	WorkflowEdge    *postgres.WorkflowEdgeRepository
-	WorkflowRun     *postgres.WorkflowRunRepository
-	WorkflowNodeRun *postgres.WorkflowNodeRunRepository
+	Workflow        *postgres.AutomationRepository
+	WorkflowNode    *postgres.AutomationNodeRepository
+	WorkflowEdge    *postgres.AutomationEdgeRepository
+	WorkflowRun     *postgres.AutomationRunRepository
+	WorkflowNodeRun *postgres.AutomationRunStepRepository
 
 	// Suppressions
 	Suppression *postgres.SuppressionRepository
@@ -407,11 +407,11 @@ func newRepositories(db *postgres.DB) *Repositories {
 		StepRun:          postgres.NewStepRunRepository(db),
 
 		// Workflows
-		Workflow:        postgres.NewWorkflowRepository(db),
-		WorkflowNode:    postgres.NewWorkflowNodeRepository(db),
-		WorkflowEdge:    postgres.NewWorkflowEdgeRepository(db),
-		WorkflowRun:     postgres.NewWorkflowRunRepository(db),
-		WorkflowNodeRun: postgres.NewWorkflowNodeRunRepository(db),
+		Workflow:        postgres.NewAutomationRepository(db),
+		WorkflowNode:    postgres.NewAutomationNodeRepository(db),
+		WorkflowEdge:    postgres.NewAutomationEdgeRepository(db),
+		WorkflowRun:     postgres.NewAutomationRunRepository(db),
+		WorkflowNodeRun: postgres.NewAutomationRunStepRepository(db),
 
 		// Suppressions
 		Suppression: postgres.NewSuppressionRepository(db),
