@@ -14,6 +14,7 @@ interface ScanStepperProps {
   onStepClick?: (step: ScanWizardStep) => void
   /** The steps shown, in order (New adds Review). */
   steps?: ScanWizardStep[]
+  className?: string
 }
 
 const LABELS: Record<ScanWizardStep, string> = {
@@ -26,12 +27,22 @@ const LABELS: Record<ScanWizardStep, string> = {
 
 const DEFAULT_STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
 
-export function ScanStepper({ currentStep, onStepClick, steps = DEFAULT_STEPS }: ScanStepperProps) {
+export function ScanStepper({
+  currentStep,
+  onStepClick,
+  steps = DEFAULT_STEPS,
+  className,
+}: ScanStepperProps) {
   const STEPS = steps.map((id) => ({ id, label: LABELS[id] }))
   const currentIndex = STEPS.findIndex((s) => s.id === currentStep)
 
   return (
-    <div className="flex min-w-0 items-center justify-between overflow-x-auto px-4 py-3 sm:px-6">
+    <div
+      className={cn(
+        'flex min-w-0 items-center justify-between overflow-x-auto px-4 py-3 sm:px-6',
+        className
+      )}
+    >
       {STEPS.map((step, index) => {
         const isCompleted = index < currentIndex
         const isCurrent = index === currentIndex
