@@ -108,12 +108,25 @@ func (r *AuthorizationLetterRepository) Revoke(ctx context.Context, tenantID, id
 	return scope.ErrLetterRevoked
 }
 
-// CountEntries counts the scope entries naming the letter.
-func (r *AuthorizationLetterRepository) CountEntries(ctx context.Context, tenantID, id shared.ID) (int, error) {
-	var n int
-	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM scope_targets WHERE tenant_id = $1 AND letter_id = $2`,
-		tenantID.String(), id.String()).Scan(&n); err != nil {
-		return 0, fmt.Errorf("count letter entries: %w", err)
+// EntryIDs lists the scope entries naming the letter.
+func (r *AuthorizationLetterRepository) EntryIDs(ctx context.Context, tenantID, id shared.ID) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM scope_targets WHERE tenant_id = $1 AND letter_id = $2 ORDER BY id`,
+		tenantID.String(), id.String())
+	if err != nil {
+		return nil, fmt.Errorf("list letter entries: %w", err)
 	}
-	return n, nil
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan letter entry: %w", err)
+		}
+		eid, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("letter entry id: %w", err)
+		}
+		out = append(out, eid)
+	}
+	return out, rows.Err()
 }

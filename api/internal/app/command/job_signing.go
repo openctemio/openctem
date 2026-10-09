@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/metrics"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
 )
@@ -98,6 +99,12 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 		outcome := "unavailable"
 		if errors.Is(err, ErrJobRefused) {
 			outcome = "refused"
+			reason := "other"
+			var rf *jobsign.RefusalError
+			if errors.As(err, &rf) {
+				reason = rf.Reason
+			}
+			metrics.SignerRefusalsTotal.WithLabelValues(reason).Inc()
 		}
 		metrics.JobSigningTotal.WithLabelValues(outcome).Inc()
 		s.logger.Warn("command not signed; not handed to the sensor",
@@ -135,11 +142,38 @@ func (s *Service) signClaimed(ctx context.Context, tenantID shared.ID, sensorID 
 		if err != nil {
 			down = !errors.Is(err, ErrJobRefused)
 			s.unclaim(ctx, tenantID, c.ID, sensorID, pinned[c.ID])
+			if rf := permanentRefusal(err); rf != nil {
+				// The signer's ledger does not authorize this job: it would
+				// refuse it on every claim. Fail it with the reason.
+				s.failAtClaim(ctx, c, signerRefusedMessage(rf), FailureSignerRefused)
+			}
 			continue
 		}
 		out = append(out, signed)
 	}
 	return out
+}
+
+// FailureSignerRefused: the job signer refused the job for good (outside
+// its scope ledger); the command is failed with the reason.
+const FailureSignerRefused = scanrundom.FailureSignerRefused
+
+// permanentRefusal is the signer's refusal in err when the signer will
+// refuse the job again as its ledger stands (RFC-040 §5.6 point 4).
+func permanentRefusal(err error) *jobsign.RefusalError {
+	var rf *jobsign.RefusalError
+	if errors.As(err, &rf) && rf.Permanent() {
+		return rf
+	}
+	return nil
+}
+
+// signerRefusedMessage is the error recorded on a command the signer
+// refused for good.
+func signerRefusedMessage(rf *jobsign.RefusalError) string {
+	msg := FailureSignerRefused + ": the job signer refused to sign this job (" + rf.Reason + "): " + rf.Detail +
+		". The organization's approved scope in the signer's ledger does not allow it."
+	return truncateUTF8(msg, MaxFailErrorMessageBytes)
 }
 
 // unclaim takes back a claim that was not signed. A failure is logged: the
