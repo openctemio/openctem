@@ -9,7 +9,7 @@
 'use client'
 
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'

@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ReactNode } from 'react'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
