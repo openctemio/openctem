@@ -80,6 +80,8 @@ var stepUpRoutes = []string{
 	"POST /api/v1/programs",
 	"PUT /api/v1/programs/{id}/scope",
 	"POST /api/v1/programs/{id}/reactivate",
+	// Approving a custom template version for sensors (RFC-040 §11.5).
+	"POST /api/v1/scanner-templates/{id}/approve",
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
@@ -144,6 +146,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
+			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()

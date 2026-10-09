@@ -399,7 +399,9 @@ latest backup. The admin console shows the break.
 
 **Security, critical (RFC-040 §5.11 A10).** The job signer refused a job
 whose target is outside its scope ledger (`out_of_ledger`), above the tier
-people approved (`tier_exceeds_ledger`) or excluded (`target_excluded`). An
+people approved (`tier_exceeds_ledger`) or excluded (`target_excluded`), or
+whose custom template is not a version people approved
+(`template_not_in_ledger`). An
 honest API never asks for one: the command was written into the database
 outside the API, a scope change never reached the signer, or the API is
 compromised. The command failed with `SIGNER_REFUSED` and its detail names
