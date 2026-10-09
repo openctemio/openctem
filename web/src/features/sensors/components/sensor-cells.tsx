@@ -1,7 +1,7 @@
 'use client'
 
 import type { SensorGrantSummary } from '@/lib/api/sensor-grant-hooks'
-import { AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -11,6 +11,7 @@ import type { Sensor, SensorSdkStatus, SensorVersionStatus } from '@/lib/api/sen
 import { configHealthMeta, configHealthNeedsAttention } from '../lib/config-report'
 import { capacityLabel, sensorCapacity, type SensorToolRow } from '../lib/capabilities'
 import { formatDurationShort, keyExpiry } from '../lib/format'
+import { postureIssues } from '../lib/posture'
 import { isOneShotSensor } from '../lib/sensor-state'
 import {
   normalizeSensorVersion,
@@ -79,6 +80,26 @@ export function ConfigHealthTag({
 }
 
 /**
+ * A warning tag on the sensor list and cards for a sensor the platform flags
+ * as unhardened; the title lists the fixes. Nothing for a hardened sensor or
+ * an API without the posture.
+ */
+export function SensorPostureTag({ sensor }: { sensor: Pick<Sensor, 'posture'> }) {
+  const { t } = useTranslation()
+  const issues = postureIssues(sensor)
+  if (issues.length === 0) return null
+  const title = issues.map((i) => t(i.fixKey, i.fix)).join('\n')
+  return (
+    <SensorTag tone="warning" title={title}>
+      <span data-slot="sensor-posture-tag" className="inline-flex items-center gap-1">
+        <ShieldAlert className="h-3 w-3" aria-hidden />
+        {t('sensors.posture.tag', 'Unhardened')}
+      </span>
+    </SensorTag>
+  )
+}
+
+/**
  * The host name a sensor reports, or null when it adds nothing: not reported,
  * or the same as the sensor's name (installs often name the sensor after its
  * host).
@@ -105,6 +126,7 @@ export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: Sens
         </span>
         <ProtocolTag sensor={sensor} />
         <ConfigHealthTag health={sensor.config_health} />
+        <SensorPostureTag sensor={sensor} />
         <SensorGrantTags grant={grant} />
       </span>
       {host && (
