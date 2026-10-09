@@ -354,6 +354,12 @@ func run() int {
 		}()
 		log.Info("websocket redis bridge started")
 	}
+	if services.ModuleChangeBus != nil {
+		if err := services.ModuleChangeBus.Start(wsCtx); err != nil {
+			// Toggles still apply here at once and elsewhere after the gate TTL.
+			log.Error("module change bus not subscribed", "error", err)
+		}
+	}
 
 	// ==========================================================================
 	// HTTP Server

@@ -9,6 +9,7 @@
 #   api/api/openapi/swagger.yaml               OpenAPI spec (swag)
 #   api/api/openapi/routes.txt                 registered routes
 #   web/src/config/api-route-permissions.json  web route permission map
+#   web/src/config/authz-matrix.json           authorization reference
 #   web/src/lib/api/generated/api.types.ts     web API types (from the spec)
 #
 # Use it on a host that runs the stack from a bind-mounted checkout (next dev +
@@ -47,6 +48,7 @@ outputs=(
   api/api/openapi/swagger.yaml
   api/api/openapi/routes.txt
   web/src/config/api-route-permissions.json
+  web/src/config/authz-matrix.json
   web/src/lib/api/generated/api.types.ts
 )
 
@@ -62,7 +64,7 @@ docker run --rm \
   "$go_image" sh -euc '
     apk add --no-cache make >/dev/null
     make -C api contract
-    chown "$OWNER" api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json
+    chown "$OWNER" api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json
   '
 
 echo "generate-in-docker: web API types in $node_image"
