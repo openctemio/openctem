@@ -16,20 +16,15 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { AlertTriangle, Loader2, Wifi } from 'lucide-react'
@@ -37,6 +32,7 @@ import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanRunsCache, useQuickScan } from '@/lib/api/scan-workflow-hooks'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
 import { SelectionSummary } from './target-picker/selection-summary'
+import { ScannerSelect } from './scanner-select'
 
 /** Backend hard cap on targets per quick scan (see POST /scans/quick, 1..1000). */
 const MAX_TARGETS = 1000
@@ -75,7 +71,7 @@ export function ScanAssetsDialog({
   onSuccess,
 }: ScanAssetsDialogProps) {
   const router = useRouter()
-  const [scannerName, setScannerName] = useState('nuclei')
+  const [scannerName, setScannerName] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [refused, setRefused] = useState<ScopeRefusal[]>([])
   const { trigger: quickScan } = useQuickScan()
@@ -101,7 +97,7 @@ export function ScanAssetsDialog({
   const isOverCap = targets.length > MAX_TARGETS
   const cappedTargets = useMemo(() => targets.slice(0, MAX_TARGETS), [targets])
   const isLargeSet = cappedTargets.length > LARGE_SET_THRESHOLD
-  const canSubmit = cappedTargets.length > 0 && !isSubmitting
+  const canSubmit = cappedTargets.length > 0 && !!scannerName && !isSubmitting
 
   const handleSubmit = async () => {
     if (cappedTargets.length === 0) {
@@ -149,7 +145,7 @@ export function ScanAssetsDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !isSubmitting && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -161,7 +157,7 @@ export function ScanAssetsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <DialogBody className="space-y-4">
           {/* Target preview */}
           {cappedTargets.length > 0 && (
             <div className="space-y-2">
@@ -187,18 +183,6 @@ export function ScanAssetsDialog({
               {skippedCount} asset{skippedCount !== 1 ? 's' : ''} skipped (no scannable address).
             </p>
           )}
-          {refused.length > 0 ? (
-            <ScopeRefusalPanel refused={refused} />
-          ) : (
-            // The same live scope check as New Scan and Quick scan.
-            <SelectionSummary
-              targets={cappedTargets}
-              chips={cappedTargets.map((t) => ({ key: t, label: t, kind: 'typed' as const }))}
-              groupCount={0}
-              invalidCount={0}
-              scannerName={scannerName}
-            />
-          )}
           {isOverCap && (
             <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -217,25 +201,27 @@ export function ScanAssetsDialog({
             </div>
           )}
 
-          {/* Scanner picker */}
+          {/* Scanner: the tool registry's active scanners (it was a fixed list) */}
           <div className="space-y-2">
             <Label htmlFor="scan-assets-scanner">Scanner</Label>
-            <Select value={scannerName} onValueChange={setScannerName}>
-              <SelectTrigger id="scan-assets-scanner">
-                <SelectValue placeholder="Select scanner" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="nuclei">Nuclei</SelectItem>
-                <SelectItem value="nmap">Nmap</SelectItem>
-                <SelectItem value="subfinder">Subfinder</SelectItem>
-                <SelectItem value="httpx">HTTPx</SelectItem>
-              </SelectContent>
-            </Select>
+            <ScannerSelect id="scan-assets-scanner" value={scannerName} onChange={setScannerName} />
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="flex justify-end gap-2 pt-2">
+          {refused.length > 0 ? (
+            <ScopeRefusalPanel refused={refused} />
+          ) : (
+            // The same live scope check as New Scan and Quick scan.
+            <SelectionSummary
+              targets={cappedTargets}
+              chips={cappedTargets.map((t) => ({ key: t, label: t, kind: 'typed' as const }))}
+              groupCount={0}
+              invalidCount={0}
+              scannerName={scannerName}
+            />
+          )}
+        </DialogBody>
+
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>
@@ -252,7 +238,7 @@ export function ScanAssetsDialog({
               </>
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

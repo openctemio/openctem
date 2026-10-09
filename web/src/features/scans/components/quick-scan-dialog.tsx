@@ -14,8 +14,10 @@ import { useState, useMemo } from 'react'
 import Link from '@/components/link'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -132,7 +134,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>Quick Scan</DialogTitle>
           <DialogDescription>
@@ -141,64 +143,71 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
         </DialogHeader>
 
         {started ? (
-          <div className="space-y-4 py-2">
-            <div className="flex items-start gap-3 rounded-lg border p-3">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-              <div className="space-y-1 text-sm">
-                <p className="font-medium">Scan started on {started.target_count} target(s)</p>
-                <p className="text-muted-foreground">
-                  Follow it under Runs. It is not saved as a scan configuration.
-                </p>
-              </div>
-            </div>
-
-            {savedName ? (
-              <p className="text-sm">
-                Saved as{' '}
-                <Link href={`/scans/${started.scan_id}`} className="font-medium underline">
-                  {savedName}
-                </Link>
-                . You can schedule it from there.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="quick-save-name">Save as scan</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="quick-save-name"
-                    value={saveName}
-                    onChange={(e) => setSaveName(e.target.value)}
-                    maxLength={200}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={handleSave}
-                    disabled={isSaving || !saveName.trim()}
-                  >
-                    {isSaving ? (
-                      <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="me-2 h-4 w-4" />
-                    )}
-                    Save
-                  </Button>
+          <>
+            <DialogBody className="space-y-4">
+              <div className="flex items-start gap-3 rounded-lg border p-3">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium">Scan started on {started.target_count} target(s)</p>
+                  <p className="text-muted-foreground">
+                    Follow it under Runs. It is not saved as a scan configuration.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Keeps these targets and this scanner as a configuration you can run again or
-                  schedule.
-                </p>
               </div>
-            )}
 
-            <div className="flex justify-end pt-2">
+              {savedName ? (
+                <p className="text-sm">
+                  Saved as{' '}
+                  <Link href={`/scans/${started.scan_id}`} className="font-medium underline">
+                    {savedName}
+                  </Link>
+                  . You can schedule it from there.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="quick-save-name">Save as scan</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="quick-save-name"
+                      value={saveName}
+                      onChange={(e) => setSaveName(e.target.value)}
+                      maxLength={200}
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={handleSave}
+                      disabled={isSaving || !saveName.trim()}
+                    >
+                      {isSaving ? (
+                        <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="me-2 h-4 w-4" />
+                      )}
+                      Save
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Keeps these targets and this scanner as a configuration you can run again or
+                    schedule.
+                  </p>
+                </div>
+              )}
+            </DialogBody>
+            <DialogFooter>
               <Button onClick={handleClose}>Done</Button>
-            </div>
-          </div>
+            </DialogFooter>
+          </>
         ) : (
           <>
-            <div className="space-y-4 py-2">
+            <DialogBody className="space-y-4">
               {/* Targets: the same paste source and summary as New Scan */}
               <PasteSource value={targets} onChange={setTargets} />
+
+              {/* Scanner: the tool registry's active scanners */}
+              <div className="space-y-2">
+                <Label htmlFor="quick-scanner">Scanner</Label>
+                <ScannerSelect id="quick-scanner" value={scannerName} onChange={setScannerName} />
+              </div>
 
               {refused.length > 0 ? (
                 <ScopeRefusalPanel refused={refused} />
@@ -220,15 +229,9 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                   scannerName={scannerName}
                 />
               )}
+            </DialogBody>
 
-              {/* Scanner: the tool registry's active scanners */}
-              <div className="space-y-2">
-                <Label htmlFor="quick-scanner">Scanner</Label>
-                <ScannerSelect id="quick-scanner" value={scannerName} onChange={setScannerName} />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
+            <DialogFooter>
               <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
                 Cancel
               </Button>
@@ -253,7 +256,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                   </>
                 )}
               </Button>
-            </div>
+            </DialogFooter>
           </>
         )}
       </DialogContent>
