@@ -130,4 +130,4 @@ administrator saves them the built-in defaults above apply.
 
 ## Plans and modules
 
-Plans set numeric limits only; they do not decide which modules an organization has. Module entitlements per plan, with grants for trials and add-ons, are designed in [RFC-064](../rfcs/RFC-064-modules-entitlements-preferences.md); today's module model is in [modules.md](modules.md).
+A plan also decides which modules its organizations may use: Console > System > Plans > Plan modules (super admin, fresh authenticator code). Until it is saved every plan includes every module. One organization can be granted a module beyond its plan (a trial, with an expiry, or an add-on) or denied one, in Console > Organizations > Plan > Modules (ops admin and up, reason required). Changing an organization's plan changes its modules at once. The model is in [modules.md](modules.md) and [RFC-064](../rfcs/RFC-064-modules-entitlements-preferences.md).
