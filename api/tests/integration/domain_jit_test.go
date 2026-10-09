@@ -25,7 +25,7 @@ func TestDomainJITAndLapse(t *testing.T) {
 	svc := domainverify.NewService(vdRepo, nil, logger.NewNop())
 
 	tn := createTestTenant(t, db, "jit-org")
-	stamp := shared.NewID().String()[:8]
+	stamp := shared.NewID().String()[28:]
 	main := "acme-" + stamp + ".example"
 	sub := "sub-" + stamp + ".example"
 	old := "old-" + stamp + ".example"

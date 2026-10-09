@@ -29,7 +29,7 @@ func TestLeastPrivilege_HeldMembershipAndDomainJITApproval(t *testing.T) {
 	tenantRepo := postgres.NewTenantRepository(pg)
 
 	tn := createTestTenant(t, db, "lp-org")
-	stamp := shared.NewID().String()[:8]
+	stamp := shared.NewID().String()[28:]
 	owner := createTestUser(t, db, "owner-"+stamp+"@lp.example", "Owner")
 	newcomer := createTestUser(t, db, "new-"+stamp+"@lp.example", "New")
 	t.Cleanup(func() {
