@@ -134,7 +134,7 @@ the queue (no required check; the PR and the push scan the change).
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
-  reads the `toolchain` directive (currently `go1.26.8`). setup-go sets
+  reads the `toolchain` directive (currently `go1.26.9`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
   and the release binaries use. `api/Dockerfile` and `api/Dockerfile.admin-cli`
   pin their `golang:` base image separately: bump them with `go.mod`.
@@ -172,10 +172,11 @@ them and the merge queue can test several API changes in one group:
 | `api/api/openapi/swagger.yaml` | handler `// @Router` annotations and request/response types | `make -C api swagger` (swag, pinned) |
 | `api/api/openapi/routes.txt` | the router | `tools/lint/openapicontract` `TestWriteRouteManifest` |
 | `web/src/config/api-route-permissions.json` | the route gates | `tests/unit/route_permission_map_test.go` |
+| `web/src/config/authz-matrix.json` | the catalog, the built-in roles, the role templates, the route gates, the data-scope registry | `cmd/gen-authz-docs` ([authorization-reference.md](../architecture/authorization-reference.md)) |
 | `web/src/lib/api/generated/api.types.ts` | the spec | `web/scripts/generate-api-types.sh` |
 
-`make -C api contract` writes the first three (needs Go), `npm run
-generate:api-types` in `web/` the fourth (needs Node); **`make generate`** at the
+`make -C api contract` writes the first four (needs Go), `npm run
+generate:api-types` in `web/` the fifth (needs Node); **`make generate`** at the
 root runs both, and **`make generate-docker`** does the same in throwaway
 `golang`/`node` containers when the host has only Docker
 (`scripts/generate-in-docker.sh`). Run it after pulling and after changing a

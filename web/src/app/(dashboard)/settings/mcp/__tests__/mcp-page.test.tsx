@@ -29,6 +29,7 @@ vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', name: 'Acme', slug: 'acme', role: 'member' } }),
 }))
 vi.mock('@/features/mcp-oauth/components/mcp-policy-card', () => ({ McpPolicyCard: () => null }))
+vi.mock('@/features/mcp-oauth/components/org-clients-card', () => ({ OrgClientsCard: () => null }))
 vi.mock('@/features/mcp-oauth/api/connections', () => ({
   useOrgConnections: () => ({ data: undefined, isLoading: false }),
   revokeOrgConnection: vi.fn(),

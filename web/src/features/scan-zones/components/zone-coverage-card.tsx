@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import useSWR from 'swr'
 import { ArrowUpRight, CheckCircle2 } from 'lucide-react'
 
