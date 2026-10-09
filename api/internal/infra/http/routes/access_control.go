@@ -207,3 +207,19 @@ func registerRoleRoutes(
 		r.GET("/", h.GetMyPermissions)
 	}, tenantMiddlewares...)
 }
+
+// registerServiceAccountRoutes registers the service account routes:
+// organization-owned identities for integrations, managed like members.
+func registerServiceAccountRoutes(
+	router Router,
+	h *handler.ServiceAccountHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/service-accounts", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.MembersRead))
+		r.POST("/", h.Create, middleware.Require(permission.MembersWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.MembersWrite))
+	}, tenantMiddlewares...)
+}

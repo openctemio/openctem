@@ -167,6 +167,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerRoleRoutes", "registerGroupRoutes", "registerScopeRuleRoutes", "registerOrganizationMemberRoutes",
 			"registerOrganizationTrustRoutes", "registerSCIMRoutes", "registerPermissionSyncRoutes",
+			"registerServiceAccountRoutes",
 		},
 	},
 	{

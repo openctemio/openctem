@@ -42,6 +42,8 @@ type RoleService struct {
 	stepUp shared.RecentAuthGate
 	// bindings are the team role bindings (decisions G1-G12); nil: none.
 	bindings groupdom.RoleBindingRepository
+	// serviceAccounts applies the service-account role ceiling; nil: none.
+	serviceAccounts serviceAccountReader
 	// externalCeiling is the trust ceiling for external members (RFC-058).
 	externalCeiling func(ctx context.Context, host, home shared.ID) (string, error)
 	// privilege tells the administrators about privilege increases (RFC-058).

@@ -355,9 +355,9 @@ var Personas = []Persona{
 	{
 		ID: "api-integration", Name: "API integration", Group: "Machines",
 		Goal:      "Reads data into another system (SIEM, data lake, ticketing).",
-		Roles:     []string{"viewer"},
-		DataScope: "The data scope of the user the key belongs to, never full data.",
-		Access:    "An oct_ API key of a dedicated user with a narrow custom role; keys are read-only on the REST API and are suspended with their user.",
+		Roles:     []string{},
+		DataScope: "The teams the service account belongs to, never full data.",
+		Access:    "A service account (no sign-in, never owner or administrator, no full data access) with a narrow custom role and its teams, acting through an oct_ API key minted for it; keys are read-only on the REST API and go with the account.",
 		MustNot:   []string{"write through the REST API", "act as an administrator"},
 	},
 	{

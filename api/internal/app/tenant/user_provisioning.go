@@ -21,6 +21,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
@@ -311,7 +312,9 @@ func (s *UserProvisioningService) ReissueSetupLink(ctx context.Context, tenantID
 	if err != nil {
 		return nil, err
 	}
-	if !u.IsPendingSetup() {
+	if !u.IsPendingSetup() || strings.HasSuffix(u.Email(), "@"+serviceaccount.EmailDomain) {
+		// A service account never gets a password (the database refuses it
+		// too): it acts only through API keys.
 		return nil, ErrNotPendingSetup
 	}
 	if err := s.authorizeSetupLinkCaller(ctx, tenantID, callerIDStr, membership); err != nil {
