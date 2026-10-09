@@ -1,7 +1,7 @@
 'use client'
 
 import type { ElementType, ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 

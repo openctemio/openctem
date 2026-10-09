@@ -10,7 +10,7 @@
  */
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Search, Workflow } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
