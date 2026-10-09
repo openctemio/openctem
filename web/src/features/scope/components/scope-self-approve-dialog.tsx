@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -69,7 +70,7 @@ export function ScopeSelfApproveDialog({ entry, onOpenChange }: ScopeSelfApprove
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Approve your own entry</DialogTitle>
           <DialogDescription>
@@ -78,43 +79,45 @@ export function ScopeSelfApproveDialog({ entry, onOpenChange }: ScopeSelfApprove
             yourself. This is recorded in the audit log and every administrator is told.
           </DialogDescription>
         </DialogHeader>
-        <form id={formId} onSubmit={submit} className="space-y-4">
-          {error && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
+        <DialogBody>
+          <form id={formId} onSubmit={submit} className="space-y-4">
+            {error && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-reason`}>
+                Why may it take effect without a second person?
+              </Label>
+              <Textarea
+                id={`${formId}-reason`}
+                rows={3}
+                maxLength={1000}
+                required
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
             </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor={`${formId}-reason`}>
-              Why may it take effect without a second person?
-            </Label>
-            <Textarea
-              id={`${formId}-reason`}
-              rows={3}
-              maxLength={1000}
-              required
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${formId}-code`}>Code from your authenticator app</Label>
-            <Input
-              id={`${formId}-code`}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={8}
-              required
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\s/g, ''))}
-              className="w-40"
-            />
-          </div>
-        </form>
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-code`}>Code from your authenticator app</Label>
+              <Input
+                id={`${formId}-code`}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={8}
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\s/g, ''))}
+                className="w-40"
+              />
+            </div>
+          </form>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
