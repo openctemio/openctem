@@ -1340,6 +1340,18 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		args = append(args, *filter.LastSeenBefore)
 		argIndex++
 	}
+	// Expiry range: the asset's expiry property (format expiry), read only
+	// when it parses as a timestamp so a malformed value never fails the list.
+	if filter.ExpiresAfter != nil {
+		conditions = append(conditions, fmt.Sprintf("%s > $%d", expirySQL, argIndex))
+		args = append(args, *filter.ExpiresAfter)
+		argIndex++
+	}
+	if filter.ExpiresBefore != nil {
+		conditions = append(conditions, fmt.Sprintf("%s < $%d", expirySQL, argIndex))
+		args = append(args, *filter.ExpiresBefore)
+		argIndex++
+	}
 	if filter.CreatedAfter != nil {
 		conditions = append(conditions, fmt.Sprintf("a.created_at >= $%d", argIndex))
 		args = append(args, *filter.CreatedAfter)

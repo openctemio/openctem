@@ -38,6 +38,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -493,29 +494,33 @@ export default function ExceptionsPage() {
 
       {/* Reject dialog */}
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Reject suppression rule</DialogTitle>
             <DialogDescription>Provide a reason for rejecting this rule.</DialogDescription>
           </DialogHeader>
-          {selectedRule && (
-            <div className="rounded-lg border bg-muted/50 p-3">
-              <p className="text-sm font-medium">{selectedRule.name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {suppressionScopeSummary(selectedRule)}
+          <DialogBody className="grid gap-4">
+            {selectedRule && (
+              <div className="rounded-lg border bg-muted/50 p-3">
+                <p className="text-sm font-medium">{selectedRule.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {suppressionScopeSummary(selectedRule)}
+                </p>
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Textarea
+                placeholder="Reason for rejection..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={3}
+                maxLength={2000}
+              />
+              <p className="text-xs text-muted-foreground text-end">
+                {rejectionReason.length}/2000
               </p>
             </div>
-          )}
-          <div className="grid gap-2">
-            <Textarea
-              placeholder="Reason for rejection..."
-              value={rejectionReason}
-              onChange={(e) => setRejectionReason(e.target.value)}
-              rows={3}
-              maxLength={2000}
-            />
-            <p className="text-xs text-muted-foreground text-end">{rejectionReason.length}/2000</p>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRejectOpen(false)} disabled={isRejecting}>
               Cancel

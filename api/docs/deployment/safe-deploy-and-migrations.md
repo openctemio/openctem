@@ -184,6 +184,22 @@ scripts/check-migrations.sh migrations/000500_*.up.sql   # scan specific files
 
 ---
 
+## Backup, ledger and archive tables
+
+A data migration sometimes keeps the rows it changes in a side table so that
+its down migration can put them back (`<thing>_backup_<version>`,
+`<thing>_ledger`, `<thing>_archive`, `<thing>_pre_<version>`). Such a table is
+rollback data only: once the forward step is final, a later migration drops it
+(migration 001481 dropped twelve of them). The pre-upgrade backup is where the
+rows live after that.
+
+`tests/unit/migration_ledger_tables_test.go` replays CREATE / RENAME / DROP TABLE
+over the migration chain and fails when a table with such a name is left at the
+end of it. Either add the drop migration in the same change, or add the table to
+`ledgerTableAllowlist` in that test with an expiry date and a reason; when the
+date passes the test fails again until the drop migration exists. Temporary
+tables (`CREATE TEMP TABLE`) are not counted.
+
 ## Dirty-migration recovery
 
 `golang-migrate` runs each migration in a transaction. If a step fails midway,
