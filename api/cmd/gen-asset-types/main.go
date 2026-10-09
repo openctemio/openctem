@@ -1733,24 +1733,6 @@ func renderSQL(m *model) string {
 	w("UPDATE asset_types SET class = 'other', lens = NULL, alias_of = NULL, alias_sub_type = NULL,\n")
 	w("    sub_types = '{}', is_storable = false\n")
 	w("WHERE code NOT IN (%s);\n\n", sqlList(typeIDs))
-	w("-- Accepted inputs that are not stored as such: aliases (from_sub_type '')\n")
-	w("-- and legacy sub-types, with what they are stored as.\n")
-	w("DELETE FROM asset_type_input_map;\n")
-	w("INSERT INTO asset_type_input_map (from_type, from_sub_type, to_type, to_sub_type, provider, attributes) VALUES\n")
-	for i, in := range m.Inputs {
-		sep := ","
-		if i == len(m.Inputs)-1 {
-			sep = ";"
-		}
-		attrs := "'{}'"
-		if len(in.To.Attributes) > 0 {
-			raw, _ := json.Marshal(in.To.Attributes) // map keys are sorted
-			attrs = sqlString(string(raw))
-		}
-		w("    (%s, %s, %s, %s, %s, %s)%s\n", sqlString(in.From.Type), sqlString(in.From.SubType),
-			sqlString(in.To.Type), sqlNullable(in.To.SubType), sqlNullable(in.To.Provider), attrs, sep)
-	}
-	w("\n")
 	w("-- Re-derive assets.asset_class / asset_lens in batches, without touching\n-- updated_at.\n")
 	w("ALTER TABLE assets DISABLE TRIGGER trigger_assets_updated_at;\n")
 	w("DO $$\nDECLARE\n    cursor_id uuid := NULL;\nBEGIN\n    LOOP\n")
