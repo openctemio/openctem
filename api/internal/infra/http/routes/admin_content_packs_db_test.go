@@ -31,7 +31,7 @@ import (
 func contentPackHarness(t *testing.T) (*chainHarness, *contentpackapp.PlatformService, *contentpack.PlatformPack) {
 	t.Helper()
 	var svc *contentpackapp.PlatformService
-	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB) {
+	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, _ *adminconsole.Service) {
 		cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 		if err != nil {
 			t.Fatal(err)
