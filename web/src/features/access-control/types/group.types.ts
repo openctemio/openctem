@@ -47,6 +47,9 @@ export interface GroupMember {
   joined_at: string
   added_by?: string
   added_by_name?: string
+  /** When the membership ends (RFC-050 W22); absent means it does not. */
+  expires_at?: string
+  expiry_reason?: string
   // Backend standard response fields
   name: string
   email: string
@@ -116,6 +119,28 @@ export interface UpdateGroupInput {
 export interface AddGroupMemberInput {
   user_id: string
   role: GroupMemberRole
+  /** RFC 3339; required on an external team, at most 365 days ahead. */
+  expires_at?: string
+  expiry_reason?: string
+}
+
+/** Sets, moves or clears (null) when a team membership ends. */
+export interface SetGroupMemberExpiryInput {
+  expires_at: string | null
+  reason?: string
+}
+
+/**
+ * A custom role bound to a team: every member holds it while in the team
+ * (api research/58). `privileged` roles carry an administrator-level
+ * permission; only an owner changes such a team.
+ */
+export interface GroupRoleBinding {
+  role_id: string
+  name: string
+  privileged: boolean
+  created_by?: string
+  created_at: string
 }
 
 export interface UpdateGroupMemberInput {

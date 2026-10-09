@@ -79,6 +79,7 @@ var dsMemberPerms = []string{ //nolint:gochecknoglobals // test fixture
 	permission.FindingsRead.String(), permission.FindingsWrite.String(), permission.FindingsDelete.String(),
 	permission.FindingsStatus.String(), permission.FindingsTriage.String(), permission.FindingsAssign.String(),
 	permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String(),
+	permission.FindingsComment.String(), permission.FindingsSeverity.String(),
 	permission.AssetGroupsRead.String(), permission.DashboardRead.String(),
 	permission.ExposuresRead.String(), permission.ExposuresWrite.String(), permission.ExposuresTriage.String(),
 	permission.ExposuresDelete.String(),

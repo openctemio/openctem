@@ -22,6 +22,7 @@ import (
 type attestRepo struct {
 	*mockTargetRepo
 	downgrades int
+	done       map[string]bool
 }
 
 func (r *attestRepo) TenantsWithIntrusiveEntries(context.Context) ([]shared.ID, error) {
@@ -56,19 +57,21 @@ func (r *attestRepo) MarkAttestationRequested(_ context.Context, tid, id shared.
 }
 
 func (r *attestRepo) DowngradeUnattested(_ context.Context, tid, id shared.ID, req, now time.Time) (bool, error) {
+	// The service hands over the entry already set to t1; the store's
+	// condition is the request it saw, once.
 	t, ok := r.targets[id.String()]
-	if !ok || t.TenantID() != tid || t.MaxTier() != scopedom.TierIntrusive || t.AttestationRequestedAt() == nil || !t.AttestationRequestedAt().Equal(req) {
+	key := id.String() + req.String()
+	if !ok || t.TenantID() != tid || r.done[key] {
 		return false, nil
 	}
-	t.SetMaxTier(scopedom.TierActive, now)
-	t.RestoreAttestation(scopedom.AttestationState{AttestedAt: t.AttestedAt(), AttestedBy: t.AttestedBy()})
+	r.done[key] = true
 	r.downgrades++
 	return true, nil
 }
 
 func attestHarness(t *testing.T, st tenant.ScopeSettings) (*scope.Service, *attestRepo, *channelLog) {
 	t.Helper()
-	repo := &attestRepo{mockTargetRepo: newMockTargetRepo()}
+	repo := &attestRepo{mockTargetRepo: newMockTargetRepo(), done: map[string]bool{}}
 	svc := scope.NewService(repo, newMockExclusionRepo(), newMockAssetRepo(), logger.NewNop())
 	svc.SetStepUpGate(passGate{})
 	svc.SetEntryPolicy(fixedSettings{st}, adminDir{1}, &userNotes{})
@@ -177,5 +180,31 @@ func TestScopeAttestation_DueDate(t *testing.T) {
 	}
 	if (tenant.ScopeSettings{}).AttestationDays() != 90 {
 		t.Fatal("default attestation period is not 90 days")
+	}
+}
+
+// The downgrade is a narrowing: saved, then sent to the job signer's ledger
+// with the entry at t1.
+func TestScopeAttestation_DowngradeReachesTheLedger(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, _ := attestHarness(t, tenant.ScopeSettings{})
+	led := &fakeLedger{}
+	svc.SetLedger(led)
+	tid := shared.NewID()
+	start := time.Now().UTC().Add(-120 * 24 * time.Hour)
+	e := seedT2(repo, tid, "perm.t2.ledger.example", start, nil)
+	now := start.Add(91 * 24 * time.Hour)
+	if res, _ := svc.ReconcileAttestations(ctx, now); res.Requested != 1 {
+		t.Fatalf("request: %+v", res)
+	}
+	if res, err := svc.ReconcileAttestations(ctx, now.Add(15*24*time.Hour)); err != nil || res.Downgraded != 1 {
+		t.Fatalf("downgrade: %+v %v", res, err)
+	}
+	if e.MaxTier() != scopedom.TierActive {
+		t.Fatal("not downgraded")
+	}
+	last := led.changes[len(led.changes)-1]
+	if len(last.Ops) != 1 || last.Ops[0].Entry == nil || last.Ops[0].Entry.MaxTier != 1 {
+		t.Fatalf("ledger change %+v, want the entry at t1", last)
 	}
 }

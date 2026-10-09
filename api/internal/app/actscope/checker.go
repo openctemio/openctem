@@ -72,12 +72,63 @@ const (
 	ReasonNoScopeTarget  = "no scope entry covers it; add it to Scoping before scanning it"
 )
 
+// ProgramMembers lists the bug-bounty programs whose group has a user
+// (*postgres.BountyProgramRepository, RFC-065 §7).
+type ProgramMembers interface {
+	MemberProgramIDs(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
+}
+
+// ActingUser names the user a request acts as (*datascope.Enforcer).
+type ActingUser interface {
+	CallerUserID(ctx context.Context) string
+}
+
 // Checker implements the act-scope rule.
 type Checker struct {
 	enforcer ActEnforcer
 	assets   AssetNames
 	targets  ScopeTargets
 	roots    ScopeRoots
+	// programs lets a restricted member scan typed targets their programs
+	// cover; nil: they may not.
+	programs ProgramMembers
+	acting   ActingUser
+}
+
+// SetPrograms lets a restricted member scan a typed target an in-effect
+// entry of one of their bug-bounty programs covers (RFC-065 §7).
+func (c *Checker) SetPrograms(p ProgramMembers, acting ActingUser) *Checker {
+	c.programs, c.acting = p, acting
+	return c
+}
+
+// memberPrograms is the set of programs the acting user belongs to (empty
+// when unwired or for the system).
+func (c *Checker) memberPrograms(ctx context.Context, tenantID shared.ID, fallback *shared.ID) (map[shared.ID]bool, error) {
+	if c.programs == nil {
+		return nil, nil
+	}
+	var user shared.ID
+	if c.acting != nil {
+		if id, err := shared.IDFromString(c.acting.CallerUserID(ctx)); err == nil {
+			user = id
+		}
+	}
+	if user.IsZero() && fallback != nil {
+		user = *fallback
+	}
+	if user.IsZero() {
+		return nil, nil
+	}
+	ids, err := c.programs.MemberProgramIDs(ctx, tenantID, user)
+	if err != nil {
+		return nil, fmt.Errorf("program memberships: %w", err)
+	}
+	out := make(map[shared.ID]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
 }
 
 // New wires the checker. Every dependency is required: a nil one refuses
@@ -119,6 +170,8 @@ func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
 	}
 
 	var auth *scopeauth.Authority
+	var programs map[shared.ID]bool
+	programsLoaded := false
 	for _, t := range in.Targets {
 		if strings.TrimSpace(t) == "" {
 			continue
@@ -130,6 +183,24 @@ func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
 			continue
 		}
 		if !unrestricted {
+			// A restricted member may scan typed text one of their
+			// programs covers (RFC-065 §7); anything else stays refused.
+			if !programsLoaded {
+				programsLoaded = true
+				if programs, err = c.memberPrograms(ctx, in.TenantID, in.FallbackUser); err != nil {
+					return nil, err
+				}
+			}
+			if len(programs) > 0 {
+				if auth == nil {
+					if auth, err = scopeauth.Load(ctx, in.TenantID, c.targets, c.roots); err != nil {
+						return nil, err
+					}
+				}
+				if auth.CoveredByPrograms(t, programs) {
+					continue
+				}
+			}
 			out.RefusedTargets[t] = ReasonNotAnAsset
 			continue
 		}
