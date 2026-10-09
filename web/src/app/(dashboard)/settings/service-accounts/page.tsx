@@ -36,9 +36,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Sheet,
+  SheetBody,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -91,7 +94,7 @@ function CreateAccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>New service account</DialogTitle>
           <DialogDescription>
@@ -99,28 +102,30 @@ function CreateAccountDialog({
             assets it may see. You are recorded as the person accountable for it.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="sa-name">Name</Label>
-            <Input
-              id="sa-name"
-              value={name}
-              maxLength={MAX_NAME}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="SIEM export"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="sa-desc">Description (optional)</Label>
-            <Textarea
-              id="sa-desc"
-              value={description}
-              maxLength={MAX_DESCRIPTION}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What the integration does and who runs it"
-            />
-          </div>
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="sa-name">Name</Label>
+              <Input
+                id="sa-name"
+                value={name}
+                maxLength={MAX_NAME}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="SIEM export"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sa-desc">Description (optional)</Label>
+              <Textarea
+                id="sa-desc"
+                value={description}
+                maxLength={MAX_DESCRIPTION}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What the integration does and who runs it"
+              />
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -129,7 +134,7 @@ function CreateAccountDialog({
               {isMutating ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )
@@ -163,91 +168,93 @@ function AccountKeysSheet({
   }
 
   return (
-    <Sheet open onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>API keys of {account.name}</SheetTitle>
-          <SheetDescription>
-            A key acts as this service account: it carries only the scopes you give it that the
-            account also holds, sees only the account&apos;s assets, and is read-only.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="space-y-3 px-4 pb-4">
-          {canMint && (
-            <Button size="sm" onClick={() => setGenOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              Generate key
-            </Button>
-          )}
-          {isLoading ? (
-            <Skeleton className="h-24 rounded-lg" />
-          ) : error ? (
-            <ErrorState title="API keys" error={error} onRetry={() => void mutate()} />
-          ) : keys.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No keys yet.</p>
-          ) : (
-            <ul className="divide-y rounded-md border">
-              {keys.map((k) => (
-                <li key={k.id} className="flex items-start justify-between gap-3 p-3">
-                  <div className="min-w-0 space-y-1">
-                    <p className="truncate text-sm font-medium">{k.name}</p>
-                    <p className="text-muted-foreground text-xs">
-                      <code>{k.key_prefix}…</code>
-                      {k.expires_at && (
-                        <>
-                          {' '}
-                          · expires <RelativeTime date={k.expires_at} />
-                        </>
-                      )}
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {k.scopes.map((s) => (
-                        <Badge key={s} variant="secondary" className="font-mono text-[10px]">
-                          {s}
-                        </Badge>
-                      ))}
+    <>
+      <Sheet open onOpenChange={onOpenChange}>
+        <SheetContent className="w-full sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>API keys of {account.name}</SheetTitle>
+            <SheetDescription>
+              A key acts as this service account: it carries only the scopes you give it that the
+              account also holds, sees only the account&apos;s assets, and is read-only.
+            </SheetDescription>
+          </SheetHeader>
+          <SheetBody className="space-y-3">
+            {canMint && (
+              <Button size="sm" onClick={() => setGenOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                Generate key
+              </Button>
+            )}
+            {isLoading ? (
+              <Skeleton className="h-24 rounded-lg" />
+            ) : error ? (
+              <ErrorState title="API keys" error={error} onRetry={() => void mutate()} />
+            ) : keys.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No keys yet.</p>
+            ) : (
+              <ul className="divide-y rounded-md border">
+                {keys.map((k) => (
+                  <li key={k.id} className="flex items-start justify-between gap-3 p-3">
+                    <div className="min-w-0 space-y-1">
+                      <p className="truncate text-sm font-medium">{k.name}</p>
+                      <p className="text-muted-foreground text-xs">
+                        <code>{k.key_prefix}…</code>
+                        {k.expires_at && (
+                          <>
+                            {' '}
+                            · expires <RelativeTime date={k.expires_at} />
+                          </>
+                        )}
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {k.scopes.map((s) => (
+                          <Badge key={s} variant="secondary" className="font-mono text-[10px]">
+                            {s}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <Can route="DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Delete key"
-                      aria-label={`Delete key ${k.name}`}
-                      className="text-destructive hover:text-destructive shrink-0"
-                      onClick={() => setPendingDelete({ id: k.id, name: k.name })}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </Can>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <GenerateKeyDialog
-          open={genOpen}
-          onOpenChange={setGenOpen}
-          onSubmit={(req) => createKey(req)}
-          isMutating={creating}
-          onCreated={setNewKey}
-          title={`Generate a key for ${account.name}`}
-          description="Only scopes you hold yourself can be given. The secret is shown once."
-          namePlaceholder="Production connector"
-        />
-        <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
-        <ConfirmDialog
-          open={!!pendingDelete}
-          onOpenChange={(o) => !o && setPendingDelete(null)}
-          title={`Delete ${pendingDelete?.name ?? 'key'}?`}
-          desc="The integration using this key loses access immediately. This cannot be undone."
-          confirmText={deleting ? 'Deleting...' : 'Delete'}
-          destructive
-          isLoading={deleting}
-          handleConfirm={() => void handleDelete()}
-        />
-      </SheetContent>
-    </Sheet>
+                    <Can route="DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Delete key"
+                        aria-label={`Delete key ${k.name}`}
+                        className="text-destructive hover:text-destructive shrink-0"
+                        onClick={() => setPendingDelete({ id: k.id, name: k.name })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </Can>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+      <GenerateKeyDialog
+        open={genOpen}
+        onOpenChange={setGenOpen}
+        onSubmit={(req) => createKey(req)}
+        isMutating={creating}
+        onCreated={setNewKey}
+        title={`Generate a key for ${account.name}`}
+        description="Only scopes you hold yourself can be given. The secret is shown once."
+        namePlaceholder="Production connector"
+      />
+      <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(o) => !o && setPendingDelete(null)}
+        title={`Delete ${pendingDelete?.name ?? 'key'}?`}
+        desc="The integration using this key loses access immediately. This cannot be undone."
+        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        destructive
+        isLoading={deleting}
+        handleConfirm={() => void handleDelete()}
+      />
+    </>
   )
 }
 
