@@ -29,7 +29,7 @@ type Module struct {
 
 	// Parent module ID for hierarchical modules (sub-modules).
 	// If nil, this is a top-level module.
-	// Example: "assets.domains" has parentModuleID = "assets"
+	// Example: "integrations.scm" has parentModuleID = "integrations"
 	parentModuleID *string
 
 	// Event types associated with this module (for notification filtering)

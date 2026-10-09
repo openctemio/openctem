@@ -112,7 +112,7 @@ A pack is:
   | Source | Pinning | Who |
   |---|---|---|
   | Platform-managed upstream (nuclei-templates, semgrep registry rulesets, trivy DB) | release tag + digest; channels `stable` and `canary` | platform operator |
-  | Tenant upload | digest | tenant admin (`content:packs:write`, step-up) |
+  | Tenant upload | digest | tenant admin (`scans:content:write`, step-up) |
   | Git repository | commit SHA (a branch is resolved to a commit at sync) | tenant admin; credentials via the integration store |
   | OCI artifact | manifest digest | tenant admin |
   | HTTPS / S3 URL | content digest | tenant admin; httpsec SSRF guard; no private ranges unless the source is marked internal by the platform operator |
@@ -364,6 +364,7 @@ content: { templates: { mode: merge, sources: [acme-nuclei], include: { tags: [c
 | Tampered pack in transit or at rest | DSSE signature + digest verified before storing and again at mount |
 | Cross-tenant leakage of a custom pack | Tenant-scoped storage and delivery; per-task mounts; digest lookups tenant-scoped |
 | Archive tricks (traversal, symlinks, bombs) | Safe unpack at ingest with caps; canonical tar; sensors receive only canonical packs |
+| Hostile content attacks the ingest itself | Ingest runs in the API process, which is enough (owner decision 2026-10-08):<br>• pure-Go, memory-safe parsers (tar, gzip, YAML);<br>• no extraction to disk and no execution;<br>• bounded inputs, at most 2 ingests at once, a 60 s limit;<br>• fuzz tests on the archive and template parsers.<br>A linter that needs an external tool moves ingest to an isolated process first. |
 | A source fetch abused as SSRF | Platform fetches through httpsec; private ranges refused unless marked internal by the platform operator |
 | Secrets committed into a pack | Secret scan at ingest; a hit blocks the pack until acknowledged |
 | A tool's own updater bypasses packs | Update flags refused; updaters disabled; RFC-060 forwarder refuses update endpoints |
@@ -374,7 +375,7 @@ content: { templates: { mode: merge, sources: [acme-nuclei], include: { tags: [c
 | Phase | Deliverable | Repos |
 |---|---|---|
 | K1 | `content:` slots in `tool.yaml` (validator, schema, `ctx.Content`, protocol `run.task.content`, exec placeholders); built-in tools declare their slots | sdk-go, sensor |
-| K2 | Pack store: ingest, canonical archive, lint, classification, signing, API and permissions, audit; platform-managed upstream sources with channels | api |
+| K2 | Pack store: ingest, canonical archive, lint, classification, signing, API and permissions, audit (tenant uploads: shipped, [architecture](../architecture/content-packs.md)); platform-managed upstream sources with channels | api |
 | K3 | Desired state, push (v3 stream and v2 heartbeat), sensor prefetch, cache by digest, manifest by digest, GC | api, sdk-go, sensor |
 | K4 | Composition in steps, policies and profiles; pin at run start; retests reuse digests; placement by cached digest | api, web |
 | K5 | Tenant content sources (§3.6: git with app/token/deploy-key auth and webhooks, https with required integrity, oci, s3, `fetch_via: sensor`, binding by kind incl. namespaced kinds, per-kind validation); custom templates migrated; `$TMPDIR` path removed | api, sdk-go, sensor, web |

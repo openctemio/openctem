@@ -34,6 +34,7 @@ import (
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
+//	/admin/access-requests    any admin         ops_admin+ (approve/reject, audited)
 //	/admin/settings/plans     any admin         super_admin + fresh TOTP code
 //	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
@@ -47,13 +48,14 @@ import (
 
 // registerAdminRoutes registers all platform admin endpoints.
 // These are privileged operations for managing shared infrastructure.
-// Note: authMiddleware and userSyncMiddleware are kept for interface compatibility
-// but not used: admin routes authenticate the console session.
+// Admin routes authenticate the console session, not the tenant session.
+// crossSite (middleware.RejectCrossSiteBrowser; nil in route-shape tests)
+// guards the console's sign-in steps, which run before a console session and
+// its admin_csrf cookie exist.
 func registerAdminRoutes(
 	router Router,
 	h Handlers,
-	_ Middleware, // authMiddleware - unused, admin uses the console session
-	_ Middleware, // userSyncMiddleware - unused, admin uses the console session
+	crossSite Middleware,
 ) {
 	// ==========================================================================
 	// Console-session authenticated routes
@@ -85,9 +87,9 @@ func registerAdminRoutes(
 				r.GET("/validate", h.AdminAuth.Validate, authed)
 			}
 			if h.AdminConsole != nil {
-				r.POST("/session", h.AdminConsole.StartSession, loginRL)
-				r.POST("/mfa", h.AdminConsole.VerifyMFA, loginRL)
-				r.POST("/logout", h.AdminConsole.Logout)
+				r.POST("/session", h.AdminConsole.StartSession, preSession(crossSite, loginRL)...)
+				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
+				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
 				// credential-guessing surface (the IdP authenticates, the state is
@@ -98,8 +100,8 @@ func registerAdminRoutes(
 				// the login bucket.
 				idpRL := consoleRL.TokenExchangeMiddleware()
 				r.GET("/idp", h.AdminConsole.IdPInfo)
-				r.POST("/idp/start", h.AdminConsole.IdPStart, idpRL)
-				r.POST("/idp/callback", h.AdminConsole.IdPCallback, idpRL)
+				r.POST("/idp/start", h.AdminConsole.IdPStart, preSession(crossSite, idpRL)...)
+				r.POST("/idp/callback", h.AdminConsole.IdPCallback, preSession(crossSite, idpRL)...)
 			}
 		})
 	}
@@ -135,6 +137,24 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// The request-access queue: any admin reads; approving (creates the
+	// organization, requester as owner) or rejecting needs ops_admin+, audited.
+	if h.AccessRequest != nil {
+		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
+		decide := func(action string) []Middleware {
+			mws := []Middleware{requireOps}
+			if h.AdminAuditMiddleware != nil {
+				mws = append(mws, h.AdminAuditMiddleware.AuditLog(action, "access_request", "id"))
+			}
+			return mws
+		}
+		router.Group("/api/v1/admin/access-requests", func(r Router) {
+			r.GET("/", h.AccessRequest.List)
+			r.POST("/{id}/approve", h.AccessRequest.Approve, decide("access_request.approve")...)
+			r.POST("/{id}/reject", h.AccessRequest.Reject, decide("access_request.reject")...)
 		}, adminMiddlewares...)
 	}
 
@@ -350,6 +370,22 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// AI applications (MCP clients, RFC-062 §12). Reads: any admin, counts
+	// only. Block / unblock: ops_admin+, audited.
+	if h.MCPConnections != nil {
+		router.Group("/api/v1/admin/mcp-clients", func(r Router) {
+			r.GET("/", h.MCPConnections.AdminListClients)
+			write := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+			block, unblock := cloneMW(write), cloneMW(write)
+			if h.AdminAuditMiddleware != nil {
+				block = append(block, h.AdminAuditMiddleware.AuditLog("mcp_client.blocked", "mcp_client", "id"))
+				unblock = append(unblock, h.AdminAuditMiddleware.AuditLog("mcp_client.unblocked", "mcp_client", "id"))
+			}
+			r.POST("/{id}/block", h.MCPConnections.AdminBlockClient, block...)
+			r.POST("/{id}/unblock", h.MCPConnections.AdminUnblockClient, unblock...)
+		}, adminMiddlewares...)
+	}
+
 	// Target mapping management (scanner target type -> asset type).
 	// Reads: any admin. Writes: ops_admin+ (readonly rejected) — target
 	// mappings are shared platform configuration, gated at the route layer to
@@ -386,4 +422,12 @@ func registerAdminRoutes(
 // middleware (e.g. an audit factory) cannot mutate the shared write chain.
 func cloneMW(mws []Middleware) []Middleware {
 	return append([]Middleware{}, mws...)
+}
+
+// preSession prepends the cross-site guard (when set) to a route's middlewares.
+func preSession(crossSite Middleware, mws ...Middleware) []Middleware {
+	if crossSite == nil {
+		return mws
+	}
+	return append([]Middleware{crossSite}, mws...)
 }

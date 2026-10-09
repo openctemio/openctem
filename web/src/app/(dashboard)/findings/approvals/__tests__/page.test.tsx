@@ -25,7 +25,7 @@ const mockTriggerReject = vi.fn()
 const mockTriggerCancel = vi.fn()
 
 vi.mock('@/features/findings/api/use-findings-api', () => ({
-  usePendingApprovals: vi.fn(() => ({
+  useApprovals: vi.fn(() => ({
     data: null,
     isLoading: true,
     error: null,
@@ -45,7 +45,23 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
   })),
 }))
 
+vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'user-1' }) }))
+
+// The tab (status) and page live in the URL through useListParams.
+const listState = vi.hoisted(() => ({ status: '', setFilter: vi.fn() }))
+vi.mock('@/hooks/use-list-params', () => ({
+  useListParams: () => ({
+    page: 1,
+    perPage: 20,
+    filters: { status: listState.status },
+    pagination: { pageIndex: 0, pageSize: 20 },
+    setPagination: vi.fn(),
+    setFilter: listState.setFilter,
+  }),
+}))
+
 vi.mock('@/features/findings/types', () => ({
+  APPROVAL_STATUSES: ['pending', 'approved', 'rejected', 'canceled', 'expired'],
   APPROVAL_STATUS_CONFIG: {
     pending: { label: 'Pending', variant: 'warning' },
     approved: { label: 'Approved', variant: 'success' },
@@ -144,7 +160,7 @@ vi.mock('@/features/shared/components/data-table/data-table-column-header', () =
 
 // Import after mocks
 import ApprovalsPage from '../page'
-import { usePendingApprovals } from '@/features/findings/api/use-findings-api'
+import { useApprovals } from '@/features/findings/api/use-findings-api'
 
 // ============================================
 // MOCK DATA
@@ -188,21 +204,30 @@ const mockApprovals = [
   },
 ]
 
+// The server counts every status under the caller's scope, not just the page.
+const COUNTS = { pending: 1, approved: 1, rejected: 1, canceled: 0, expired: 0 }
+
 function mockHook(
   overrides: Partial<{
-    data: { data: typeof mockApprovals; total: number; page: number; per_page: number } | null
+    data: {
+      data: typeof mockApprovals
+      total: number
+      page: number
+      per_page: number
+      status_counts?: Record<string, number>
+    } | null
     isLoading: boolean
     error: Error | undefined
   }> = {}
 ) {
-  vi.mocked(usePendingApprovals).mockReturnValue({
+  vi.mocked(useApprovals).mockReturnValue({
     data: null,
     isLoading: false,
     error: undefined,
     mutate: mockMutate,
     isValidating: false,
     ...overrides,
-  } as ReturnType<typeof usePendingApprovals>)
+  } as ReturnType<typeof useApprovals>)
 }
 
 // ============================================
@@ -220,13 +245,15 @@ describe('ApprovalsPage', () => {
 
   describe('page header', () => {
     it('renders the page title', () => {
-      mockHook({ data: { data: [], total: 0, page: 1, per_page: 500 } })
+      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
       expect(screen.getByText('Approval Requests')).toBeInTheDocument()
     })
 
     it('renders description with counts', () => {
-      mockHook({ data: { data: mockApprovals, total: 3, page: 1, per_page: 500 } })
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
       render(<ApprovalsPage />)
       expect(screen.getByText('3 total requests - 1 pending review')).toBeInTheDocument()
     })
@@ -238,14 +265,14 @@ describe('ApprovalsPage', () => {
     })
 
     it('renders back link to findings page', () => {
-      mockHook({ data: { data: [], total: 0, page: 1, per_page: 500 } })
+      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
       const backLink = screen.getByText('Back to Findings')
       expect(backLink.closest('a')).toHaveAttribute('href', '/findings')
     })
 
     it('renders refresh button', () => {
-      mockHook({ data: { data: [], total: 0, page: 1, per_page: 500 } })
+      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
       expect(screen.getByText('Refresh')).toBeInTheDocument()
     })
@@ -290,7 +317,7 @@ describe('ApprovalsPage', () => {
 
   describe('empty state', () => {
     it('shows empty message when no approvals', () => {
-      mockHook({ data: { data: [], total: 0, page: 1, per_page: 500 } })
+      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
       expect(screen.getByText('No approval requests')).toBeInTheDocument()
     })
@@ -302,7 +329,9 @@ describe('ApprovalsPage', () => {
 
   describe('stats cards', () => {
     it('renders stats with CardDescription labels', () => {
-      mockHook({ data: { data: mockApprovals, total: 3, page: 1, per_page: 500 } })
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
       render(<ApprovalsPage />)
 
       // Stat labels. "Pending" is also a tab label now that the tab count is a
@@ -312,7 +341,9 @@ describe('ApprovalsPage', () => {
     })
 
     it('renders correct counts', () => {
-      mockHook({ data: { data: mockApprovals, total: 3, page: 1, per_page: 500 } })
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
       render(<ApprovalsPage />)
 
       // Counts appear as CardTitle values - "1" for pending, "1" for approved, etc.
@@ -328,7 +359,9 @@ describe('ApprovalsPage', () => {
 
   describe('tabs', () => {
     it('renders status filter tabs with counts', () => {
-      mockHook({ data: { data: mockApprovals, total: 3, page: 1, per_page: 500 } })
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
       render(<ApprovalsPage />)
 
       expect(screen.getByRole('tab', { name: /^All\s*3$/i })).toBeInTheDocument()
@@ -339,13 +372,61 @@ describe('ApprovalsPage', () => {
     })
   })
 
+  describe('server-side tabs', () => {
+    it('asks the server for every status on the All tab', () => {
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+      render(<ApprovalsPage />)
+      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, undefined)
+    })
+
+    it('asks the server for the tab status and starts at page 1', () => {
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+      render(<ApprovalsPage />)
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /^Approved/i }))
+      // Choosing a tab writes the status to the URL (and page 1)...
+      expect(listState.setFilter).toHaveBeenCalledWith('status', 'approved')
+    })
+
+    it('reads the tab from the URL and asks the server for that status', () => {
+      listState.status = 'rejected'
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+      render(<ApprovalsPage />)
+      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'rejected')
+      listState.status = ''
+    })
+
+    it('takes tab counts from the server, not from the rows of the page', () => {
+      mockHook({
+        data: {
+          data: mockApprovals.slice(0, 1),
+          total: 120,
+          page: 1,
+          per_page: 20,
+          status_counts: { pending: 120, approved: 40, rejected: 7, canceled: 2, expired: 1 },
+        },
+      })
+      render(<ApprovalsPage />)
+      expect(screen.getByRole('tab', { name: /^All\s*170$/i })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: /^Approved\s*40$/i })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: /^Expired\s*1$/i })).toBeInTheDocument()
+    })
+  })
+
   // ============================================
   // TABLE RENDERING
   // ============================================
 
   describe('table rendering', () => {
     it('renders DataTable with all approval data', () => {
-      mockHook({ data: { data: mockApprovals, total: 3, page: 1, per_page: 500 } })
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
       render(<ApprovalsPage />)
 
       expect(screen.getByTestId('data-table')).toBeInTheDocument()
@@ -360,7 +441,7 @@ describe('ApprovalsPage', () => {
 
   describe('refresh', () => {
     it('calls mutate when refresh button is clicked', () => {
-      mockHook({ data: { data: [], total: 0, page: 1, per_page: 500 } })
+      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
       fireEvent.click(screen.getByText('Refresh'))
       expect(mockMutate).toHaveBeenCalled()

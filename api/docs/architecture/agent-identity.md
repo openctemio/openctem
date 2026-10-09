@@ -1,51 +1,52 @@
-# Agent Identity & Credentials
+# Sensor Identity & Credentials
 
-> Design of record: [RFC-014](../rfcs/RFC-014-agent-identity.md).
-> This document tracks **what is shipped vs planned** for how our agents
-> authenticate. It does **not** cover external connectors (DefectDojo / Jira /
-> Nessus) — those keep the per-tenant AES-encrypted credential + webhook-HMAC
+> Design of record: [RFC-014](../rfcs/RFC-014-agent-identity.md) and
+> [RFC-032](../rfcs/RFC-032-sensor-enrollment-and-identity.md). This document
+> tracks **what is shipped vs planned** for how sensors authenticate to the
+> platform. It does **not** cover external connectors (DefectDojo, Jira,
+> Nessus): those keep the per-tenant AES-encrypted credential + webhook-HMAC
 > model, a different threat model (we hold *their* secret; we cannot impose our
-> identity on a third-party SaaS).
+> identity on a third-party service).
 
 ## Model in one paragraph
 
-Every agent has its **own identity** — one `agents` row with an inline
-`api_key_hash` (HMAC-SHA256 + server pepper of an `octs_` key with 32 random
-bytes, shown once at issue; see *Credential formats*; older sensors may still
-hold a legacy `rda_` key). This is deliberately **not** a shared account: one
-leaked key revokes/audits independently, unlike a single tenant-wide token. On
-top of that identity the credential is evolving from a *static* secret toward a
-**short-lived, auto-rotating** one, so a
-leaked key self-revokes at its next renewal instead of living forever.
+Every sensor has its **own identity**: one `sensors` row with an inline
+`api_key_hash` (HMAC-SHA256 with a server pepper, of an `octs_` key with 32
+random bytes, shown once at issue; see *Credential formats*; older sensors may
+still hold a legacy `rda_` key). This is deliberately **not** a shared account:
+one leaked key is revoked and audited independently, unlike a single
+tenant-wide token. On top of that identity the credential is **short-lived and
+auto-rotating**, so a leaked key stops working at its next renewal instead of
+living forever.
 
 ## Lifecycle
 
 ```
-ENROLL   registration token (ExpiresAt / MaxUses / DefaultScopes)   [shipped]
-   │       → mints a per-agent identity + first API key
-ISSUE    api_key_hash + api_key_prefix, optional key_expires_at     [shipped]
+ENROLL   pairing (sensor-pairing.md): the sensor gets its identity
+           and first API key
+ISSUE    api_key_hash + api_key_prefix, optional key_expires_at
 RUN      auth = peppered-hash lookup
-         → Status.CanAuthenticate()  (active / disabled / revoked)
-         → NOT expired (key_expires_at)                             [shipped 1b]
-RENEW    sensor POSTs /api/v2/sensor/keys with its current key     [shipped 1a]
-         → fresh key (+ fresh expiry when a TTL is configured)
-ROTATE   admin POST /agents/{id}/regenerate-key (hard, tenant)      [shipped]
-REVOKE   Status = revoked  → auth short-circuits immediately        [shipped]
-         short key TTL      → implicit revocation (no CRL)           [shipped 1b]
+         -> Status.CanAuthenticate()  (active / disabled / revoked)
+         -> NOT expired (key_expires_at)
+RENEW    sensor POSTs /api/v2/sensor/keys with its current key
+         -> fresh key (+ fresh expiry under SENSOR_KEY_TTL)
+ROTATE   admin POST /api/v1/sensors/{id}/regenerate-key (hard, tenant)
+REVOKE   Status = revoked -> auth short-circuits immediately
+         key TTL          -> implicit revocation (no CRL)
 ```
 
 ## What is shipped
 
 | Capability | Where | Notes |
 |-----------|-------|-------|
-| Per-agent identity + peppered hash | `internal/app/agent/service.go` (`generateAgentAPIKey`, `AuthenticateByAPIKey`) | `crypto.HashTokenPeppered`; legacy plain-SHA256 fallback for pre-pepper rows |
-| Enrollment tokens (short-lived, use-limited, scoped) | `pkg/domain/agent/registration_token.go` | the k8s bootstrap-token analog |
-| Admin hard rotation | `POST /agents/{id}/regenerate-key` (JWT, `AgentsWrite`) | old key dies immediately; tenant-scoped |
-| **Agent self-renew** (Phase 1a) | `POST /api/v2/sensor/keys` (sensor key auth; the v1 `/api/v1/agent/renew` was retired 2026-10-05) → `AgentService.RenewAPIKey` | agent rotates its **own** key; works for tenant **and** platform agents; TOCTOU-safe (re-reads status by id) |
-| **Key expiry** (Phase 1b) | `agents.key_expires_at` (migration `000185`), `Agent.IsKeyExpired()`, enforced in `AuthenticateByAPIKey` | **NULL = never expires** (default + all legacy rows) |
-| Configurable key TTL | `SENSOR_KEY_TTL` env → `AgentService.SetKeyTTL` | **default `0` = disabled**; only self-renew honors it |
-| **Rotation overlap** (Phase 3) | `AgentAPIKeyRepository` over the `agent_api_keys` table; auth accepts the inline key **or** an active/valid key row | self-renew under a TTL issues the new key as a row; the key the sensor renewed **with** (inline or row) and every other key it still held stop after `SENSOR_KEY_RENEW_GRACE` (default 15 min), so a renewal leaves one long-lived key (see *Renewal retires the presented key*); per-key `use_count`/`last_used` audit |
-| Agent auto-renew (Phase 2, SDK) | `sdk-go` `KeyRenewManager` + agent `-key-autorenew` flag | renews at ~½ TTL, swaps both clients, persists to the creds file; *pending the sdk-go v0.5.0 release |
+| Per-sensor identity + peppered hash | `internal/app/sensor/service.go` (`generateSensorAPIKey`, `AuthenticateByAPIKey`) | pepper `SENSOR_KEY_PEPPER`, derived from `APP_ENCRYPTION_KEY` with HKDF when empty |
+| Enrollment by pairing | `pkg/domain/sensor/pairing.go`, [sensor-pairing.md](sensor-pairing.md) | the sensor never receives a reusable tenant secret |
+| Admin hard rotation | `POST /api/v1/sensors/{id}/regenerate-key` (`sensors:write`, step-up) | old key dies immediately; tenant-scoped |
+| **Sensor self-renew** | `POST /api/v2/sensor/keys` (sensor key auth) -> `SensorService.RenewAPIKey` | the sensor rotates its **own** key; works for tenant **and** platform sensors; re-checks status under a row lock |
+| **Key expiry** | `sensors.key_expires_at`, `Sensor.IsKeyExpired()`, enforced in `AuthenticateByAPIKey` | NULL = never expires (keys created or regenerated by an administrator) |
+| Key TTL on renewal | `SENSOR_KEY_TTL` -> `SensorService.SetKeyTTL` | **default 90 days**, renewed at half-life; `0` disables expiry. Only renewal applies it |
+| **Rotation overlap** | `sensor_api_keys` table; auth accepts the inline key **or** an active, valid key row | a renewal under a TTL issues the new key as a row; the key the sensor renewed **with** (inline or row) and every other key it still held stop after `SENSOR_KEY_RENEW_GRACE` (default 15 min), so a renewal leaves one long-lived key (see *Renewal retires the presented key*); per-key `use_count`/`last_used` |
+| Sensor auto-renew | `sdk-go` `KeyRenewManager`, used by the sensor | renews at half the TTL, swaps both clients and persists the key; the sensor renews on its own only when its key file is on a persistent volume |
 
 ### Renewal retires the presented key
 
@@ -95,7 +96,7 @@ renewal racing a regeneration either commits first, and the regeneration
 revokes its key, or runs after it and is refused. Either way the regenerated
 key is the only valid credential.
 
-What this buys: a copied `rda_` key can no longer renew itself a parallel line
+What this buys: a copied key can no longer renew itself a parallel line
 of long-lived keys. Whoever renews last holds the only long-lived key, and the
 other holder is locked out after the grace and has to be re-enrolled, which an
 administrator sees. Two concurrent renewals with the same key also end with one
@@ -103,30 +104,29 @@ long-lived key: "older than the new row" means the newer row is never capped by
 the older renewal. `SENSOR_KEY_RENEW_GRACE=0` retires the presented key at once
 (in-flight requests made with it then fail).
 
-### Enabling short-lived credentials (`SENSOR_KEY_TTL`)
+### Short-lived credentials (`SENSOR_KEY_TTL`)
 
-Set e.g. `SENSOR_KEY_TTL=24h`. Then every call to `/api/v2/sensor/keys` issues a
-key that expires in 24h, and the renew response includes `expires_at` so the
-agent can schedule its next renewal. With the variable **unset (the default),
-renewed keys never expire** and behavior is identical to before Phase 1b.
+`SENSOR_KEY_TTL` (default 90 days; a Go duration such as `2160h`) sets
+the lifetime of every key issued by `/api/v2/sensor/keys`; the renew response
+includes `expires_at` so the sensor schedules its next renewal (at half-life by
+default). `SENSOR_KEY_TTL=0` makes renewed keys never expire.
 
-> **Operational prerequisite.** Do **not** enable a TTL until agents actually
-> auto-renew (Phase 2). A configured TTL only sets expiry *on renewal*, and an
-> agent that never renews would simply keep its non-expiring key — but an agent
-> that renews once and then stops would lock itself out at expiry. Treat TTL as
-> off until the daemon renew loop ships.
+> **Operational note.** The TTL only applies *on renewal*. A sensor that never
+> renews keeps its non-expiring key, but a sensor that renews once and then loses
+> the renewed key (no persistent volume for its key file) locks itself out at
+> expiry. Keep the sensor's key file on a persistent volume, as the install
+> snippets and the Helm chart do.
 
 ## What is planned (not yet shipped)
 
-| Phase | Capability | Scope |
-|-------|-----------|-------|
-| **4** | Scope enforcement (`RunnerScopes` / `SensorScopes`) at the authz layer | least-privilege, like k8s NodeRestriction; rides on the Phase-3 multi-key (rotated keys already carry per-type scopes) |
-| **5** | OIDC federation for ephemeral CI runners — exchange the CI provider's OIDC token for a short-lived scoped agent token | zero stored secret; strongest option for CI |
+| Capability | Scope |
+|-----------|-------|
+| Scope enforcement (`RunnerScopes` / `SensorScopes`) at the authorization layer | least privilege per key; rotated keys already carry per-type scopes |
+| OIDC federation for ephemeral CI runners: exchange the CI provider's OIDC token for a short-lived scoped sensor token | no stored secret; see [ci-runner-identity.md](ci-runner-identity.md) |
 
 ## Credential formats
 
-Owner decision 2026-10-03 (RFC-032 revision, §10.4). Every key issued since
-then (create, admin regeneration, self-renewal, the overlapping `RotateKey`
+Decided in the RFC-032 revision (§10.4). Every key issued now (create, admin regeneration, self-renewal, the overlapping `RotateKey`
 path) is an `octs_` key; `rda_` keys are no longer issued.
 
 | Prefix | What | Shape | Total length | Status |
@@ -219,13 +219,12 @@ def is_openctem_token(tok):
 ```
 
 A leaked key is revoked by regenerating it on the Sensors page (or revoking
-the sensor); OpenCTEM is self-hosted, so a report goes to the installation's
-administrator, not to the vendor.
+the sensor); a report goes to the installation's administrator.
 
 ## Why not a shared account token
 
-A single tenant-wide (or global) token is rejected: one
-leak compromises **every** agent, with no per-agent revoke, no per-agent audit,
-and no way to scope one runner differently from another. Per-machine identity +
+A single tenant-wide (or global) token is rejected: one leak compromises
+**every** sensor, with no per-sensor revoke, no per-sensor audit, and no way to
+scope one runner differently from another. Per-machine identity plus a
 short-lived rotating credential bounds the blast radius of one leak to one
-machine and one renewal window. OpenCTEM was already on that axis; Phases 1a–1b close the "static key that never expires" gap.
+machine and one renewal window.

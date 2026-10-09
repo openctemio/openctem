@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -179,6 +180,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	// A job the claim-time scope re-check fails settles what waits on it
+	// (scan step, validation run, retest) as a sensor's failure would.
+	svc.Command.SetFailureObserver(commandHandler)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
@@ -301,13 +305,41 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpHandler.SetAuditService(svc.Audit)
 		mcpAuth = apiKeyAuth.Handler
 	}
+	// The organization MCP policy applies to oct_ keys on the MCP endpoint
+	// (access tokens are checked by the authorization server).
+	var mcpPolicies middleware.MCPPolicyReader
+	var mcpSettings *handler.MCPSettingsHandler
+	if svc.Tenant != nil {
+		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
+		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
+	}
+	mcpDiscovery := newMCPDiscovery(cfg, log)
+	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
+	// endpoint also accepts its access tokens, and a refused call that
+	// another scope would allow gets a step-up challenge.
+	var mcpOAuthHandler *handler.MCPOAuthHandler
+	var mcpConnections *handler.MCPConnectionsHandler
+	if mcpOAuth := newMCPOAuthService(mcpDiscovery, deps, log); mcpOAuth != nil && mcpHandler != nil {
+		mcpOAuthHandler = handler.NewMCPOAuthHandler(mcpOAuth, log)
+		mcpConnections = handler.NewMCPConnectionsHandler(mcpOAuth, log)
+		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
+		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
+	}
+	if mcpAuth != nil && mcpPolicies != nil {
+		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
+		mcpAuth = func(next http.Handler) http.Handler { return auth(gate(next)) }
+	}
 
 	handlers := routes.Handlers{
-		ModuleGate: moduleGate,
-		DataScope:  svc.DataScope,
-		MCP:        mcpHandler,
-		MCPAuth:    mcpAuth,
-		APIKeyAuth: apiKeyAuth,
+		ModuleGate:     moduleGate,
+		DataScope:      svc.DataScope,
+		MCP:            mcpHandler,
+		MCPAuth:        mcpAuth,
+		MCPDiscovery:   mcpDiscovery,
+		MCPOAuth:       mcpOAuthHandler,
+		MCPSettings:    mcpSettings,
+		MCPConnections: mcpConnections,
+		APIKeyAuth:     apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
@@ -413,6 +445,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
 		ScannerTemplate: handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
 		TemplateSource:  handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
+		ContentPack:     handler.NewContentPackHandler(svc.ContentPacks, log),
 		SecretStore:     handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:            handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
@@ -637,6 +670,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.CredentialImport.SetAuditService(svc.Audit)
 	}
 
+	if svc.AccessRequest != nil {
+		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+	}
 	if svc.Entitlement != nil {
 		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
 		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})
@@ -652,6 +688,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SignupPolicy = svc.Signup
 	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
+	handlers.Bootstrap.WithSession(bootstrapSession(cfg, svc, handlers))
 	return handlers
 }
 
@@ -1121,4 +1158,30 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 		return nil
 	}
 	return handler.NewSensorPairingHandler(svc.SensorPairing, svc.Sensor, log)
+}
+
+// bootstrapSession wires the session parts of GET /me/bootstrap to the same
+// code that serves /users/me, /users/me/tenants, /notifications/unread-count,
+// /easm/candidates and the organization policy of /auth/providers.
+func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
+	s := handler.BootstrapSession{}
+	if h.User != nil {
+		s.Me = h.User.MeResponse
+		s.MyTenants = h.User.MyTenantsResponse
+	}
+	if svc.Notification != nil {
+		s.UnreadCount = svc.Notification.GetUnreadCount
+	}
+	if h.EASM != nil && h.EASM.HasReview() {
+		s.EASMReviewCount = h.EASM.ReviewCount
+	}
+	mode := cfg.Auth.TenantCreationMode
+	signup := svc.Signup
+	s.TenantCreationMode = func(ctx context.Context) string {
+		if signup != nil {
+			return string(signup.Current(ctx).Mode)
+		}
+		return mode
+	}
+	return s
 }

@@ -79,7 +79,7 @@ domain is touched by a sensor until a person confirms it (`PUT
 
 ## Rejected names, identity and linking
 
-Since research/22 P0-9 (bug 22c B2):
+Current behaviour:
 
 - **Promotion runs first**, then the exposures are built, so a CT exposure
   links to **the host's own asset** when one exists (a promoted or older
@@ -112,7 +112,7 @@ Configuration: `CERT_MONITOR_ENABLED` (default true), `CERT_MONITOR_INTERVAL`
 (24h), `CERT_MONITOR_FEED_URL` (`https://crt.sh`),
 `CERT_MONITOR_CERTSPOTTER_URL` (`https://api.certspotter.com`, `off`
 disables), `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (50).
-Since research/22 P0-11 `CERT_MONITOR_INTERVAL` is the platform default
+`CERT_MONITOR_INTERVAL` is the platform default
 interval: the controller ticks hourly, a domain is re-queried once its window
 passed, and a tenant may set its own interval (6 h to 168 h) or turn the
 monitor off (`/api/v1/easm/settings`; then its names are not sent to crt.sh
@@ -126,7 +126,7 @@ sources of P5.
 Source tag on everything emitted: `cert_transparency`
 (`internal/app/certmonitor/service.go`, `Source`).
 
-It complements the agent-side subfinder recon (which enumerates subdomains
+It complements the sensor-side subfinder recon (which enumerates subdomains
 on demand during a scan job): CT monitoring runs continuously server-side and,
 crucially, surfaces cert-expiry exposures and certs issued for domains the tenant
 never scanned.
@@ -171,4 +171,4 @@ passive only per O5). Promotion of discovered subdomains into assets is built
 
 - `data-sources.md` — the exposure-discovery model this plugs into.
 - RFC-019 (`docs/rfcs/RFC-019-certificate-transparency-discovery.md`).
-- [easm.md](easm.md) and RFC-036: where CT fits in the EASM pipeline.
+- [easm.md](easm.md) and RFC-036: where CT fits in EASM discovery.

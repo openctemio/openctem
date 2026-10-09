@@ -2,6 +2,7 @@ package jira
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -46,5 +47,36 @@ func TestCommentOnFinding_NoopWhenSyncDisabledUnlinkedOrUnconfigured(t *testing.
 				t.Fatalf("commented although it must not: %v", c.comments)
 			}
 		})
+	}
+}
+
+// A comment carries values a sensor controls (the finding title, a retest
+// reason): they must reach Jira as text, never as wiki markup.
+func TestCommentOnFinding_EncodesWikiMarkup(t *testing.T) {
+	c := &recordingClient{}
+	s := newSync(&stubFindingRepo{finding: findingInProgress(t, "https://x.atlassian.net/browse/SEC-7")}, c)
+	s.SetMappingResolver(stubMappingResolver{mapping: enabledMapping()})
+	title := `[Re-authenticate|https://evil.test/login] !https://evil.test/px.png! [~admin] {html}<b>x</b>{html}`
+	body := "Regression: \"" + title + "\" was detected again\n\nreason: see https://evil.test\n\nObserved by OpenCTEM."
+	if err := s.CommentOnFinding(context.Background(), shared.NewID(), shared.NewID(), body); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.comments) != 1 {
+		t.Fatalf("comments = %v", c.comments)
+	}
+	got := c.comments[0]
+	if strings.Contains(got, "https://") {
+		t.Fatalf("a URL is still clickable: %s", got)
+	}
+	// Every wiki markup character is escaped (preceded by a backslash).
+	prev := ' '
+	for _, r := range got {
+		if strings.ContainsRune("[]|!{}~", r) && prev != '\\' {
+			t.Fatalf("unescaped %q in the comment: %s", r, got)
+		}
+		prev = r
+	}
+	if strings.Count(got, "\n\n") != 2 {
+		t.Fatalf("paragraphs not kept: %q", got)
 	}
 }

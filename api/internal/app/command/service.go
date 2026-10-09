@@ -40,11 +40,11 @@ type Service struct {
 	// job's tier (local_policy.go, RFC-055).
 	contracts     ToolContractSource
 	grantRefusals GrantRefusalObserver
-	// scopeGate re-checks the targets of every scan command a sensor gets
-	// (scope_recheck.go); nil: not re-checked. stepFailer hears about a
-	// step whose command the re-check failed.
-	scopeGate  ScopeGate
-	stepFailer StepFailer
+	// scopeGate re-checks the targets of every command a sensor gets
+	// (scope_recheck.go); nil: not re-checked. failures hears about a
+	// command the re-check failed.
+	scopeGate ScopeGate
+	failures  FailureObserver
 	// now is the clock (tests replace it).
 	now func() time.Time
 }

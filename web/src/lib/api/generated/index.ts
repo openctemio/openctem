@@ -175,6 +175,12 @@ export type AdminAuditChainRebaselineRequest =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineRequest']
 export type AdminAuditChainRebaselineResponse =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineResponse']
+// Admin console: the request-access queue (Organizations > Access requests)
+export type AccessRequest = Schemas['internal_infra_http_handler.AccessRequestResponse']
+export type AccessRequestList = Schemas['internal_infra_http_handler.AccessRequestListResponse']
+export type ApproveAccessRequestInput = Schemas['internal_infra_http_handler.ApproveAccessRequest']
+export type ApproveAccessRequestResult =
+  Schemas['internal_infra_http_handler.ApproveAccessRequestResponse']
 // Plans and limits (console System > Plans and organization plans;
 // the organization Settings > Plan & usage)
 export type PlanDefaultsResponse = Schemas['internal_infra_http_handler.PlanDefaultsResponse']
@@ -214,6 +220,8 @@ export type RunEvent = Schemas['internal_infra_http_handler.RunEvent']
 export type RunEventsResponse = Schemas['internal_infra_http_handler.RunEventsResponse']
 export type RunMap = Schemas['internal_infra_http_handler.RunMapResponse']
 export type RunMapNode = Schemas['internal_infra_http_handler.RunMapNode']
+export type RunStepOutputs = Schemas['internal_infra_http_handler.RunStepOutputsResponse']
+export type RunStepOutput = Schemas['internal_infra_http_handler.RunStepOutput']
 /** GET /api/v1/easm/candidates — the attribution review queue. */
 export type EASMReviewPage =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']

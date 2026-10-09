@@ -8,7 +8,7 @@
 
 import { Suspense, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { ErrorState, MetricStrip, PageHeader, type MetricStripItem } from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -49,6 +49,7 @@ function CycleDetail() {
   const params = useParams<{ id: string }>()
   const id = params?.id ?? null
   const { data: cycle, error, isLoading, mutate } = useCycle(id)
+  useBreadcrumbTitle(cycle?.name)
   const frozen = cycle && cycle.status !== 'planning'
   const { data: scope } = useCycleScope(frozen ? (id ?? null) : null)
   const { data: profiles } = useCycleProfiles(id)

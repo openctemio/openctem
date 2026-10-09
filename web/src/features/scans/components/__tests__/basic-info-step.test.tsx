@@ -20,8 +20,21 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
                 is_system_template: true,
                 tags: ['starter', 'discovery'],
                 steps: [
-                  { id: 'a1', name: 'Subdomain discovery', tool: '' },
-                  { id: 'a2', name: 'DNS resolution', tool: '' },
+                  { id: 'a1', step_key: 'subs', name: 'Subdomain discovery', tool: '' },
+                  {
+                    id: 'a2',
+                    step_key: 'dns',
+                    name: 'DNS resolution',
+                    tool: '',
+                    depends_on: ['subs'],
+                  },
+                  {
+                    id: 'a3',
+                    step_key: 'http',
+                    name: 'HTTP probe',
+                    tool: '',
+                    depends_on: ['subs'],
+                  },
                 ],
               },
               {
@@ -129,6 +142,8 @@ describe('BasicInfoStep', () => {
     // A tenant workflow is not a starter.
     expect(screen.queryByRole('radio', { name: 'External discovery' })).toBeNull()
     expect(screen.getByText('Subdomain discovery')).toBeInTheDocument()
+    // The card summarizes stages: parallel steps are named together.
+    expect(screen.getByText('DNS resolution + HTTP probe (in parallel)')).toBeInTheDocument()
   })
 
   it('choosing a starter makes a workflow scan of that template', async () => {

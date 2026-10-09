@@ -19,7 +19,11 @@ import (
 
 type mockComponentRepo struct {
 	// Storage
-	components   map[string]*component.Component
+	components map[string]*component.Component
+
+	sbomEntries  []component.SBOMEntry
+	sbomErr      error
+	sbomCalls    []sbomCall
 	dependencies map[string]*component.AssetDependency
 
 	// Configurable return values
@@ -218,6 +222,21 @@ func (m *mockComponentRepo) GetVulnerableComponents(_ context.Context, _ shared.
 
 func (m *mockComponentRepo) GetLicenseStats(_ context.Context, _ shared.ID) ([]component.LicenseStats, error) {
 	return m.getLicenseStatsResult, m.getLicenseStatsErr
+}
+
+func (m *mockComponentRepo) ListSBOMEntries(_ context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope, limit int) ([]component.SBOMEntry, error) {
+	m.sbomCalls = append(m.sbomCalls, sbomCall{tenantID: tenantID, assetID: assetID, scope: scope, limit: limit})
+	if len(m.sbomEntries) > limit {
+		return m.sbomEntries[:limit], m.sbomErr
+	}
+	return m.sbomEntries, m.sbomErr
+}
+
+type sbomCall struct {
+	tenantID shared.ID
+	assetID  *shared.ID
+	scope    *shared.DataScope
+	limit    int
 }
 
 func (m *mockComponentRepo) ListAssetUsage(_ context.Context, _ shared.ID, _ shared.ID, _ bool, _ *shared.DataScope, page pagination.Pagination) (pagination.Result[component.ComponentAssetUsage], error) {

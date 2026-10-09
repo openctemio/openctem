@@ -1,4 +1,4 @@
-# OpenCTEM UI — End-to-End Tests
+# Web Console End-to-End Tests
 
 This directory contains [Playwright](https://playwright.dev/) end-to-end
 tests that exercise the running stack (UI + API + database) through real
@@ -18,17 +18,28 @@ The unit tests under `src/` mock the API and run against a virtual DOM
   state at the same time
 
 These E2E tests address those gaps with a small, high-signal set of
-tests that cover the platform's most user-visible flows.
+tests that cover the console's most user-visible flows.
 
-## The five critical flows
+## Specs
 
-| #   | Spec file                                   | What it covers                                             |
-| --- | ------------------------------------------- | ---------------------------------------------------------- |
-| 1   | `01-login-and-invitation.spec.ts`           | Login form rejection, successful login, invitation preview |
-| 2   | `02-asset-relationship-multiselect.spec.ts` | Asset list, relationships tab, multi-select picker         |
-| 3   | `03-tag-crud.spec.ts`                       | Add and remove tags from an asset                          |
-| 4   | `04-findings-asset-filter.spec.ts`          | `?assetId=` filter on /findings page                       |
-| 5   | `05-owner-picker.spec.ts`                   | Asset owner picker open + search                           |
+| Spec file (`specs/`)                        | What it covers                                             |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| `01-login-and-invitation.spec.ts`           | Login form rejection, successful login, invitation preview |
+| `02-asset-relationship-multiselect.spec.ts` | Asset list, relationships tab, multi-select picker         |
+| `03-tag-crud.spec.ts`                       | Add and remove tags from an asset                          |
+| `04-findings-asset-filter.spec.ts`          | `?assetId=` filter on /findings                            |
+| `05-owner-picker.spec.ts`                   | Asset owner picker open + search                           |
+| `06-finding-picker.spec.ts`                 | Remediation findings picker                                |
+| `07-finding-drawer-writes-once.spec.ts`     | Finding drawer saves each change once                      |
+| `07-sensor-row-actions.spec.ts`             | Sensor list row actions                                    |
+| `08-finding-detail-header.spec.ts`          | Finding detail page header                                 |
+| `09-landmarks-and-names.spec.ts`            | Page landmarks and accessible names                        |
+| `10-scan-detail-runs.spec.ts`               | Scan detail and its runs                                   |
+| `11-settings-access.spec.ts`                | Settings pages respect permissions                         |
+| `12-settings-reachability.spec.ts`          | Every settings page is reachable                           |
+| `13-validation-reachability.spec.ts`        | Validation pages are reachable                             |
+| `14-remediation-drawer-status.spec.ts`      | Remediation drawer status changes                          |
+| `15-route-protection.spec.ts`               | Signed-out redirects and public routes                     |
 
 Each spec is designed to:
 
@@ -114,12 +125,8 @@ e2e/
 │   ├── auth.ts                     # loginAs(), gotoDashboardPath()
 │   ├── env.ts                      # env loading + skip-on-missing
 │   └── table.ts                    # dataRows(), firstDataRow()
-└── specs/
-    ├── 01-login-and-invitation.spec.ts
-    ├── 02-asset-relationship-multiselect.spec.ts
-    ├── 03-tag-crud.spec.ts
-    ├── 04-findings-asset-filter.spec.ts
-    └── 05-owner-picker.spec.ts
+├── ci/                             # CI stack: compose.yml, make-env.sh, seed.sh
+└── specs/                          # NN-name.spec.ts, see the table above
 ```
 
 ## Writing new tests

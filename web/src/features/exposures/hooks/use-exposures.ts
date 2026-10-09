@@ -29,8 +29,8 @@ export function useExposures(tenantId: string | null, filters?: ExposureListFilt
   const shouldFetch = tenantId && canReadFindings
 
   const { data, error, isLoading, mutate } = useSWR<ExposureListResponse>(
-    shouldFetch ? ['exposures', tenantId, filters] : null,
-    () => get<ExposureListResponse>(exposureEndpoints.list(filters)),
+    shouldFetch ? exposureEndpoints.list(filters) : null,
+    (url: string) => get<ExposureListResponse>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 10000,
@@ -61,8 +61,8 @@ export function useExposure(tenantId: string | null, exposureId: string | null) 
   const shouldFetch = tenantId && exposureId && canReadFindings
 
   const { data, error, isLoading, mutate } = useSWR<ExposureEvent>(
-    shouldFetch ? ['exposure', tenantId, exposureId] : null,
-    () => get<ExposureEvent>(exposureEndpoints.get(exposureId!)),
+    shouldFetch ? exposureEndpoints.get(exposureId!) : null,
+    (url: string) => get<ExposureEvent>(url),
     {
       revalidateOnFocus: false,
     }
@@ -88,8 +88,8 @@ export function useExposureStats(tenantId: string | null) {
   const shouldFetch = tenantId && canReadStats
 
   const { data, error, isLoading, mutate } = useSWR<ExposureStats>(
-    shouldFetch ? ['exposure-stats', tenantId] : null,
-    () => get<ExposureStats>(exposureEndpoints.stats()),
+    shouldFetch ? exposureEndpoints.stats() : null,
+    (url: string) => get<ExposureStats>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000,
@@ -125,8 +125,8 @@ export function useExposureHistory(tenantId: string | null, exposureId: string |
   const shouldFetch = tenantId && exposureId && canReadFindings
 
   const { data, error, isLoading, mutate } = useSWR<ExposureStateHistoryResponse>(
-    shouldFetch ? ['exposure-history', tenantId, exposureId] : null,
-    () => get<ExposureStateHistoryResponse>(exposureEndpoints.history(exposureId!)),
+    shouldFetch ? exposureEndpoints.history(exposureId!) : null,
+    (url: string) => get<ExposureStateHistoryResponse>(url),
     {
       revalidateOnFocus: false,
     }
