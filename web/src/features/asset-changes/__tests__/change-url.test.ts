@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CHANGE_VIEWS, changeUrl, isChangeView } from '../api/use-asset-changes'
+import { CHANGE_VIEWS, changeCountsUrl, changeUrl, isChangeView } from '../api/use-asset-changes'
 
 const from = '2026-09-23T00:00:00.000Z'
 
@@ -38,5 +38,19 @@ describe('isChangeView', () => {
     expect(CHANGE_VIEWS.every(isChangeView)).toBe(true)
     expect(isChangeView('recovered')).toBe(false)
     expect(isChangeView('')).toBe(false)
+  })
+})
+
+describe('changeCountsUrl', () => {
+  it('asks the five totals in one request, with the window and the toggle', () => {
+    const url = new URL(changeCountsUrl({ from, internetOnly: true }), 'http://x')
+    expect(url.pathname).toBe('/api/v1/state-history/counts')
+    expect(url.searchParams.get('from')).toBe(from)
+    expect(url.searchParams.get('internet_facing')).toBe('true')
+    expect(
+      new URL(changeCountsUrl({ from, internetOnly: false }), 'http://x').searchParams.has(
+        'internet_facing'
+      )
+    ).toBe(false)
   })
 })
