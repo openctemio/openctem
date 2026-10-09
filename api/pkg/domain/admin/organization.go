@@ -23,14 +23,31 @@ type Organization struct {
 	ActiveIdentityProviders int
 	VerifiedDomains         int
 	SSOEnforced             bool
+	// Plan is the organization's plan (free, pro, enterprise); one created
+	// before plans has no stored plan and is enterprise.
+	Plan string
 }
+
+// Owner filter values for OrganizationFilter.Owner.
+const (
+	OrganizationOwnerNone    = "none"
+	OrganizationOwnerPresent = "present"
+)
 
 // OrganizationFilter narrows the organization list.
 type OrganizationFilter struct {
 	// Search matches name or slug, case-insensitively.
 	Search string
-	Limit  int
-	Offset int
+	// Owner is OrganizationOwnerNone (no active owner), OrganizationOwnerPresent
+	// or empty (any).
+	Owner string
+	// Plan keeps organizations on this plan; empty means any.
+	Plan string
+	// IncludeSystem lists the platform system tenant too. It is internal
+	// (seeded data, no members): left out of the list unless asked for.
+	IncludeSystem bool
+	Limit         int
+	Offset        int
 }
 
 // OrganizationReader is a platform-level (cross-tenant) read model. It exists

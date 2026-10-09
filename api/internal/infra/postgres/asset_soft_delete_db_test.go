@@ -128,7 +128,7 @@ func TestAssetDelete_SoftDeleteHidesDetachesAndFreesName(t *testing.T) {
 	if n, _ := repo.Count(ctx, filter); n != 2 {
 		t.Errorf("Count = %d, want 2", n)
 	}
-	stats, err := repo.GetAggregateStats(ctx, tenant, asset.AccessScope{}, nil, nil, "")
+	stats, err := repo.GetAggregateStats(ctx, tenant, asset.AccessScope{}, nil, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

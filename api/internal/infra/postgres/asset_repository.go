@@ -1012,6 +1012,17 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, fmt.Sprintf("a.asset_type IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
+	// Lens filter (the asset_lens column the registry trigger keeps)
+	if len(filter.Lenses) > 0 {
+		lenses := make([]string, len(filter.Lenses))
+		for i, l := range filter.Lenses {
+			lenses[i] = string(l)
+		}
+		conditions = append(conditions, fmt.Sprintf("a.asset_lens = ANY($%d::text[])", argIndex))
+		args = append(args, pq.Array(lenses))
+		argIndex++
+	}
+
 	// Criticalities filter
 	if len(filter.Criticalities) > 0 {
 		placeholders := make([]string, len(filter.Criticalities))
@@ -1189,6 +1200,28 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 			}
 			conditions = append(conditions, "("+strings.Join(orParts, " OR ")+")")
 		}
+	}
+
+	// Batch lookup by id (the caller's tenant and data scope still apply).
+	if len(filter.IDs) > 0 {
+		placeholders := make([]string, len(filter.IDs))
+		for i, id := range filter.IDs {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, id)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("a.id IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Names equal to or below DNS names: exact, or ending in ".<name>".
+	if len(filter.UnderDomains) > 0 {
+		parts := make([]string, 0, len(filter.UnderDomains))
+		for _, d := range filter.UnderDomains {
+			parts = append(parts, fmt.Sprintf("(a.name = $%d OR a.name ILIKE $%d ESCAPE '\\')", argIndex, argIndex+1))
+			args = append(args, d, "%."+escapeLikePattern(d))
+			argIndex += 2
+		}
+		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
 	}
 
 	// Business unit membership filter (business_unit_assets join).
@@ -2021,16 +2054,21 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 }
 
 // aggregateStatsWhere builds the WHERE clause of GetAggregateStats: tenant,
-// types, tags, sub-type and the caller's data scope (the same predicate as
+// types, lenses, tags, sub-type and the caller's data scope (the same predicate as
 // List, so a scoped user's totals and breakdowns count only the assets they
 // can list).
-func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, tags []string, subType string) (string, []any) {
+func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, lenses, tags []string, subType string) (string, []any) {
 	filterClause := " WHERE a.deleted_at IS NULL AND a.tenant_id = $1"
 	args := []any{tenantID.String()}
 	idx := 2
 	if len(types) > 0 {
 		filterClause += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
 		args = append(args, pq.Array(types))
+		idx++
+	}
+	if len(lenses) > 0 {
+		filterClause += fmt.Sprintf(" AND a.asset_lens = ANY($%d::text[])", idx)
+		args = append(args, pq.Array(lenses))
 		idx++
 	}
 	if len(tags) > 0 {
@@ -2057,7 +2095,7 @@ func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, ta
 // This version collapses everything into one query using a CTE + UNION ALL,
 // trading slightly more complex SQL for an 83% reduction in DB round-trips.
 // PostgreSQL plans a single scan of the filtered CTE for all aggregates.
-func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types []string, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types, lenses, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
 		ByType:               make(map[string]int),
 		BySubType:            make(map[string]int),
@@ -2076,7 +2114,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	}
 
 	// Build the WHERE clause once.
-	filterClause, args := aggregateStatsWhere(tenantID, access, types, tags, subType)
+	filterClause, args := aggregateStatsWhere(tenantID, access, types, lenses, tags, subType)
 
 	// One query, three columns:
 	//   category — which aggregate this row belongs to

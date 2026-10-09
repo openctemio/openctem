@@ -10,10 +10,10 @@ import (
 
 // terminalStatusFilter excludes every closed/terminal status (matches
 // FindingStatus.IsClosed). 'closed' is not a real status value; an earlier
-// list also missed accepted/accepted_risk/duplicate/verified, so a
+// list also missed accepted/duplicate, so a
 // risk-accepted CVE got force-escalated to critical on every KEV sync,
 // overriding a deliberate human decision.
-const terminalStatusFilter = `status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')`
+const terminalStatusFilter = `status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')`
 
 // KEVEscalator auto-escalates findings whose CVEs are in the CISA KEV catalog.
 type KEVEscalator struct {

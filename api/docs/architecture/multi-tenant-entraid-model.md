@@ -22,7 +22,7 @@ A per-tenant Entra connection **binds one OpenCTEM tenant to one Azure directory
 
 ## 1. Setup — each tenant = its own Azure app + directory
 
-A tenant admin registers the org's Azure app in the Azure Portal, then enters its credentials into OpenCTEM (Settings → Identity Providers, or the `SSO_ENTRA_*` env fallback). Different tenant → different `client_id` / `client_secret` / directory `tid`.
+The organization registers its Azure app in the Azure Portal; a **platform administrator** enters its credentials in the admin console (or the `SSO_ENTRA_*` env fallback applies). Each change to an organization's SSO needs approval by an organization owner under **Settings → SSO approvals**. Different tenant → different `client_id` / `client_secret` / directory `tid`.
 
 ```
 Acme Corp    (org=acme)   →  Azure dir tid=A1b2…  ·  client_id acme-…    ·  secret 🔒  ·  @acme.com  (verified)

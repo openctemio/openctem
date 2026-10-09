@@ -78,3 +78,6 @@ workflow_run_repository.go:WorkflowRunRepository.GetByID:workflow_runs  D-11 bas
 workflow_run_repository.go:WorkflowRunRepository.UpdateStats:workflow_runs  D-11 baseline: add the tenant predicate
 workflow_run_repository.go:WorkflowRunRepository.UpdateStatus:workflow_runs  D-11 baseline: add the tenant predicate
 workflow_run_repository.go:WorkflowRunRepository.Update:workflow_runs  D-11 baseline: add the tenant predicate
+mcp_oauth_repository.go:MCPOAuthRepository.GetRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
+mcp_oauth_repository.go:MCPOAuthRepository.ClaimRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
+mcp_oauth_repository.go:MCPOAuthRepository.DenyRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user

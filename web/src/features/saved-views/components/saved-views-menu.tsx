@@ -69,9 +69,14 @@ export function SavedViewsMenu({
   groupBy,
   onSelect,
 }: SavedViewsMenuProps) {
-  const { views, mutate } = useSavedViews(page)
-  const { groups } = useMyGroups()
+  // The list loads when it is about to be shown (pointer over or focus on the
+  // button, or the menu opening), or at once when a view is active (its name
+  // is the button's label) — not with every page load.
+  const [wanted, setWanted] = useState(false)
+  const { views, mutate } = useSavedViews(page, wanted || !!activeId)
   const [saveOpen, setSaveOpen] = useState(false)
+  // Only the save dialog's "share with" picker needs the caller's groups.
+  const { groups } = useMyGroups(saveOpen)
   const [name, setName] = useState('')
   const [share, setShare] = useState(PERSONAL)
   const [saving, setSaving] = useState(false)
@@ -168,9 +173,15 @@ export function SavedViewsMenu({
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => open && setWanted(true)}>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9 max-w-[14rem]">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 max-w-[14rem]"
+            onPointerEnter={() => setWanted(true)}
+            onFocus={() => setWanted(true)}
+          >
             <Bookmark className="h-4 w-4 md:me-2" />
             <span className="hidden truncate md:inline">{active ? active.name : 'Views'}</span>
             {active && modified && (

@@ -19,6 +19,7 @@ import type {
   SecretType,
 } from '../types'
 import type { Severity } from '@/features/shared/types'
+import { ALL_FINDING_STATUSES } from '../types/finding.types'
 import { findingAssetType } from './finding-asset-type'
 import { normalizeCriticality } from '@/lib/criticality'
 
@@ -27,24 +28,10 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000'
 /** Sources whose findings come from people, not scanners. */
 export const HUMAN_SOURCES = new Set(['pentest', 'bug_bounty', 'red_team', 'manual'])
 
-const STATUS_MAP: Record<string, FindingStatus> = {
-  new: 'new',
-  open: 'new',
-  confirmed: 'confirmed',
-  in_progress: 'in_progress',
-  fix_applied: 'fix_applied',
-  not_observed: 'not_observed',
-  resolved: 'resolved',
-  false_positive: 'false_positive',
-  accepted: 'accepted',
-  duplicate: 'duplicate',
-  draft: 'draft',
-  in_review: 'in_review',
-  remediation: 'remediation',
-  retest: 'retest',
-  verified: 'verified',
-  accepted_risk: 'accepted_risk',
-}
+// The API returns only the statuses of the one registry.
+const STATUS_MAP: Record<string, FindingStatus> = Object.fromEntries(
+  ALL_FINDING_STATUSES.map((s) => [s, s])
+)
 
 function mapAssets(api: ApiFinding): AffectedAsset[] {
   const assets: AffectedAsset[] = []

@@ -50,6 +50,7 @@ import type { SensorPreference, NewScanFormData } from '../../types'
 import { SENSOR_PREFERENCE_CONFIG } from '../../types'
 import { useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
 import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
+import { planStages } from '@/features/scan-workflows/lib/workflow-stages'
 import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { ScannerSelect } from '../scanner-select'
 import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
@@ -142,7 +143,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                 title={s.name}
                 description={s.description ?? ''}
                 icon={<GitBranch className="h-4 w-4" />}
-                steps={(s.steps ?? []).map((st) => st.name)}
+                stages={planStages(s.steps ?? []).stages.map((g) => g.map((st) => st.name))}
                 readiness={s.readiness}
               />
             ))}
@@ -345,14 +346,15 @@ function ChoiceCard({
   title,
   description,
   icon,
-  steps,
+  stages,
   readiness,
 }: {
   value: string
   title: string
   description: string
   icon: React.ReactNode
-  steps?: string[]
+  /** Step names by stage: steps of one stage run in parallel. */
+  stages?: string[][]
   readiness?: WorkflowReadiness
 }) {
   const id = `run-choice-${value}`
@@ -398,12 +400,15 @@ function ChoiceCard({
             )}
           </span>
         )}
-        {steps && steps.length > 0 && (
-          <span className="flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground">
-            {steps.map((st, i) => (
-              <span key={`${st}-${i}`} className="flex items-center">
+        {stages && stages.length > 0 && (
+          <span
+            className="flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground"
+            aria-label="Stages"
+          >
+            {stages.map((names, i) => (
+              <span key={i} className="flex items-center">
                 {i > 0 && <ChevronRight className="h-3 w-3" />}
-                {st}
+                {names.length > 1 ? `${names.join(' + ')} (in parallel)` : names[0]}
               </span>
             ))}
           </span>

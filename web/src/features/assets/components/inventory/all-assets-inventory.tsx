@@ -17,6 +17,8 @@
  * columns, attribute facets and yes/no counts, an "Add <type>" form built
  * from its attributes, row actions, and an empty state that says how to find
  * the type. Create, edit, delete and CSV export work for every type here.
+ * `?lens=` narrows it to one registry lens (every type of it, aliases
+ * included), picked from the lens pills above the table.
  */
 
 import { AssetsSectionTabs } from '../assets-section-tabs'
@@ -69,6 +71,7 @@ import { InventoryStatStrip } from './inventory-stat-strip'
 import { InventoryBulkBar } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
+import { InventoryLensBar, inventoryLenses } from './inventory-lens-bar'
 
 const FILTERS_OPEN_KEY = 'openctem:assets-filters-open'
 
@@ -77,7 +80,9 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
   return {
     search: f.search,
     types: f.types,
+    lenses: f.lens ? [f.lens] : undefined,
     subType: f.subType,
+    minRiskScore: f.minRiskScore,
     propertiesFilter: f.propertiesFilter,
     criticalities: f.criticalities,
     statuses: f.statuses,
@@ -241,18 +246,27 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     [registry, filters.types, filters.subType]
   )
   const facetKeys = useMemo(() => typeView?.facets.map((f) => f.key) ?? [], [typeView])
-  // The type's own counts. Without a type this is the same request as the
-  // tenant-wide stats above (SWR shares it).
+  // The lens's label when the list is one lens (and not one type).
+  const lensLabel = useMemo(
+    () =>
+      !typeView && filters.lens
+        ? inventoryLenses(registry).find((l) => l.id === filters.lens)?.label
+        : undefined,
+    [registry, typeView, filters.lens]
+  )
+  // The type's (or lens's) own counts. Without either this is the same
+  // request as the tenant-wide stats above (SWR shares it).
   const {
     stats: typeStats,
     isLoading: typeStatsLoading,
     mutate: typeStatsMutate,
-  } = useAssetStats(
-    typeView ? [typeView.type] : undefined,
-    undefined,
-    typeView?.subType,
-    facetKeys.length > 0 ? facetKeys : undefined
-  )
+  } = useAssetStats({
+    types: typeView ? [typeView.type] : undefined,
+    lenses: !typeView && filters.lens ? [filters.lens] : undefined,
+    subType: typeView?.subType,
+    countBy: facetKeys.length > 0 ? facetKeys : undefined,
+  })
+  const scopeLabel = typeView?.plural ?? lensLabel
   const attributeFacets = useMemo(
     () =>
       (typeView?.facets ?? []).map((attribute) => ({
@@ -408,7 +422,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   return (
     <Main>
-      <PageHeader title={typeView ? typeView.plural : 'Assets'}>
+      <PageHeader title={scopeLabel ?? 'Assets'}>
         <Button
           variant="outline"
           size="sm"
@@ -425,13 +439,25 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       </PageHeader>
       <AssetsSectionTabs />
 
+      {!typeView && (
+        <InventoryLensBar
+          className="mt-5"
+          registry={registry}
+          value={filters.lens}
+          onChange={(lens) =>
+            // A lens replaces the type picks: a type outside it would match nothing.
+            setFilters({ ...filters, lens, types: undefined, subType: undefined, page: 1 })
+          }
+        />
+      )}
+
       <InventoryStatStrip
-        className="mt-5"
-        stats={typeView ? typeStats : stats}
+        className={typeView ? 'mt-5' : 'mt-4'}
+        stats={scopeLabel ? typeStats : stats}
         filters={filters}
-        isLoading={typeView ? typeStatsLoading : statsLoading}
+        isLoading={scopeLabel ? typeStatsLoading : statsLoading}
         onChange={setFilters}
-        typeLabel={typeView?.plural}
+        typeLabel={scopeLabel}
         boolFacets={boolFacets}
       />
 

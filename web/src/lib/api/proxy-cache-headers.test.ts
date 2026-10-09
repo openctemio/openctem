@@ -31,4 +31,18 @@ describe('proxyCacheHeaders', () => {
   it('adds nothing to an unlabelled anonymous response', () => {
     expect(proxyCacheHeaders(null, false)).toEqual({})
   })
+
+  it('passes the ETag of a response the browser may keep, so it can revalidate (304)', () => {
+    // The asset type registry: private, no-cache + ETag (research/81).
+    expect(proxyCacheHeaders('private, no-cache', true, '"abc"')).toEqual({
+      'Cache-Control': 'private, no-cache',
+      Vary: 'Cookie',
+      ETag: '"abc"',
+    })
+  })
+
+  it('never passes an ETag with no-store, or without the API caching decision', () => {
+    expect(proxyCacheHeaders('no-store', true, '"abc"')).toEqual({ 'Cache-Control': 'no-store' })
+    expect(proxyCacheHeaders(null, true, '"abc"')).toEqual({ 'Cache-Control': 'no-store' })
+  })
 })

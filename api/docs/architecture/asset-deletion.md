@@ -1,6 +1,6 @@
 # Asset deletion
 
-**Status: SHIPPED.** Owner decision O3 (2026-10-03, assets area review §4).
+**Status: SHIPPED.** Decision O3.
 
 Deleting an asset never destroys findings. Before this change a delete was
 a hard delete, and `findings.asset_id ON DELETE CASCADE` erased every finding

@@ -45,7 +45,7 @@ function check(over: Partial<SensorConfigCheck> = {}): SensorConfigCheck {
       compose: 'services:\n  sensor:\n    volumes:\n      - state:/var/lib/openctem/state\n',
       helm: 'sensor.state.persistence.enabled: true',
     },
-    docs_url: 'https://docs.openctem.io/sensor/troubleshooting#identity-state-persistent',
+    docs_url: 'https://docs.openctem.io/sensors/troubleshooting/#identity-state-persistent',
     ...over,
   }
 }
@@ -191,7 +191,7 @@ describe('ConfigCheckList: docs links', () => {
     const link = within(row('identity.state_persistent')).getByRole('link', { name: 'Docs' })
     expect(link).toHaveAttribute(
       'href',
-      'https://docs.openctem.io/sensor/troubleshooting#identity-state-persistent'
+      'https://docs.openctem.io/sensors/troubleshooting/#identity-state-persistent'
     )
     expect(link).toHaveAttribute('target', '_blank')
     expect(link.getAttribute('rel')).toContain('noopener')

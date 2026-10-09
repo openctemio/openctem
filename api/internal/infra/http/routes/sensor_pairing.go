@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -40,12 +41,11 @@ func registerSensorPairingRoutes(router Router, h *handler.SensorPairingHandler,
 	perRequest := middleware.NewTelemetryRateLimiter(pairingPerRequestRate, pairingPerRequestBurst, 30*time.Minute, log)
 	perUser := middleware.NewTelemetryRateLimiter(pairingPerUserRate, pairingPerUserBurst, time.Hour, log)
 
-	clientIP := middleware.ClientIP
 	start := []Middleware{
-		pairingLimit(perIP, clientIP),
+		pairingLimit(perIP, pairingSourceKey),
 		pairingLimit(global, func(*http.Request) string { return "global" }),
 	}
-	perPairing := []Middleware{pairingLimit(perRequest, handler.PairingKey)}
+	perPairing := perPairingChain(perRequest)
 
 	// Sensor plane. V2Observe labels the metrics; the handler authenticates
 	// every request by its signature (no sensor-key authenticator: the key
@@ -66,6 +66,43 @@ func registerSensorPairingRoutes(router Router, h *handler.SensorPairingHandler,
 		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.SensorsApprove), userLimit)
 		r.POST("/{id}/reject", h.Deny, middleware.Require(permission.SensorsPair), userLimit)
 	}, tenantMiddlewares...)
+}
+
+// pairingSourceKey is the per-source key of the pairing start budget: the
+// client address, an IPv6 address grouped by its /64. One IPv6 host
+// usually holds a whole /64, so a per-address budget would give a single
+// caller 2^64 budgets to exhaust the platform-wide open-pairing cap with.
+func pairingSourceKey(r *http.Request) string {
+	ip := middleware.ClientIP(r)
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	a = a.Unmap()
+	if a.Is4() {
+		return a.String()
+	}
+	p, err := a.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return p.String()
+}
+
+// perPairingChain guards the routes of one pairing: a path id that is not
+// a pairing id is the pairing-not-found answer every mismatch gets, before
+// the per-pairing limiter can store it as a key.
+func perPairingChain(rl *middleware.TelemetryRateLimiter) []Middleware {
+	requireID := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if handler.PairingKey(r) == "" {
+				protov2.NewProblem(protov2.ProblemPairingNotFound).Write(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	return []Middleware{requireID, pairingLimit(rl, handler.PairingKey)}
 }
 
 // pairingLimit refuses a request over the key's budget with the v2

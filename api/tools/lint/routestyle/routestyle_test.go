@@ -95,6 +95,8 @@ func TestRules(t *testing.T) {
 		{"POST", "/api/v1/validation/evidence2", "ingestHandler.AuthenticateSource", "R1"},
 		{"GET", "/api/v2/sensor/x", tenantChain, "R1"},
 		{"GET", "/api/v1/findings", "h.AdminAuthMiddleware.Authenticate | " + tenantChain, "R1"},
+		{"GET", "/.well-known/oauth-protected-resource", "", ""}, // RFC 8615 prefix
+		{"GET", "/api/v1/.well-known/x", tenantChain, "R2"},      // only as the first segment
 		{"GET", "/api/v1/scan_zones", tenantChain, "R2"},
 		{"GET", "/api/v1/scanZones", tenantChain, "R2"},
 		{"GET", "/api/v1/findings/{findingId}", tenantChain, "R3"},

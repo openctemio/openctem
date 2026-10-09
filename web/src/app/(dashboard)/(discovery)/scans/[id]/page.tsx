@@ -8,13 +8,14 @@
  */
 
 import { useMemo, useState } from 'react'
+import { useSWRConfig } from 'swr'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { AlertTriangle, ArrowLeft, RefreshCw, Tag, Trash2, XCircle } from 'lucide-react'
 
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -41,13 +42,17 @@ import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-c
 import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
+  IDLE_RUN_LIST_REFRESH_MS,
   elapsedMs,
   isRunInProgress,
+  liveRunIds,
+  runListRefreshInterval,
   runTaskProgress,
   runTriggeredByLabel,
   scanRunCounts,
 } from '@/features/scans/lib/run-display'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useRunChannels } from '@/hooks/use-websocket'
 import { del, post } from '@/lib/api/client'
 import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -137,17 +142,35 @@ export default function ScanDetailPage() {
   const [openRunId, setOpenRunId] = useState<string | null>(null)
 
   const { data: config, isLoading, error } = useScanConfig(scanId)
+  useBreadcrumbTitle(config?.name)
 
   // The latest runs, for the numbers above the tabs (runs still in progress
   // are the newest), whichever history page is open.
-  const { data: latestRuns, mutate: refetchLatest } = useScanRuns(scanId, 1, 10, {
-    refreshInterval: 10000,
+  // A live run's change notices (run:{id}) refresh both lists; they poll
+  // every 10 s only while a run is live and its notices cannot arrive (socket
+  // down), and every 2 min otherwise, to notice a run a schedule or someone
+  // else starts.
+  const [liveIds, setLiveIds] = useState<string[]>([])
+  const { mutate: mutateCache } = useSWRConfig()
+  const runsPrefix = scanId ? `/api/v1/scans/${scanId}/runs` : ''
+  const realtime = useRunChannels(liveIds, () => {
+    void mutateCache((key) => typeof key === 'string' && key.startsWith(runsPrefix))
   })
+  const { data: latestRuns, mutate: refetchLatest } = useScanRuns(scanId, 1, 10, {
+    refreshInterval: runListRefreshInterval(10000, IDLE_RUN_LIST_REFRESH_MS, realtime),
+    onSuccess: (page) => setLiveIds(liveRunIds(page?.data)),
+  })
+  const latestLive = (latestRuns?.data ?? []).some(isRunInProgress)
+  // The history page only changes while a run is live; the latest runs above
+  // notice a new one.
   const {
     data: runsResponse,
     isLoading: isLoadingRuns,
     mutate: refetchRuns,
-  } = useScanRuns(scanId, runPage, runPerPage, { refreshInterval: 10000, keepPreviousData: true })
+  } = useScanRuns(scanId, runPage, runPerPage, {
+    refreshInterval: latestLive && !realtime ? 10000 : 0,
+    keepPreviousData: true,
+  })
   const runs = useMemo(() => runsResponse?.data ?? [], [runsResponse])
   const refetchAll = () => Promise.all([refetchLatest(), refetchRuns()])
 

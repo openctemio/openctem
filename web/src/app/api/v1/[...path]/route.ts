@@ -23,7 +23,7 @@ export const maxDuration = 60 // seconds
 export const dynamic = 'force-dynamic'
 import { isInSwitchCooldown } from '@/lib/api/switch-cooldown'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
-import { proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
+import { CONDITIONAL_REQUEST_HEADERS, proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
 import { proxyBackendPath } from '@/lib/api/proxy-path'
 import {
   isSensorProtocolPath,
@@ -31,7 +31,7 @@ import {
   SENSOR_PROTOCOL_REFUSAL_STATUS,
 } from '@/lib/api/sensor-protocol-guard'
 import { devLog } from '@/lib/logger'
-import { rotatedRefreshToken } from '@/lib/server-auth-cookies'
+import { csrfRejection, rotatedRefreshToken } from '@/lib/server-auth-cookies'
 
 const ACCESS_TOKEN_COOKIE = env.auth.cookieName
 const REFRESH_TOKEN_COOKIE = env.auth.refreshCookieName
@@ -191,6 +191,12 @@ async function proxyRequest(
     return NextResponse.json(SENSOR_PROTOCOL_REFUSAL, { status: SENSOR_PROTOCOL_REFUSAL_STATUS })
   }
 
+  // Every write here is authenticated by the browser's cookies (the session,
+  // or for /auth/* the refresh cookie the API sets): same origin and the
+  // double-submit pair, signed in or not. The API checks the pair again.
+  const csrf = csrfRejection(request)
+  if (csrf) return csrf
+
   const path = proxyBackendPath(params.path)
   if (path === null) {
     return NextResponse.json(
@@ -276,6 +282,9 @@ async function proxyRequest(
     // derives tenant solely from the JWT. Forwarding it is a footgun.
     'x-csrf-token',
     'x-sensor-api-key', // For GET /sensors/{id}/config-templates — keeps key out of query string
+    // Conditional GETs: the browser revalidates a kept response and the API
+    // answers 304 when its ETag still matches.
+    ...CONDITIONAL_REQUEST_HEADERS,
   ]
   forwardHeaders.forEach((header) => {
     const value = request.headers.get(header)
@@ -382,6 +391,25 @@ async function proxyRequest(
       return proxyResponse
     }
 
+    // Not Modified: the browser's kept copy is still current. A 304 has no
+    // body; it carries the validator and the caching headers only.
+    if (response.status === 304) {
+      const notModified = new NextResponse(null, { status: 304 })
+      for (const [key, val] of Object.entries(
+        proxyCacheHeaders(
+          response.headers.get('cache-control'),
+          Boolean(accessToken),
+          response.headers.get('etag')
+        )
+      )) {
+        notModified.headers.set(key, val)
+      }
+      if (refreshedTokenData) {
+        setTokenCookies(notModified, refreshedTokenData)
+      }
+      return notModified
+    }
+
     // Get response body — wrap in try-catch to handle stream errors
     // (e.g. "Error in input stream" when backend closes connection mid-response)
     let responseText: string
@@ -415,7 +443,11 @@ async function proxyRequest(
     // The API's caching decision (no-store on secrets, max-age on config),
     // keyed by the session cookie for authenticated responses.
     for (const [key, val] of Object.entries(
-      proxyCacheHeaders(response.headers.get('cache-control'), Boolean(accessToken))
+      proxyCacheHeaders(
+        response.headers.get('cache-control'),
+        Boolean(accessToken),
+        response.headers.get('etag')
+      )
     )) {
       proxyResponse.headers.set(key, val)
     }

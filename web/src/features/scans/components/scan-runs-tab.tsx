@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
+import { useSWRConfig } from 'swr'
 import Link from 'next/link'
 import type { ColumnDef } from '@tanstack/react-table'
 
@@ -32,17 +33,23 @@ import {
 import { useListParams } from '@/hooks/use-list-params'
 import { Can, Permission } from '@/lib/permissions'
 import { useScanRuns, useScanManagementStats } from '@/lib/api/scan-workflow-hooks'
+import { scanManagementEndpoints } from '@/lib/api/endpoints'
 import type { ScanRun, ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
+  IDLE_RUN_LIST_REFRESH_MS,
   RUN_KIND_FILTERS,
   elapsedMs,
+  isRunInProgress,
+  liveRunIds,
+  runListRefreshInterval,
   runKindLabel,
   runSubjectFindingId,
   runTriggeredByLabel,
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
 import { replaceUrlSearch } from '@/hooks/use-url-param'
+import { useRunChannels } from '@/hooks/use-websocket'
 import {
   DEFAULT_RUN_SORT,
   DEFAULT_SCAN_PAGE_SIZE,
@@ -127,9 +134,27 @@ function ScanRunsTable() {
   }
   const [exporting, setExporting] = useState(false)
 
+  // The live runs' change notices (run:{id}) refresh the list and its
+  // counts; they poll every 30 s only while a run is live and the notices
+  // cannot arrive (socket down), and every 2 min otherwise (new runs).
+  const [liveIds, setLiveIds] = useState<string[]>([])
+  const { mutate: mutateCache } = useSWRConfig()
+  const realtime = useRunChannels(liveIds, () => {
+    void mutateCache(
+      (key) =>
+        typeof key === 'string' &&
+        (key.startsWith('/api/v1/scan-runs') || key === scanManagementEndpoints.stats())
+    )
+  })
   const swrConfig = useMemo(
-    () => ({ revalidateOnFocus: false, refreshInterval: 30000, dedupingInterval: 5000 }),
-    []
+    () => ({
+      revalidateOnFocus: false,
+      refreshInterval: runListRefreshInterval(30000, IDLE_RUN_LIST_REFRESH_MS, realtime),
+      dedupingInterval: 5000,
+      onSuccess: (page: { data?: Array<{ id: string; status: string }> } | undefined) =>
+        setLiveIds(liveRunIds(page?.data)),
+    }),
+    [realtime]
   )
 
   // Statuses are typed as the API stores them, so the filter value goes
@@ -144,8 +169,14 @@ function ScanRunsTable() {
   }
 
   const { data, isLoading, error } = useScanRuns(filters, swrConfig)
-  const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
   const runs = data?.data ?? []
+  // The counts follow the list: live while a listed run is live.
+  const runsLive = runs.some(isRunInProgress)
+  const { data: overview, isLoading: isLoadingStats } = useScanManagementStats({
+    revalidateOnFocus: false,
+    dedupingInterval: 5000,
+    refreshInterval: runsLive && !realtime ? 30000 : IDLE_RUN_LIST_REFRESH_MS,
+  })
   const counts = overview?.scan_runs
 
   const { setFilter } = list

@@ -30,6 +30,13 @@ var (
 	v2WriteBurstPerSensor = 20
 	v2ReadRatePerSensor   = 5.0
 	v2ReadBurstPerSensor  = 20
+	// The control plane (heartbeats, polls, claims, transitions, logs,
+	// manifests, fingerprint queries) per tenant, on top of the per-sensor
+	// budgets: an organization with many sensors cannot multiply the
+	// per-sensor budget without bound. Sized for large fleets (1000 sensors
+	// heartbeating every 30 s and polling every 5 s stay well inside).
+	v2ControlRatePerTenant  = 500.0
+	v2ControlBurstPerTenant = 1000
 )
 
 // sensorV2Budgets are the rate and concurrency budgets of the sensor
@@ -44,6 +51,8 @@ type sensorV2Budgets struct {
 	read        *middleware.TelemetryRateLimiter
 	renew       *middleware.TelemetryRateLimiter
 	concurrency *middleware.TenantConcurrencyLimiter
+	// control is the per-tenant control-plane budget.
+	control *middleware.TelemetryRateLimiter
 }
 
 func newSensorV2Budgets(tenantRateLimiter *middleware.TelemetryRateLimiter, log *logger.Logger) *sensorV2Budgets {
@@ -53,6 +62,7 @@ func newSensorV2Budgets(tenantRateLimiter *middleware.TelemetryRateLimiter, log 
 		read:        middleware.NewTelemetryRateLimiter(v2ReadRatePerSensor, v2ReadBurstPerSensor, 10*time.Minute, log),
 		renew:       middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log),
 		concurrency: middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerTenant),
+		control:     middleware.NewTelemetryRateLimiter(v2ControlRatePerTenant, v2ControlBurstPerTenant, 10*time.Minute, log),
 	}
 }
 
@@ -83,7 +93,7 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 // server put in the context. It is never mounted on a listener.
 func sensorV2InProcess(h *handler.SensorResultsV2Handler, ctl *handler.SensorControlV2Handler, b *sensorV2Budgets) http.Handler {
 	r := infrahttp.NewChiRouter()
-	mountSensorV2(r, h, ctl, b, handler.AuthenticateInProcess)
+	mountSensorV2(r, h, ctl, b, h.AuthenticateInProcessWithPolicies)
 	return r.Handler()
 }
 
@@ -113,8 +123,8 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 	// budget is for report writes). Key renewal also takes a per-sensor renewal
 	// budget (a burst of 5, then one every 2 minutes): it mints a credential each
 	// time, and a stolen key must not mint an unbounded set of fresh ones.
-	controlWrite := []Middleware{middleware.V2Throttle(nil, b.write, nil, handler.SensorKey)}
-	controlRead := []Middleware{throttleRead}
+	controlWrite := []Middleware{middleware.V2Throttle(b.control, b.write, nil, handler.SensorKey)}
+	controlRead := []Middleware{middleware.V2Throttle(b.control, b.read, nil, handler.SensorKey)}
 	keys := []Middleware{middleware.V2Throttle(nil, b.renew, nil, handler.SensorKey), controlWrite[0]}
 	if ctl != nil {
 		h.SetControlFeatures(ctl.Features())

@@ -2,7 +2,8 @@ name: Docs check
 
 # Markdown in this repository must be English, must not carry private
 # addresses or internal host names, and its relative links must resolve.
-# Runs on every PR with no path filter so it can be a required check.
+# Links from code to docs.openctem.io and to files on GitHub must resolve too.
+# Runs on every PR with no path filter so both jobs can be required checks.
 
 on:
   push:
@@ -24,3 +25,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Links, language and private addresses
         run: python3 scripts/docs_check.py .
+
+  # docs.openctem.io links (page and anchor) and github.com/openctemio file
+  # links in code, against the docs site source (openctemio/docs main) and
+  # the repositories they name.
+  docs-links:
+    name: Docs links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: openctemio/docs
+          ref: main
+          path: .docs-site
+          persist-credentials: false
+      - name: Documentation links in code
+        run: python3 scripts/check_docs_links.py --docs .docs-site --fetch-other .

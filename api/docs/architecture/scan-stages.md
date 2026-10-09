@@ -1,8 +1,8 @@
 # Scan stages: catalogue, planner and chaining
 
 > Last updated: 2026-10-07. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
-> §5 (engines and the stage catalogue) and research/27 (scan modes and
-> workflows, owner decisions G1–G12). Run model: [scan-lifecycle.md](scan-lifecycle.md).
+> §5 (engines and the stage catalogue; scan modes and workflows, decisions
+> G1–G12). Run model: [scan-lifecycle.md](scan-lifecycle.md).
 > Target gate: [active-probe-gate.md](active-probe-gate.md).
 
 A scan runs stages. A stage is one **capability** ("discover.subdomains",
@@ -42,17 +42,17 @@ platform data: a tenant, a sensor or a report cannot widen it.
 - **Fan-out.** Each stage has `max_fanout` (at most the run cap of 10 000) and a
   per-parent cap (5 000 by default: a domain with more subdomains than that is
   a suspected wildcard). An engine may lower a cap, never raise it.
-- **Hop limit** (owner decision G5): a derived target is at most 3 discovery
+- **Hop limit** (decision G5): a derived target is at most 3 discovery
   hops from the run's seeds.
-- **Registry outputs (research/27 F3).** `tools.output_types` (migration
+- **Registry outputs.** `tools.output_types` (migration
   001040) records what each platform tool produces, backfilled from the
   catalogue. No API writes it; a DB test keeps it equal to the catalogue.
 - **Validation.** `stage.ValidateGraph` checks a workflow graph against the
-  capability contracts (§1.1). Every pipeline save calls it: full save, create,
+  capability contracts (§1.1). Every scan workflow save calls it: full save, create,
   and add, update or delete of a step, inside the save transaction. It also
-  backs `POST /api/v1/scan-workflows/verify` (`pipelines:write`), which checks a
-  draft and stores nothing. A pipeline's steps are the graph
-  (`pipeline.StepsGraph`): one node per step and one edge per dependency. A step
+  backs `POST /api/v1/scan-workflows/verify` (`scans:workflows:write`), which checks a
+  draft and stores nothing. A scan workflow's steps are the graph
+  (`scanrun.StepsGraph`): one node per step and one edge per dependency. A step
   the catalogue places is a capability node, with its tool as the pin. A tenant
   tool with no contract is **opaque**: an edge to or from it is a warning (it
   orders the steps and passes no data). The errors, each anchored to a node or
@@ -127,13 +127,13 @@ and the sensor read too. The taxonomy keeps every id above. It adds:
 
 Tools then declare `implements: [{capability: scan.ports@1, params: …}]` in
 their descriptor. The per-tool maps in `contract.go` (`toolParams`,
-`batchTools`) and `pipeline.stepToolSettings` become descriptor lookups
+`batchTools`) and the per-step tool settings become descriptor lookups
 behind the same functions. A built-in name fallback stays for sensors
 without descriptors, for one release train.
 
 ### 1.2 Capability nodes: tool selection and settings
 
-A pipeline step is a **capability node**. It names a capability and picks its
+A scan workflow step is a **capability node**. It names a capability and picks its
 tool in one of three ways (`tool_selection` on the step response):
 
 - **auto** (no tool, no `prefer_tools`): any implementation of the capability,
@@ -200,19 +200,19 @@ The workflow must be the organization's own or a system workflow (otherwise
 
 ## 2. The planner: one dispatcher, capability → tool
 
-Every pipeline step command is built on one path:
-`pipeline.Service.queueStepForExecutionWithSettings`. The scan trigger hands a
+Every scan workflow step command is built on one path:
+`scanrun.Service.queueStepForExecutionWithSettings`. The scan trigger hands a
 workflow's first steps to it (`scan.StepQueuer`, wired as
 `s.Scan.SetStepQueuer(s.Pipeline)`); unwired, a workflow scan is refused. The
 payload comes from one builder, `scan.StepCommandPayload`.
 
-- **F1 (research/27).** A step that named only a capability passed validation
+- **F1.** A step that named only a capability passed validation
   but its command carried no `scanner`, so the sensor failed it with
   `scanner not found: `. `scan.ResolveStepTool` now decides the tool, with the
-  same rule for validation (scan trigger and pipeline template checks) and
+  same rule for validation (scan trigger and scan workflow checks) and
   dispatch, and the payload always names it in `scanner` and
   `preferred_tool`.
-- **Resolution (owner decision G10).** A pinned tool is strict. A capability
+- **Resolution (decision G10).** A pinned tool is strict. A capability
   that names one catalogue stage (`scan.ports`, or a word such as
   `portscan`) runs the first active platform implementation of the stage,
   the default first; a collector or connector is never picked; none active is
@@ -229,7 +229,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `tenant_runner_only` in its run context; the dispatcher never sends any of
   its steps to platform sensors, whatever the template prefers. (Steps after
   the first used to ignore it.)
-- **No step is pinned to one sensor** (research/49 W27). A step command goes
+- **No step is pinned to one sensor.** A step command goes
   to the run's zone (stamped with it), to the platform queue, or to the
   tenant's sensors, and is left unpinned: the claim predicates (zone, tool,
   grant, refusals, freeze) decide which sensor takes it. `SelectSensor` only
@@ -268,15 +268,15 @@ payload comes from one builder, `scan.StepCommandPayload`.
   as defense in depth. Platform jobs (`get_next_platform_job`) do not check
   host keys yet.
   Not yet: the candidate tool list per chunk (claim by any candidate),
-  placement modes and a spread cap (research/49 §3.12.3).
+  placement modes and a spread cap.
 
-## 4. Report output-type binding (owner decision G12)
+## 4. Report output-type binding (decision G12)
 
 `internal/app/ingest/output_binding.go`. A report bound to a command may
 carry only the asset types its tool is declared to produce or take: the
 outputs of the tool's catalog stages plus the inputs it re-observes
 (`stage.MayReport`). This stops a compromised or buggy sensor from planting
-arbitrary assets through a legitimate command (research/22b S2), and it is
+arbitrary assets through a legitimate command, and it is
 what makes chained outputs trustworthy.
 
 - **Quarantine mode** (the default for a tenant with no stored policy): the
@@ -306,7 +306,7 @@ what makes chained outputs trustworthy.
 
 ## 3. The hop router: chaining with a gate at every hop
 
-`internal/app/pipeline/hop_router.go`; tables `scan_step_outputs`,
+`internal/app/scanrun/hop_router.go`; tables `scan_step_outputs`,
 `scan_run_stage_plans`, `scan_run_targets` (migrations 001048, 001049).
 
 - **E6.** A step used to receive the run's seeds whatever came before it. Now,
@@ -335,7 +335,7 @@ what makes chained outputs trustworthy.
   rejected parent) are refused, so a `needs_review` name may be resolved. A
   **T1** stage takes only what `easm.ActiveGate` allows. A **T2** stage is
   never fed derived targets (`STAGE_NOT_CHAINABLE`).
-- **Hops (research/30 V3).** A hop counts only when the chain reaches a new
+- **Hops.** A hop counts only when the chain reaches a new
   name: a port, service or URL on a host the run already reached keeps that
   host's hop; a subdomain of a parent name is one hop further; a resolved
   address or alias is one hop beyond the furthest parent. So a six-stage
@@ -351,7 +351,7 @@ what makes chained outputs trustworthy.
   (`seed`, `passive_allowed`, `gate_allowed`) or why it was skipped
   (`excluded`, `unconfirmed`, `refused`, `other_zone`, `hop_limit`,
   `over_cap`, `duplicate`, `invalid`). `GET /api/v1/scan-runs/{id}/stages`
-  (`pipelines:read`, tenant-scoped, counts only) serves the per-stage counts.
+  (`scans:read`, tenant-scoped, counts only) serves the per-stage counts.
 - **Tenant isolation.** Every query is scoped to the run's tenant, and every
   row references the run and assets with composite tenant foreign keys, so a
   cross-tenant row is refused by the database. Asset merges move these rows to

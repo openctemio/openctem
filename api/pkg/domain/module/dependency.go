@@ -223,7 +223,7 @@ type ToggleWarning struct {
 }
 
 // parentModuleID extracts the parent module for a sub-module ID.
-// Sub-modules use the convention "<parent>.<sub>" (e.g. "assets.hosts",
+// Sub-modules use the convention "<parent>.<sub>" (e.g. "ai_triage.agent",
 // "ai_triage.bulk", "integrations.scm"). Returns empty string when the
 // ID has no dot, i.e. is already a top-level module.
 func parentModuleID(moduleID string) string {
@@ -239,8 +239,8 @@ func parentModuleID(moduleID string) string {
 // dependent is enabled, the edge type decides blocker vs warning.
 //
 // Implicit sub-module cascade: every sub-module "<parent>.<sub>" is
-// treated as hard-depending on its parent. Disabling `assets` therefore
-// auto-blocks on every enabled `assets.*` sub-module without needing
+// treated as hard-depending on its parent. Disabling `integrations`
+// therefore auto-blocks on every enabled `integrations.*` sub-module without needing
 // explicit edges per sub-module in ModuleDependencies. The inverse
 // direction (disabling a sub-module) does NOT cascade — sub-modules
 // are leaf toggles.
