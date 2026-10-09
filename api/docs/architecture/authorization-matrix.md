@@ -1772,6 +1772,14 @@ deliberately.
    | member | `sensors:write`, `audit:read`, `settings:billing:read` |
    | viewer | `audit:read`, `settings:billing:read` |
 
+   The viewer role is where every new member starts, so it holds only what
+   reading the programme needs. Migration `001420` removed
+   `scans:secret_store:read` (the stored scan credential list) and
+   `team:assignment_rules:read` from it. The built-in roles nest
+   (viewer within member within admin within owner);
+   `permission.SystemRoles` lists them and `TestSystemRolePermissions_MatchSeed`
+   keeps the seed equal to that list.
+
 10. **Custom templates are trusted code (owner decision 2026-10-02).** A
     custom scanner template (nuclei especially) decides which hosts the sensor
     contacts and what it sends, so only owners and administrators author one:
