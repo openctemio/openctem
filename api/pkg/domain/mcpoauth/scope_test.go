@@ -87,8 +87,14 @@ func TestScopesFor(t *testing.T) {
 	if got := ScopesFor(string(permission.PentestRetestsRead)); !reflect.DeepEqual(got, []Scope{ScopePentestRead}) {
 		t.Fatalf("ScopesFor(pentest retests) = %v", got)
 	}
-	if got := ScopesFor(string(permission.FindingsWrite)); len(got) != 1 || got[0] != ScopeFindingsWrite {
-		t.Fatalf("ScopesFor(findings:write) = %v, want the write scope only", got)
+	if got := ScopesFor(string(permission.FindingsComment)); len(got) != 1 || got[0] != ScopeFindingsComment {
+		t.Fatalf("ScopesFor(findings:comment) = %v, want the comment scope only", got)
+	}
+	// No MCP scope grants the broader finding permissions.
+	for _, p := range []permission.Permission{permission.FindingsWrite, permission.FindingsSeverity} {
+		if got := ScopesFor(string(p)); len(got) != 0 {
+			t.Fatalf("ScopesFor(%s) = %v, want none", p, got)
+		}
 	}
 }
 
