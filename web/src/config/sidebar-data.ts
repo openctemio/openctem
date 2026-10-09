@@ -71,6 +71,7 @@ import {
   SCANS_SECTION_TABS,
   ATTACK_SURFACE_SECTION_TABS,
   BUSINESS_CONTEXT_SECTION_TABS,
+  SCOPE_SECTION_TABS,
   EXPOSURES_SECTION_TABS,
   REMEDIATION_SECTION_TABS,
   THREAT_MODEL_SECTION_TABS,
@@ -182,8 +183,10 @@ export const sidebarData: SidebarData = {
           title: 'Scope',
           url: '/scope',
           icon: Fence,
-          permission: Permission.ScopeRead,
-          module: 'scope_config',
+          // Scope | Programs (RFC-065): the row shows while either tab is
+          // open to the user (a researcher holds only programs:read) and
+          // links to the first such tab; SCOPE_SECTION_TABS carries the gates.
+          sections: SCOPE_SECTION_TABS,
         },
         {
           // Threats per crown jewel, and the attacker profiles they are

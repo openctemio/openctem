@@ -66,6 +66,10 @@ type Repository interface {
 
 	// === Role Members ===
 
+	// ListRoleHolderIDs returns every user who holds the role in the tenant,
+	// directly or through a team.
+	ListRoleHolderIDs(ctx context.Context, tenantID, roleID ID) ([]ID, error)
+
 	// ListRoleMembers returns all users who have a specific role in a tenant.
 	ListRoleMembers(ctx context.Context, tenantID, roleID ID) ([]*UserRole, error)
 

@@ -70,7 +70,7 @@ var Features = []Feature{
 		ID: "scope", Title: "Scope",
 		Description: "What the organization may scan: scope targets, exclusions, approvals and scope settings.",
 		Stages:      []string{StageScoping},
-		Registers:   []string{"registerScopeRoutes"},
+		Registers:   []string{"registerScopeRoutes", "registerScopeLetterRoutes"},
 	},
 	{
 		ID: "programs", Title: "Bug-bounty programs",
@@ -108,7 +108,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
 			"registerScanRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanFreezeWindowRoutes",
-			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes",
+			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
@@ -193,10 +193,10 @@ var Features = []Feature{
 	},
 	{
 		ID: "account", Title: "Sign-in and own account",
-		Description: "Authentication, the caller's own account, notifications, bootstrap data and the real-time socket.",
+		Description: "Authentication, the caller's own account, notifications, platform announcements, bootstrap data and the real-time socket.",
 		Registers: []string{
 			"registerAuthRoutes", "registerUserRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
-			"registerWebSocketRoutes",
+			"registerWebSocketRoutes", "registerAnnouncementRoute",
 		},
 	},
 	{

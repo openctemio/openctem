@@ -46,18 +46,21 @@ var ErrProgramManaged = shared.NewDomainError("PROGRAM_MANAGED",
 	"this entry belongs to a program; change it by re-importing or resuming the program", shared.ErrConflict)
 
 // ParseGeneralSource reads the source a person may choose on the general
-// scope routes: ownership (default) or self_attestation. Program entries
-// come only from the programs service; letters arrive in a later phase.
+// scope routes: ownership (default), self_attestation or
+// authorization_letter (with a letter, RFC-065 §13). Program entries come
+// only from the programs service.
 func ParseGeneralSource(s string) (AuthorizationSource, error) {
 	switch AuthorizationSource(s) {
 	case "", AuthOwnership:
 		return AuthOwnership, nil
 	case AuthSelfAttestation:
 		return AuthSelfAttestation, nil
+	case AuthLetter:
+		return AuthLetter, nil
 	case AuthProgram:
 		return "", ErrProgramEntryViaPrograms
 	}
-	return "", fmt.Errorf("%w: authorization_source must be ownership or self_attestation", shared.ErrValidation)
+	return "", fmt.Errorf("%w: authorization_source must be ownership, self_attestation or authorization_letter", shared.ErrValidation)
 }
 
 // AuthorizationSource is why the entry authorizes probes (ownership when
@@ -75,22 +78,30 @@ func (t *Target) ProgramID() *shared.ID { return t.programID }
 // IsProgramEntry reports whether the entry comes from a program.
 func (t *Target) IsProgramEntry() bool { return t.AuthorizationSource() == AuthProgram }
 
-// SetAuthorization sets the source and, for a program entry, its program.
-// A program entry needs a program; no other source has one.
-func (t *Target) SetAuthorization(s AuthorizationSource, programID *shared.ID) error {
+// LetterID is the authorization letter a letter entry names (nil otherwise).
+func (t *Target) LetterID() *shared.ID { return t.letterID }
+
+// SetAuthorization sets the source and the record it names: a program entry
+// names its program, a letter entry its letter (ref); no other source names
+// anything.
+func (t *Target) SetAuthorization(s AuthorizationSource, ref *shared.ID) error {
+	needsRef := s == AuthProgram || s == AuthLetter
 	switch {
 	case !s.Valid():
 		return fmt.Errorf("%w: unknown authorization source", shared.ErrValidation)
-	case (s == AuthProgram) != (programID != nil && !programID.IsZero()):
-		return fmt.Errorf("%w: a program entry needs its program, and only a program entry has one", shared.ErrValidation)
+	case needsRef != (ref != nil && !ref.IsZero()):
+		return fmt.Errorf("%w: a program entry names its program and a letter entry its letter; no other entry names either", shared.ErrValidation)
 	}
 	t.authSource = s
-	if s == AuthProgram {
-		id := *programID
+	t.programID, t.letterID = nil, nil
+	switch s {
+	case AuthProgram:
+		id := *ref
 		t.programID = &id
 		t.origin = OriginProgram
-	} else {
-		t.programID = nil
+	case AuthLetter:
+		id := *ref
+		t.letterID = &id
 	}
 	return nil
 }
