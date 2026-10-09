@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -26,7 +27,7 @@ const MCPGrantRateLimitPerHour = 3600
 // MCPTokenAuthenticator checks an MCP OAuth access token
 // (*mcpoauthapp.Service).
 type MCPTokenAuthenticator interface {
-	AuthenticateAccessToken(ctx context.Context, raw, ip string) (*mcpoauthapp.Principal, error)
+	AuthenticateAccessToken(ctx context.Context, raw, ip string, dp mcpoauthapp.DPoPRequest) (*mcpoauthapp.Principal, error)
 }
 
 // GetMCPPrincipal returns the OAuth principal of the request, or nil when
@@ -51,18 +52,27 @@ func MCPCredentialAuth(apiKeyAuth func(http.Handler) http.Handler, tokens MCPTok
 	return func(next http.Handler) http.Handler {
 		keyChain := apiKeyAuth(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			raw := bearerToken(r)
+			scheme, raw := authorizationToken(r)
 			if tokens == nil || !strings.HasPrefix(raw, mcpoauth.AccessTokenPrefix) {
 				keyChain.ServeHTTP(w, r)
 				return
 			}
-			if r.Header.Get("X-API-Key") != "" {
+			proofs := r.Header.Values("DPoP")
+			if r.Header.Get("X-API-Key") != "" || len(proofs) > 1 {
 				apierror.Unauthorized("Invalid credentials").WriteJSON(w)
 				return
 			}
-			p, err := tokens.AuthenticateAccessToken(r.Context(), raw, getClientIP(r))
+			dp := mcpoauthapp.DPoPRequest{Scheme: scheme, Method: r.Method}
+			if len(proofs) == 1 {
+				dp.Proof = proofs[0]
+			}
+			p, err := tokens.AuthenticateAccessToken(r.Context(), raw, getClientIP(r), dp)
 			if err != nil {
 				log.Debug("mcp access token refused", "reason", err.Error())
+				if errors.Is(err, mcpoauthapp.ErrDPoP) {
+					// RFC 9449 §7.1: the challenge names the DPoP scheme.
+					w.Header().Set("WWW-Authenticate", `DPoP error="invalid_dpop_proof", algs="`+strings.Join(mcpoauthapp.DPoPAlgorithms(), " ")+`"`)
+				}
 				apierror.Unauthorized("Invalid credentials").WriteJSON(w)
 				return
 			}
@@ -87,4 +97,14 @@ func MCPCredentialAuth(apiKeyAuth func(http.Handler) http.Handler, tokens MCPTok
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// authorizationToken returns the scheme and token of the Authorization
+// header for the two schemes an MCP access token may use (Bearer, DPoP).
+func authorizationToken(r *http.Request) (scheme, token string) {
+	scheme, rest, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !ok || (!strings.EqualFold(scheme, "Bearer") && !strings.EqualFold(scheme, "DPoP")) {
+		return "", ""
+	}
+	return scheme, strings.TrimSpace(rest)
 }
