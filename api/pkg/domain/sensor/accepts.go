@@ -172,6 +172,16 @@ func portSetting(v any) string {
 // custom templates, only when the tenant enabled it. Both default to off
 // for every tenant; turning one on is an administrator action, audited and
 // alerted (D9).
+// ToolHTTPPolicy is the organization's tool HTTP layer as a scan job
+// carries it ("http_policy", sdk-go core.OrgHTTPPolicy).
+type ToolHTTPPolicy struct {
+	UserAgent        string `json:"user_agent,omitempty"`
+	AllowInsecureTLS *bool  `json:"allow_insecure_tls,omitempty"`
+}
+
+// IsZero reports whether the policy sets nothing.
+func (p ToolHTTPPolicy) IsZero() bool { return p.UserAgent == "" && p.AllowInsecureTLS == nil }
+
 type OptIns struct {
 	AllowInteractsh      bool `json:"allow_interactsh"`
 	AllowCustomTemplates bool `json:"allow_custom_templates"`
