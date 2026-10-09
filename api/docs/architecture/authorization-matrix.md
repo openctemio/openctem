@@ -1662,8 +1662,12 @@ deliberately.
    permissions. There is no deny-override: purely additive grants keep the
    effective permission set easy to reason about and audit.
 
-   Groups (teams) carry **only data scope** (which assets their members see),
-   never permissions. Group permission sets and per-group permission overrides
+   Groups (teams) carry **data scope** (which assets their members see) and
+   may be **bound to custom roles** (team role bindings, migration
+   `group_role_bindings`, decisions G1-G12): every active member then holds
+   those roles. A team never has a permission set of its own; the binding
+   gives a role, and roles stay the only source of permissions. See
+   "Team role bindings" below. Group permission sets and per-group permission overrides
    were removed: they were never read by enforcement, yet the UI said members
    inherit them. The `/api/v1/permission-sets` and
    `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
@@ -1692,9 +1696,13 @@ deliberately.
    (2026-10-04, reversing the 2026-09 AUTHZ-16 "won't build") and A2: `expires_at`
    plus a reason on direct grants, group memberships and engagements, and expiry
    on role assignments and guest memberships, checked at read time
-   (RFC-050 W22/W23). Until then there is no `expires_at` on any grant, and
-   revocation is immediate: disable or offboard the member (RFC-050 member
-   lifecycle), or remove the grant/role (`RevokeAllSessions` + version bump).
+   (RFC-050 W22/W23). Built so far: external members' memberships (RFC-058)
+   and **team memberships** (`group_members.expires_at`, migration 001459;
+   required on `external` teams; removed within a minute of the end date,
+   which recomputes the data scope). Role assignments and direct grants have
+   no `expires_at` yet; revocation is immediate: disable or offboard the
+   member (RFC-050 member lifecycle), or remove the grant/role
+   (`RevokeAllSessions` + version bump).
 5. **No time-limited grants.** There is no `expires_at` on role assignments;
    revocation is immediate via `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
 
@@ -1924,6 +1932,29 @@ role. A custom role created later needs them explicitly for those reads.
 | `compliance:reports:read` | No compliance report API; the page is a redirect. |
 | `findings:policies:*` | The policies module was retired (000215) without ever having routes. |
 | `settings:billing:read`, `settings:billing:write` | No billing API or page. |
+
+## Team role bindings
+
+A custom role bound to a team is held by every active member of the team.
+`v_user_role_grants` (direct `user_roles` plus `group_role_bindings` through
+active teams and memberships that have not ended) is the one answer to "which
+roles does this person hold". Permissions, full data access (the data-scope
+bypass, notification audiences, the grant ceiling) and the member access
+report all read it.
+
+| Rule | Enforcement |
+|---|---|
+| Only custom roles of the same organization bind | composite foreign keys `(group_id, tenant_id)` and `(role_id, tenant_id)`: a built-in role (tenant_id NULL) or another tenant's role or team cannot be stored |
+| Binding is a grant | `POST/DELETE /api/v1/groups/{groupId}/roles` need `team:roles:assign` and `team:groups:write`; the actor must hold every permission of the role (and full data if it has it) and, without full data access, every asset of the team (D13) |
+| Membership of a team that carries roles is a grant | adding, extending or removing someone needs the same ceiling for each bound role; nobody but the owner adds themselves |
+| Privileged roles are the owner's | a role with full data access or a permission in `permission.PrivilegedPermissions` (member, team, role, API key, secret store or settings administration) is bound, unbound, its team's membership changed, or an existing bound role made privileged, by the owner only, with a recent sign-in |
+| External members | never hold a full-data role through a team (refused on add and on bind) |
+| Limits | at most 10 roles per team; a bound role cannot be deleted (409 `ROLE_IN_USE`) |
+| Freshness | every bind, unbind, add, remove, end-date change, expiry and role edit invalidates the affected members' cached permissions (role edits fan out to direct and team holders) |
+| Audit | `role.assigned` / `role.unassigned` on the team (metadata `binding=team`, the role, `privileged`, member count), High, Critical when privileged |
+
+Team roles, the administrator bypass and the owner invariants are unchanged:
+they read the built-in roles only, and those never bind.
 
 ## CI invariants that keep this from drifting
 
