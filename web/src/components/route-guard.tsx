@@ -26,7 +26,7 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { usePathname } from 'next/navigation'
 import { ShieldX, ArrowLeft, Home, Package, Settings } from 'lucide-react'
 import { usePermissions } from '@/lib/permissions/hooks'
