@@ -684,6 +684,8 @@ type Services struct {
 
 	// ContentPacks is the content pack store (RFC-061).
 	ContentPacks *contentpackapp.Service
+	// PlatformContentPacks are the platform's packs and channels (RFC-061).
+	PlatformContentPacks *contentpackapp.PlatformService
 
 	// Workflows
 	Workflow           *workflow.WorkflowService
@@ -1650,7 +1652,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.TemplateKeys = initTemplateKeyring(cfg, log)
 	// Content packs are stored in each tenant's namespace of the operator
 	// file storage and signed with the tenant's content key.
-	s.ContentPacks = contentpackapp.NewService(repos.ContentPack, fileStorage, initContentSigner(cfg, log), s.Audit, log)
+	contentSigner := initContentSigner(cfg, log)
+	s.ContentPacks = contentpackapp.NewService(repos.ContentPack, fileStorage, contentSigner, s.Audit, log)
+	// Platform packs: their own storage namespace (not a tenant id, so an
+	// organization's erasure never reaches it) and the platform content key.
+	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
