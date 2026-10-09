@@ -60,7 +60,7 @@ export function emptyPolicyForm(timezone: string): PolicyFormState {
     kind: 'allow',
     minTier: 1,
     timezone,
-    slots: [{ days: [1, 2, 3, 4, 5], start: '22:00', end: '06:00' }],
+    slots: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00' }],
     oneOffs: [],
     selector: {},
     graceMinutes: String(DEFAULT_GRACE_MINUTES),
