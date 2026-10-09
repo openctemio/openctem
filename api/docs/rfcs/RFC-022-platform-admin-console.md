@@ -70,7 +70,7 @@
 **Schema.** Migration `000225` added `admin_credentials` and `admin_sessions`;
 `000226` (rev. 2) links administrators to accounts. The console password
 columns (`admin_credentials.password_hash`, `password_changed_at`) are no longer
-used and are dropped in a later release (expand-contract):
+used; migration 001483 dropped them:
 
 - `admin_users.user_id` (unique, FK `users`, cascade). Rows without it were
   API-key identities; migration 000227 deactivated them (rev. 3).
@@ -604,6 +604,21 @@ Requests is its own console section. Access requests moved from
 lists them, as information for the first two days and as a warning after
 that, with a link to the inbox. Future request kinds (domain-claim conflicts,
 JIT approvals) join this section when they have an administrator API.
+## Revision 16: security center
+
+- **Sessions** (Security > Sessions, super admin only, like the roster):
+  `GET /api/v1/admin/console-sessions` lists every open console session (the
+  administrator, role, break-glass, how they signed in, IP, started, last
+  seen; the caller's own is marked). `DELETE /api/v1/admin/console-sessions/{id}`
+  ends one at once: a reason (10 to 500 characters) and a fresh authenticator
+  code, audited at high severity as `console.session_ended`. The caller's
+  own current session is refused (sign out instead).
+- **Admin activity** gained a date range (`from`/`to`), a detail sheet per
+  entry (resource, request, browser, error, and the request body as stored,
+  secrets redacted) and a CSV export of the filtered page (formula-safe
+  cells).
+- One step-up check (`confirmAdminStepUp`) serves owner recovery and ending
+  a session.
 
 ## Later phases
 

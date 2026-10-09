@@ -39,6 +39,15 @@ func (c *refusingChecker) Check(_ context.Context, _ shared.ID, key plan.Key, de
 	return nil
 }
 
+func (c *refusingChecker) Headroom(_ context.Context, _ shared.ID, key plan.Key) (int, error) {
+	if key == c.refuse {
+		return 0, nil
+	}
+	return plan.Unlimited, nil
+}
+
+func (c *refusingChecker) RecordRefusals(plan.Key, int) {}
+
 func countPlanRows(t *testing.T, db *sql.DB, query string, args ...any) int {
 	t.Helper()
 	var n int

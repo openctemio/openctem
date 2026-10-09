@@ -4,6 +4,7 @@ import {
   Gauge,
   History,
   Inbox,
+  MonitorSmartphone,
   KeyRound,
   LayoutDashboard,
   UserCog,
@@ -108,6 +109,14 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/security/activity',
         icon: History,
         keywords: ['audit', 'logs', 'system logs', 'history'],
+      },
+      {
+        title: 'Sessions',
+        i18nKey: 'admin.nav.sessions',
+        url: '/admin/security/sessions',
+        icon: MonitorSmartphone,
+        minRole: 'super_admin',
+        keywords: ['signed in', 'console sessions', 'sign out', 'devices'],
       },
       {
         title: 'Administrators',

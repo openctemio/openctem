@@ -16,6 +16,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -609,87 +611,88 @@ export function EditCredentialDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Edit Credential</DialogTitle>
           <DialogDescription>
             Update the credential configuration. Leave secret fields empty to keep existing values.
           </DialogDescription>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">
+              {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
+            </Badge>
+          </div>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 mb-4">
-          <Badge variant="outline">
-            {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
-          </Badge>
-        </div>
-
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
             {/* Basic Info */}
-            <div className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Credential name" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <DialogBody className="space-y-6">
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Credential name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (optional)</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Describe what this credential is used for"
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description (optional)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Describe what this credential is used for"
+                          className="resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="expires_at"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Expiration Date (optional)</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                <FormField
+                  control={form.control}
+                  name="expires_at"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Expiration Date (optional)</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Credential-specific fields */}
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium">
-                Update {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
-              </h4>
+              {/* Credential-specific fields */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">
+                  Update {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
+                </h4>
 
-              <Alert>
-                <AlertDescription>
-                  Leave fields empty to keep the current values. Enter new values to update.
-                </AlertDescription>
-              </Alert>
+                <Alert>
+                  <AlertDescription>
+                    Leave fields empty to keep the current values. Enter new values to update.
+                  </AlertDescription>
+                </Alert>
 
-              {renderCredentialFields()}
-            </div>
+                {renderCredentialFields()}
+              </div>
+            </DialogBody>
 
             <DialogFooter>
               <Button
@@ -705,7 +708,7 @@ export function EditCredentialDialog({
                 Save Changes
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>

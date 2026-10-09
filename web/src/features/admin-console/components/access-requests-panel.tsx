@@ -13,6 +13,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -116,16 +118,18 @@ function ApproveDialog({
                 Email could not be sent. Give the owner this one-time link.
               </DialogDescription>
             </DialogHeader>
-            <SetupLinkResult
-              outcome={{ ...result.owner_setup, email_sent: !!result.owner_setup.email_sent }}
-              email={request?.email ?? ''}
-            />
+            <DialogBody>
+              <SetupLinkResult
+                outcome={{ ...result.owner_setup, email_sent: !!result.owner_setup.email_sent }}
+                email={request?.email ?? ''}
+              />
+            </DialogBody>
             <DialogFooter>
               <Button onClick={onDone}>Done</Button>
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={submit} className="space-y-4">
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>Approve access request</DialogTitle>
               <DialogDescription>
@@ -133,33 +137,35 @@ function ApproveDialog({
                 one-time set-password link by email.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="ar-name">Organization name</Label>
-              <Input
-                id="ar-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={100}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ar-slug">Slug</Label>
-              <Input
-                id="ar-slug"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value.toLowerCase())}
-                pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                minLength={3}
-                maxLength={50}
-                required
-              />
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
+            <DialogBody className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="ar-name">Organization name</Label>
+                <Input
+                  id="ar-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={100}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ar-slug">Slug</Label>
+                <Input
+                  id="ar-slug"
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value.toLowerCase())}
+                  pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                  minLength={3}
+                  maxLength={50}
+                  required
+                />
+              </div>
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
                 Cancel
@@ -169,7 +175,7 @@ function ApproveDialog({
                 Create organization
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>
