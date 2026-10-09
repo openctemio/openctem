@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
+	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
@@ -554,6 +555,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.ReclassifyQueue,
 		log.With("controller", "threat-intel-refresh"),
 	))
+
+	// NVD CVE feed for inventory matching (RFC-066) — off until a platform
+	// admin enables the "nvd" threat-intel source.
+	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
+		w.ControllerManager.Register(controller.NewVulnFeedRefreshController(
+			vulnfeed.NewSyncer(vulnfeed.NewClient(cfg.Worker.NVDAPIKey), repos.CVECorpus,
+				repos.ThreatIntel.SyncStatus(), repos.Software, log.With("component", "vulnfeed")),
+			log.With("controller", "vuln-feed-refresh"),
+		))
+	}
 
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
 	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.

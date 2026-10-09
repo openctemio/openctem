@@ -843,6 +843,10 @@ type SensorConfig struct {
 	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
 	CTEMIDFeedURL string
 
+	// NVDAPIKey is the optional NVD API key of the CVE feed (RFC-066). The
+	// feed works without one, more slowly. Set NVD_API_KEY; never logged.
+	NVDAPIKey string `json:"-"`
+
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
 	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
@@ -1332,6 +1336,7 @@ func Load() (*Config, error) {
 			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			NVDAPIKey:                   getEnv("NVD_API_KEY", ""),
 			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
