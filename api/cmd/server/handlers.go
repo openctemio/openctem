@@ -207,6 +207,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Gated actions (rotate_key) ring only when the sensor's grant lists
 	// them (RFC-052 §5.3).
 	doorbell.SetGrants(repos.SensorGrant)
+	// A new job-signing key set changes config_version, so sensors re-read
+	// hello and pick it up (RFC-040 §5.6).
+	if svc.JobSigner != nil {
+		doorbell.SetKeySetVersion(svc.JobSigner.KeySetVersion)
+	}
 	ingestHandler.SetDoorbell(doorbell)
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
@@ -375,6 +380,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
+		BountyProgram: handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
 		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
@@ -553,6 +559,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			postgres.NewPlatformUserDirectory(deps.DB),
 			newPlatformUserService(repos, svc, cfg, deps.DB),
 			log),
+		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
+		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
