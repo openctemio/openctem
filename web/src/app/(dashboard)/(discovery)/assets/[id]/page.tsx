@@ -24,7 +24,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DetailSections, PageHeader } from '@/features/shared'
-import { AssetAttributionSection, AssetIdentitySections, useAsset } from '@/features/assets'
+import {
+  AssetAttributeSourcesSection,
+  AssetAttributionSection,
+  AssetIdentitySections,
+  useAsset,
+} from '@/features/assets'
 import { cn } from '@/lib/utils'
 import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
 import { CRITICALITY_TEXT_COLORS } from '@/lib/criticality-colors'
@@ -203,6 +208,7 @@ export default function AssetDetailPage() {
               assetName={asset.name}
               assetType={asset.type}
             />
+            <AssetAttributeSourcesSection assetId={asset.id} />
             <AssetIdentitySections
               assetId={asset.id}
               assetName={asset.name}
