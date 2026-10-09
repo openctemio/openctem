@@ -209,13 +209,16 @@ func (r *Router) routeAddrs(rt *Route, addrs []netip.Addr) {
 	switch {
 	case best != nil:
 		rt.Zone = best
+	// The reasons never quote a private or denied answer: the platform's
+	// resolver may know internal names, and a reason is shown to whoever
+	// asked (scan-zone preview).
 	case private.IsValid():
 		rt.OutsideZones = true
-		rt.Reason = fmt.Sprintf("resolves to %s, a private address outside every scan zone", private)
+		rt.Reason = "resolves to a private address outside every scan zone"
 	case denied.IsValid() && len(addrs) == 1:
-		rt.Reason = fmt.Sprintf("resolves to %s, which is in the built-in deny list", denied)
+		rt.Reason = "resolves to an address in the built-in deny list"
 	case denied.IsValid() && !hasPublic(addrs):
-		rt.Reason = fmt.Sprintf("resolves only to addresses in the built-in deny list (%s)", denied)
+		rt.Reason = "resolves only to addresses in the built-in deny list"
 	default:
 		r.routePublic(rt)
 	}

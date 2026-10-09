@@ -35,11 +35,6 @@ export const AUTH_ROUTES = {
    * OAuth callback handler
    */
   CALLBACK: '/auth/callback',
-
-  /**
-   * Auth error page
-   */
-  ERROR: '/auth/error',
 } as const
 
 /**
@@ -61,14 +56,7 @@ export const PROTECTED_ROUTES = {
    */
   SETTINGS: '/settings',
   SETTINGS_ACCOUNT: '/account',
-  SETTINGS_APPEARANCE: '/settings/appearance',
   SETTINGS_NOTIFICATIONS: '/account/notifications',
-  SETTINGS_DISPLAY: '/settings/display',
-
-  /**
-   * Help center
-   */
-  HELP: '/help-center',
 } as const
 
 /**

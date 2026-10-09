@@ -90,15 +90,17 @@ func (r *SensorResultRepository) Create(ctx context.Context, item *sensorresult.
 		return fmt.Errorf("failed to lock quarantine: %w", err)
 	}
 	var perTenant, perSensor int
+	var tenantBytes int64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*), COUNT(*) FILTER (WHERE sensor_id = $2)
+		SELECT COUNT(*), COUNT(*) FILTER (WHERE sensor_id = $2), COALESCE(SUM(payload_size), 0)
 		FROM sensor_result_quarantine
 		WHERE tenant_id = $1 AND status = 'pending'`, item.TenantID.String(), item.SensorID.String()).
-		Scan(&perTenant, &perSensor); err != nil {
+		Scan(&perTenant, &perSensor, &tenantBytes); err != nil {
 		return fmt.Errorf("failed to count quarantine: %w", err)
 	}
 	if (limits.MaxPendingPerTenant > 0 && perTenant >= limits.MaxPendingPerTenant) ||
-		(limits.MaxPendingPerSensor > 0 && perSensor >= limits.MaxPendingPerSensor) {
+		(limits.MaxPendingPerSensor > 0 && perSensor >= limits.MaxPendingPerSensor) ||
+		(limits.MaxPendingBytesPerTenant > 0 && tenantBytes+int64(len(item.Payload)) > limits.MaxPendingBytesPerTenant) {
 		return sensorresult.ErrFull
 	}
 

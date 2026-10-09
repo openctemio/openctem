@@ -352,7 +352,7 @@ func (s *TenantService) notifyAdmins(ctx context.Context, tenantID shared.ID, ti
 			Body:             body,
 			Severity:         severity,
 			ResourceType:     "membership",
-			URL:              "/settings/users",
+			URL:              "/settings/members",
 		}); err != nil {
 			s.logger.Warn("notify admin of member lifecycle", "error", err)
 		}

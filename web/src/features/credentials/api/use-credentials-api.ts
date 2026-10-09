@@ -123,11 +123,16 @@ async function fetchCredentialEnums(url: string): Promise<ApiCredentialEnums> {
  * }
  * ```
  */
-export function useCredentialsApi(filters?: CredentialApiFilters, config?: SWRConfiguration) {
+export function useCredentialsApi(
+  filters?: CredentialApiFilters,
+  config?: SWRConfiguration,
+  /** false: the list is not shown (another view is), so it is not fetched. */
+  enabled = true
+) {
   const { currentTenant } = useTenant()
 
   // Ensure user has a tenant before making requests
-  const key = currentTenant ? buildCredentialsEndpoint(filters) : null
+  const key = currentTenant && enabled ? buildCredentialsEndpoint(filters) : null
 
   return useSWR<ApiCredentialListResponse>(key, fetchCredentials, { ...defaultConfig, ...config })
 }
@@ -171,7 +176,9 @@ export function useCredentialEnumsApi(config?: SWRConfiguration) {
  */
 export function useCredentialIdentitiesApi(
   filters?: CredentialApiFilters,
-  config?: SWRConfiguration
+  config?: SWRConfiguration,
+  /** false: the identity view is not shown, so it is not fetched. */
+  enabled = true
 ) {
   const { currentTenant } = useTenant()
 
@@ -189,7 +196,7 @@ export function useCredentialIdentitiesApi(
     return queryString ? `${baseUrl}?${queryString}` : baseUrl
   }
 
-  const key = currentTenant ? buildUrl() : null
+  const key = currentTenant && enabled ? buildUrl() : null
 
   return useSWR<ApiIdentityListResponse>(key, (url: string) => get<ApiIdentityListResponse>(url), {
     ...defaultConfig,

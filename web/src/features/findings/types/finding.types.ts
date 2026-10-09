@@ -583,7 +583,7 @@ export const ACTIVITY_TYPE_CONFIG: Record<
     color: 'text-blue-400',
   },
   verified: {
-    label: 'Verified',
+    label: 'Retest verified',
     icon: 'shield-check',
     color: 'text-green-400',
   },
@@ -1207,6 +1207,8 @@ export interface ApiApproval {
   id: string
   tenant_id: string
   finding_id: string
+  /** The finding's title (approval lists); absent when it no longer exists. */
+  finding_title?: string
   requested_status: string
   requested_by: string
   justification: string
@@ -1215,12 +1217,21 @@ export interface ApiApproval {
   rejected_by?: string
   rejected_at?: string
   rejection_reason?: string
-  status: 'pending' | 'approved' | 'rejected' | 'canceled'
+  status: ApprovalStatus
   expires_at?: string
   created_at: string
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled'
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'
+
+/** Every approval status, in tab order. */
+export const APPROVAL_STATUSES: readonly ApprovalStatus[] = [
+  'pending',
+  'approved',
+  'rejected',
+  'canceled',
+  'expired',
+]
 
 export const APPROVAL_STATUS_CONFIG: Record<
   ApprovalStatus,
@@ -1230,4 +1241,5 @@ export const APPROVAL_STATUS_CONFIG: Record<
   approved: { label: 'Approved', variant: 'success' },
   rejected: { label: 'Rejected', variant: 'destructive' },
   canceled: { label: 'Canceled', variant: 'secondary' },
+  expired: { label: 'Expired', variant: 'secondary' },
 }

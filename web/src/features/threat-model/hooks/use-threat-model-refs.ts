@@ -58,29 +58,45 @@ export function useAttackerProfileMap(enabled: boolean = true) {
   return { profileMap: map, isLoading }
 }
 
+/** The most ids one batch read takes (the asset list's page size limit). */
+export const ASSET_NAME_BATCH = 100
+
+/** `GET /assets?ids=…` for one batch of ids. */
+export function assetNamesURL(ids: string[]): string {
+  return `/api/v1/assets?ids=${ids.map(encodeURIComponent).join(',')}&per_page=${ids.length}`
+}
+
 /**
- * Resolve a set of asset ids → display names. Batches individual asset reads
- * and tolerates missing assets (a deleted/merged asset id resolves to a short
- * fallback rather than failing the whole page).
+ * Resolve a set of asset ids → display names, with ONE list request per 100
+ * ids (`GET /assets?ids=…`) instead of one `GET /assets/{id}` per asset
+ * (research/81). The API applies the caller's data scope: an asset the caller
+ * may not see, or one deleted or merged since, resolves to a short id rather
+ * than failing the page.
  */
 export function useAssetNameMap(assetIds: string[]) {
   const unique = Array.from(new Set(assetIds.filter(Boolean))).sort()
-  const key = unique.length ? `asset-names:${unique.join(',')}` : null
+  const batches: string[][] = []
+  for (let i = 0; i < unique.length; i += ASSET_NAME_BATCH) {
+    batches.push(unique.slice(i, i + ASSET_NAME_BATCH))
+  }
+  // One key per id set (the ids are sorted), so pages naming the same assets share it.
+  const key = batches.length ? batches.map(assetNamesURL).join(' ') : null
 
   const { data, isLoading } = useSWR<Record<string, string>>(
     key,
     async () => {
-      const entries = await Promise.all(
-        unique.map(async (id) => {
-          try {
-            const asset = await get<{ name?: string }>(`/api/v1/assets/${id}`)
-            return [id, asset?.name ?? shortId(id)] as const
-          } catch {
-            return [id, shortId(id)] as const
-          }
-        })
+      const pages = await Promise.all(
+        batches.map((ids) =>
+          get<AssetListResponse>(assetNamesURL(ids)).catch(() => ({ data: [], total: 0 }))
+        )
       )
-      return Object.fromEntries(entries)
+      const names: Record<string, string> = {}
+      for (const page of pages) {
+        for (const a of page.data ?? []) {
+          if (typeof a.id === 'string' && typeof a.name === 'string') names[a.id] = a.name
+        }
+      }
+      return names
     },
     { revalidateOnFocus: false }
   )

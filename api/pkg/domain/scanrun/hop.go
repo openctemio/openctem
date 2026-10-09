@@ -65,6 +65,20 @@ type StepOutput struct {
 	Name      string
 	Type      string
 	SubType   string
+	// New: the previous run of the scan did not produce it in the same step
+	// (set by PreviewStepOutputs when it compares).
+	New bool
+}
+
+// StepOutputDelta compares what one step (by key) produced in a run with
+// the previous run of the same scan: how many assets the previous run
+// produced, how many this run produced that the previous did not (added),
+// and how many the previous run produced that this one did not (gone).
+type StepOutputDelta struct {
+	StepKey  string
+	Previous int
+	Added    int
+	Gone     int
 }
 
 // StagePlan is how one stage of a run was planned: the exactly-once record
@@ -116,6 +130,19 @@ type HopRepository interface {
 	// the run's step runs produced. A non-nil scope counts only the assets
 	// the caller may see.
 	CountStepOutputs(ctx context.Context, tenantID, runID shared.ID, scope *shared.DataScope) ([]StepOutputCount, error)
+	// PreviousRun returns the latest finished (completed or partial) run of
+	// the same scan created before the run, or a zero id when there is none
+	// (or the run has no scan).
+	PreviousRun(ctx context.Context, tenantID, runID shared.ID) (shared.ID, error)
+	// CompareStepOutputs compares, per step key, the live assets the run and
+	// the previous run produced. A non-nil scope counts only the assets the
+	// caller may see.
+	CompareStepOutputs(ctx context.Context, tenantID, runID, previousRunID shared.ID, scope *shared.DataScope) ([]StepOutputDelta, error)
+	// PreviewStepOutputs returns up to limit live assets one step (by key) of
+	// the run produced, new ones first, and how many there are in all; New
+	// is set against the previous run (zero: none, nothing is new). A
+	// non-nil scope lists and counts only the assets the caller may see.
+	PreviewStepOutputs(ctx context.Context, tenantID, runID, previousRunID shared.ID, stepKey string, scope *shared.DataScope, limit int) ([]StepOutput, int, error)
 	// PendingStepIngest reports whether a sensor report of any command of
 	// the given step runs is still being received or ingested.
 	PendingStepIngest(ctx context.Context, tenantID shared.ID, stepRunIDs []shared.ID) (bool, error)

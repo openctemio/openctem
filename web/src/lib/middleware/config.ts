@@ -27,7 +27,6 @@ export const PUBLIC_ROUTES = [
   // OAuth / SSO provider callbacks: the session cookie is set by these pages.
   '/auth/callback',
   '/auth/sso/callback',
-  '/auth/error',
   // Platform admin console sign-in (RFC-022): the TOTP step and the platform
   // IdP callback. The rest of /admin is ADMIN_CONSOLE_ROOT.
   '/admin/login',
