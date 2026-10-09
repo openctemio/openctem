@@ -233,11 +233,12 @@ function looseContent(el: ts.JsxElement, P: string): boolean {
   let level = el.children
   for (let depth = 0; depth < 4; depth++) {
     const m = meaningful(level)
-    // A branch that renders the body (`{cond ? <Body>…</Body> : null}`) is fine.
+    // A branch that renders the body or the footer (`{cond ? <Body>…</Body> :
+    // null}`, `{tab === 'new' && <Footer>…</Footer>}`) is fine.
     const rest = m.filter(
       (c) =>
         ![`${P}Header`, `${P}Footer`, `${P}Body`].includes(tagOf(c) ?? '') &&
-        !(ts.isJsxExpression(c) && hasTag(c, `${P}Body`))
+        !(ts.isJsxExpression(c) && (hasTag(c, `${P}Body`) || hasTag(c, `${P}Footer`)))
     )
     const wrapper =
       rest.length === 1 && ['form', 'Form', '<>', `${P}Form`].includes(tagOf(rest[0]) ?? '')
@@ -337,6 +338,9 @@ describe('modal surfaces', { timeout: 60_000 }, () => {
       problems(
         '<AlertDialogContent><AlertDialogHeader/>{x ? <AlertDialogBody/> : null}</AlertDialogContent>'
       )
+    ).toEqual([])
+    expect(
+      problems('<DialogContent><DialogHeader/><DialogBody/>{x && <DialogFooter/>}</DialogContent>')
     ).toEqual([])
     expect(problems('<SheetContent className="w-full sm:max-w-xl"><p/></SheetContent>')).toEqual([
       'SheetContent without SheetHeader',
