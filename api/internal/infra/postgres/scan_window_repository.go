@@ -1,7 +1,7 @@
 package postgres
 
 // Scan window policies and overrides (RFC-067,
-// docs/architecture/scan-windows.md; migration 001630). Every statement is
+// docs/architecture/scan-windows.md; migration 001660). Every statement is
 // tenant-scoped.
 
 import (

@@ -71,7 +71,9 @@ delivery (`command.Service` Poll, claim-N, claim by id) asks
 cover the job's targets (program exclusions applied, the command's own
 tenant only):
 
-- outside a covering program's testing windows the job stays pending;
+- outside a covering program's testing windows the job waits: the scan
+  window hold evaluates them as allow windows that cannot be overridden
+  (RFC-067, [scan-windows.md](scan-windows.md));
 - two programs with different values for one header, or two User-Agents:
   the job fails with `PROGRAM_RULES_CONFLICT`;
 - otherwise the delivered copy carries the headers and User-Agent in
@@ -80,8 +82,10 @@ tenant only):
 - headers or a User-Agent go only to a sensor whose SDK is v0.19.0 or later
   (older sensors would ignore them); a failed lookup withholds the job.
 
-The trigger refuses the same cases up front (`PROGRAM_OUTSIDE_WINDOW`,
-`PROGRAM_RULES_CONFLICT`). Programs cannot require credential or connection
+The trigger refuses conflicting rules up front (`PROGRAM_RULES_CONFLICT`);
+a run outside a testing window waits, a scheduled one is deferred to the
+next opening, and a target whose windows never open refuses the run
+(`SCAN_WINDOW_NEVER_OPENS`). Programs cannot require credential or connection
 headers.
 
 ## Letters of authorization
@@ -129,7 +133,7 @@ the run and hold `scope:read` or `programs:read`.
 | `internal/app/scan/scope_snapshot.go`, `internal/app/scope/snapshot.go` | snapshot per run |
 | `internal/infra/postgres/bounty_program_assign.go` | program assignment pass (data scope) |
 | `migrations/001495_bounty_programs.*` | tables, columns, permissions, Researcher role |
-| `pkg/domain/bountyprogram/windows.go`, `internal/app/bountyprogram/rules.go` | testing windows, the rules a job carries |
+| `pkg/domain/bountyprogram/windows.go`, `internal/app/bountyprogram/rules.go` | testing window validation, the rules a job carries (windows are evaluated by `internal/app/scanwindow`) |
 | `internal/app/command/program_rules.go`, `internal/app/scan/program_rules.go` | rules at delivery and at trigger |
 | `pkg/domain/scope/letter.go`, `internal/app/scope/letters.go` | letters of authorization |
 | `pkg/domain/bountyprogram/sync.go`, `internal/app/bountyprogram/sync.go`, `internal/infra/bountysource/` | scope sync |

@@ -331,8 +331,8 @@ elsewhere.
   `commands.window_closed_at` and `commands.window_policy_ids` are added
   (nullable, no rewrite).
 - `scans:freeze:override` becomes `scans:windows:override` in every role and
-  API key that held it (migration 001631); `scans:windows:manage` is granted
-  to owner and admin (001630).
+  API key that held it (migration 001661); `scans:windows:manage` is granted
+  to owner and admin (001660).
 - `/api/v1/scan-freeze-windows` and the `override_freeze` trigger field are
   removed; Settings › Scan freeze windows becomes Settings › Scan windows.
 - Down migrations restore the freeze table from the blackout policies it can

@@ -193,7 +193,9 @@ scan would do if it started now, without creating anything
 - **Targets:** the zone routing preview with scan type `workflow`, which runs the
   trigger's target resolution, scope exclusions and zone plan. The sample is cut
   to 20 targets.
-- **Freeze:** a freeze window active now for the scan's zone, for active work.
+- **Scan windows:** `targets.windows`, the targets that wait for their scan
+  windows and until when, at the workflow's highest tier; a target whose
+  windows never open blocks (`SCAN_WINDOW_NEVER_OPENS`).
 
 The workflow must be the organization's own or a system workflow (otherwise
 404). The new-scan wizard shows the preview on its last step.
@@ -232,7 +234,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
 - **No step is pinned to one sensor.** A step command goes
   to the run's zone (stamped with it), to the platform queue, or to the
   tenant's sensors, and is left unpinned: the claim predicates (zone, tool,
-  grant, refusals, freeze) decide which sensor takes it. `SelectSensor` only
+  grant, refusals) and the scan window hold decide which sensor takes it and when. `SelectSensor` only
   decides platform versus tenant now; it no longer picks a sensor.
 - **Chunks.** A step whose tool takes a target list (the catalogue's `batch`
   flag) and whose planned targets exceed its capability's `chunk_size` is cut
