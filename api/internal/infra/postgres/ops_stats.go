@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 )
 
 // Platform-wide counts for the operator's metrics (docs/operations/monitoring.md).
@@ -28,6 +30,11 @@ type OpsSensorCount struct {
 // OpsSnapshot is one read of the platform-wide counts.
 type OpsSnapshot struct {
 	Sensors []OpsSensorCount
+
+	// SensorsUnhardened counts active tenant sensors by unhardened reason
+	// (sensor.UnhardenedKinds: policy_none, pin_none, network_unenforced,
+	// bearer_key). A sensor with several reasons counts under each.
+	SensorsUnhardened map[string]int64
 
 	// Commands waiting for a sensor (pending and due) and held by one
 	// (acknowledged or running), and how long the oldest due pending
@@ -73,6 +80,12 @@ func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 		return s, fmt.Errorf("sensors: %w", err)
 	}
 	s.Sensors = sensors
+
+	unhardened, err := readOpsUnhardened(ctx, db)
+	if err != nil {
+		return s, fmt.Errorf("unhardened sensors: %w", err)
+	}
+	s.SensorsUnhardened = unhardened
 
 	if err := db.QueryRowContext(ctx, `
 		SELECT count(*) FILTER (WHERE status = 'pending' AND COALESCE(scheduled_at, created_at) <= now()),
@@ -138,6 +151,58 @@ func readOpsSensors(ctx context.Context, db opsQuerier) ([]OpsSensorCount, error
 			return nil, err
 		}
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// readOpsUnhardened counts active tenant sensors by unhardened reason. The
+// rows are grouped by the few values the posture is derived from (the local
+// policy state and requirement, the current manifest's platform TLS pin and
+// sandbox network confinement, the auth kind, whether the sensor has
+// connected), and sensor.DerivePosture judges each group, so the gauge and
+// the console flag the same sensors.
+func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT s.reported_local_policy->>'state', COALESCE(s.reported_local_policy->>'required', 'false') = 'true',
+		       p.posture->'platform_tls'->>'pin', p.posture->'sandbox'->>'network_enforced',
+		       COALESCE(s.auth_kind, '') = '`+string(sensor.AuthKindKeyBound)+`', s.last_seen_at IS NOT NULL, count(*)
+		FROM sensors s
+		LEFT JOIN LATERAL (SELECT `+sensorManifestPostureSQL("s")+` AS posture) p ON TRUE
+		WHERE s.status = 'active' AND NOT s.is_platform_sensor
+		GROUP BY 1, 2, 3, 4, 5, 6`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]int64, len(sensor.UnhardenedKinds()))
+	for _, k := range sensor.UnhardenedKinds() {
+		out[k] = 0
+	}
+	for rows.Next() {
+		var (
+			state, pin, netEnforced  sql.NullString
+			required, keyBound, seen bool
+			n                        int64
+		)
+		if err := rows.Scan(&state, &required, &pin, &netEnforced, &keyBound, &seen, &n); err != nil {
+			return nil, err
+		}
+		in := sensor.PostureInput{KeyBound: keyBound, Seen: seen}
+		if state.Valid {
+			in.LocalPolicy = &sensor.LocalPolicyReport{State: state.String, Required: required}
+		}
+		if pin.Valid || netEnforced.Valid {
+			in.Posture = &sensor.ManifestPosture{}
+			if pin.Valid {
+				in.Posture.PlatformTLS = &sensor.PlatformTLSPosture{Pin: pin.String}
+			}
+			if netEnforced.Valid {
+				in.Posture.Sandbox = &sensor.SandboxPosture{NetworkEnforced: netEnforced.String == "true"}
+			}
+		}
+		for _, reason := range sensor.DerivePosture(in).Unhardened {
+			out[reason] += n
+		}
 	}
 	return out, rows.Err()
 }
