@@ -441,6 +441,13 @@ These are either platform-controlled per job or security boundaries.
 
 ### 6.12 Custom template trust (implemented 2026-10-03)
 
+> Amended 2026-10-09 (RFC-040 §11.5): with the job signer, a template
+> version reaches sensors only once approved like a scope widening and
+> recorded in the signer's ledger; the signed job lists the template
+> digests and a sensor that verifies it trusts them through the job. The
+> per-tenant manifest below is the fallback for sensors without signed
+> jobs ([job-signing.md, "Custom templates"](../architecture/job-signing.md#custom-templates)).
+
 Custom templates are not settings (§6.11), but they reach the sensor the
 same way settings will, so they get the delivery guarantees first: DSSE
 over the exact bytes, tenant and sensor binding, expiry, one manifest per

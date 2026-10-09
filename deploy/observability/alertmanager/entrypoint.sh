@@ -70,6 +70,19 @@ route:
   group_interval: 5m
   repeat_interval: 4h
   routes:
+    # Unhardened sensors are a standing nudge, not an incident: one
+    # notification per kind, repeated once a day.
+    - matchers: [alertname="SensorsUnhardened"]
+      receiver: operators
+      group_by: [alertname, kind]
+      repeat_interval: 24h
+    # Security signals (job signer refusals, RFC-040 §5.11 A10) are sent at
+    # once and repeated hourly, whatever their severity.
+    - matchers: [category="security"]
+      receiver: operators
+      group_by: [alertname, reason, kind]
+      group_wait: 10s
+      repeat_interval: 1h
     - matchers: [severity="critical"]
       receiver: operators
       repeat_interval: 1h
@@ -82,9 +95,10 @@ inhibit_rules:
   - source_matchers: [severity="critical"]
     target_matchers: [severity="warning"]
     equal: [alertname]
-  # The API down (or its database down) explains every alert the API reports.
+  # The API down (or its database down) explains every alert the API reports,
+  # except the security signals: they stay visible.
   - source_matchers: [alertname=~"ApiDown|PostgresDown"]
-    target_matchers: [component="api"]
+    target_matchers: [component="api", category!="security"]
 
 receivers:
   - name: operators

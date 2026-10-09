@@ -28,7 +28,6 @@ import {
   useRemoveGroupMember,
   useAssignAssetToGroup,
   useUnassignAssetFromGroup,
-  type GroupMemberRole,
   formatDate,
   getGroupType,
   GroupTypeConfig,
@@ -50,7 +49,7 @@ import {
 } from '@/features/shared'
 import { useMembers } from '@/features/organization'
 import { useTenant } from '@/context/tenant-provider'
-import { useCanMutate } from '@/lib/permissions'
+import { Permission, useCanMutate, usePermissions } from '@/lib/permissions'
 
 import {
   MembersTab,
@@ -60,9 +59,17 @@ import {
   AddMemberDialog,
   AddAssetDialog,
   BulkAddAssetsDialog,
+  RolesTab,
+  MembershipEndDialog,
+  membershipEndISO,
+  DEFAULT_EXTERNAL_MEMBERSHIP_DAYS,
+  type NewGroupMember,
 } from './group-detail-sheet/index'
+import { dateInputDaysFromNow } from '@/features/organization/lib/external-access'
 
-type GroupTab = 'overview' | 'members' | 'assets' | 'scope-rules'
+type GroupTab = 'overview' | 'members' | 'roles' | 'assets' | 'scope-rules'
+
+const EMPTY_NEW_MEMBER: NewGroupMember = { userId: '', role: 'member', endsOn: '', reason: '' }
 
 interface GroupDetailSheetProps {
   groupId: string | null
@@ -118,6 +125,16 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
   const canAddAsset = useCanMutate('POST /api/v1/groups/{groupId}/assets')
   const canBulkAddAssets = useCanMutate('POST /api/v1/groups/{groupId}/assets/bulk')
   const canRemoveAsset = useCanMutate('DELETE /api/v1/groups/{groupId}/assets/{assetId}')
+  const canSetMemberEnd = useCanMutate('PATCH /api/v1/groups/{groupId}/members/{userId}')
+  const canBindRole = useCanMutate('POST /api/v1/groups/{groupId}/roles')
+  const canUnbindRole = useCanMutate('DELETE /api/v1/groups/{groupId}/roles/{roleId}')
+  const { canAll } = usePermissions()
+  const canViewRoles = canAll(Permission.GroupsRead, Permission.RolesRead)
+  const [memberEnd, setMemberEnd] = useState<{
+    userId: string
+    name: string
+    expiresAt?: string
+  } | null>(null)
   const [editForm, setEditForm] = useState({ name: '', description: '' })
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false)
   const [addAssetDialogOpen, setAddAssetDialogOpen] = useState(false)
@@ -126,7 +143,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
     null
   )
   const [assetToRemove, setAssetToRemove] = useState<{ id: string; name: string } | null>(null)
-  const [newMember, setNewMember] = useState({ userId: '', role: 'member' as GroupMemberRole })
+  const [newMember, setNewMember] = useState<NewGroupMember>(EMPTY_NEW_MEMBER)
 
   // Remove hooks
   const { removeMember, isRemoving: isRemovingMember } = useRemoveGroupMember(
@@ -206,10 +223,12 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
       await addMember({
         user_id: newMember.userId,
         role: newMember.role,
+        expires_at: membershipEndISO(newMember.endsOn),
+        expiry_reason: newMember.endsOn ? newMember.reason.trim() || undefined : undefined,
       })
       toast.success('Member added successfully')
       setAddMemberDialogOpen(false)
-      setNewMember({ userId: '', role: 'member' })
+      setNewMember(EMPTY_NEW_MEMBER)
       mutateMembers()
       mutateGroup()
       onUpdate?.()
@@ -304,6 +323,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
         </>
       ),
     },
+    ...(canViewRoles ? [{ value: 'roles' as const, label: 'Roles' }] : []),
     { value: 'scope-rules', label: 'Scope rules' },
   ]
 
@@ -455,7 +475,26 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                 limit={PAGE_SIZE}
                 offset={membersOffset}
                 onPageChange={setMembersOffset}
-                onAddMember={canAddMember ? () => setAddMemberDialogOpen(true) : undefined}
+                onAddMember={
+                  canAddMember
+                    ? () => {
+                        // An external team proposes an end date; the API requires one.
+                        setNewMember({
+                          ...EMPTY_NEW_MEMBER,
+                          endsOn:
+                            groupType === 'external'
+                              ? dateInputDaysFromNow(DEFAULT_EXTERNAL_MEMBERSHIP_DAYS)
+                              : '',
+                        })
+                        setAddMemberDialogOpen(true)
+                      }
+                    : undefined
+                }
+                onChangeEnd={
+                  canSetMemberEnd
+                    ? (userId, name, expiresAt) => setMemberEnd({ userId, name, expiresAt })
+                    : undefined
+                }
                 onRemoveMember={
                   canRemoveMember
                     ? (userId, name) => setMemberToRemove({ userId, name })
@@ -482,6 +521,15 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
               />
             )}
 
+            {activeTab === 'roles' && groupId && (
+              <RolesTab
+                groupId={groupId}
+                canBind={canBindRole}
+                canUnbind={canUnbindRole}
+                onChanged={onUpdate}
+              />
+            )}
+
             {activeTab === 'scope-rules' && <ScopeRulesTab groupId={groupId} />}
           </>
         )}
@@ -495,7 +543,18 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
         isAddingMember={isAddingMember}
         onAddMember={handleAddMember}
         availableMembers={availableMembers}
+        requireEnd={groupType === 'external'}
       />
+
+      {groupId && (
+        <MembershipEndDialog
+          groupId={groupId}
+          member={memberEnd}
+          required={groupType === 'external'}
+          onOpenChange={(o) => !o && setMemberEnd(null)}
+          onSaved={() => mutateMembers()}
+        />
+      )}
 
       <AddAssetDialog
         open={addAssetDialogOpen}

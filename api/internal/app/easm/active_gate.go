@@ -190,6 +190,33 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 	return ScopeStatusOutOfScope, nil, nil
 }
 
+// ProgramOnlyTargets returns the targets that only program entries cover
+// (RFC-065 §8): a bug-bounty program's scope is not the organization's, and
+// such a target is never probed from platform sensors. Implements
+// scan.ProgramTargetChecker.
+func (g *ActiveGate) ProgramOnlyTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	var auth *scopeauth.Authority
+	var out []string
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		if auth.ProgramOnly(t) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 // UnverifiedTargets returns the targets naming an internet host or public
 // address that are not at or under a verified domain of the tenant (an
 // address never is: there is no address proof yet). Implements
@@ -411,21 +438,9 @@ func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, tar
 // public address or range, which the scope authority must cover (a host with
 // a path, such as a repository URL, counts as its host unless a scope target
 // matches the whole text). Private and internal names are gated by scan
-// zones; anything else (an identifier) is left to the act-scope check.
-func needsAuthority(t string) bool {
-	if isInternalName(t) {
-		return false
-	}
-	if dnsHost(t) != "" {
-		return true
-	}
-	h := strings.Trim(strings.TrimSpace(t), "[]")
-	if _, err := netip.ParsePrefix(h); err == nil {
-		return true
-	}
-	_, err := netip.ParseAddr(asset.HostOf(t))
-	return err == nil
-}
+// zones; anything else (an identifier) is left to the act-scope check. The
+// job signer's ledger uses the same rule (scopedom.NeedsAuthority).
+func needsAuthority(t string) bool { return scopedom.NeedsAuthority(t) }
 
 // decide applies the rule to assets already loaded (ids not in assets are
 // not the tenant's or are deleted: nothing to probe, refused as
@@ -617,23 +632,4 @@ func hostValues(m map[string]string) []string {
 // link-local or CGNAT address (or range), or an internal-only host name.
 // Those are gated by scan zones (a private address is scanned only inside a
 // zone), not by EASM attribution.
-func isInternalName(name string) bool {
-	if p, err := netip.ParsePrefix(strings.TrimSpace(name)); err == nil {
-		return internalAddr(p.Addr())
-	}
-	h := asset.HostOf(name)
-	if a, err := netip.ParseAddr(h); err == nil {
-		return internalAddr(a)
-	}
-	l := strings.ToLower(strings.TrimSuffix(h, "."))
-	return l == "localhost" || strings.HasSuffix(l, ".localhost") ||
-		strings.HasSuffix(l, ".local") || strings.HasSuffix(l, ".internal") || strings.HasSuffix(l, ".lan")
-}
-
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
-
-func internalAddr(a netip.Addr) bool {
-	a = a.Unmap()
-	return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() ||
-		a.IsUnspecified() || cgnat.Contains(a)
-}
+func isInternalName(name string) bool { return scopedom.InternalName(name) }
