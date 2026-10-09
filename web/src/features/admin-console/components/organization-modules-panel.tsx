@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -237,7 +238,7 @@ function GrantDialog({
             Takes effect at once and is recorded in the admin audit log.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <DialogBody className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor={`${id}-r`}>Reason</Label>
             <Textarea
@@ -260,7 +261,7 @@ function GrantDialog({
             />
             {expiryBad && <p className="text-sm text-destructive">Pick a date in the future.</p>}
           </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>
             Cancel
