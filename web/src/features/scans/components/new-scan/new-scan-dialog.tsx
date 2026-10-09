@@ -18,8 +18,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { ChevronLeft, ChevronRight, Loader2, Play } from 'lucide-react'
-import { ScanRoutingSection, toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
-import { WorkflowPreviewSection } from './workflow-preview'
+import { toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
+import { ReviewStep } from './review-step'
+import { useScanReview } from '../../hooks/use-scan-review'
+import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
@@ -54,7 +56,7 @@ interface NewScanDialogProps {
   onSubmit?: (data: NewScanFormData) => void
 }
 
-const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
+const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule', 'review']
 
 export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogProps) {
   const [currentStep, setCurrentStep] = useState<ScanWizardStep>('basic')
@@ -84,6 +86,26 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       ),
     [formData]
   )
+
+  const workflowRequest = useMemo(
+    () => ({
+      scan_workflow_id: formData.workflowId ?? '',
+      targets: previewRequest.targets,
+      asset_group_ids: previewRequest.asset_group_ids,
+      scan_zone_id: formData.scanZoneId ?? undefined,
+    }),
+    [formData.workflowId, formData.scanZoneId, previewRequest]
+  )
+  const review = useScanReview(formData, workflowRequest, open && currentStep === 'review')
+  const { data: chosenWorkflow } = useScanWorkflow(
+    formData.mode === 'workflow' && formData.workflowId ? formData.workflowId : null,
+    { revalidateOnFocus: false }
+  )
+  const whatLabel =
+    formData.mode === 'workflow'
+      ? (chosenWorkflow?.name ?? 'Workflow')
+      : formData.scannerName || 'Scanner'
+  const blocked = review.blockers.length > 0
 
   const currentStepIndex = STEPS.indexOf(currentStep)
   const isFirstStep = currentStepIndex === 0
@@ -147,9 +169,18 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       setCurrentStep(step)
     }
   }
+  const startLabel = formData.schedule.runImmediately
+    ? 'Start scan'
+    : formData.schedule.saveOnly
+      ? 'Save scan'
+      : 'Schedule scan'
 
   const handleSubmit = async () => {
     if (!validateCurrentStep()) return
+    if (blocked) {
+      toast.error(review.blockers[0])
+      return
+    }
 
     const targetProblem = targetsError(formData)
     if (targetProblem) {
@@ -218,6 +249,8 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           onOpenChange(false)
           return
         }
+      } else if (formData.schedule.saveOnly) {
+        toast.success(`Scan "${formData.name}" saved: start it from the scan page`)
       } else {
         const at = formData.schedule.frequency === 'once' ? onceRunAt(formData) : null
         toast.success(
@@ -275,28 +308,19 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       case 'options':
         return <OptionsStep data={formData} onChange={handleDataChange} />
       case 'schedule':
+        return <ScheduleStep data={formData} onChange={handleDataChange} offerSaveOnly />
+      case 'review':
         return (
-          <>
-            <ScheduleStep data={formData} onChange={handleDataChange} />
-            {formData.mode === 'workflow' && formData.workflowId && (
-              <WorkflowPreviewSection
-                request={{
-                  scan_workflow_id: formData.workflowId,
-                  targets: previewRequest.targets,
-                  asset_group_ids: previewRequest.asset_group_ids,
-                  scan_zone_id: formData.scanZoneId ?? undefined,
-                }}
-              />
-            )}
-            {canReadZones && zones.length > 0 && (
-              <ScanRoutingSection
-                zones={zones}
-                value={formData.scanZoneId}
-                onChange={(scanZoneId) => handleDataChange({ scanZoneId })}
-                request={previewRequest}
-              />
-            )}
-          </>
+          <ReviewStep
+            data={formData}
+            onChange={handleDataChange}
+            review={review}
+            onEdit={setCurrentStep}
+            whatLabel={whatLabel}
+            zones={zones}
+            canReadZones={canReadZones}
+            zoneRequest={previewRequest}
+          />
         )
       default:
         return null
@@ -307,7 +331,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] overflow-hidden p-0 w-full sm:max-w-[600px]">
+      <DialogContent className="max-h-[90vh] overflow-hidden p-0 w-full sm:max-w-[680px]">
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>New Scan</DialogTitle>
           <DialogDescription>Configure and launch a new security scan</DialogDescription>
@@ -315,15 +339,25 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
         {/* Stepper */}
         <div className="min-w-0 border-b">
-          <ScanStepper currentStep={currentStep} onStepClick={handleStepClick} />
+          <ScanStepper currentStep={currentStep} onStepClick={handleStepClick} steps={STEPS} />
         </div>
 
         {/* Step Content */}
-        <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden">{renderStep()}</div>
+        <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden sm:max-h-[60vh]">
+          {renderStep()}
+        </div>
 
         {/* Footer */}
         <div className="flex flex-col-reverse gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="flex justify-center sm:justify-start">
+          <div className="flex flex-col items-center gap-1 sm:flex-row sm:justify-start">
+            {isLastStep && blocked && (
+              <p
+                id="review-blocked"
+                className="text-xs text-destructive sm:order-2 sm:max-w-[16rem]"
+              >
+                {review.blockers[0]}
+              </p>
+            )}
             {!isFirstStep && (
               <Button
                 type="button"
@@ -353,18 +387,20 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               <Button
                 type="button"
                 onClick={handleSubmit}
-                disabled={isLoading}
+                disabled={isLoading || blocked}
+                title={blocked ? review.blockers[0] : undefined}
+                aria-describedby={blocked ? 'review-blocked' : undefined}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    {formData.schedule.runImmediately ? 'Starting...' : 'Scheduling...'}
+                    {formData.schedule.runImmediately ? 'Starting...' : 'Saving...'}
                   </>
                 ) : (
                   <>
                     <Play className="me-2 h-4 w-4" />
-                    {formData.schedule.runImmediately ? 'Start Scan' : 'Schedule Scan'}
+                    {startLabel}
                   </>
                 )}
               </Button>
