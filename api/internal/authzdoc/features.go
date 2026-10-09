@@ -182,6 +182,7 @@ var Features = []Feature{
 		Description: "The MCP endpoint for AI clients, its OAuth authorization server, connections and organization policy.",
 		Registers: []string{
 			"registerMCPRoutes", "registerMCPOAuthRoutes", "registerMCPConnectionRoutes", "registerMCPSettingsRoutes",
+			"registerMCPClientRoutes",
 		},
 	},
 	{
