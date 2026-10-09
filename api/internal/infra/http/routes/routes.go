@@ -79,6 +79,8 @@ type Handlers struct {
 	DefectDojo    *handler.DefectDojoHandler    // nil if not initialized / no DefectDojo sync
 	AssetGroup    *handler.AssetGroupHandler    // nil if not initialized (no database)
 	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
+	// BountyProgram serves bug-bounty programs (RFC-065); nil without a database.
+	BountyProgram *handler.BountyProgramHandler
 	AssetType     *handler.AssetTypeHandler     // nil if not initialized (no database)
 	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
 	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
@@ -760,6 +762,9 @@ func Register(
 	// Scope Configuration routes (tenant from JWT token)
 	if h.Scope != nil {
 		registerScopeRoutes(router, h.Scope, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
+	}
+	if h.BountyProgram != nil {
+		registerProgramRoutes(router, h.BountyProgram, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
 	}
 
 	// Asset Type routes (tenant from JWT token)
