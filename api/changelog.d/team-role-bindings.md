@@ -2,7 +2,7 @@
 
 - A custom role can be bound to a team (`GET/POST /api/v1/groups/{groupId}/roles`,
   `DELETE /api/v1/groups/{groupId}/roles/{roleId}`): every active member of
-  the team holds it (migration 001460, view `v_user_role_grants`).
+  the team holds it (migration 001503, view `v_user_role_grants`).
 - Binding, and changing who is in a team that carries roles, are grants: the
   actor must be able to grant each role and hold the team's assets; nobody
   but the owner adds themselves. Roles with full data access or member, team,
