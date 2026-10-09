@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { useTenant } from '@/context/tenant-provider'
 import { useDashboardStats } from '@/features/dashboard'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
+import { cn } from '@/lib/utils'
 import {
   useRiskTrend,
   useExecutiveSummary,
@@ -67,6 +68,7 @@ export function CtemDashboard() {
 
   // Maturity is module-gated — skip the fetch entirely when disabled so it 403s nothing.
   const ctemCyclesEnabled = useModuleEnabled('ctem_cycles')
+  const attackSurfaceEnabled = useModuleEnabled('attack_surface')
   const { data: maturity, isLoading: maturityLoading } = useCtemMaturityTrend(
     tenantId,
     ctemCyclesEnabled
@@ -104,18 +106,22 @@ export function CtemDashboard() {
       </section>
 
       {/* Row 3 — Fix next + Attack paths */}
-      <section className="mb-6 grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+      <section
+        className={cn('mb-6 grid gap-4', attackSurfaceEnabled && 'lg:grid-cols-[1.3fr_1fr]')}
+      >
         <FixNextQueue
           chains={chains}
           topRisks={summary?.top_risks}
           isLoading={exposureLoading || summaryLoading}
         />
-        <AttackPathsCard
-          attackPaths={attackPaths}
-          chains={chains}
-          crownJewelsTotal={scopingSummary?.crown_jewels.total}
-          isLoading={pathsLoading || exposureLoading}
-        />
+        {attackSurfaceEnabled && (
+          <AttackPathsCard
+            attackPaths={attackPaths}
+            chains={chains}
+            crownJewelsTotal={scopingSummary?.crown_jewels.total}
+            isLoading={pathsLoading || exposureLoading}
+          />
+        )}
       </section>
 
       {/* Row 4 — Threat intel + coverage/hygiene (+ optional maturity) */}
