@@ -43,6 +43,9 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detail:
         'Migration {version} is marked dirty. Fix it and re-run the migrations before the next deploy.',
       vars: { version: p.schema_version },
+      href: '/admin/operations',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
     })
   } else if (p.schema_known && p.schema_shipped > 0 && p.schema_version < p.schema_shipped) {
     items.push({
@@ -53,6 +56,9 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detailKey: 'admin.attention.schemaBehind.detail',
       detail: 'Applied {applied}, this release ships {shipped}. Run the migrations.',
       vars: { applied: p.schema_version, shipped: p.schema_shipped },
+      href: '/admin/operations',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
     })
   } else if (p.schema_known && p.schema_shipped > 0 && p.schema_version > p.schema_shipped) {
     items.push({
@@ -63,6 +69,9 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detailKey: 'admin.attention.schemaAhead.detail',
       detail: 'Applied {applied}, this release ships {shipped}. Was the API rolled back?',
       vars: { applied: p.schema_version, shipped: p.schema_shipped },
+      href: '/admin/operations',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
     })
   }
 
@@ -162,6 +171,9 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detailKey: 'admin.attention.sensorsOffline.detail',
       detail: '{offline} of {total} platform sensors are offline or stale.',
       vars: { offline: p.platform_sensors.offline, total: p.platform_sensors.total },
+      href: '/admin/operations',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
     })
   }
 
@@ -175,6 +187,9 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detail:
         '{count} run(s) are more than 10 minutes past their deadline: the timeout controller may be stopped.',
       vars: { count: p.scan_runs_past_deadline },
+      href: '/admin/operations',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
     })
   }
 
@@ -187,6 +202,9 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
       detailKey: 'admin.attention.outboxDead.detail',
       detail: '{count} notification(s) failed every retry and were not delivered.',
       vars: { count: p.outbox_dead },
+      href: '/admin/operations',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
     })
   }
 
@@ -202,6 +220,9 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
         count: p.commands_pending,
         minutes: Math.floor(p.command_oldest_pending_seconds / 60),
       },
+      href: '/admin/operations',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
     })
   }
 

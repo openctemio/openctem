@@ -360,3 +360,72 @@ export interface AdminConsoleSession {
   /** The session making the request. */
   current: boolean
 }
+
+interface AdminOpsComponent {
+  ok: boolean
+  latency_ms: number
+  configured: boolean
+  error?: string
+}
+
+/** GET /admin/operations: the installation's health (any admin role). */
+export interface AdminOperations {
+  build: { version: string; commit?: string; build_time?: string; channel?: string }
+  schema: { applied: number; shipped: number; dirty: boolean; known: boolean }
+  database: AdminOpsComponent & {
+    open_connections: number
+    in_use: number
+    idle: number
+    max_open: number
+    wait_count: number
+  }
+  redis: AdminOpsComponent
+  queues: {
+    commands_pending: number
+    commands_running: number
+    command_oldest_pending_seconds: number
+    scan_runs_open: number
+    scan_runs_past_deadline: number
+    outbox_pending: number
+    outbox_failed: number
+    outbox_dead: number
+    outbox_oldest_pending_seconds: number
+  }
+  sensors: {
+    platform: boolean
+    health: string
+    config_health?: string
+    sdk_version?: string
+    count: number
+  }[]
+  sdk_min_version?: string
+  controllers: {
+    name: string
+    running: boolean
+    last_reconcile_at?: string
+    errors_total: number
+  }[]
+  checked_at: string
+}
+
+/** A platform announcement in the console (GET /admin/announcements). */
+export interface AdminAnnouncement {
+  id: string
+  message: string
+  severity: 'info' | 'warning' | 'maintenance'
+  starts_at: string
+  ends_at?: string
+  state: 'scheduled' | 'active' | 'ended'
+  created_at: string
+}
+
+/** One threat-intelligence feed's sync state (GET /admin/threat-intel/sync). */
+export interface ThreatIntelFeed {
+  source: string
+  enabled: boolean
+  last_sync_at?: string
+  last_sync_status: string
+  last_error?: string
+  records_synced: number
+  next_sync_at?: string
+}

@@ -18,7 +18,6 @@ asset_state_history
 assets
 assignment_rules
 attachments
-attack_paths
 attack_simulation_runs
 attack_simulations
 attacker_profiles
@@ -27,6 +26,9 @@ audit_chain_rebaseline_entries
 audit_chain_rebaselines
 audit_log_chain
 audit_logs
+authorization_letters
+bounty_program_exclusions
+bounty_programs
 business_service_assets
 business_services
 business_unit_assets
@@ -82,12 +84,14 @@ finding_status_approvals
 finding_verification_checklists
 findings
 group_asset_scope_rules
+group_role_bindings
 groups
 ingest_jobs
 ingest_reports
 integrations
 ioc_matches
 iocs
+mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
 mcp_oauth_requests
@@ -116,6 +120,7 @@ saved_views
 scan_coverage_state
 scan_freeze_windows
 scan_profiles
+scan_run_scope_snapshots
 scan_run_stage_plans
 scan_run_targets
 scan_runs
@@ -130,6 +135,7 @@ scim_group_role_mappings
 scim_groups
 scim_tokens
 scope_exclusions
+scope_snapshots
 scope_target_approvals
 scope_targets
 sensor_config_reports
@@ -160,7 +166,6 @@ threat_actors
 threat_model_threats
 threat_models
 tool_categories
-tool_executions
 tools
 user_accessible_assets
 user_dashboards

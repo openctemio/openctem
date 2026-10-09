@@ -116,6 +116,25 @@ type ScannerTemplateResponse struct {
 	CreatedBy       *string        `json:"created_by,omitempty"`
 	CreatedAt       string         `json:"created_at"`
 	UpdatedAt       string         `json:"updated_at"`
+	// SensorApproval says whether the current version may reach sensors
+	// (RFC-040 §11.5): approved by people and recorded by the job signer.
+	SensorApproval TemplateSensorApproval `json:"sensor_approval"`
+}
+
+// TemplateSensorApproval is the approval of a template's current version
+// for sensors.
+type TemplateSensorApproval struct {
+	Approved bool `json:"approved"`
+	// ApprovalsRequired is the organization's approval count for a
+	// widening (scope policy); the author of the version never counts.
+	ApprovalsRequired int                        `json:"approvals_required"`
+	Approvals         []TemplateApprovalResponse `json:"approvals"`
+}
+
+// TemplateApprovalResponse is one approval of the current version.
+type TemplateApprovalResponse struct {
+	UserID     string `json:"user_id"`
+	ApprovedAt string `json:"approved_at"`
 }
 
 // ValidationResultResponse represents the response for template validation.
@@ -189,7 +208,9 @@ func (h *ScannerTemplateHandler) Create(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toScannerTemplateResponse(template))
+	resp := toScannerTemplateResponse(template)
+	h.withApprovalsRequired(r, tenantID, resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Get handles GET /api/v1/scanner-templates/{id}
@@ -216,7 +237,9 @@ func (h *ScannerTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScannerTemplateResponse(template))
+	resp := toScannerTemplateResponse(template)
+	h.withApprovalsRequired(r, tenantID, resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // List handles GET /api/v1/scanner-templates
@@ -272,6 +295,7 @@ func (h *ScannerTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 	for i, template := range result.Data {
 		items[i] = toScannerTemplateResponse(template)
 	}
+	h.withApprovalsRequired(r, tenantID, items...)
 
 	resp := map[string]any{
 		"items":    items,
@@ -329,6 +353,7 @@ func (h *ScannerTemplateHandler) Update(w http.ResponseWriter, r *http.Request) 
 		Description: req.Description,
 		Content:     req.Content,
 		Tags:        req.Tags,
+		UserID:      middleware.GetUserID(r.Context()),
 	}
 
 	before, ok := h.templateBefore(w, r, tenantID, templateID)
@@ -343,7 +368,9 @@ func (h *ScannerTemplateHandler) Update(w http.ResponseWriter, r *http.Request) 
 	h.auditTemplate(r, audit.ActionScannerTemplateUpdated, templateID, before, template)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScannerTemplateResponse(template))
+	resp := toScannerTemplateResponse(template)
+	h.withApprovalsRequired(r, tenantID, resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Delete handles DELETE /api/v1/scanner-templates/{id}
@@ -481,7 +508,9 @@ func (h *ScannerTemplateHandler) Deprecate(w http.ResponseWriter, r *http.Reques
 	h.auditTemplate(r, audit.ActionScannerTemplateDeprecated, templateID, before, template)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScannerTemplateResponse(template))
+	resp := toScannerTemplateResponse(template)
+	h.withApprovalsRequired(r, tenantID, resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // TemplateUsageResponse represents the response for template usage and quota.
@@ -603,7 +632,68 @@ func toScannerTemplateResponse(t *scannertemplate.ScannerTemplate) *ScannerTempl
 		resp.Metadata = make(map[string]any)
 	}
 
+	resp.SensorApproval = TemplateSensorApproval{Approved: t.ApprovedForSensors(), Approvals: []TemplateApprovalResponse{}}
+	for _, a := range t.CurrentApprovals() {
+		resp.SensorApproval.Approvals = append(resp.SensorApproval.Approvals,
+			TemplateApprovalResponse{UserID: a.UserID, ApprovedAt: a.ApprovedAt.Format("2006-01-02T15:04:05Z07:00")})
+	}
+
 	return resp
+}
+
+// withApprovalsRequired fills the approval count of resps; a policy that
+// cannot be read leaves it 0 (the approve call reports the error).
+func (h *ScannerTemplateHandler) withApprovalsRequired(r *http.Request, tenantID string, resps ...*ScannerTemplateResponse) {
+	n, err := h.service.ApprovalsRequired(r.Context(), tenantID)
+	if err != nil {
+		h.logger.Warn("template approval count not read", "error", err)
+		return
+	}
+	for _, resp := range resps {
+		resp.SensorApproval.ApprovalsRequired = n
+	}
+}
+
+// templateErrorCodes are the domain errors answered with their own code.
+var templateErrorCodes = map[string]int{
+	app.ErrTemplateLedgerRefused.Code:           http.StatusConflict,
+	app.ErrTemplateLedgerUnavailable.Code:       http.StatusConflict,
+	scannertemplate.ErrSensorSelfApproval.Code:  http.StatusForbidden,
+	scannertemplate.ErrSensorApprovedTwice.Code: http.StatusConflict,
+	scannertemplate.ErrSensorNotActive.Code:     http.StatusConflict,
+}
+
+// ApproveForSensors handles POST /api/v1/scanner-templates/{id}/approve
+// @Summary      Approve a template version for sensors
+// @Description  Records the caller's approval of the template's current version. Once the organization's approval count is reached, the job signer records the version and sensors may run it (RFC-040 §11.5). The author of the version cannot approve it.
+// @Tags         Scanner Templates
+// @Produce      json
+// @Param        id   path      string  true  "Template ID"
+// @Success      200  {object}  ScannerTemplateResponse
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scanner-templates/{id}/approve [post]
+func (h *ScannerTemplateHandler) ApproveForSensors(w http.ResponseWriter, r *http.Request) {
+	templateID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	before, ok := h.templateBefore(w, r, tenantID, templateID)
+	if !ok {
+		return
+	}
+	template, err := h.service.ApproveTemplateForSensors(r.Context(), tenantID, templateID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.auditTemplate(r, audit.ActionScannerTemplateApproved, templateID, before, template)
+
+	resp := toScannerTemplateResponse(template)
+	h.withApprovalsRequired(r, tenantID, resp)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // toValidationResultResponse converts a validation result to response.
@@ -648,6 +738,13 @@ func (h *ScannerTemplateHandler) handleValidationError(w http.ResponseWriter, er
 // handleServiceError converts service errors to API errors.
 // Uses safe error messages to prevent information leakage.
 func (h *ScannerTemplateHandler) handleServiceError(w http.ResponseWriter, err error) {
+	var de *shared.DomainError
+	if errors.As(err, &de) {
+		if status, ok := templateErrorCodes[de.Code]; ok {
+			apierror.New(status, apierror.Code(de.Code), de.Message).WriteJSON(w)
+			return
+		}
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scanner template").WriteJSON(w)

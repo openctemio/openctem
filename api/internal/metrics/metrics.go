@@ -316,4 +316,28 @@ var (
 		},
 		[]string{"outcome"},
 	)
+
+	// SignerRefusalsTotal counts the job signer's refusals by reason
+	// (out_of_ledger, tier_exceeds_ledger, target_excluded, rate limits,
+	// malformed statements; RFC-040 §5.11 detection A10). The signer's own
+	// signing log is the record a compromised API cannot rewrite; this is
+	// the alerting signal.
+	SignerRefusalsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_signer_refusals_total",
+			Help: "Job statements the job signer refused, by reason",
+		},
+		[]string{"reason"},
+	)
+
+	// SignerLedgerFeedTotal counts scope changes sent to the job signer's
+	// ledger, by kind (widen, narrow, sync) and outcome (applied, refused,
+	// unavailable).
+	SignerLedgerFeedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_signer_ledger_feed_total",
+			Help: "Scope changes sent to the job signer's ledger, by kind and outcome",
+		},
+		[]string{"kind", "outcome"},
+	)
 )
