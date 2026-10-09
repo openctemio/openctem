@@ -912,7 +912,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
-		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing,
+		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing, repos.Finding,
 	} {
 		r.SetPlanLimits(s.Entitlement)
 	}

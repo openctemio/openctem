@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 
 import type { PlanSummaryResponse } from '@/lib/api/generated'
 import { useOrganizationPlan } from '../api/use-organization-plan'
 import { OrganizationPlanUsage } from '../components/organization-plan-usage'
-import { formatLimit, usagePercent } from '../lib/plan-keys'
+import {
+  formatLimit,
+  ORGANIZATION_KEYS,
+  PLAN_KEY_LABEL,
+  PLAN_KEYS,
+  usagePercent,
+} from '../lib/plan-keys'
 
 vi.mock('../api/use-organization-plan', async (orig) => ({
   ...(await orig<typeof import('../api/use-organization-plan')>()),
@@ -75,5 +81,42 @@ describe('OrganizationPlanUsage', () => {
     mockPlan({ error: new Error('boom') })
     render(<OrganizationPlanUsage />)
     expect(screen.getByRole('button', { name: /retry|try again/i })).toBeInTheDocument()
+  })
+})
+
+describe('findings limit', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('is a plan key the console and the organization page list', () => {
+    expect(PLAN_KEYS).toContain('findings')
+    expect(ORGANIZATION_KEYS).toContain('findings')
+    expect(PLAN_KEY_LABEL.findings).toBe('Findings')
+  })
+
+  it('shows a dash, not 0, for findings the server did not count (unlimited)', () => {
+    mockPlan({
+      data: {
+        plan: 'free',
+        over_limit: false,
+        limits: [{ key: 'findings', limit: -1, used: 0, source: 'plan', uncounted: true }],
+      },
+    })
+    render(<OrganizationPlanUsage />)
+    const row = screen.getByText('Findings').closest('tr') as HTMLElement
+    expect(within(row).getByText('Counted while a limit is set')).toBeInTheDocument()
+    expect(within(row).queryByText('0')).not.toBeInTheDocument()
+  })
+
+  it('shows the count once a findings limit is set', () => {
+    mockPlan({
+      data: {
+        plan: 'free',
+        over_limit: false,
+        limits: [{ key: 'findings', limit: 1000, used: 250, source: 'override' }],
+      },
+    })
+    render(<OrganizationPlanUsage />)
+    expect(screen.getByText('250')).toBeInTheDocument()
+    expect(screen.getByText('1000')).toBeInTheDocument()
   })
 })

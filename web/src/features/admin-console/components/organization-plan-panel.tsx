@@ -46,6 +46,7 @@ const TEXT: PlanUsageTableText = {
   usedColumn: 'Used',
   limitColumn: 'Allowed',
   unlimited: 'Unlimited',
+  notCounted: 'Counted while a limit is set',
   overLimit: 'Over limit',
   override: 'Set for this organization',
   until: (date) => `until ${new Date(date).toLocaleDateString()}`,
