@@ -24,7 +24,10 @@ type Service struct {
 	repo      commanddom.Repository
 	sensors   SensorLookup
 	templates TemplateSigner
-	logger    *logger.Logger
+	// jobs signs every claimed command (job_signing.go); nil: claims
+	// carry no signed job.
+	jobs   JobSigner
+	logger *logger.Logger
 	// refusals hears about failed commands (local_policy.go); nil: none.
 	refusals RefusalObserver
 	// privatePolicy keeps private targets from sensors without a local
@@ -358,8 +361,10 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	}
 
 	ids := make([]shared.ID, len(cands))
+	pinned := make(map[shared.ID]bool, len(cands))
 	for i, c := range cands {
 		ids[i] = c.ID
+		pinned[c.ID] = c.SensorID != nil
 	}
 	claimed, err := claimer.ClaimManyForSensor(ctx, tenantID, sensorID, input.Capabilities, ids)
 	if err != nil {
@@ -381,7 +386,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		}
 		out = append(out, cmd)
 	}
-	return s.signTemplates(input.SensorID, out), nil
+	return s.signClaimed(ctx, tenantID, input.SensorID, s.signTemplates(input.SensorID, out), pinned), nil
 }
 
 // freeScanSlots is how many more scans a sensor may take: its job limit
