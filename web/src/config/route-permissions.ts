@@ -168,6 +168,19 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.ScopeConfig,
   },
+  // Bug-bounty programs (RFC-065); the API filters what each caller sees.
+  '/programs': {
+    permission: Permission.ProgramsRead,
+    module: Module.ScopeConfig,
+  },
+  '/programs/new': {
+    permission: Permission.ProgramsWrite,
+    module: Module.ScopeConfig,
+  },
+  '/programs/**': {
+    permission: Permission.ProgramsRead,
+    module: Module.ScopeConfig,
+  },
   '/business-services': {
     permission: Permission.BusinessServicesRead,
     module: Module.BusinessServices,
