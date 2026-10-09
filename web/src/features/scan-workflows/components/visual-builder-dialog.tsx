@@ -1,11 +1,18 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Save, X, Cloud, Server, Loader2, AlertTriangle } from 'lucide-react'
+import { Save, Cloud, Server, Loader2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { WorkflowBuilder, type AvailableTool } from './workflow-builder'
@@ -234,9 +241,33 @@ export function VisualBuilderDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-[100vw] w-[100vw] h-[100vh] p-0 gap-0 rounded-none border-0 flex flex-col [&>button]:hidden">
+        <DialogContent size="screen">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b bg-background shrink-0">
+          <DialogHeader
+            className="border-b"
+            actions={
+              <>
+                {isReadOnly && (
+                  <Badge className="bg-info/15 text-info border-0 text-xs">System Template</Badge>
+                )}
+                {hasChanges && !isReadOnly && (
+                  <Badge variant="outline" className="text-warning border-warning text-xs">
+                    Unsaved
+                  </Badge>
+                )}
+                {!isReadOnly && (
+                  <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
+                    {isSaving ? (
+                      <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="me-2 h-4 w-4" />
+                    )}
+                    Save
+                  </Button>
+                )}
+              </>
+            }
+          >
             <div className="flex items-center gap-3 min-w-0">
               {workflow?.is_system_template ? (
                 <Cloud className="h-5 w-5 text-blue-500 shrink-0" />
@@ -254,35 +285,10 @@ export function VisualBuilderDialog({
                 </DialogDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {isReadOnly && (
-                <Badge className="bg-blue-500/15 text-blue-600 border-0 text-xs">
-                  System Template
-                </Badge>
-              )}
-              {hasChanges && !isReadOnly && (
-                <Badge variant="outline" className="text-yellow-600 border-yellow-600 text-xs">
-                  Unsaved
-                </Badge>
-              )}
-              {!isReadOnly && (
-                <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
-                  {isSaving ? (
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="me-2 h-4 w-4" />
-                  )}
-                  Save
-                </Button>
-              )}
-              <Button variant="ghost" size="sm" onClick={() => handleOpenChange(false)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          </DialogHeader>
 
-          {/* Content */}
-          <div className="flex flex-1 overflow-hidden">
+          {/* Content: the canvas fills the body; it pans and zooms itself. */}
+          <DialogBody className="flex overflow-hidden border-0 p-0 last:pb-0 sm:p-0 sm:last:pb-0">
             {/* Workflow Canvas */}
             <div className="flex-1 relative">
               <WorkflowBuilder
@@ -303,7 +309,7 @@ export function VisualBuilderDialog({
 
             {/* Node Palette - Always show on right side */}
             {!isReadOnly && <NodePalette position="right" />}
-          </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
 
