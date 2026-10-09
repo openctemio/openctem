@@ -595,6 +595,22 @@ again, without touching what an organization holds:
   super admin out) and for an erased account.
 - Ctrl/Cmd+K also finds accounts.
 
+## Revision 16: security center
+
+- **Sessions** (Security > Sessions, super admin only, like the roster):
+  `GET /api/v1/admin/console-sessions` lists every open console session (the
+  administrator, role, break-glass, how they signed in, IP, started, last
+  seen; the caller's own is marked). `DELETE /api/v1/admin/console-sessions/{id}`
+  ends one at once: a reason (10 to 500 characters) and a fresh authenticator
+  code, audited at high severity as `console.session_ended`. The caller's
+  own current session is refused (sign out instead).
+- **Admin activity** gained a date range (`from`/`to`), a detail sheet per
+  entry (resource, request, browser, error, and the request body as stored,
+  secrets redacted) and a CSV export of the filtered page (formula-safe
+  cells).
+- One step-up check (`confirmAdminStepUp`) serves owner recovery and ending
+  a session.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
