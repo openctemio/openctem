@@ -88,6 +88,6 @@ type LetterRepository interface {
 	// Revoke sets revoked_at/by when the letter is not revoked yet; it
 	// reports ErrLetterRevoked otherwise.
 	Revoke(ctx context.Context, tenantID, id, by shared.ID, at time.Time) error
-	// CountEntries counts the scope entries that name the letter.
-	CountEntries(ctx context.Context, tenantID, id shared.ID) (int, error)
+	// EntryIDs lists the scope entries that name the letter.
+	EntryIDs(ctx context.Context, tenantID, id shared.ID) ([]shared.ID, error)
 }

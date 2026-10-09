@@ -52,7 +52,10 @@ func (s *Service) letterRef(ctx context.Context, tenantID shared.ID, letterID st
 
 // LetterService manages authorization letters.
 type LetterService struct {
-	repo   scopedom.LetterRepository
+	repo scopedom.LetterRepository
+	// ledger feeds the job signer's scope ledger (*Service.CommitEntries,
+	// RFC-040 §11.5); nil: none.
+	ledger LetterLedger
 	files  LetterFileStore
 	notify func(ctx context.Context, tenantID shared.ID, title, body string)
 	now    func() time.Time
@@ -63,6 +66,16 @@ type LetterService struct {
 func NewLetterService(repo scopedom.LetterRepository, files LetterFileStore, notify func(ctx context.Context, tenantID shared.ID, title, body string)) *LetterService {
 	return &LetterService{repo: repo, files: files, notify: notify, now: func() time.Time { return time.Now().UTC() }}
 }
+
+// LetterLedger is the job signer's scope ledger hook (*Service.CommitEntries).
+type LetterLedger interface {
+	CommitEntries(ctx context.Context, tenantID shared.ID, requester string, put []*scopedom.Target,
+		removed []shared.ID, platformPolicy string, save func() error) error
+}
+
+// SetLedger makes a revocation take the letter's entries out of the job
+// signer's ledger too.
+func (ls *LetterService) SetLedger(l LetterLedger) { ls.ledger = l }
 
 // UploadLetterInput is a new letter and its file.
 type UploadLetterInput struct {
@@ -148,7 +161,18 @@ func (ls *LetterService) File(ctx context.Context, tenantID, id shared.ID) (io.R
 // Revoke revokes a letter: every entry naming it stops authorizing at once
 // (the in-effect read joins the letter). Administrators are told.
 func (ls *LetterService) Revoke(ctx context.Context, tenantID, id, by shared.ID) (*scopedom.Letter, error) {
-	if err := ls.repo.Revoke(ctx, tenantID, id, by, ls.now()); err != nil {
+	entries, err := ls.repo.EntryIDs(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	revoke := func() error { return ls.repo.Revoke(ctx, tenantID, id, by, ls.now()) }
+	if ls.ledger == nil {
+		err = revoke()
+	} else {
+		// A narrowing: saved first, then taken out of the signer's ledger.
+		err = ls.ledger.CommitEntries(ctx, tenantID, by.String(), nil, entries, "", revoke)
+	}
+	if err != nil {
 		return nil, err
 	}
 	l, err := ls.repo.GetByID(ctx, tenantID, id)
@@ -156,9 +180,8 @@ func (ls *LetterService) Revoke(ctx context.Context, tenantID, id, by shared.ID)
 		return nil, err
 	}
 	if ls.notify != nil {
-		n, _ := ls.repo.CountEntries(ctx, tenantID, id)
 		ls.notify(ctx, tenantID, "Authorization letter revoked",
-			fmt.Sprintf("%s: %d scope entries naming it no longer authorize scans", l.Title, n))
+			fmt.Sprintf("%s: %d scope entries naming it no longer authorize scans", l.Title, len(entries)))
 	}
 	return l, nil
 }
