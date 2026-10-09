@@ -14,8 +14,10 @@ each job against its own rules and signs it. A sensor that verifies the
 signature runs only what the signer signed.
 
 This page describes what is built: the signer process, the statement and
-envelope format, claim-time signing in the API, and the key set signed by
-an offline root through which sensors accept signer keys. Sensors verify
+envelope format, claim-time signing in the API, the key set signed by
+an offline root through which sensors accept signer keys, and the signer's
+scope ledger (RFC-040 P2): the signer signs a job only when its targets lie
+inside the scope people approved, as the signer itself recorded it. Sensors verify
 with sdk-go (`pkg/jobsig`); until a sensor verifies, the envelope protects
 nothing on that sensor.
 
@@ -66,6 +68,8 @@ Signer (`openctem-signer serve`):
 | `SIGNER_KEYSET_FILE` | the key set signed by the offline root, served at `GET /v1/keyset`; read at start and on `SIGHUP` (see "Key sets and the offline root") | unset: no key set |
 | `SIGNER_TENANT_RATE` / `SIGNER_TENANT_BURST` | signing ceiling per organization (token bucket) | 50/s, 500 |
 | `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
+| `SIGNER_LEDGER` | scope ledger mode: `enforce`, `audit` or `off` ([Scope ledger](#scope-ledger)) | the recorded default: `enforce` on a signer that had never signed, `audit` on one upgraded to the ledger |
+| `SIGNER_LEDGER_MIN_APPROVALS` | the operator's floor under every widening's approval count (0, 1 or 2) | 0 |
 
 API:
 
@@ -183,6 +187,7 @@ with the envelope, or a refusal:
 | Status | Reasons |
 |---|---|
 | 400 | `malformed` (not JSON, unknown or mistyped field, trailing data), `bad_kind`, `invalid_id`, `missing_command_type`, `missing_tool`, `bad_payload_digest`, `bad_targets`, `bad_lease_epoch`, `clock_skew`, `bad_expiry`, `server_field_set` |
+| 403 | `out_of_ledger`, `tier_exceeds_ledger`, `target_excluded` (the [scope ledger](#scope-ledger) does not authorize the job) |
 | 413 | `body_too_large` |
 | 429 | `tenant_rate_limited`, `sensor_rate_limited` |
 | 500 | `internal` (the sequence number or the signing log could not be written: nothing is signed) |
@@ -213,9 +218,12 @@ Its own rules; nothing the API sends relaxes them:
 - `issued_at` within ±2 minutes of the signer's clock;
 - `expires_at` after `issued_at` and at most 1 hour after it;
 - `seq`, `nonce` and `signer` are not set by the caller;
-- the organization's and the sensor's signing ceilings.
+- the organization's and the sensor's signing ceilings;
+- every target against the organization's [scope ledger](#scope-ledger), at
+  the tool's tier (in `enforce` mode; `audit` signs and records the miss).
 
-It does not yet check targets against an approved scope (see "Not yet").
+It does not yet check zone ranges, time windows or per-hour distinct-target
+ceilings (see "Not yet").
 
 ## Statement
 
@@ -314,16 +322,24 @@ Any failure: refuse the command (fail it with a refusal), never run it.
 
 - `SIGNER_SOCKET` unset: claims are exactly as before; no envelope, no
   `signed_jobs` feature.
-- Signer down, slow (over `SIGNER_TIMEOUT`) or refusing: the command is not
-  handed out. A claim-N answer leaves it out; a claim by id answers `503`
+- Signer refusing for its ledger (403: `out_of_ledger`,
+  `tier_exceeds_ledger`, `target_excluded`): the claim is taken back and the
+  command **fails** with `SIGNER_REFUSED: the job signer refused to sign this
+  job (<reason>): <detail>`, so it is not offered again; its run step,
+  validation or retest fails with the same code (failure class `scope`).
+- Signer down, slow (over `SIGNER_TIMEOUT`) or refusing for another reason:
+  the command is not handed out. A claim-N answer leaves it out; a claim by id answers `503`
   `unavailable` with `Retry-After`. The claim is taken back: the command is
   pending again, still addressed to the sensor only if it was before the
   claim. A claim replay (the sensor already holds the command) is answered
   `503` and the command is left as it is. Claims wait; nothing leaves
   unsigned.
 - Each signing is counted in `sensor_job_signing_total{outcome}` with
-  `outcome` one of `signed`, `refused`, `unavailable`, and refusals are
-  logged with the command and sensor ids.
+  `outcome` one of `signed`, `refused`, `unavailable`; each refusal in
+  `openctem_signer_refusals_total{reason}` (alerts `SignerOutOfLedger`,
+  RFC-040 §5.11 A10, and `SignerRefusals`), and refusals are logged with the
+  command and sensor ids. The signing log is the record a compromised API
+  cannot rewrite; the metric is the alerting signal the API reports.
 
 ## State
 
@@ -339,7 +355,197 @@ Any failure: refuse the command (fail it with a refusal), never run it.
   bytes (the first line's `prev` is `sha256:` + 64 zeros), and is fsync'd
   before the answer. A signature whose log line cannot be written is not
   returned. The signer refuses to start on a broken or torn log;
-  `openctem-signer verify-log` checks it.
+  `openctem-signer verify-log` checks it. A job signed in `audit` mode that
+  `enforce` would have refused carries `ledger_audit` (the reason).
+- `ledger.log`: the scope ledger, in the same chained JSONL format (lines up
+  to 32 MiB); the ledger is the replay of it. `ledger.lock` is held while the
+  signer runs, so an import cannot write beside it. See
+  [Scope ledger](#scope-ledger).
+
+## Scope ledger
+
+RFC-040 §5.6 points 4 and 5, phase P2. The signer keeps, per organization,
+the scope entries in effect and the target exclusions, in its own state
+directory, and signs a job only inside them. The API's database is not
+consulted: a `scope_targets` row written straight into the database, or an
+API process that asks for anything, gets a refusal.
+
+### What it holds and checks
+
+| Item | Fields | From |
+|---|---|---|
+| entry | `id`, `type` (scope target type), `pattern`, `max_tier` (0, 1, 2), `expires_at` | a scope entry in effect (active, unexpired) |
+| exclusion | `id`, `type` (domain, subdomain, ip_address, ip_range, cidr, url, repository), `pattern`, `expires_at` | a target exclusion in effect (approved, active) |
+
+At sign time, for every target of the statement, with the API's matching
+(`pkg/domain/scope`: `*.x` covers `x` and every name below it, CIDR and
+range containment, IDNA forms; the same `AuthorityForms`, `ExclusionForms`
+and `NeedsAuthority` the API's authority check uses):
+
+1. an exclusion in effect that matches the target, its URL host or
+   host:port host: `target_excluded` (whatever the tool's tier);
+2. the tool's tier is `stage.ProbeTier(tool)` from the catalog compiled into
+   the signer (an unknown tool or none is t1). A passive (t0) tool needs no
+   entry, and neither do internal names and private, loopback, link-local or
+   CGNAT addresses (zones gate them), as in RFC-054 §4.2;
+3. otherwise an unexpired entry covering the target with `max_tier` at or
+   above the tier: covered only below it is `tier_exceeds_ledger`, not at all
+   `out_of_ledger`.
+
+Expiry is applied with the signer's clock: an expired entry stops
+authorizing without any message from the API.
+
+### How it changes
+
+Three paths, nothing else:
+
+| Path | Who | What the signer allows |
+|---|---|---|
+| `POST /v1/ledger/apply` | the API's scope service, on every committed change to what authorizes probes | narrowing always; widening only with the approvals below |
+| `POST /v1/ledger/sync` | the API, every 10 minutes (`signer-ledger-sync` controller) for every organization the ledger holds | narrowing only |
+| `openctem-signer ledger import` | the operator, signer stopped | the bootstrap, or a restore with `-replace` |
+
+`apply` body (`jobsign.LedgerChange`, unknown fields refused, at most 16 MiB
+and 1,000 operations; an organization holds at most 10,000 entries and
+10,000 exclusions):
+
+```json
+{"tenant_id": "…", "change_id": "<uuid>",
+ "requester": "<user uuid, or empty for a system path>",
+ "approvals": [{"user_id": "<uuid>", "approved_at": "…", "self_approved": false}],
+ "policy_required_approvals": 1,
+ "platform_policy": "",
+ "ops": [{"op": "put_entry", "entry": {"id": "…", "type": "domain", "pattern": "*.example.com", "max_tier": 1}},
+         {"op": "remove_exclusion", "id": "…"}]}
+```
+
+Operations: `put_entry`, `remove_entry`, `put_exclusion`,
+`remove_exclusion`. The **signer** classifies the change; the caller does
+not say which it is. A change widens when any operation widens
+(`jobsign.EntryWidens`, `ExclusionPutWidens`, `ExclusionRemoveWidens`): a
+new entry, a different type or pattern, a higher tier, a later or removed
+expiry; an exclusion removed or shortened while in effect. Everything else
+narrows, and identical puts are a no-op.
+
+A widening needs, counted by the signer: distinct approvers (lower-case
+UUIDs, `approved_at` not in the future), **not the requester**, at least
+`max(policy_required_approvals, SIGNER_LEDGER_MIN_APPROVALS)`, and at least
+one when an entry is t2 (RFC-054 S3: never zero for intrusive). A
+requester's plain approval never counts; a `self_approved` approval (RFC-054
+§12 A2, a sole owner with a fresh second factor) counts once and only for
+the requester. A t2 entry without an expiry is malformed. The approval count
+is the API's scope policy (`scope.Service.loadPolicy`): there is no second
+approver model here.
+
+Refusals: 400 `ledger_malformed`, 413 `ledger_too_large`, 403
+`ledger_not_approved`. The answer is `{"kind": "widen|narrow|noop", "mode": "…"}`.
+
+`sync` body (`jobsign.LedgerSnapshot`): the organization's entries and
+exclusions in effect in the database. Entries the snapshot lacks are
+removed; entries it holds narrower are narrowed (lower tier, earlier
+expiry); exclusions it holds that the ledger lacks are added, and the
+later of two exclusion expiries is kept. Anything the snapshot holds wider
+is left out and counted as `diverged` (the API logs it). `GET /v1/ledger`
+answers the mode and the organizations with anything in the ledger.
+
+### The API side (the hook)
+
+`scope.Service` sends every change through two functions,
+`commitEntry` and `commitExclusion` (`internal/app/scope/ledger.go`): create,
+update, approve, activate, deactivate and delete of entries; approve,
+activate, update, deactivate and delete of exclusions. Writes made outside
+it go through `scope.Service.CommitEntries`, the same rule in batch form:
+bounty programs (RFC-065) send import, re-import and resume as widenings
+(requester the importer, no approval, `platform_policy:
+program_attestation`) and pause, end and dropped entries as narrowings. Any
+further path that puts an entry into effect (authorization letters) must use
+one of them. Program exclusions and the rule that program targets never go
+to platform sensors stay API-side checks; the ledger does not hold them.
+
+- A **widening is sent before it is saved**. Refused, the request fails with
+  `409 SCOPE_LEDGER_REFUSED`; signer down, `409 SCOPE_LEDGER_UNAVAILABLE`.
+  The database never holds scope the signer did not accept.
+- A **narrowing is saved first** and sent best effort; it is never blocked
+  by the signer. One that did not arrive is applied by the next sync.
+- The approvals sent are the entry's recorded approvals, its requester
+  (`created_by`, or whoever last widened it) and its `approvals_required`;
+  for an exclusion taken out of effect, the reviewer that
+  `Exclusion.AuthorizeReduction` accepted, with one approval required.
+- An exclusion whose window was extended back to review stays in the ledger
+  as it was until it is approved again (the ledger keeps the stricter).
+
+Path, finding-type and scanner exclusions are not target sets and stay out
+of the ledger.
+
+### Modes and defaults
+
+| Mode | Sign time | Ledger changes |
+|---|---|---|
+| `enforce` | a target outside the ledger is refused (403) | validated and recorded |
+| `audit` | signed anyway; the signing log line carries `ledger_audit` and the signer logs a warning | validated and recorded |
+| `off` | not checked | answered `{"mode": "off"}`, not recorded |
+
+`SIGNER_LEDGER` sets the mode. Unset, the default recorded in the ledger's
+first line applies: **`enforce` for a new installation** (the signer had
+never signed when the ledger was created) and **`audit` for an upgraded
+one** (its signing log already had entries), as decided for the sensor-local
+policy (RFC-040 Q3 revised: new installs fail closed). An import sets the
+default to `enforce`.
+
+### Bootstrap and restore (the ceremony)
+
+An upgraded installation starts in `audit` with an empty ledger: every job
+is still signed, and each one outside the ledger is recorded. To enforce:
+
+1. Export the scope in effect from the database (a new file, 0600; never
+   overwritten). Its SHA-256 is printed:
+
+   ```bash
+   docker compose exec api ./server -signer-ledger-export /tmp/ledger.json
+   docker compose cp api:/tmp/ledger.json ./ledger.json
+   ```
+
+2. Review it (`jq` it; a second person compares the organizations and
+   patterns with the Scoping pages).
+3. Stop the signer and import from standard input; the digest printed must
+   equal step 1's:
+
+   ```bash
+   docker compose stop signer
+   docker compose run --rm -T signer ledger import -file /dev/stdin < ledger.json
+   docker compose start signer
+   ```
+
+   The import refuses while the signer runs (it holds `ledger.lock`) and,
+   into a ledger that already holds scope, unless `-replace` is given:
+   `-replace` is for restoring after the signer's state was lost, and it can
+   widen the ledger, so it belongs to the same two-person review.
+4. The default mode is now `enforce` (unless `SIGNER_LEDGER` says
+   otherwise). Watch `openctem_signer_refusals_total` and the
+   `SignerOutOfLedger` alert.
+
+`openctem-signer ledger verify` checks the chain of `ledger.log` and that
+every record replays; `openctem-signer ledger show` prints the ledger as a
+snapshot file (read only, also while the signer runs). A tampered,
+reordered or truncated `ledger.log` stops the signer at start.
+
+### Limits (P2)
+
+- **Approvals are as the API recorded them.** The signer checks the
+  approval rule (count, distinct people, not the requester, the operator
+  floor, t2), but the user ids and the policy count come from the API. An
+  attacker who controls the API process can claim approvals; the ledger
+  then still stops a database writer, a path that bypasses the scope
+  service, and every target outside approved scope, and the chained
+  ledger log records each claimed approval. P3 makes each approval a
+  WebAuthn assertion the signer verifies. `SIGNER_LEDGER_MIN_APPROVALS`
+  raises the floor in the meantime.
+- Internal names and private addresses are not checked against entries
+  (zones gate them, as in the API); the sensor-local policy is their
+  control until zone ranges join the ledger.
+- Tenant approval settings (`widening_approvals`) are read by the API; a
+  lowered setting lowers the count the API reports. The operator floor
+  is the signer-side bound.
 
 ## Not yet (next steps)
 
@@ -349,11 +555,13 @@ Any failure: refuse the command (fail it with a refusal), never run it.
 - **`keyset_version` in the statement** (`signer.keyset_version`, RFC-040
   §5.6 point 3), once sensors that reject unknown statement fields are
   gone.
-- **The signer's ledger and the scope document**: targets checked against
-  the organization's approved scope and the zone's ranges, tiers, time
-  windows, per-hour distinct-target ceilings; the signed scope document the
-  sensor checks next to the job (RFC-040 §5.6 points 4 and 5).
-- **Two-person rule for widening** the ledger (RFC-040 P2, then WebAuthn).
+- **The scope document** (P3): the approved part of the ledger signed by
+  the offline root's delegated scope role and checked by the sensor next to
+  the job (RFC-040 §5.6 point 4, two repositories); zone ranges, time
+  windows and per-hour distinct-target ceilings in the ledger.
+- **WebAuthn approvals** (P3): each approval an assertion over the change
+  digest, verified by the signer against approver credentials enrolled
+  through its own CLI, so a compromised API cannot invent approvals.
 - **Template manifests, tool settings and egress policy** signed by the
   signer instead of the API's derived keys (decision Q11).
 - **K2** (KMS, Vault Transit, HSM) and a Helm chart for the signer.
