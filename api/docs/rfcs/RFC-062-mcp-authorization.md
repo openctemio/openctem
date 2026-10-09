@@ -176,7 +176,7 @@ user holds but whose scope was not granted answers `403` with
 so the client can ask for more (step-up). A tool the user cannot run at all is
 a normal tool error.
 
-Write scopes (for example `mcp:findings.write`) arrive with the first write tool
+Write scopes (for example `mcp:findings.comment`) arrive with the first write tool
 (§10). They are never listed in `scopes_supported`; a client gets them only
 through an `insufficient_scope` challenge, and approving one requires a recent
 sign-in (step-up, 10 minutes).
@@ -245,8 +245,8 @@ This tool-level exchange works with every MCP protocol revision. When the
 endpoint moves to MCP 2026-07-28, the same confirmation is also offered as
 a URL-mode elicitation in an `InputRequiredResult` (§11).
 
-The first write tool is `add_finding_comment` (`mcp:findings.write` →
-`findings:write`): an internal comment, never sent to integrations.
+The first write tool is `add_finding_comment` (`mcp:findings.comment` →
+`findings:comment`): an internal comment, never sent to integrations.
 
 ## 11. Transport
 

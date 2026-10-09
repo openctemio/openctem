@@ -402,3 +402,25 @@ export interface AdminOperations {
   }[]
   checked_at: string
 }
+
+/** A platform announcement in the console (GET /admin/announcements). */
+export interface AdminAnnouncement {
+  id: string
+  message: string
+  severity: 'info' | 'warning' | 'maintenance'
+  starts_at: string
+  ends_at?: string
+  state: 'scheduled' | 'active' | 'ended'
+  created_at: string
+}
+
+/** One threat-intelligence feed's sync state (GET /admin/threat-intel/sync). */
+export interface ThreatIntelFeed {
+  source: string
+  enabled: boolean
+  last_sync_at?: string
+  last_sync_status: string
+  last_error?: string
+  records_synced: number
+  next_sync_at?: string
+}

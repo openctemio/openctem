@@ -25,6 +25,7 @@ import (
 //	/admin/auth/validate      any admin         —
 //	/admin/overview           any admin         —
 //	/admin/operations         any admin         —
+//	/admin/announcements      any admin         ops_admin+ + reason (audited)
 //	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
 //	                                            code (audited high)
 //	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
@@ -117,6 +118,24 @@ func registerAdminRoutes(
 	if h.AdminOverview != nil {
 		router.GET("/api/v1/admin/overview", h.AdminOverview.Get, adminMiddlewares...)
 	}
+	// System > Announcements: any admin reads; ops_admin+ publishes or ends
+	// one with a reason (audited).
+	if h.Announcement != nil {
+		opsAnn := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		annAudit := func(action string) []Middleware {
+			out := cloneMW(opsAnn)
+			if h.AdminAuditMiddleware != nil {
+				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "announcement", "announcement_id"))
+			}
+			return out
+		}
+		router.Group("/api/v1/admin/announcements", func(r Router) {
+			r.GET("/", h.Announcement.AdminList)
+			r.POST("/", h.Announcement.AdminCreate, annAudit("announcement.create")...)
+			r.POST("/{announcement_id}/cancel", h.Announcement.AdminEnd, annAudit("announcement.cancel")...)
+		}, adminMiddlewares...)
+	}
+
 	// Console > Operations (any admin role): build, schema, database, Redis,
 	// work queues, sensor versions, controllers. Infrastructure facts only.
 	if h.AdminOperations != nil {
