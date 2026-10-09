@@ -6,8 +6,9 @@
 //
 //   src/lib/api/generated/api.types.ts      from api/api/openapi/swagger.yaml
 //   src/config/api-route-permissions.json   from the API route table
+//   src/config/authz-matrix.json            the authorization reference (gen-authz-docs)
 //
-// Both come from the Go source, so they need Go: `make generate` at the
+// They come from the Go source, so they need Go: `make generate` at the
 // repository root writes them (or `make generate-docker`, which needs only
 // Docker). This script does not run Go. It refreshes the TypeScript types when
 // the spec is newer than them (that step needs only Node), and otherwise fails
@@ -25,6 +26,7 @@ const web = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const spec = process.env.OPENAPI_SPEC || resolve(web, '../api/api/openapi/swagger.yaml')
 const types = resolve(web, 'src/lib/api/generated/api.types.ts')
 const permissions = resolve(web, 'src/config/api-route-permissions.json')
+const authzMatrix = resolve(web, 'src/config/authz-matrix.json')
 
 const mtime = (p) => (existsSync(p) ? statSync(p).mtimeMs : 0)
 
@@ -36,7 +38,7 @@ if (existsSync(spec) && mtime(spec) > mtime(types)) {
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
 
-const missing = [types, permissions].filter((p) => !existsSync(p))
+const missing = [types, permissions, authzMatrix].filter((p) => !existsSync(p))
 if (missing.length > 0) {
   console.error(
     [

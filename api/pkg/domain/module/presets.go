@@ -134,7 +134,7 @@ var presetMinimal = ModulePreset{
 		"dev",
 	},
 	KeyOutcomes: []string{
-		"Only the 8 core modules are enabled (dashboard, assets, findings, scans, team, roles, audit, settings)",
+		"Only the core modules are enabled (dashboard, assets, findings, scans, SLA, team, roles, audit, settings)",
 		"All optional features stay off until you opt in",
 		"Useful for minimal-noise demos or when evaluating specific modules in isolation",
 	},
@@ -219,7 +219,7 @@ var presetVMEssentials = ModulePreset{
 		"components", "branches", "credentials",
 		// Prioritization
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
-		"priority_rules", "risk_scoring", "risk_analysis", "sla",
+		"priority_rules", "risk_scoring", "risk_analysis",
 		// Mobilization
 		"remediation", "suppressions", "workflows",
 		// Insights
@@ -330,7 +330,7 @@ var presetOffensive = ModulePreset{
 		// Prioritization
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"ai_triage.custom_prompts", "ai_triage.workflow",
-		"priority_rules", "risk_scoring", "risk_analysis", "sla",
+		"priority_rules", "risk_scoring", "risk_analysis",
 		// Mobilization — handoff (pentest) + auto-submit (bounty)
 		"workflows", "suppressions", "remediation",
 		// Insights — reports are the deliverable for both
@@ -380,7 +380,7 @@ var presetASPM = ModulePreset{
 		"components", "branches", "credentials",
 		// Prioritization — full app-finding lifecycle
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
-		"priority_rules", "risk_scoring", "risk_analysis", "sla",
+		"priority_rules", "risk_scoring", "risk_analysis",
 		// Mobilization — gate + fix
 		"remediation", "suppressions", "workflows",
 		// Insights — SBOM + exec
@@ -426,7 +426,7 @@ var presetSBOM = ModulePreset{
 		"components", "branches", "credentials",
 		// Prioritization
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
-		"priority_rules", "risk_scoring", "risk_analysis", "sla",
+		"priority_rules", "risk_scoring", "risk_analysis",
 		// Mobilization
 		"remediation", "suppressions", "workflows",
 		// Insights — SBOM is the key deliverable
@@ -471,7 +471,7 @@ var presetCSPM = ModulePreset{
 		"components", "credentials",
 		// Prioritization
 		"threat_intel", "ai_triage", "priority_rules",
-		"risk_analysis", "risk_scoring", "sla",
+		"risk_analysis", "risk_scoring",
 		// Validation
 		"compensating_controls", "control_testing",
 		// Mobilization
@@ -525,7 +525,7 @@ var presetCompliance = ModulePreset{
 		// Discovery — light, just enough for asset mapping
 		"components",
 		// Prioritization
-		"threat_intel", "priority_rules", "risk_analysis", "risk_scoring", "sla",
+		"threat_intel", "priority_rules", "risk_analysis", "risk_scoring",
 		// Mobilization
 		"remediation", "suppressions", "workflows",
 		// Insights (heavy)
@@ -571,7 +571,7 @@ var presetCTEMFull = ModulePreset{
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"ai_triage.workflow", "ai_triage.custom_prompts",
 		"priority_rules", "risk_analysis", "business_impact",
-		"risk_scoring", "sla",
+		"risk_scoring",
 		// Validation
 		"pentest", "attack_simulation", "control_testing",
 		"compensating_controls",

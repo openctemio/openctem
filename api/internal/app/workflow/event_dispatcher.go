@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/metrics"
 
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
@@ -36,7 +37,20 @@ type WorkflowEventDispatcher struct {
 
 	// triggerFn replaces service.TriggerWorkflow in tests (nil in production).
 	triggerFn func(ctx context.Context, input TriggerWorkflowInput) error
+
+	// modules reports the modules a tenant has off; nil runs every tenant.
+	modules ModuleGuard
 }
+
+// ModuleGuard reports the modules a tenant has off (*module.ModuleService).
+type ModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard makes events start no automation for a tenant with the
+// workflows module off: its automations stay saved and start again on the
+// next event after the module is turned back on (no replay).
+func (d *WorkflowEventDispatcher) SetModuleGuard(g ModuleGuard) { d.modules = g }
 
 // NewWorkflowEventDispatcher creates a new workflow event dispatcher.
 func NewWorkflowEventDispatcher(
@@ -149,6 +163,9 @@ func (d *WorkflowEventDispatcher) findMatchingWorkflows(
 	tenantID shared.ID,
 	triggerType workflowdom.TriggerType,
 ) ([]*workflowdom.Workflow, error) {
+	if d.modules != nil && d.modules.TenantDisabledModules(ctx, tenantID.String())[moduledom.ModuleWorkflows] {
+		return nil, nil
+	}
 	// Use optimized batch query - single query returns workflows with their full graph
 	workflows, err := d.workflowRepo.ListActiveWithTriggerType(ctx, tenantID, triggerType)
 	if err != nil {

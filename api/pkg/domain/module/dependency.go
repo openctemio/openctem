@@ -47,7 +47,7 @@ type Dependency struct {
 
 // ModuleDependencies is the platform-wide dependency graph, keyed by
 // the dependent module ID. Core modules (dashboard, assets, findings,
-// scans, team, roles, audit, settings) are never listed as keys here
+// scans, team, roles, audit, settings, sla) are never listed as keys here
 // because the core-module check short-circuits ValidateToggle before
 // dependency logic runs — they are structurally un-disable-able.
 //
@@ -149,9 +149,6 @@ var ModuleDependencies = map[string][]Dependency{
 	},
 	"suppressions": {
 		{ModuleID: "findings", Type: DependencyHard, Reason: "suppressions suppress findings"},
-	},
-	"sla": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "SLA tracks time-to-remediate per finding"},
 	},
 	"compliance": {
 		{ModuleID: "findings", Type: DependencySoft, Reason: "compliance reports aggregate findings against frameworks"},

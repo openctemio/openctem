@@ -518,3 +518,29 @@ func TestModuleCatalog_SubModuleParentsResolve(t *testing.T) {
 			len(broken), strings.Join(broken, "\n  - "))
 	}
 }
+
+// TestModuleCatalog_CoreFlagMatches — CoreModuleIDs and the is_core column
+// must name the same modules. Go decides the gate (ModuleGate.IsEnabled,
+// ValidateToggle) and the database decides the settings page (the web locks a
+// module whose is_core is set), so a module core in one and toggleable in the
+// other is a switch that does nothing, or a gate the page says is open.
+func TestModuleCatalog_CoreFlagMatches(t *testing.T) {
+	catalog := loadModuleCatalog(t, openModuleCatalogDB(t))
+	requireDerivedNonEmpty(t, "CoreModuleIDs", len(module.CoreModuleIDs))
+
+	for id := range module.CoreModuleIDs {
+		row, ok := catalog[id]
+		if !ok {
+			t.Errorf("core module %q has no modules row", id)
+			continue
+		}
+		if !row.isCore {
+			t.Errorf("module %q is in CoreModuleIDs but modules.is_core is false: add a migration that sets it", id)
+		}
+	}
+	for id, row := range catalog {
+		if row.isCore && row.isActive && !module.CoreModuleIDs[id] {
+			t.Errorf("modules.is_core is true for %q but it is not in CoreModuleIDs", id)
+		}
+	}
+}
