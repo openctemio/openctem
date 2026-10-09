@@ -221,7 +221,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
               {refused.length > 0 ? (
                 <ScopeRefusalPanel refused={refused} />
               ) : (
-                <ScopePreview targets={targetList} />
+                <ScopePreview targets={targetList} scannerName={scannerName} />
               )}
 
               {/* Scanner: the tool registry's active scanners */}
