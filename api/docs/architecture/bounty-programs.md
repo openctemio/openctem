@@ -63,6 +63,48 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
 - Act scope: a restricted member may scan a typed target an active entry of
   one of their programs covers.
 
+## Rules at delivery
+
+A program's rules travel with every job a sensor gets (RFC-065 §12). Command
+delivery (`command.Service` Poll, claim-N, claim by id) asks
+`bountyprogram.Service.JobRules` for the programs whose in-effect entries
+cover the job's targets (program exclusions applied, the command's own
+tenant only):
+
+- outside a covering program's testing windows the job stays pending;
+- two programs with different values for one header, or two User-Agents:
+  the job fails with `PROGRAM_RULES_CONFLICT`;
+- otherwise the delivered copy carries the headers and User-Agent in
+  `http_policy` and a `rate_limit` capped at the smallest program rate; the
+  stored command is unchanged;
+- headers or a User-Agent go only to a sensor whose SDK is v0.19.0 or later
+  (older sensors would ignore them); a failed lookup withholds the job.
+
+The trigger refuses the same cases up front (`PROGRAM_OUTSIDE_WINDOW`,
+`PROGRAM_RULES_CONFLICT`). Programs cannot require credential or connection
+headers.
+
+## Letters of authorization
+
+A signed letter (`/api/v1/scope/letters`, RFC-065 §13) is stored as an
+attachment with its SHA-256 and a validity of at most two years. It
+authorizes nothing by itself: a scope entry with authorization source
+`authorization_letter` names it, goes through the approval policy, and is in
+effect only while the letter is valid (the in-effect read joins the letter).
+Revoking a letter (scope approvers) or its expiry stops every entry naming it
+at once. A letter's attachment cannot be deleted while the letter exists.
+
+## Scope sync
+
+A program's scope can come from the researcher API of the platform that runs
+it (`program_api`: handle, username and an API token stored encrypted and
+never returned) or from a scope file the program publishes on its own
+registrable domain (`program_file`), read with the SSRF-safe HTTP client
+(RFC-065 §14). A sync, on demand or by the controller, applies narrowing at
+once (removed entries, new program exclusions; a closed program is suspended)
+and keeps widening as pending terms: nothing new authorizes until a member
+accepts the pending terms hash (`/pending/apply`, step-up, audited).
+
 ## Evidence
 
 Every scan run links to a scope snapshot: the entry that covered each of its
@@ -83,3 +125,8 @@ the run and hold `scope:read` or `programs:read`.
 | `internal/app/scan/scope_snapshot.go`, `internal/app/scope/snapshot.go` | snapshot per run |
 | `internal/infra/postgres/bounty_program_assign.go` | program assignment pass (data scope) |
 | `migrations/001495_bounty_programs.*` | tables, columns, permissions, Researcher role |
+| `pkg/domain/bountyprogram/windows.go`, `internal/app/bountyprogram/rules.go` | testing windows, the rules a job carries |
+| `internal/app/command/program_rules.go`, `internal/app/scan/program_rules.go` | rules at delivery and at trigger |
+| `pkg/domain/scope/letter.go`, `internal/app/scope/letters.go` | letters of authorization |
+| `pkg/domain/bountyprogram/sync.go`, `internal/app/bountyprogram/sync.go`, `internal/infra/bountysource/` | scope sync |
+| `migrations/001496_authorization_letters.*`, `migrations/001497_bounty_program_sync.*` | letters, sync state |
