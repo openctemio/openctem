@@ -89,7 +89,7 @@ Two properties worth understanding:
 | 15 | compensating_controls | CTEM |
 | 16 | scans | scanning |
 | 17 | scan_workflows | scanning |
-| 18 | tool_executions | scanning |
+| 18 | ~~tool_executions~~ (dropped by migration 001491) | scanning |
 | 19 | audit_logs | audit |
 | 20 | notification_outbox | notifications |
 
