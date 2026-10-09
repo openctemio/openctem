@@ -334,6 +334,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpClients = handler.NewMCPClientsHandler(mcpOAuth, log)
 		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
 		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
+		// Write tools run only after the person confirms the action in the
+		// web UI (RFC-062 §10).
+		mcpHandler.SetWriteTools(mcpOAuth, svc.Vulnerability)
 	}
 	if mcpAuth != nil && mcpPolicies != nil {
 		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
@@ -550,6 +553,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			postgres.NewPlatformUserDirectory(deps.DB),
 			newPlatformUserService(repos, svc, cfg, deps.DB),
 			log),
+		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
@@ -980,6 +984,9 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
 	h := handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+	if svc.JobSigner != nil {
+		h.SetSignedJobs(svc.JobSigner.Hello)
+	}
 	if ciKeys != nil {
 		h.SetCIRunnerKeyPolicy(ciKeys)
 	}

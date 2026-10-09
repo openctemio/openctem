@@ -916,7 +916,7 @@ The code must come from the caller's authenticator app in this request
 (`SELF_APPROVAL_NEEDS_TOTP` without one, `SELF_APPROVAL_INVALID_CODE` for a
 wrong or reused code; a wrong code counts towards the lockout). A password or
 an open step-up window is not enough. The approval row records
-`self_approved` and the reason (migration `001485`); the audit event
+`self_approved` and the reason (migration `001497`); the audit event
 `scope_target.self_approved` is high severity; every administrator and the
 channels (`security_alert`) are told. S3 is unchanged in substance: a T2
 entry still needs one approval, which here is the owner's own, proven with
@@ -958,7 +958,7 @@ expiring after it) is attested every `t2_attestation_days` (30–180, default
    The job is idempotent (it only changes T2 entries that are overdue).
    Raising the entry back to T2 is an ordinary widening (step-up, approval).
 
-Implementation: migration `001495` adds `attested_at`, `attested_by` and
+Implementation: migration `001498` adds `attested_at`, `attested_by` and
 `attestation_requested_at` to `scope_targets`. The `scope-attestation`
 controller runs hourly (`scope.Service.ReconcileAttestations`); every write
 is tenant-scoped and conditional (a request opens only when none is open; the
@@ -997,7 +997,7 @@ organization requires N approvals"; the widening warning adapts.
 
 | PR | Content |
 |---|---|
-| Approvers | A1, A2: approver directory, `approval` on pending entries, notify and remind, self-approval with a fresh authenticator code (migration `001485`) |
+| Approvers | A1, A2: approver directory, `approval` on pending entries, notify and remind, self-approval with a fresh authenticator code (migration `001497`) |
 | T2 duration | A3: `t2_max_duration`, owner-only `PUT /scope/settings/intrusive`, server-side bound, entry dialogs |
 | Attestation | A4: attestation timestamps, `POST /attest`, the attestation and downgrade job |
 | Platform policy | A5: platform default and per-organization override, console section, effective policy on the tenant settings |

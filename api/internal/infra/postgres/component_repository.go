@@ -457,7 +457,7 @@ func (r *ComponentRepository) ListDependencies(ctx context.Context, assetID shar
 			}
 		}
 
-		// License is now stored in component_licenses table, pass empty string
+		// The license is the tenant's observation (asset_components.license), not the global component's
 		comp := component.Reconstitute(
 			cIDObj, cName, cVer, eco, cPurl,
 			"", cDesc.String, cHome.String,
@@ -516,7 +516,7 @@ func (r *ComponentRepository) scanComponent(row *sql.Row) (*component.Component,
 		}
 	}
 
-	// License is now stored in component_licenses table, pass empty string
+	// The license is the tenant's observation (asset_components.license), not the global component's
 	return component.Reconstitute(parsedID, name, ver, parsedEco, purl, "", desc.String, home.String, vuln, parsedMeta, cr, up), nil
 }
 
@@ -541,7 +541,7 @@ func (r *ComponentRepository) scanComponentFromRows(rows *sql.Rows) (*component.
 		}
 	}
 
-	// License is now stored in component_licenses table, pass empty string
+	// The license is the tenant's observation (asset_components.license), not the global component's
 	return component.Reconstitute(parsedID, name, ver, parsedEco, purl, "", desc.String, home.String, vuln, parsedMeta, cr, up), nil
 }
 
@@ -581,7 +581,7 @@ func (r *ComponentRepository) scanDependency(row *sql.Row) (*component.AssetDepe
 		}
 	}
 
-	// License is now stored in component_licenses table, pass empty string
+	// The license is the tenant's observation (asset_components.license), not the global component's
 	comp := component.Reconstitute(
 		cIDObj, cName, cVer, eco, cPurl,
 		"", cDesc.String, cHome.String,
@@ -1159,9 +1159,9 @@ func (r *ComponentRepository) ListVulnerabilities(
 // GetLicenseStats returns license statistics for a tenant.
 func (r *ComponentRepository) GetLicenseStats(ctx context.Context, tenantID shared.ID) ([]component.LicenseStats, error) {
 	// License distribution for the tenant's components, from the tenant's own
-	// license observations (asset_components.license). The shared
-	// component_licenses table is not read: tenants could write it, so one
-	// tenant's report could change another tenant's license report.
+	// license observations (asset_components.license). There is no shared
+	// per-component license table: tenants could write it, so one tenant's
+	// report could change another tenant's license report.
 	query := `
 		SELECT
 			l.spdx_id as license_id,

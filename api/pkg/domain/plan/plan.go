@@ -46,10 +46,16 @@ const (
 	// FreeTeamsPerUser caps how many Free organizations one person may own
 	// (a property of the Free plan, checked when an organization is created).
 	FreeTeamsPerUser Key = "free_teams_per_user"
+	// Findings caps the findings an organization stores (new fingerprints;
+	// a re-sighting of an existing finding counts nothing). Unlimited on
+	// every built-in plan; an administrator sets it per plan or per
+	// organization. Counting findings is costly on a large table, so their
+	// usage is counted only while a findings limit applies.
+	Findings Key = "findings"
 )
 
 // Keys lists every limit in display order.
-var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, FreeTeamsPerUser}
+var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, FreeTeamsPerUser, Findings}
 
 // IsValid reports whether k is a known limit.
 func (k Key) IsValid() bool {
@@ -166,6 +172,9 @@ type Effective struct {
 	OverLimit bool       `json:"over_limit"`
 	ExpiresAt *time.Time `json:"override_expires_at,omitempty"`
 	Reason    string     `json:"override_reason,omitempty"`
+	// Uncounted: the usage was not counted (findings while no findings
+	// limit applies), so Used is 0 and means nothing.
+	Uncounted bool `json:"uncounted,omitempty"`
 }
 
 // ErrLimitReached is returned when an addition would exceed a limit.
@@ -192,6 +201,12 @@ func (e *ErrLimitReached) Unwrap() error { return shared.ErrForbidden }
 // (*ErrLimitReached; fail-closed). entitlement.Service implements it.
 type Checker interface {
 	Check(ctx context.Context, tenantID shared.ID, key Key, delta int) error
+	// Headroom returns how many more of key may be added (Unlimited when no
+	// limit applies, without counting usage), for a batch that admits part
+	// of its additions. A read error is *ErrLimitReached (fail-closed).
+	Headroom(ctx context.Context, tenantID shared.ID, key Key) (int, error)
+	// RecordRefusals counts n additions refused after Headroom.
+	RecordRefusals(key Key, n int)
 }
 
 // Repository persists plans and overrides.
@@ -209,8 +224,10 @@ type Repository interface {
 	ListOverrides(ctx context.Context, tenantID shared.ID) ([]Override, error)
 	SetOverride(ctx context.Context, o Override) error
 	DeleteOverride(ctx context.Context, tenantID shared.ID, key Key) error
-	// Usage counts what the organization uses for each countable key.
-	Usage(ctx context.Context, tenantID shared.ID) (map[Key]int, error)
+	// Usage counts what the organization uses for each countable key (one
+	// query). Findings are counted only when withFindings is set: the
+	// caller asks only while a findings limit applies.
+	Usage(ctx context.Context, tenantID shared.ID, withFindings bool) (map[Key]int, error)
 	// CountOwnedFreeTenants counts the Free organizations a user owns.
 	CountOwnedFreeTenants(ctx context.Context, userID shared.ID) (int, error)
 }

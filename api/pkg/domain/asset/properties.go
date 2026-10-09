@@ -66,6 +66,18 @@ func LookupProperty(key string) (PropertyDefinition, bool) {
 	return *p, true
 }
 
+// ExpiryPropertyKeys returns the keys of format expiry (a certificate's
+// not_after, a domain's expires_at), in schema order.
+func ExpiryPropertyKeys() []string {
+	var out []string
+	for _, p := range registryProperties {
+		if p.Format == PropertyFormatExpiry {
+			out = append(out, p.Key)
+		}
+	}
+	return out
+}
+
 // CanonicalPropertyKey returns the canonical key a synonym folds into, or the
 // key itself.
 func CanonicalPropertyKey(key string) string {
