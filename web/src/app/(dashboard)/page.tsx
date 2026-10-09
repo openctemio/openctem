@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import dynamic from 'next/dynamic'
 import {
   Plus,

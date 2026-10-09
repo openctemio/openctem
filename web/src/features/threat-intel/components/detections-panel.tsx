@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Radar, RotateCcw, ShieldCheck, AlertCircle, RefreshCw } from 'lucide-react'
 import { PageHeader, DataTable, DataTableColumnHeader, EmptyState } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'

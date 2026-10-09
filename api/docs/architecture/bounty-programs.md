@@ -79,4 +79,4 @@ attestation. Identical scope gives the same hash and one stored body.
 | `internal/app/scopeauth/` | `OwnedCover`: whether a non-program entry covers a target |
 | `internal/app/scan/active_proof.go` | platform-sensor refusal for program-only targets |
 | `internal/app/scan/scope_snapshot.go` | snapshot per run |
-| `migrations/001410_bounty_programs.*` | tables, columns, permissions, Researcher role |
+| `migrations/001454_bounty_programs.*` | tables, columns, permissions, Researcher role |
