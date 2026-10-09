@@ -249,3 +249,49 @@ func TestSync_ClosedAndFailing(t *testing.T) {
 		t.Fatalf("due: %d %v", n, err)
 	}
 }
+
+// A sync writes through the job signer ledger hook (RFC-040 §11.5): its
+// narrowing takes entries out, an accepted widening puts entries in under
+// the program attestation (refused: nothing saved), a closed program takes
+// every entry out.
+func TestSync_FeedsTheSignerLedger(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, fetch, p, user := syncService(t)
+	l := &fakeLedger{}
+	svc.SetLedger(l)
+	if _, err := svc.ConfigureSource(ctx, p.TenantID, user, p.ID, bp.SyncSourceInput{Source: bp.ScopeSourceAPI,
+		Handle: "acme", Username: "jdoe", Token: "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	fetch.text = "*.acme.example\nacme.example\napi.other.example\n-admin.acme.example\n"
+	if _, err := svc.Sync(ctx, p.TenantID, user, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if l.removed != 1 || l.put != 0 {
+		t.Fatalf("narrowing sent put=%d removed=%d", l.put, l.removed)
+	}
+
+	pending := repo.programs[p.ID].Pending.TermsSHA256
+	stored := *repo.programs[p.ID] // the fake hands out its own pointer; a database read would not
+	l.refuse = true
+	if _, _, err := svc.Accept(ctx, p.TenantID, user, p.ID, pending); err == nil || patterns(t, repo, p)["api.other.example"] {
+		t.Fatalf("a widening the signer refused was saved: %v", err)
+	}
+	repo.programs[p.ID] = &stored
+	l.refuse = false
+	if _, _, err := svc.Accept(ctx, p.TenantID, user, p.ID, pending); err != nil {
+		t.Fatal(err)
+	}
+	if l.put == 0 || l.policy != programAttestation {
+		t.Fatalf("accepted widening sent %d entries under %q", l.put, l.policy)
+	}
+
+	fetch.open = false
+	before := l.removed
+	if res, err := svc.Sync(ctx, p.TenantID, user, p.ID); err != nil || !res.Suspended {
+		t.Fatalf("closed: %+v %v", res, err)
+	}
+	if n := len(patterns(t, repo, p)); l.removed-before != n || n == 0 {
+		t.Fatalf("suspension removed %d of %d entries", l.removed-before, n)
+	}
+}

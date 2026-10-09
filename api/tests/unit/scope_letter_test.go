@@ -21,7 +21,8 @@ import (
 )
 
 type memLetters struct {
-	byID map[shared.ID]*scopedom.Letter
+	byID    map[shared.ID]*scopedom.Letter
+	entries []shared.ID
 }
 
 func (m *memLetters) Create(_ context.Context, l *scopedom.Letter) error {
@@ -47,7 +48,9 @@ func (m *memLetters) Revoke(_ context.Context, tid, id, by shared.ID, at time.Ti
 	l.RevokedAt, l.RevokedBy = &at, &by
 	return nil
 }
-func (m *memLetters) CountEntries(context.Context, shared.ID, shared.ID) (int, error) { return 0, nil }
+func (m *memLetters) EntryIDs(context.Context, shared.ID, shared.ID) ([]shared.ID, error) {
+	return m.entries, nil
+}
 
 type memFiles struct{ got []byte }
 
@@ -153,5 +156,84 @@ func TestScopeEntry_LetterSource(t *testing.T) {
 	// The approval policy applies: a two-admin organization needs the other admin.
 	if !e.IsPending() || e.AuthorizationSource() != scopedom.AuthLetter || !e.LetterID().Equals(valid.ID) {
 		t.Fatalf("letter entry: pending=%v source=%v", e.IsPending(), e.AuthorizationSource())
+	}
+}
+
+// letterLedger records what a revocation sends to the signer ledger hook.
+type letterLedger struct {
+	removed []shared.ID
+	saved   bool
+}
+
+func (l *letterLedger) CommitEntries(_ context.Context, _ shared.ID, _ string, put []*scopedom.Target, removed []shared.ID,
+	_ string, save func() error,
+) error {
+	if len(put) > 0 {
+		return errors.New("a revocation never puts entries")
+	}
+	if err := save(); err != nil {
+		return err
+	}
+	l.saved, l.removed = true, removed
+	return nil
+}
+
+// Revoking a letter takes every entry naming it out of the job signer's
+// ledger, after the revocation is saved (RFC-040 §11.5).
+func TestLetterRevoke_FeedsTheSignerLedger(t *testing.T) {
+	ctx := context.Background()
+	tid, user := shared.NewID(), shared.NewID()
+	now := time.Now()
+	l := &scopedom.Letter{ID: shared.NewID(), TenantID: tid, Title: "x", ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(time.Hour)}
+	e1, e2 := shared.NewID(), shared.NewID()
+	repo := &memLetters{byID: map[shared.ID]*scopedom.Letter{l.ID: l}, entries: []shared.ID{e1, e2}}
+	svc := scope.NewLetterService(repo, &memFiles{}, nil)
+	ledger := &letterLedger{}
+	svc.SetLedger(ledger)
+	if _, err := svc.Revoke(ctx, tid, l.ID, user); err != nil {
+		t.Fatal(err)
+	}
+	if !ledger.saved || len(ledger.removed) != 2 || l.RevokedAt == nil {
+		t.Fatalf("revocation: saved=%v removed=%v revoked=%v", ledger.saved, ledger.removed, l.RevokedAt)
+	}
+	// A second revocation fails in the save; nothing more is sent.
+	ledger.saved = false
+	if _, err := svc.Revoke(ctx, tid, l.ID, user); !errors.Is(err, scopedom.ErrLetterRevoked) || ledger.saved {
+		t.Fatalf("second revocation: %v", err)
+	}
+}
+
+// A letter entry is in the signer's ledger only while its letter is in
+// effect, and never past the letter's end.
+func TestScopeLedger_LetterEntriesEndWithTheirLetter(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, ledger := ledgerScopeService(t, 1)
+	tid := shared.NewID()
+	now := time.Now().UTC()
+	l := &scopedom.Letter{ID: shared.NewID(), TenantID: tid, Title: "x", ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(48 * time.Hour)}
+	repo := &memLetters{byID: map[shared.ID]*scopedom.Letter{l.ID: l}}
+	svc.SetLetters(repo)
+	e, err := create(svc, tid, uuidActor(), "a.client.example", func(in *scope.CreateTargetInput) {
+		in.AuthorizationSource, in.LetterID = "authorization_letter", l.ID.String()
+	})
+	if err != nil || !e.IsActive() {
+		t.Fatalf("letter entry: %v active=%v", err, e != nil && e.IsActive())
+	}
+	if len(ledger.changes) != 1 || len(ledger.changes[0].Ops) != 1 || ledger.changes[0].Ops[0].Entry == nil {
+		t.Fatalf("ledger changes: %+v", ledger.changes)
+	}
+	got := ledger.changes[0].Ops[0].Entry.ExpiresAt
+	if got == nil || !got.Equal(l.ValidUntil) {
+		t.Fatalf("ledger expiry %v, want the letter end %v", got, l.ValidUntil)
+	}
+
+	snap, err := svc.LedgerSnapshot(ctx, tid.String())
+	if err != nil || len(snap.Entries) != 1 || !snap.Entries[0].ExpiresAt.Equal(l.ValidUntil) {
+		t.Fatalf("snapshot: %+v %v", snap.Entries, err)
+	}
+	// Revoked (or expired): out of the snapshot, so the next sync narrows it.
+	l.RevokedAt = &now
+	if snap, _ := svc.LedgerSnapshot(ctx, tid.String()); len(snap.Entries) != 0 {
+		t.Fatalf("a revoked letter entry stays in the snapshot: %+v", snap.Entries)
 	}
 }
