@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Globe, ShieldX } from 'lucide-react'
 import { Main } from '@/components/layout'

@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/link'
 
 /**
  * The finding an approval request is about, by title, linking to it. An
