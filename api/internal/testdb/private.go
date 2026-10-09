@@ -115,3 +115,21 @@ func Migrate(t testing.TB, db *sql.DB, migrationsDir string, from, to int, down 
 		t.Fatalf("testdb: no %s migration in [%d, %d] in %s", suffix, from, to, migrationsDir)
 	}
 }
+
+// MigrationVersion returns the version of the one migration in migrationsDir
+// whose up file is named <version>_<name>.up.sql. A migration test looks its
+// own migration up by name, so the merge queue renumbering the file does not
+// leave the test migrating a version that no longer exists.
+func MigrationVersion(t testing.TB, migrationsDir, name string) int {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(migrationsDir, "*_"+name+".up.sql"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("testdb: want exactly one migration named %s in %s, got %v (%v)", name, migrationsDir, files, err)
+	}
+	base := filepath.Base(files[0])
+	version, err := strconv.Atoi(base[:strings.IndexByte(base, '_')])
+	if err != nil {
+		t.Fatalf("testdb: migration %s has no numeric version: %v", base, err)
+	}
+	return version
+}
