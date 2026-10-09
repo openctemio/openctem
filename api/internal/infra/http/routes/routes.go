@@ -235,6 +235,7 @@ type Handlers struct {
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminOverview     *handler.AdminOverviewHandler
 	AdminPlatformUser *handler.AdminPlatformUserHandler
+	AdminSession      *handler.AdminSessionHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	AdminConsole            *handler.AdminConsoleHandler
@@ -617,7 +618,7 @@ func Register(
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
-		registerDashboardRoutes(router, h.Dashboard, authMiddleware, userSync)
+		registerDashboardRoutes(router, h.Dashboard, authMiddleware, userSync, log)
 	}
 
 	// Audit log routes (tenant from JWT token)

@@ -36,6 +36,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -608,74 +609,76 @@ export default function CompliancePage() {
 
       {/* Edit Dialog */}
       <Dialog open={!!editRequirement} onOpenChange={(open) => !open && setEditRequirement(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Update control status</DialogTitle>
             <DialogDescription>
               {editRequirement && `${editRequirement.frameworkName} · ${editRequirement.controlId}`}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(v) => setFormData({ ...formData, status: v as ControlStatus })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="implemented">Implemented</SelectItem>
-                    <SelectItem value="partial">Partial</SelectItem>
-                    <SelectItem value="not_implemented">Not implemented</SelectItem>
-                    <SelectItem value="not_applicable">N/A</SelectItem>
-                  </SelectContent>
-                </Select>
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={formData.status}
+                    onValueChange={(v) => setFormData({ ...formData, status: v as ControlStatus })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="implemented">Implemented</SelectItem>
+                      <SelectItem value="partial">Partial</SelectItem>
+                      <SelectItem value="not_implemented">Not implemented</SelectItem>
+                      <SelectItem value="not_applicable">N/A</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Priority</Label>
+                  <Select
+                    value={formData.priority}
+                    onValueChange={(v) => setFormData({ ...formData, priority: v as Priority })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="critical">Critical</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="space-y-2">
-                <Label>Priority</Label>
-                <Select
-                  value={formData.priority}
-                  onValueChange={(v) => setFormData({ ...formData, priority: v as Priority })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Owner</Label>
+                <Input
+                  value={formData.owner}
+                  onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Due date</Label>
+                <Input
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Notes</Label>
+                <Textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={3}
+                />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Owner</Label>
-              <Input
-                value={formData.owner}
-                onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Due date</Label>
-              <Input
-                type="date"
-                value={formData.dueDate}
-                onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                rows={3}
-              />
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditRequirement(null)}>
               Cancel
