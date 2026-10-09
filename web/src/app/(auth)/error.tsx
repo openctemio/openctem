@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { devLog } from '@/lib/logger'
 import { reportRouteError } from '@/lib/error-reporting'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {

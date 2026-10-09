@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -333,6 +334,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"carrying open KEV/critical findings (crown jewels), for this tenant.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 			RequiredPerm: string(permission.AssetsRead),
+			Module:       moduledom.ModuleAttackSurface,
 			call:         h.toolExposureChains,
 		},
 		{
@@ -360,6 +362,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 			Description:  "Compliance posture rollup for this tenant: framework/control totals and overdue controls.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 			RequiredPerm: string(permission.ComplianceFrameworksRead),
+			Module:       moduledom.ModuleCompliance,
 			call:         h.toolCompliancePosture,
 		},
 		// --- pentest report-writing tools (campaign-membership gated) ---------
@@ -370,6 +373,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"key owner to be a member of the campaign.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 			RequiredPerm: string(permission.PentestCampaignsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolGetCampaign,
 		},
 		{
@@ -383,6 +387,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				`"status":{"type":"string"},` +
 				`"limit":{"type":"integer","description":"max rows (default 25, max 100)"}},"required":["campaign_id"]}`),
 			RequiredPerm: string(permission.PentestFindingsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolListCampaignFindings,
 		},
 		{
@@ -392,6 +397,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"campaign membership.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 			RequiredPerm: string(permission.PentestFindingsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolGetPentestFinding,
 		},
 		{
@@ -400,6 +406,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"notes, tested_at. Requires campaign membership.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"campaign_id":{"type":"string"}},"required":["campaign_id"]}`),
 			RequiredPerm: string(permission.PentestRetestsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolListRetests,
 		},
 		{
@@ -411,6 +418,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				`"search":{"type":"string"},` +
 				`"limit":{"type":"integer"}}}`),
 			RequiredPerm: string(permission.PentestTemplatesRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolListFindingTemplates,
 		},
 		{
@@ -419,6 +427,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"average and max CVSS, and progress. Requires campaign membership.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"campaign_id":{"type":"string"}},"required":["campaign_id"]}`),
 			RequiredPerm: string(permission.PentestCampaignsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolCampaignReportStats,
 		},
 	}
