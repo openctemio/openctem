@@ -54,6 +54,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -552,97 +553,99 @@ function CreateThreatActorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add threat actor</DialogTitle>
           <DialogDescription>Track a new adversary group for this tenant.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="ta-name">Name *</Label>
-            <Input
-              id="ta-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. APT29"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ta-type">Type</Label>
-            <Select value={actorType} onValueChange={(v) => setActorType(v as ActorType)}>
-              <SelectTrigger id="ta-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ACTOR_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {ACTOR_TYPE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ta-aliases">Aliases</Label>
-            <Input
-              id="ta-aliases"
-              value={aliases}
-              onChange={(e) => setAliases(e.target.value)}
-              placeholder="Comma-separated, e.g. Cozy Bear, The Dukes"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ta-desc">Description</Label>
-            <Textarea
-              id="ta-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+        <DialogBody>
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="ta-motivation">Motivation</Label>
+              <Label htmlFor="ta-name">Name *</Label>
               <Input
-                id="ta-motivation"
-                value={motivation}
-                onChange={(e) => setMotivation(e.target.value)}
-                placeholder="e.g. Espionage"
+                id="ta-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. APT29"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ta-country">Country of origin</Label>
-              {/* Stored as a 3-letter code; the API rejects anything longer. */}
-              <Input
-                id="ta-country"
-                value={country}
-                maxLength={3}
-                placeholder="ISO code, e.g. RU"
-                onChange={(e) => setCountry(e.target.value.toUpperCase())}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="ta-mitre">MITRE group ID</Label>
-              <Input
-                id="ta-mitre"
-                value={mitreId}
-                onChange={(e) => setMitreId(e.target.value)}
-                placeholder="e.g. G0016"
-              />
+              <Label htmlFor="ta-type">Type</Label>
+              <Select value={actorType} onValueChange={(v) => setActorType(v as ActorType)}>
+                <SelectTrigger id="ta-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ACTOR_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {ACTOR_TYPE_LABELS[t]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ta-tags">Tags</Label>
+              <Label htmlFor="ta-aliases">Aliases</Label>
               <Input
-                id="ta-tags"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                placeholder="Comma-separated"
+                id="ta-aliases"
+                value={aliases}
+                onChange={(e) => setAliases(e.target.value)}
+                placeholder="Comma-separated, e.g. Cozy Bear, The Dukes"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="ta-desc">Description</Label>
+              <Textarea
+                id="ta-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ta-motivation">Motivation</Label>
+                <Input
+                  id="ta-motivation"
+                  value={motivation}
+                  onChange={(e) => setMotivation(e.target.value)}
+                  placeholder="e.g. Espionage"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ta-country">Country of origin</Label>
+                {/* Stored as a 3-letter code; the API rejects anything longer. */}
+                <Input
+                  id="ta-country"
+                  value={country}
+                  maxLength={3}
+                  placeholder="ISO code, e.g. RU"
+                  onChange={(e) => setCountry(e.target.value.toUpperCase())}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ta-mitre">MITRE group ID</Label>
+                <Input
+                  id="ta-mitre"
+                  value={mitreId}
+                  onChange={(e) => setMitreId(e.target.value)}
+                  placeholder="e.g. G0016"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ta-tags">Tags</Label>
+                <Input
+                  id="ta-tags"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                  placeholder="Comma-separated"
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
