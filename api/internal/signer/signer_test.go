@@ -40,7 +40,9 @@ func newKey(t *testing.T) ed25519.PrivateKey {
 
 func newService(t *testing.T, dir string, key ed25519.PrivateKey, mod func(*Config)) *Service {
 	t.Helper()
-	cfg := Config{Key: key, StateDir: dir, Now: func() time.Time { return tNow }}
+	// These tests are about the statement, the sequence and the log: the
+	// ledger is off unless a test turns it on (ledger_test.go).
+	cfg := Config{Key: key, StateDir: dir, Now: func() time.Time { return tNow }, LedgerMode: jobsign.LedgerOff}
 	if mod != nil {
 		mod(&cfg)
 	}

@@ -94,6 +94,10 @@ export const SCOPE_REFUSAL_TEXT = {
     label: 'Wrong sensor for the zone',
     message: "The chosen sensor is not in this target's scan zone.",
   },
+  program_platform: {
+    label: 'Program target',
+    message: 'Platform sensors never probe bug-bounty program targets; use your own sensors.',
+  },
 } as const satisfies Record<string, { label: string; message: string }>
 
 export type ScopeRefusalCode = keyof typeof SCOPE_REFUSAL_TEXT

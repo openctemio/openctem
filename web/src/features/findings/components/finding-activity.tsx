@@ -7,7 +7,7 @@
  */
 
 import { forwardRef } from 'react'
-import { usePermissions } from '@/context/permission-provider'
+import { useCanMutate } from '@/lib/permissions'
 import {
   EntityActivity,
   type EntityActivityHandle,
@@ -65,10 +65,9 @@ export const FindingActivityView = forwardRef<EntityActivityHandle, FindingActiv
     { feed, findingId, subject, urlParam, legacyTab, shortcut, readOnly, className },
     ref
   ) {
-    // POST /findings/{id}/comments needs findings:write; without it the
+    // POST /findings/{id}/comments needs findings:comment; without it the
     // composer is not offered (instead of a 403 on Send).
-    const { hasPermission } = usePermissions()
-    const canComment = hasPermission('findings:write') && !readOnly
+    const canComment = useCanMutate('POST /api/v1/findings/{id}/comments') && !readOnly
 
     return (
       <EntityActivity

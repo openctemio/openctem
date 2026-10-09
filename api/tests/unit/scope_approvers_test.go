@@ -325,3 +325,24 @@ func TestScopeApprovers_RemindIsRateLimited(t *testing.T) {
 		t.Fatalf("reminder for an active entry: %v", err)
 	}
 }
+
+// The owner's own approval reaches the job signer's ledger marked
+// self_approved, before it is saved; a refusal fails the approval.
+func TestScopeApprovers_SelfApprovalGoesToTheLedger(t *testing.T) {
+	h, tenantID, e := singleOwnerT2(t)
+	led := &fakeLedger{refuse: true}
+	h.svc.SetLedger(led)
+	if _, err := h.svc.SelfApproveTarget(context.Background(), e.ID().String(), tenantID.String(), owner, "only owner", "123456"); err == nil {
+		t.Fatal("a self-approval the signer refused was saved")
+	}
+	led.refuse = false
+	h2, tid2, e2 := singleOwnerT2(t)
+	h2.svc.SetLedger(led)
+	if _, err := h2.svc.SelfApproveTarget(context.Background(), e2.ID().String(), tid2.String(), owner, "only owner", "123456"); err != nil {
+		t.Fatal(err)
+	}
+	last := led.changes[len(led.changes)-1]
+	if len(last.Approvals) != 1 || !last.Approvals[0].SelfApproved || last.Requester != ownerID {
+		t.Fatalf("ledger change %+v, want one self-approved approval by the requester", last)
+	}
+}

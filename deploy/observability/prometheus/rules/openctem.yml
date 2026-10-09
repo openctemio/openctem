@@ -203,6 +203,15 @@ groups:
           description: A sensor runs with a configuration problem (missing tools, ignored capabilities, policy refusals).
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorconfigimpaired
 
+      - alert: SensorsUnhardened
+        expr: sum by (kind) (openctem_sensors_unhardened) > 0
+        for: 24h
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} sensor(s) are unhardened: {{ $labels.kind }}'
+          description: Sensors run without a local policy (policy_none), without a pinned platform CA (pin_none), with tools outside network confinement (network_unenforced) or with a bearer key instead of a key-bound identity (bearer_key). They keep working; the Sensors page flags them.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsunhardened
+
       - alert: SensorSdkUnsupported
         expr: sum by (kind) (openctem_sensors_sdk{status="unsupported"}) > 0
         for: 1h
@@ -285,6 +294,34 @@ groups:
           summary: The audit log hash chain has {{ $value | humanize }} new break(s) ({{ $labels.reason }})
           description: An audit entry was changed or removed outside the API. Treat as a security incident.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#auditchainbreak
+
+      # RFC-040 §5.11 A10: the job signer refused a job its scope ledger does
+      # not authorize. An honest API never asks for one: a database row
+      # written outside the API, a scope change the signer never accepted,
+      # or a compromised API.
+      - alert: SignerOutOfLedger
+        expr: sum by (reason) (increase(openctem_signer_refusals_total{reason=~"out_of_ledger|tier_exceeds_ledger|target_excluded|template_not_in_ledger"}[15m])) > 0
+        labels: {severity: critical, component: api, category: security}
+        annotations:
+          summary: The job signer refused {{ $value | humanize }} job(s) outside its scope ledger ({{ $labels.reason }})
+          description: A job for a target nobody approved reached the signer. Treat as a security incident until explained.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signeroutofledger
+
+      - alert: SignerRefusals
+        expr: sum by (reason) (increase(openctem_signer_refusals_total{reason!~"out_of_ledger|tier_exceeds_ledger|target_excluded|template_not_in_ledger"}[15m])) > 5
+        labels: {severity: warning, component: api, category: security}
+        annotations:
+          summary: The job signer refused {{ $value | humanize }} job(s) in 15 minutes ({{ $labels.reason }})
+          description: Rate ceilings, clock skew or malformed statements. Jobs wait until the signer signs them.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signerrefusals
+
+      - alert: SignerLedgerChangeRefused
+        expr: sum by (kind) (increase(openctem_signer_ledger_feed_total{outcome="refused"}[30m])) > 0
+        labels: {severity: warning, component: api, category: security}
+        annotations:
+          summary: The job signer refused {{ $value | humanize }} scope change(s) ({{ $labels.kind }})
+          description: A scope change the API approved did not meet the signer's approval rule. It was not saved.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signerledgerchangerefused
 
       - alert: LoginFailureSpike
         expr: sum(increase(openctem_auth_login_failures_total{reason="invalid_credentials"}[5m])) > 50
