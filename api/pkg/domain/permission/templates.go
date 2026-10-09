@@ -59,7 +59,7 @@ var roleTemplates = []RoleTemplate{
 			BusinessServicesRead, BusinessServicesWrite, CompensatingControlsRead, CompensatingControlsWrite,
 			PriorityRulesRead, PriorityRulesWrite, VerificationChecklistsRead,
 			SLARead, SLAWrite,
-			FindingsApprove, SuppressionsRead, SuppressionsApprove,
+			FindingsApprove, FindingsComment, SuppressionsRead, SuppressionsApprove,
 			ScopeRead, ScopeApprove, ScopeExclusionsApprove,
 			CredentialsRead, ThreatIntelRead, ScansRead,
 			PentestCampaignsRead, PentestFindingsRead, ComplianceFrameworksRead, ComplianceAssessmentsRead,
@@ -74,7 +74,8 @@ var roleTemplates = []RoleTemplate{
 			"never approves it.",
 		Personas: []string{"Security operations analyst", "Exposure triage analyst"},
 		Permissions: join(readCore, []Permission{
-			FindingsWrite, FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify,
+			FindingsWrite, FindingsComment, FindingsSeverity,
+			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify,
 			ExposuresWrite, ExposuresTriage, SuppressionsRead, SuppressionsWrite,
 			CredentialsRead, WorkflowsRead,
 			ScansRead, ScansExecute, ScanProfilesRead,
@@ -91,7 +92,8 @@ var roleTemplates = []RoleTemplate{
 			"risk acceptance.",
 		Personas: []string{"Vulnerability management lead", "Remediation coordinator"},
 		Permissions: join(readCore, []Permission{
-			FindingsWrite, FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify,
+			FindingsWrite, FindingsComment, FindingsSeverity,
+			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify,
 			FindingsExport,
 			ExposuresWrite, ExposuresTriage, SuppressionsRead, SuppressionsWrite,
 			RemediationWrite, WorkflowsRead, WorkflowsWrite,
@@ -107,11 +109,11 @@ var roleTemplates = []RoleTemplate{
 		ID:   "remediation-owner",
 		Name: "Remediation owner",
 		Description: "Fixes what is assigned to their team: comments, remediation steps, tickets and " +
-			"marking a fix applied. Requests risk acceptance with a justification. Cannot verify their " +
-			"own fix, approve, delete or change scans.",
+			"marking a fix applied. Requests risk acceptance with a justification. Cannot re-score " +
+			"severity, verify their own fix, approve, delete or change scans.",
 		Personas: []string{"Asset or system owner", "IT and infrastructure engineer", "Developer", "Engineering manager"},
 		Permissions: join(readCore, []Permission{
-			FindingsWrite, FindingsStatus, FindingsFixApply,
+			FindingsWrite, FindingsComment, FindingsStatus, FindingsFixApply,
 			VerificationChecklistsRead, SLARead, ScansRead,
 		}),
 	},
@@ -123,7 +125,7 @@ var roleTemplates = []RoleTemplate{
 		Personas: []string{"Application security engineer", "DevSecOps engineer"},
 		Permissions: join(readCore, []Permission{
 			ComponentsWrite, AssetsWrite,
-			FindingsWrite, FindingsTriage, FindingsStatus, FindingsAssign, FindingsVerify,
+			FindingsWrite, FindingsComment, FindingsSeverity, FindingsTriage, FindingsStatus, FindingsAssign, FindingsVerify,
 			SuppressionsRead, SuppressionsWrite,
 			ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScanProfilesWrite,
 			ScanWorkflowsRead, ToolsRead, ScannerTemplatesRead,
@@ -153,7 +155,7 @@ var roleTemplates = []RoleTemplate{
 			PentestRead, PentestWrite,
 			PentestCampaignsRead, PentestCampaignsWrite, PentestFindingsRead, PentestFindingsWrite,
 			PentestRetestsRead, PentestRetestsWrite, PentestTemplatesRead, PentestTemplatesWrite, PentestReportsWrite,
-			FindingsWrite, FindingsVerify,
+			FindingsWrite, FindingsComment, FindingsSeverity, FindingsVerify,
 			ScansRead, ScansExecute, ScanProfilesRead, ScopeRead,
 			AttackerProfilesRead, CompensatingControlsRead, VerificationChecklistsRead, ThreatIntelRead,
 		}),
@@ -181,7 +183,7 @@ var roleTemplates = []RoleTemplate{
 		Permissions: join(readCore, []Permission{
 			ThreatIntelRead, ThreatIntelWrite, AttackerProfilesRead, AttackerProfilesWrite,
 			ExposuresWrite, ExposuresTriage, CredentialsRead, CredentialsWrite,
-			FindingsWrite, FindingsTriage, ScopeRead, ReportsRead,
+			FindingsWrite, FindingsComment, FindingsSeverity, FindingsTriage, ScopeRead, ReportsRead,
 		}),
 	},
 	{
@@ -192,7 +194,7 @@ var roleTemplates = []RoleTemplate{
 			"person who asks is never the person who approves.",
 		Personas: []string{"GRC and risk manager", "Compliance manager"},
 		Permissions: join(readCore, []Permission{
-			FindingsApprove, SuppressionsRead, SuppressionsApprove,
+			FindingsApprove, FindingsComment, SuppressionsRead, SuppressionsApprove,
 			ComplianceFrameworksRead, ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 			ComplianceMappingsRead, ComplianceMappingsWrite,
 			SLARead, CTEMCyclesRead, BusinessServicesRead, CompensatingControlsRead, ReportsRead, ReportsWrite,
