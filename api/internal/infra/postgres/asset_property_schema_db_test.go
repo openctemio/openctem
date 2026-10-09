@@ -20,7 +20,7 @@ func TestAssetPropertySchema_IPLookupsAndEdgeRefresh(t *testing.T) {
 	repo := NewAssetRepository(pdb)
 	tenant := seedTestTenant(ctx, t, db)
 	other := seedTestTenant(ctx, t, db)
-	suffix := shared.NewID().String()[:8]
+	suffix := shared.NewID().String()[28:]
 
 	insert := func(tn shared.ID, name, typ, props string) shared.ID {
 		t.Helper()
