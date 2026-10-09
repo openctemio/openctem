@@ -75,6 +75,9 @@ const (
 	// from, and a sync that narrowed it or suspended it (RFC-065 §14).
 	ActionBountyProgramSourceSet Action = "bounty_program.source_set"
 	ActionBountyProgramSynced    Action = "bounty_program.synced"
+	// Authorization letters (RFC-065 §13).
+	ActionScopeLetterUploaded Action = "scope_letter.uploaded"
+	ActionScopeLetterRevoked  Action = "scope_letter.revoked"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -591,6 +594,7 @@ func (a Action) IsValid() bool {
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
 		ActionBountyProgramSourceSet, ActionBountyProgramSynced,
+		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
@@ -877,6 +881,8 @@ const (
 	ResourceTypeScopeExclusion ResourceType = "scope_exclusion"
 	// ResourceTypeBountyProgram is a bug-bounty program (RFC-065).
 	ResourceTypeBountyProgram ResourceType = "bounty_program"
+	// ResourceTypeAuthorizationLetter is a letter of authorization (RFC-065 §13).
+	ResourceTypeAuthorizationLetter ResourceType = "authorization_letter"
 	// ResourceTypeSuppressionRule is a finding suppression rule.
 	ResourceTypeSuppressionRule ResourceType = "suppression_rule"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
@@ -907,7 +913,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
-		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
@@ -994,7 +1000,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
 		ActionScopeTargetApproved, ActionScopeSettingsUpdated,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
-		ActionBountyProgramResumed,
+		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		// Deleting an asset also deletes its findings.
