@@ -9,7 +9,7 @@
 //   - every other member sees only the assets of their scope rows, and a
 //     member with no scope row sees nothing (fail closed). There is no
 //     per-organization "see everything" mode any more (owner decision D2,
-//     research doc 15 L-04): tenants.members_without_group_see is not read.
+//     research doc 15 L-04; its column was dropped by migration 001483).
 //
 // Every service that reads or writes an asset-bound row by id, or lists
 // such rows indirectly, goes through one Enforcer instead of repeating the

@@ -12,6 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -94,7 +96,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
           New administrator
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         {created ? (
           <>
             <DialogHeader>
@@ -105,39 +107,41 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                   : 'Their existing account is now an administrator. They sign in on the normal sign-in page with their own password and set up two-step verification when they open the console.'}
               </DialogDescription>
             </DialogHeader>
-            <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 py-4 text-sm">
-              <dt className="text-muted-foreground">Email</dt>
-              <dd className="min-w-0 break-all">{created.email}</dd>
-              {created.password && (
-                <>
-                  <dt className="text-muted-foreground">Temporary password</dt>
-                  <dd className="flex min-w-0 items-center gap-2">
-                    <code className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all select-all">
-                      {created.password}
-                    </code>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      aria-label="Copy temporary password"
-                      onClick={async () => {
-                        if (created.password && (await copyToClipboard(created.password))) {
-                          setCopied(true)
-                        }
-                      }}
-                    >
-                      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                    </Button>
-                  </dd>
-                </>
-              )}
-            </dl>
+            <DialogBody>
+              <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 py-4 text-sm">
+                <dt className="text-muted-foreground">Email</dt>
+                <dd className="min-w-0 break-all">{created.email}</dd>
+                {created.password && (
+                  <>
+                    <dt className="text-muted-foreground">Temporary password</dt>
+                    <dd className="flex min-w-0 items-center gap-2">
+                      <code className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all select-all">
+                        {created.password}
+                      </code>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        aria-label="Copy temporary password"
+                        onClick={async () => {
+                          if (created.password && (await copyToClipboard(created.password))) {
+                            setCopied(true)
+                          }
+                        }}
+                      >
+                        {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                      </Button>
+                    </dd>
+                  </>
+                )}
+              </dl>
+            </DialogBody>
             <DialogFooter>
               <Button onClick={close}>Done</Button>
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={submit}>
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>New administrator</DialogTitle>
               <DialogDescription>
@@ -145,73 +149,76 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                 Use an email that is not a member of any organization.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="adm-name">Name</Label>
-                <Input
-                  id="adm-name"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="adm-email">Email</Label>
-                <Input
-                  id="adm-email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select
-                  value={breakGlass ? 'super_admin' : role}
-                  disabled={breakGlass}
-                  onValueChange={(v) => setRole(v as AdminRole)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ADMIN_ROLE_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {
-                    ADMIN_ROLE_OPTIONS.find((o) => o.value === (breakGlass ? 'super_admin' : role))
-                      ?.hint
-                  }
-                </p>
-              </div>
-              <div className="flex items-start gap-3 rounded-md border p-3">
-                <Checkbox
-                  id="adm-break-glass"
-                  checked={breakGlass}
-                  onCheckedChange={(v) => setBreakGlass(v === true)}
-                />
-                <div className="space-y-1">
-                  <Label htmlFor="adm-break-glass">Break-glass (emergency access) account</Label>
+            <DialogBody>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="adm-name">Name</Label>
+                  <Input
+                    id="adm-name"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="adm-email">Email</Label>
+                  <Input
+                    id="adm-email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select
+                    value={breakGlass ? 'super_admin' : role}
+                    disabled={breakGlass}
+                    onValueChange={(v) => setRole(v as AdminRole)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ADMIN_ROLE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-muted-foreground">
-                    A local super admin for when the identity provider is down: never bound to it,
-                    allowed to use its password when the IdP is required, and every sign-in alerts
-                    all administrators. Keep its credentials offline and test it at least every 90
-                    days.
+                    {
+                      ADMIN_ROLE_OPTIONS.find(
+                        (o) => o.value === (breakGlass ? 'super_admin' : role)
+                      )?.hint
+                    }
                   </p>
                 </div>
+                <div className="flex items-start gap-3 rounded-md border p-3">
+                  <Checkbox
+                    id="adm-break-glass"
+                    checked={breakGlass}
+                    onCheckedChange={(v) => setBreakGlass(v === true)}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="adm-break-glass">Break-glass (emergency access) account</Label>
+                    <p className="text-xs text-muted-foreground">
+                      A local super admin for when the identity provider is down: never bound to it,
+                      allowed to use its password when the IdP is required, and every sign-in alerts
+                      all administrators. Keep its credentials offline and test it at least every 90
+                      days.
+                    </p>
+                  </div>
+                </div>
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
               </div>
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </div>
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={close}>
                 Cancel
@@ -221,7 +228,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                 Create administrator
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>

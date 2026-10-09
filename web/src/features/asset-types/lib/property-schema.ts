@@ -48,6 +48,11 @@ const SYNONYM_OF: Readonly<Record<string, string>> = Object.fromEntries(
 )
 
 /** The canonical key a synonym folds into, or the key itself. */
+/** True for a key of format expiry (a certificate's not_after, a domain's expires_at). */
+export function isExpiryKey(key: string): boolean {
+  return propertyDefinition(key)?.format === 'expiry'
+}
+
 export function canonicalPropertyKey(key: string): string {
   return SYNONYM_OF[key] ?? key
 }
