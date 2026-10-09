@@ -125,7 +125,7 @@ func newProviderRig(t *testing.T) *providerRig {
 func (r *providerRig) trustFor(tenant shared.ID, provider cirun.Provider, issuer string, rules cirun.Rules) *cirun.TrustConfig {
 	r.t.Helper()
 	c, err := r.svc.CreateTrustConfig(context.Background(), tenant, cirunapp.TrustConfigInput{
-		Name: string(provider) + "-" + shared.NewID().String()[:8], Provider: string(provider), Issuer: issuer, Rules: rules,
+		Name: string(provider) + "-" + shared.NewID().String()[28:], Provider: string(provider), Issuer: issuer, Rules: rules,
 	}, cirunapp.Actor{Email: "admin@acme.test"})
 	if err != nil {
 		r.t.Fatalf("create %s trust: %v", provider, err)

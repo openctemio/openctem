@@ -74,7 +74,8 @@ var (
 	ErrEntryApprovedOnce = shared.NewDomainError("ENTRY_ALREADY_APPROVED", "you already approved this scope entry", shared.ErrConflict)
 	ErrEntryRejected     = shared.NewDomainError("ENTRY_REJECTED", "the scope entry was rejected; create a new one", shared.ErrConflict)
 	ErrReasonRequiredFor = shared.NewDomainError("REASON_REQUIRED", "a reason is required for an expiring entry, a request and an intrusive entry", shared.ErrValidation)
-	ErrIntrusiveNeeds    = shared.NewDomainError("INTRUSIVE_NEEDS_EXPIRY", "a t2 (intrusive) entry needs an expiry", shared.ErrValidation)
+	ErrIntrusiveNeeds    = shared.NewDomainError("INTRUSIVE_NEEDS_EXPIRY", "a t2 (intrusive) entry needs an expiry; your organization does not allow permanent t2 entries", shared.ErrValidation)
+	ErrIntrusiveTooLong  = shared.NewDomainError("INTRUSIVE_TOO_LONG", "the expiry is beyond the longest your organization allows for a t2 (intrusive) entry", shared.ErrValidation)
 )
 
 // EntryOptions are the entry fields of a new target.
@@ -83,6 +84,9 @@ type EntryOptions struct {
 	ExpiresAt         *time.Time
 	MaxTier           Tier
 	ApprovalsRequired int
+	// IntrusivePermanent: the organization allows permanent t2 entries
+	// (t2_max_duration permanent, RFC-054 §12.4).
+	IntrusivePermanent bool
 	// Now is the clock (zero: time.Now()).
 	Now time.Time
 }
@@ -108,7 +112,7 @@ func NewEntry(tenantID shared.ID, targetType TargetType, pattern, description, c
 		return nil, fmt.Errorf("%w: approvals_required must be 0..%d", shared.ErrValidation, MaxApprovals)
 	case o.ExpiresAt != nil && !o.ExpiresAt.After(now):
 		return nil, fmt.Errorf("%w: expires_at must be in the future", shared.ErrValidation)
-	case o.MaxTier == TierIntrusive && o.ExpiresAt == nil:
+	case o.MaxTier == TierIntrusive && o.ExpiresAt == nil && !o.IntrusivePermanent:
 		return nil, ErrIntrusiveNeeds
 	case (o.ExpiresAt != nil || o.MaxTier == TierIntrusive) && reason == "":
 		return nil, ErrReasonRequiredFor

@@ -706,7 +706,7 @@ func TestDataScope_AffectedAssets(t *testing.T) {
 
 	// One CVE affecting both assets.
 	vulnID := shared.NewID()
-	cve := "CVE-2099-" + vulnID.String()[:8]
+	cve := "CVE-2099-" + vulnID.String()[28:]
 	h.exec(`INSERT INTO vulnerabilities (id, cve_id, title) VALUES ($1, $2, 'ds cve')`, vulnID.String(), cve)
 	t.Cleanup(func() {
 		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM vulnerabilities WHERE id = $1`, vulnID.String())
