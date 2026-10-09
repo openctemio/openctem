@@ -95,7 +95,7 @@ func (m *planMemRepo) DeleteOverride(_ context.Context, id shared.ID, k plan.Key
 	return nil
 }
 
-func (m *planMemRepo) Usage(context.Context, shared.ID) (map[plan.Key]int, error) {
+func (m *planMemRepo) Usage(context.Context, shared.ID, bool) (map[plan.Key]int, error) {
 	return m.usage, nil
 }
 

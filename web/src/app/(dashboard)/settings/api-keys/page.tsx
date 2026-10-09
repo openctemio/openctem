@@ -34,6 +34,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -133,58 +135,60 @@ function GenerateKeyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Generate API key</DialogTitle>
           <DialogDescription>
             Scope the key to the minimum permissions needed. The secret is shown once.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="key-name">Name</Label>
-            <Input
-              id="key-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="CI pipeline"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="key-desc">Description (optional)</Label>
-            <Input
-              id="key-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="key-expiry">Expires</Label>
-            <Select value={expires} onValueChange={setExpires}>
-              <SelectTrigger id="key-expiry">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {API_KEY_EXPIRY_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Scopes</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {AVAILABLE_SCOPES.map((s) => (
-                <label key={s} className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={scopes.includes(s)} onCheckedChange={() => toggleScope(s)} />
-                  <span className="font-mono text-xs">{s}</span>
-                </label>
-              ))}
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="key-name">Name</Label>
+              <Input
+                id="key-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="CI pipeline"
+                required
+              />
             </div>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="key-desc">Description (optional)</Label>
+              <Input
+                id="key-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="key-expiry">Expires</Label>
+              <Select value={expires} onValueChange={setExpires}>
+                <SelectTrigger id="key-expiry">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {API_KEY_EXPIRY_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Scopes</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {AVAILABLE_SCOPES.map((s) => (
+                  <label key={s} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={scopes.includes(s)} onCheckedChange={() => toggleScope(s)} />
+                    <span className="font-mono text-xs">{s}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -193,7 +197,7 @@ function GenerateKeyDialog({
               {isMutating ? 'Generating...' : 'Generate'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )
@@ -208,19 +212,21 @@ function RevealKeyDialog({ value, onClose }: { value: string; onClose: () => voi
   }
   return (
     <Dialog open={!!value} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Copy your API key</DialogTitle>
           <DialogDescription>
             This is the only time the full key is shown. Store it securely.
           </DialogDescription>
         </DialogHeader>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <code className="flex-1 break-all text-xs">{value}</code>
-          <Button size="icon" variant="ghost" onClick={copy} title="Copy">
-            {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-          </Button>
-        </div>
+        <DialogBody>
+          <div className="bg-muted flex items-center gap-2 rounded-md p-3">
+            <code className="flex-1 break-all text-xs">{value}</code>
+            <Button size="icon" variant="ghost" onClick={copy} title="Copy">
+              {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+            </Button>
+          </div>
+        </DialogBody>
         <DialogFooter>
           <Button onClick={onClose}>Done</Button>
         </DialogFooter>

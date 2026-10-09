@@ -90,8 +90,7 @@ Current behaviour:
 - **Identity does not depend on the link.** A CT exposure's fingerprint is
   tenant, type, title and host (`certmonitor.ctFingerprint`), so linking or
   relinking never creates a second row. Migration `001018` re-keyed the
-  stored rows and resolved the duplicates it collapsed (reversible: the old
-  fingerprints and states are kept in `easm_ct_rekey_001018`).
+  stored rows and resolved the duplicates it collapsed.
 - **Rejected names stay quiet.** A host that is rejected (an asset whose
   attribution is `rejected`, or a live tombstone), or that sits under one,
   produces no CT exposure (`hosts_rejected` in the sweep log). When a person
