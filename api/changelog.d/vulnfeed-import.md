@@ -2,5 +2,5 @@
 
 - The `vuln-feed-import` controller (RFC-066 §5.5) imports the daily bundles the collector [openctemio/vulnfeed](https://github.com/openctemio/vulnfeed) publishes into the CVE corpus. The platform no longer needs to call any vulnerability source.
 - Before anything is written it verifies the key set against the pinned offline root (and refuses a lower key-set version than one it accepted), the signed pointer and manifests, the sequence (no rollback, deltas only on their base), the 7-day expiry, every file's size and SHA-256, and every record with the platform's own parsers; a bundle that would remove more than 2 % of the stored ranges is refused. Record files are fetched only after the pointer verified, capped at the sizes the signed manifest states.
-- Migration 001594 adds the `vulnfeed` threat-intel source, **disabled**.
+- Migration 001636 adds the `vulnfeed` threat-intel source, **disabled**.
 - **Upgrade note:** set `VULNFEED_ROOT_KEY_ID` (the collector's root key id) and enable the source (`PATCH /api/v1/admin/threat-intel/sync/vulnfeed {"enabled": true}`). `VULNFEED_BASE_URL` points at a mirror; `VULNFEED_BUNDLE_DIR` reads a release's files from a local directory on an air-gapped platform. A warning is logged when no new bundle arrived for three days.
