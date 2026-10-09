@@ -8,9 +8,15 @@
 //	openctem-signer verify-log                      check the signing log's chain
 //	openctem-signer [serve]                         serve on SIGNER_SOCKET
 //
+// Offline, on the machine that holds the root key (never the platform host):
+//
+//	openctem-signer root keygen -out root.key       create the root key (0400), print its id
+//	openctem-signer keyset sign -root root.key -version N -days D -key <pubkey|file> [-key ...] -out keyset.json
+//	openctem-signer keyset show [-root <keyid>] keyset.json
+//
 // Environment: SIGNER_KEY_FILE, SIGNER_SOCKET, SIGNER_STATE_DIR,
-// SIGNER_TENANT_RATE, SIGNER_TENANT_BURST, SIGNER_SENSOR_RATE,
-// SIGNER_SENSOR_BURST.
+// SIGNER_KEYSET_FILE, SIGNER_TENANT_RATE, SIGNER_TENANT_BURST,
+// SIGNER_SENSOR_RATE, SIGNER_SENSOR_BURST.
 package main
 
 import (
@@ -57,10 +63,26 @@ func run(args []string) error {
 		return nil
 	case "verify-log":
 		return verifyLog()
+	case "root":
+		if len(args) == 0 || args[0] != "keygen" {
+			return errors.New("usage: root keygen -out <file>")
+		}
+		return rootKeygen(args[1:])
+	case "keyset":
+		if len(args) == 0 {
+			return errors.New("usage: keyset sign or keyset show")
+		}
+		switch args[0] {
+		case "sign":
+			return keysetSign(args[1:])
+		case "show":
+			return keysetShow(args[1:])
+		}
+		return fmt.Errorf("unknown keyset command %q (sign, show)", args[0])
 	case "serve":
 		return serve()
 	default:
-		return fmt.Errorf("unknown command %q (keygen, pubkey, verify-log, serve)", cmd)
+		return fmt.Errorf("unknown command %q (keygen, pubkey, verify-log, serve, root keygen, keyset sign, keyset show)", cmd)
 	}
 }
 
@@ -132,6 +154,17 @@ func serve() error {
 		return err
 	}
 	defer func() { _ = svc.Close() }()
+	// The key set (signed offline by the root) is optional; one that does
+	// not verify, has expired or omits this signer's key stops the start.
+	keysetFile := os.Getenv("SIGNER_KEYSET_FILE")
+	if keysetFile != "" {
+		ks, err := svc.LoadKeySetFile(keysetFile)
+		if err != nil {
+			return err
+		}
+		logger.Info("key set loaded", "keyset_version", ks.Version, "not_after", ks.NotAfter, "root_keyid", ks.RootKeyID)
+		svc.CheckKeySetExpiry()
+	}
 
 	// The socket is created owner and group only (0660) from the start.
 	syscall.Umask(0o117)
@@ -142,6 +175,9 @@ func serve() error {
 	srv := signer.NewHTTPServer(svc.Handler())
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if keysetFile != "" {
+		go watchKeySet(ctx, svc, keysetFile, logger)
+	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
 	logger.Info("signer listening", "socket", socket, "keyid", svc.KeyID())
