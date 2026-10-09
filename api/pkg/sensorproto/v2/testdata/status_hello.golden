@@ -104,6 +104,7 @@
     "release",
     "manifest",
     "local_policy",
+    "posture",
     "capacity",
     "refusal",
     "config_report",
