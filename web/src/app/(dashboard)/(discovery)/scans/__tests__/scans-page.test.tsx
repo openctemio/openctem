@@ -42,9 +42,9 @@ vi.mock('@/features/scans/components/scans-section-tabs', () => ({
 vi.mock('@/features/sensors/components/sensor-opt-in-banner', () => ({
   SensorOptInBanner: () => null,
 }))
-vi.mock('@/features/scan-freeze', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/features/scan-freeze')>()),
-  FreezeBanner: () => null,
+vi.mock('@/features/scan-windows', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/scan-windows')>()),
+  ScanWindowsBanner: () => null,
 }))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,

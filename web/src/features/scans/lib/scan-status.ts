@@ -44,7 +44,7 @@ const REFUSAL_LABELS: Record<string, string> = {
   NO_TARGETS: 'No targets',
   NO_COMPATIBLE_TARGETS: 'No target this scanner can scan',
   NO_SENSOR_AVAILABLE: 'No sensor online',
-  SCAN_FREEZE_ACTIVE: 'Freeze window active',
+  SCAN_WINDOW_NEVER_OPENS: 'Scan window never opens',
   SCAN_NOT_TRIGGERABLE: 'Scan paused or disabled',
   WILDCARD_TARGET: 'Wildcard pattern given to an active scanner',
   TOOL_DISABLED: 'Scanner disabled',
