@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Authorization letters (migration 001490): a letter entry authorizes only
+// Authorization letters (migration 001496): a letter entry authorizes only
 // while its letter is valid (the in-effect read joins it); revocation and
 // expiry stop it at once; letters and entries stay inside their tenant.
 // Requires DATABASE_URL.
