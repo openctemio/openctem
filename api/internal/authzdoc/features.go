@@ -70,7 +70,7 @@ var Features = []Feature{
 		ID: "scope", Title: "Scope",
 		Description: "What the organization may scan: scope targets, exclusions, approvals and scope settings.",
 		Stages:      []string{StageScoping},
-		Registers:   []string{"registerScopeRoutes"},
+		Registers:   []string{"registerScopeRoutes", "registerScopeLetterRoutes"},
 	},
 	{
 		ID: "programs", Title: "Bug-bounty programs",
