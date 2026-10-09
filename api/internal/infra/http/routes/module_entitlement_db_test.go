@@ -128,7 +128,7 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 	}
 
 	// Removing the deny restores it.
-	if err := ent.DeleteModuleGrant(ctx, ops, denied, moduledom.ModulePentest, "", ""); err != nil {
+	if err := ent.DeleteModuleGrant(ctx, ops, denied, moduledom.ModulePentest, "contract ended", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if code, _ := serve(denied); code != http.StatusOK {

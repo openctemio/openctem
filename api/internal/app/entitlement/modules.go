@@ -202,19 +202,36 @@ type ModuleGrantInput struct {
 	ExpiresAt *time.Time
 }
 
+// Validate reports plan.ErrInvalid unless the input names a top-level,
+// non-core module, grant or deny, a reason and, if any, an expiry after now.
+// Handlers call it before asking for a step-up code, so a typo does not
+// spend the code.
+func (in ModuleGrantInput) Validate(now time.Time) error {
+	d, known := moduledom.Lookup(in.Module)
+	if !known || d.Core || d.Parent != "" || !in.Kind.IsValid() || !ValidGrantReason(in.Reason) ||
+		(in.ExpiresAt != nil && !in.ExpiresAt.After(now)) {
+		return plan.ErrInvalid
+	}
+	return nil
+}
+
+// ValidGrantReason reports a non-blank reason of at most 500 characters.
+func ValidGrantReason(reason string) bool {
+	r := strings.TrimSpace(reason)
+	return r != "" && len([]rune(r)) <= maxOverrideReasonRunes
+}
+
 // PutModuleGrant sets one organization's grant or deny of a top-level,
 // non-core module (audited). A reason is required; an expiry, when given,
-// must be in the future.
+// must be in the future. The HTTP layer requires a step-up code first.
 func (s *Service) PutModuleGrant(ctx context.Context, actor *admin.AdminUser, tenantID shared.ID, in ModuleGrantInput, ip, ua string) error {
 	if s.modules == nil {
 		return errors.New("module entitlements are not configured")
 	}
 	reason := strings.TrimSpace(in.Reason)
 	now := s.now().UTC()
-	d, known := moduledom.Lookup(in.Module)
-	if !known || d.Core || d.Parent != "" || !in.Kind.IsValid() || reason == "" ||
-		len([]rune(reason)) > maxOverrideReasonRunes || (in.ExpiresAt != nil && !in.ExpiresAt.After(now)) {
-		return plan.ErrInvalid
+	if err := in.Validate(now); err != nil {
+		return err
 	}
 	id := actor.ID()
 	g := plan.ModuleGrant{TenantID: tenantID, ModuleID: in.Module, Kind: in.Kind, Reason: reason,
@@ -233,18 +250,19 @@ func (s *Service) PutModuleGrant(ctx context.Context, actor *admin.AdminUser, te
 	return nil
 }
 
-// DeleteModuleGrant removes one organization's grant or deny (audited).
-func (s *Service) DeleteModuleGrant(ctx context.Context, actor *admin.AdminUser, tenantID shared.ID, moduleID string, ip, ua string) error {
+// DeleteModuleGrant removes one organization's grant or deny (audited with
+// the reason). The HTTP layer requires a step-up code first.
+func (s *Service) DeleteModuleGrant(ctx context.Context, actor *admin.AdminUser, tenantID shared.ID, moduleID, reason string, ip, ua string) error {
 	if s.modules == nil {
 		return errors.New("module entitlements are not configured")
 	}
-	if _, known := moduledom.Lookup(moduleID); !known {
+	if _, known := moduledom.Lookup(moduleID); !known || !ValidGrantReason(reason) {
 		return plan.ErrInvalid
 	}
 	if err := s.modules.DeleteModuleGrant(ctx, tenantID, moduleID); err != nil {
 		return err
 	}
-	s.writeAudit(ctx, actor, ActionModuleGrantRemoved, &tenantID, "tenant", map[string]any{"module": moduleID}, ip, ua)
+	s.writeAudit(ctx, actor, ActionModuleGrantRemoved, &tenantID, "tenant", map[string]any{"module": moduleID, "reason": strings.TrimSpace(reason)}, ip, ua)
 	if s.modulesChanged != nil {
 		s.modulesChanged(tenantID.String())
 	}

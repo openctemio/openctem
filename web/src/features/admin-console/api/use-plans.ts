@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import type {
   AdminTenantModulesResponse,
+  DeleteModuleGrantRequest,
   PlanModulesResponse,
   SetModuleGrantRequest,
   UpdatePlanModulesRequest,
@@ -92,10 +93,17 @@ export function putModuleGrant(tenantId: string, moduleId: string, input: SetMod
   )
 }
 
-/** Removes an organization's grant or deny: the plan decides again. */
-export function deleteModuleGrant(tenantId: string, moduleId: string) {
+/**
+ * Removes an organization's grant or deny: the plan decides again. Needs a
+ * reason (admin audit log) and a fresh authenticator code.
+ */
+export function deleteModuleGrant(
+  tenantId: string,
+  moduleId: string,
+  proof: DeleteModuleGrantRequest
+) {
   return adminFetch<AdminTenantModulesResponse>(
     `${tenantModulesKey(tenantId)}/${encodeURIComponent(moduleId)}/grant`,
-    { method: 'DELETE' }
+    { method: 'DELETE', body: proof }
   )
 }

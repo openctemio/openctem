@@ -167,10 +167,10 @@ func TestPutModuleGrant_ValidatesAndNotifies(t *testing.T) {
 	if len(*changed) != 1 || (*changed)[0] != id.String() {
 		t.Fatalf("notified %v, want the organization", *changed)
 	}
-	if err := svc.DeleteModuleGrant(ctx, a, id, moduledom.ModulePentest, "", ""); err != nil {
+	if err := svc.DeleteModuleGrant(ctx, a, id, moduledom.ModulePentest, "contract ended", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DeleteModuleGrant(ctx, a, id, moduledom.ModulePentest, "", ""); !errors.Is(err, shared.ErrNotFound) {
+	if err := svc.DeleteModuleGrant(ctx, a, id, moduledom.ModulePentest, "contract ended", "", ""); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("second delete: %v, want ErrNotFound", err)
 	}
 }
