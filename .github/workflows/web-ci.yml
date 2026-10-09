@@ -81,7 +81,7 @@ jobs:
       - name: Collect them
         run: |
           mkdir -p "$RUNNER_TEMP/contract/head"
-          cp api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json "$RUNNER_TEMP/contract/head/"
+          cp api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json "$RUNNER_TEMP/contract/head/"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -259,7 +259,7 @@ jobs:
         working-directory: .
         run: |
           cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
-          cp "$RUNNER_TEMP/contract/api-route-permissions.json" web/src/config/
+          cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
       - name: Run type check
@@ -315,7 +315,7 @@ jobs:
         working-directory: .
         run: |
           cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
-          cp "$RUNNER_TEMP/contract/api-route-permissions.json" web/src/config/
+          cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
       - name: Cache Next.js build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

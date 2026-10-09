@@ -656,6 +656,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Remediation progress — periodically refresh campaign finding counts and
 	// auto-complete campaigns whose findings are all resolved.
 	if svc != nil && svc.RemediationCampaign != nil {
+		if svc.Module != nil {
+			svc.RemediationCampaign.SetModuleGuard(svc.Module) // skip tenants with remediation off
+		}
 		w.ControllerManager.Register(controller.NewRemediationProgressController(
 			svc.RemediationCampaign,
 			30*time.Minute,

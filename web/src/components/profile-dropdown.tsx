@@ -1,7 +1,7 @@
 'use client'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { LogOut, Settings } from 'lucide-react'
 import useDialogState from '@/hooks/use-dialog-state'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
