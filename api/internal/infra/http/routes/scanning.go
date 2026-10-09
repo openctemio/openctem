@@ -526,6 +526,30 @@ func registerScannerTemplateRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerContentPackRoutes registers the content pack store
+// (docs/rfcs/RFC-061-content-packs.md), gated by the scanner_templates
+// module it supersedes. Uploading and revoking need scans:content:write and
+// a recent sign-in: a pack is code that sensors run.
+func registerContentPackRoutes(
+	router Router,
+	h *handler.ContentPackHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+
+	router.Group("/api/v1/content-packs", func(r Router) {
+		// The tenant's public key for its sensors (public, not a secret).
+		r.GET("/signing-key", h.SigningKey, middleware.Require(permission.ContentPacksRead))
+		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}/download", h.Download, middleware.Require(permission.ContentPacksRead))
+		r.POST("/", h.Upload, middleware.Require(permission.ContentPacksWrite), requireStepUp())
+		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.ContentPacksWrite), requireStepUp())
+	}, tenantMiddlewares...)
+}
+
 // registerTemplateSourceRoutes registers template source management endpoints.
 // Template sources are external sources (Git, S3, HTTP) for scanner templates.
 func registerTemplateSourceRoutes(

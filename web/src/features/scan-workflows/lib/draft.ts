@@ -50,6 +50,11 @@ export function saveDraft(
   })
 }
 
+/** Saves already-serialized steps as the draft (the form). */
+export function saveDraftSteps(id: string, steps: CreateStepRequest[]): Promise<WorkflowDraft> {
+  return put<WorkflowDraft>(draftUrl(id), { steps })
+}
+
 export function publishDraft(id: string): Promise<ScanWorkflow> {
   return post<ScanWorkflow>(publishUrl(id), {})
 }
