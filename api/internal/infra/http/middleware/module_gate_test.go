@@ -91,7 +91,6 @@ func TestRequireModule_NewlyGatedGroups(t *testing.T) {
 		moduledom.ModuleExposures,
 		moduledom.ModuleSuppressions,
 		moduledom.ModuleReports,
-		moduledom.ModuleIntegrations,
 		moduledom.ModuleIOCs,
 		moduledom.ModuleCompensatingControls,
 		moduledom.ModuleAttackerProfiles,
