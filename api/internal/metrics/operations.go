@@ -63,6 +63,30 @@ var (
 		},
 	)
 
+	// SensorStreamOpensRefusedTotal counts sensor control-stream opens
+	// refused, by reason: rate (the per-sensor open token bucket) or
+	// concurrent (the per-sensor concurrent stream bound).
+	SensorStreamOpensRefusedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_sensor_stream_opens_refused_total",
+			Help: "Sensor control-stream opens refused, by reason (rate, concurrent)",
+		},
+		[]string{"reason"},
+	)
+
+	// SensorWakesCoalescedTotal counts cross-replica control-stream wakes
+	// not published as they came, by reason: tenant_quota (the tenant had
+	// its share of the publish queue; folded into one later tenant-wide
+	// wake) or queue_full (dropped; the streams' periodic re-check delivers
+	// the change).
+	SensorWakesCoalescedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_sensor_wakes_coalesced_total",
+			Help: "Sensor control-stream wakes not published as they came, by reason (tenant_quota, queue_full)",
+		},
+		[]string{"reason"},
+	)
+
 	// WebClientErrorsTotal counts errors browsers reported, by kind:
 	// chunk_load, render, unhandled, other.
 	WebClientErrorsTotal = promauto.NewCounterVec(
