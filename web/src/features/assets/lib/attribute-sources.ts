@@ -3,6 +3,8 @@
  * criticality, owner, exposure and data classification, and why.
  */
 
+import { ASSET_CRITICALITY_LEVELS } from '@/lib/criticality'
+
 export type TrackedAttribute = 'criticality' | 'owner_ref' | 'exposure' | 'data_classification'
 export type SourceKind = 'manual' | 'integration' | 'import' | 'scan'
 export type SourceStatus = 'winner' | 'outranked' | 'stale' | 'untrusted'
@@ -67,7 +69,7 @@ export const SOURCE_STATUS_HINT: Record<SourceStatus, string> = {
 
 /** The values an attribute accepts; null = free text. */
 export const ATTRIBUTE_VALUES: Record<TrackedAttribute, string[] | null> = {
-  criticality: ['critical', 'high', 'medium', 'low', 'none'],
+  criticality: [...ASSET_CRITICALITY_LEVELS],
   exposure: ['public', 'restricted', 'private', 'isolated', 'unknown'],
   data_classification: ['', 'public', 'internal', 'confidential', 'restricted', 'secret'],
   owner_ref: null,
