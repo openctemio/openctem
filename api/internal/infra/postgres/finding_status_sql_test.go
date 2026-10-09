@@ -66,6 +66,7 @@ var findingStatusWriters = map[string]int{
 	"finding_retest_repository.go":         2, // moveFindingInTx checks the lifecycle
 	"finding_template_provenance.go":       1, // staleFromSQL
 	"finding_vex_document.go":              1, // vexFalsePositiveFromSQL
+	"softwarematch_repository.go":          1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, staleFromSQL, vexFalsePositiveFromSQL
 	"suppression_repository.go":            2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
 }
 
