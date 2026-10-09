@@ -600,6 +600,8 @@
   "plan.key.platform_scans_per_day": "Lượt quét nền tảng mỗi ngày",
   "plan.key.platform_scans_concurrent": "Lượt quét nền tảng đồng thời",
   "plan.key.free_teams_per_user": "Tổ chức miễn phí mỗi người",
+  "plan.key.findings": "Phát hiện",
+  "plan.notCounted": "Chỉ đếm khi có giới hạn",
   "admin.activity.actionFilter": "Hành động, ví dụ console.login",
   "admin.activity.actionFilterLabel": "Lọc theo hành động",
   "admin.activity.adminFilter": "Email quản trị viên",
