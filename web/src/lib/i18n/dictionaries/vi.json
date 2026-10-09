@@ -190,6 +190,8 @@
   "settings.desc.notification-channels": "Cảnh báo Slack, Teams, Telegram và webhook cho tổ chức.",
   "settings.item.siem": "SIEM",
   "settings.desc.siem": "Chuyển tiếp sự kiện bảo mật sang Splunk.",
+  "settings.item.service-accounts": "Tài khoản dịch vụ",
+  "settings.desc.service-accounts": "Danh tính cho các tích hợp, với vai trò và khóa API riêng.",
   "settings.backToApp": "Quay lại ứng dụng",
   "settings.filter": "Lọc cài đặt",
   "settings.noMatch": "Không có cài đặt nào khớp bộ lọc.",
