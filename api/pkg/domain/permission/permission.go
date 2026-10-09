@@ -166,6 +166,10 @@ const (
 	ScannerTemplatesWrite  Permission = "scans:templates:write"
 	ScannerTemplatesDelete Permission = "scans:templates:delete"
 
+	// Content pack permissions (scans:content:*, RFC-061)
+	ContentPacksRead  Permission = "scans:content:read"
+	ContentPacksWrite Permission = "scans:content:write"
+
 	// Secret Store permissions (scans:secret_store:*)
 	SecretStoreRead   Permission = "scans:secret_store:read"
 	SecretStoreWrite  Permission = "scans:secret_store:write"
@@ -442,6 +446,7 @@ func AllPermissions() []Permission {
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
+		ContentPacksRead, ContentPacksWrite,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIOverride,
 		ScanFreezeOverride,

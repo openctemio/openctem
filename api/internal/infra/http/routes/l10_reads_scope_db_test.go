@@ -12,6 +12,7 @@ package routes
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -222,6 +223,33 @@ func TestCredentials_DataScope_DB(t *testing.T) {
 	}
 	if body := h.get(h.scoped, false, "/api/v1/credentials/stats"); !strings.Contains(body, `"total":1`) {
 		t.Errorf("stats for the member: %s, want total 1", body)
+	}
+	// The grouped counts (one query) cover the same rows as the total, for
+	// the member and for the admin: by state and by severity each sum to it.
+	for _, c := range []struct {
+		user  string
+		admin bool
+	}{{h.scoped, false}, {h.admin, true}} {
+		var st struct {
+			Total      int64            `json:"total"`
+			ByState    map[string]int64 `json:"by_state"`
+			BySeverity map[string]int64 `json:"by_severity"`
+		}
+		body := h.get(c.user, c.admin, "/api/v1/credentials/stats")
+		if err := json.Unmarshal([]byte(body), &st); err != nil {
+			t.Fatalf("stats: %v (%s)", err, body)
+		}
+		var states, severities int64
+		for _, n := range st.ByState {
+			states += n
+		}
+		for _, n := range st.BySeverity {
+			severities += n
+		}
+		if states != st.Total || severities != st.Total {
+			t.Errorf("stats (admin=%v): total %d, by_state sums %d, by_severity sums %d: %s",
+				c.admin, st.Total, states, severities, body)
+		}
 	}
 	body := h.get(h.admin, true, "/api/v1/credentials/?per_page=100")
 	if !strings.Contains(body, h.credOut) || !strings.Contains(body, h.credNoAsset) || strings.Contains(body, h.credB) {

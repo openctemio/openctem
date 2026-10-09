@@ -22,6 +22,15 @@ func (s *Server) HTTPSHandler(authenticate func(http.Handler) http.Handler) http
 	mux := http.NewServeMux()
 	mux.Handle(PathPrefix+path, http.StripPrefix(PathPrefix, h))
 	bound := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isStream(r) {
+			// The control stream outlives the server's read and write
+			// timeouts; the keepalive and the maximum stream age bound it.
+			// Lifted only once the caller is authenticated, so an
+			// unauthenticated request keeps the listener's deadlines.
+			rc := http.NewResponseController(w)
+			_ = rc.SetReadDeadline(time.Time{})
+			_ = rc.SetWriteDeadline(time.Time{})
+		}
 		mux.ServeHTTP(w, r.WithContext(WithBinding(r.Context(), sensorv3.Binding_BINDING_HTTPS)))
 	})
 	limit := s.cfg.MaxContentBytes + maxEnvelopeBytes
@@ -36,12 +45,10 @@ func (s *Server) HTTPSHandler(authenticate func(http.Handler) http.Handler) http
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
-		if isStream(r) {
-			// The control stream outlives the server's read and write
-			// timeouts; the keepalive and the maximum stream age bound it.
-			rc := http.NewResponseController(w)
-			_ = rc.SetReadDeadline(time.Time{})
-			_ = rc.SetWriteDeadline(time.Time{})
+		release, ok := s.admitUnary(w, r)
+		defer release()
+		if !ok {
+			return
 		}
 		authenticate(bound).ServeHTTP(w, r)
 	}))

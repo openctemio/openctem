@@ -13,6 +13,8 @@ func TestCSVSafeNeutralisesFormulas(t *testing.T) {
 		"plain":                    "plain",
 		"":                         "",
 		"a=b":                      "a=b",
+		" =HYPERLINK(\"http://x\")": "' =HYPERLINK(\"http://x\")",
+		"\n@SUM(A1)":                "'\n@SUM(A1)",
 	} {
 		if got := csvSafe(in); got != want {
 			t.Errorf("csvSafe(%q) = %q, want %q", in, got, want)
