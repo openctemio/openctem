@@ -555,6 +555,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "threat-intel-refresh"),
 	))
 
+	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
+	// each organization's findings.
+	if svc.VulnMatch != nil {
+		w.ControllerManager.Register(controller.NewVulnMatchController(svc.VulnMatch, log.With("controller", "vuln-match")))
+	}
+
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
 	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
 	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
