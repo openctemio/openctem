@@ -15,7 +15,7 @@
  */
 
 import * as React from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ArrowRight, Check, Copy, Loader2, Plus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

@@ -36,6 +36,7 @@ const (
 	mcpAuthorizePath = "/oauth/authorize"
 	mcpTokenPath     = "/oauth/token"
 	mcpRevokePath    = "/oauth/revoke"
+	mcpRegisterPath  = "/oauth/register"
 	// mcpConsentPage is the web page that asks the person.
 	mcpConsentPage = "/oauth/consent"
 	// maxOAuthFormBytes bounds a token or revocation request body.
@@ -57,6 +58,8 @@ type authorizationServerMetadata struct {
 	ScopesSupported                            []string `json:"scopes_supported"`
 	ClientIDMetadataDocumentSupported          bool     `json:"client_id_metadata_document_supported"`
 	AuthorizationResponseIssParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
+	RegistrationEndpoint                       string   `json:"registration_endpoint,omitempty"`
+	DPoPSigningAlgValuesSupported              []string `json:"dpop_signing_alg_values_supported"`
 }
 
 // ServerMetadata serves GET /.well-known/oauth-authorization-server.
@@ -67,7 +70,13 @@ func (h *MCPOAuthHandler) ServerMetadata(w http.ResponseWriter, _ *http.Request)
 	for i, s := range scopes {
 		names[i] = string(s)
 	}
+	registration := ""
+	if h.svc.DynamicRegistrationEnabled() {
+		registration = e.Issuer + mcpRegisterPath
+	}
 	writePublicMetadata(w, authorizationServerMetadata{
+		RegistrationEndpoint:                       registration,
+		DPoPSigningAlgValuesSupported:              mcpoauthapp.DPoPAlgorithms(),
 		Issuer:                                     e.Issuer,
 		AuthorizationEndpoint:                      e.Issuer + mcpAuthorizePath,
 		TokenEndpoint:                              e.Issuer + mcpTokenPath,
@@ -128,7 +137,16 @@ func (h *MCPOAuthHandler) Token(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, oerr)
 		return
 	}
-	resp, oerr := h.svc.Token(r.Context(), form, oauthActor(r))
+	proofs := r.Header.Values("DPoP")
+	if len(proofs) > 1 {
+		writeOAuthError(w, http.StatusBadRequest, &mcpoauthapp.OAuthError{Code: "invalid_dpop_proof", Description: "one DPoP proof per request"})
+		return
+	}
+	proof := ""
+	if len(proofs) == 1 {
+		proof = proofs[0]
+	}
+	resp, oerr := h.svc.Token(r.Context(), form, proof, oauthActor(r))
 	if oerr != nil {
 		status := http.StatusBadRequest
 		if oerr.Code == "invalid_client" {

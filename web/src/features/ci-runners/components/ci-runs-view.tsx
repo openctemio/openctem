@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ExternalLink, GitBranch, GitPullRequest, Workflow } from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState } from '@/features/shared'
 import { useListParams } from '@/hooks/use-list-params'
