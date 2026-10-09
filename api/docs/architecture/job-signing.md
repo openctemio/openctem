@@ -585,7 +585,7 @@ when people approved it and the signer recorded its digest in the ledger.
   the API derives: that path is the fallback and is removed once signed
   jobs are required everywhere. Older sdk-go verifiers refuse statements
   carrying `templates` (unknown field): such jobs fail closed on them.
-- **Upgrade.** Migration `001558` marks the current version of every
+- **Upgrade.** Migration `001572` marks the current version of every
   active template as approved (they ran before); the ledger bootstrap
   exports them for review.
 
