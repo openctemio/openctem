@@ -220,6 +220,6 @@ organization, so this can be layered on later.
 | M0 | SLA core; every surface (MCP, AI triage, automations, remediation progress); cross-replica invalidation; console refresh; catalog cleanup; permissions under live modules; console consistency | #1583, #1590, #1594, #1596 |
 | M1 | `details.reason` on `MODULE_NOT_ENABLED` | #1605 |
 | M2 | Registry, generators and coverage tests | #1619 |
-| M3 | Entitlements: plan mapping, grants, admin console pages, organization view, reasons in the console | this step's PR |
+| M3 | Entitlements: plan mapping, grants, admin console pages, organization view, reasons in the console | #1635 |
 | M4 | Downgrade grace, schedule pause and resume | after M3 |
 | M5 | Organization bundles retired (packaging is the plan's; presets remain for preferences) | with M3 |
