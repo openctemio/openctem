@@ -1,8 +1,10 @@
 import {
+  Bot,
   Building2,
   Activity,
   Gauge,
   History,
+  Inbox,
   MonitorSmartphone,
   KeyRound,
   LayoutDashboard,
@@ -64,6 +66,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/organizations',
         icon: Building2,
         keywords: ['tenants', 'teams', 'customers'],
+      },
+      {
+        title: 'Access requests',
+        i18nKey: 'admin.nav.access-requests',
+        url: '/admin/organizations/access-requests',
+        icon: Inbox,
+        keywords: ['requests', 'sign-up', 'approve', 'inbox'],
       },
       {
         title: 'Users',
@@ -155,6 +164,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/announcements',
         icon: Megaphone,
         keywords: ['maintenance', 'banner', 'notice', 'downtime'],
+      },
+      {
+        title: 'AI applications',
+        i18nKey: 'admin.nav.aiApplications',
+        url: '/admin/system/ai-applications',
+        icon: Bot,
+        keywords: ['mcp', 'oauth', 'clients', 'connected apps'],
       },
     ],
   },

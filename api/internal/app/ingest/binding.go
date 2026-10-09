@@ -55,6 +55,8 @@ type Binding struct {
 	// Tool is the bound command's tool ("" when it names none); a bound
 	// report must be from that tool.
 	Tool string
+	// CommandType is the bound command's type (BindingCommand only).
+	CommandType command.CommandType
 	// StepRunID is the workflow step run the bound command belongs to (nil
 	// for a command outside a scan run): the scan run its results came from.
 	StepRunID *shared.ID
@@ -66,7 +68,8 @@ type Binding struct {
 // assigned to the submitting sensor and open.
 func CommandBinding(cmd *command.Command) Binding {
 	id := cmd.ID
-	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd), StepRunID: cmd.StepRunID}
+	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd),
+		CommandType: cmd.Type, StepRunID: cmd.StepRunID}
 }
 
 // TrustedBinding is the binding of a server-side ingest.
@@ -246,7 +249,11 @@ type alterScope struct {
 	// sensor (BindingCommand). Only such reports may resolve findings on a
 	// source's say-so (source_resolve.go).
 	commandBound bool
-	targets      []coverTarget
+	// commandTool and commandType are the bound command's tool and type
+	// (BindingCommand only): what a source-asserted resolve must match.
+	commandTool string
+	commandType command.CommandType
+	targets     []coverTarget
 	// allowed are the persisted ids of the assets this report may change:
 	// those it created and the existing ones its command covers.
 	allowed map[shared.ID]bool
@@ -342,6 +349,7 @@ func newAlterScope(b Binding) *alterScope {
 	case BindingCommand:
 		s.targets = newCoverTargets(b.Targets)
 		s.commandBound = true
+		s.commandTool, s.commandType = b.Tool, b.CommandType
 	case BindingCIRun:
 		s.targets = newCoverTargets(b.Targets)
 	}

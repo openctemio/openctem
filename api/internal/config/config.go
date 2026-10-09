@@ -32,6 +32,7 @@ type Config struct {
 	OAuth        OAuthConfig
 	Keycloak     KeycloakConfig
 	CORS         CORSConfig
+	MCP          MCPConfig
 	RateLimit    RateLimitConfig
 	SMTP         SMTPConfig
 	Worker       SensorConfig
@@ -80,7 +81,20 @@ type ScopeConfig struct {
 	// DenyExtra are the operator's own names and ranges no tenant may
 	// target (SCOPE_DENY_EXTRA, comma-separated domains and CIDRs).
 	DenyExtra []string
+	// ZoneResolver is the DNS resolver scan-zone routing resolves hostnames
+	// with (SCAN_ZONE_RESOLVER): "system" (the platform's own resolver, which
+	// may know internal names) or host[:port] of a recursive resolver.
+	// Unset: a public resolver when organizations are self-service (SaaS),
+	// otherwise system.
+	ZoneResolver string
 }
+
+// ScanZoneResolverSystem routes hostnames with the platform's own resolver.
+const ScanZoneResolverSystem = "system"
+
+// DefaultPublicZoneResolver is the resolver of SaaS installs: tenants must
+// not resolve names through the platform's internal DNS.
+const DefaultPublicZoneResolver = "1.1.1.1:53"
 
 // validate checks the proof mode.
 func (s ScopeConfig) validate() error {
@@ -553,6 +567,11 @@ type AuthConfig struct {
 	// (internal/app/signup), not a config flag.
 	RequireEmailVerification bool // Require email verification (default: true)
 
+	// CAPTCHA (Cloudflare Turnstile) on the public request-access form. Unset:
+	// no CAPTCHA (the rate limits still apply).
+	CaptchaTurnstileSecret  string
+	CaptchaTurnstileSiteKey string
+
 	// Email verification/reset token settings
 	EmailVerificationDuration time.Duration // Email verification token lifetime (default: 24h)
 	PasswordResetDuration     time.Duration // Password reset token lifetime (default: 1h)
@@ -715,6 +734,14 @@ func (c *KeycloakConfig) JWKSURL() string {
 // IssuerURL returns the expected token issuer URL.
 func (c *KeycloakConfig) IssuerURL() string {
 	return fmt.Sprintf("%s/realms/%s", c.BaseURL, c.Realm)
+}
+
+// MCPConfig is the authorization server of the MCP endpoint (RFC-062).
+type MCPConfig struct {
+	// TrustedClientHosts are hosts whose Client ID Metadata Documents every
+	// organization treats as verified (MCP_OAUTH_TRUSTED_CLIENT_HOSTS,
+	// comma-separated). Organizations add their own on top.
+	TrustedClientHosts []string
 }
 
 // CORSConfig holds CORS configuration.
@@ -966,6 +993,12 @@ type EncryptionConfig struct {
 	// must pin the new one; set it to rotate them independently.
 	// Env var: APP_TEMPLATE_SIGNING_KEY
 	TemplateSigningKey string
+
+	// ContentSigningKey is the 32-byte master secret each tenant's content
+	// pack signing key is derived from (Ed25519, RFC-061). Same formats as
+	// Key. Empty: derived from Key under its own label.
+	// Env var: APP_CONTENT_SIGNING_KEY
+	ContentSigningKey string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1199,6 +1232,8 @@ func Load() (*Config, error) {
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
+			CaptchaTurnstileSecret:    getEnv("CAPTCHA_TURNSTILE_SECRET", ""),
+			CaptchaTurnstileSiteKey:   getEnv("CAPTCHA_TURNSTILE_SITE_KEY", ""),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
 			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
@@ -1227,6 +1262,9 @@ func Load() (*Config, error) {
 			ClientID:            getEnv("KEYCLOAK_CLIENT_ID", ""),
 			JWKSRefreshInterval: getEnvDuration("KEYCLOAK_JWKS_REFRESH_INTERVAL", 1*time.Hour),
 			HTTPTimeout:         getEnvDuration("KEYCLOAK_HTTP_TIMEOUT", 10*time.Second),
+		},
+		MCP: MCPConfig{
+			TrustedClientHosts: getEnvSlice("MCP_OAUTH_TRUSTED_CLIENT_HOSTS", nil),
 		},
 		CORS: CORSConfig{
 			// F-12: Default to localhost dev origin instead of wildcard. Production
@@ -1307,6 +1345,7 @@ func Load() (*Config, error) {
 			PreviousKeys:   getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
+			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
 		},
 		Webhooks: WebhooksConfig{
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
@@ -1334,6 +1373,7 @@ func Load() (*Config, error) {
 		},
 		Scope: ScopeConfig{
 			ActiveProof:     getEnv("SCOPE_ACTIVE_PROOF", ""),
+			ZoneResolver:    getEnv("SCAN_ZONE_RESOLVER", ""),
 			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
 			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
@@ -1458,6 +1498,12 @@ func (c *Config) validateBasic() error {
 			c.Scope.ActiveProof = ScopeProofPlatformSensors
 		}
 	}
+	if c.Scope.ZoneResolver == "" {
+		c.Scope.ZoneResolver = ScanZoneResolverSystem
+		if c.Auth.SelfServiceTenantCreation() {
+			c.Scope.ZoneResolver = DefaultPublicZoneResolver
+		}
+	}
 	if err := c.Scope.validate(); err != nil {
 		return err
 	}
@@ -1578,6 +1624,15 @@ func (c *Config) validateEncryption() error {
 		}
 		if k == c.Encryption.Key {
 			return fmt.Errorf("APP_TEMPLATE_SIGNING_KEY must differ from APP_ENCRYPTION_KEY (leave it unset to derive it)")
+		}
+	}
+
+	if k := c.Encryption.ContentSigningKey; k != "" {
+		if _, err := crypto.ParseKey(k, ""); err != nil {
+			return fmt.Errorf("APP_CONTENT_SIGNING_KEY is not a valid key (expected 32 raw, 64 hex or 44 base64 characters); generate one with `openssl rand -hex 32`")
+		}
+		if k == c.Encryption.Key || k == c.Encryption.TemplateSigningKey {
+			return fmt.Errorf("APP_CONTENT_SIGNING_KEY must differ from APP_ENCRYPTION_KEY and APP_TEMPLATE_SIGNING_KEY (leave it unset to derive it)")
 		}
 	}
 
@@ -1715,6 +1770,7 @@ func (c *Config) validatePlaceholders() error {
 	secrets := []struct{ name, value string }{
 		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
 		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
+		{"APP_CONTENT_SIGNING_KEY", c.Encryption.ContentSigningKey},
 		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
 		{"DB_PASSWORD", c.Database.Password},
 		{"REDIS_PASSWORD", c.Redis.Password},

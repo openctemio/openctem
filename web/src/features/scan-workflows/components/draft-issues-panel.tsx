@@ -69,17 +69,17 @@ export function DraftIssuesPanel({
                   type="button"
                   disabled={!key}
                   onClick={() => key && onSelectStep(key)}
-                  className="flex w-full items-start gap-2 rounded px-1 py-0.5 text-start hover:bg-muted disabled:cursor-default"
+                  className="block w-full rounded px-1 py-0.5 text-start hover:bg-muted disabled:cursor-default"
                 >
                   <span
                     className={cn(
-                      'mt-px shrink-0 font-medium',
+                      'me-2 font-medium',
                       kind === 'error' ? 'text-destructive' : 'text-warning'
                     )}
                   >
                     {kind === 'error' ? 'Blocking' : 'Warning'}
                   </span>
-                  {key && <span className="shrink-0 font-medium">{nameOf(key)}:</span>}
+                  {key && <span className="me-1 font-medium">{nameOf(key)}:</span>}
                   <span>
                     {is.message}
                     {is.fix && <span className="text-muted-foreground"> {is.fix}</span>}

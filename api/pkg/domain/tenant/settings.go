@@ -34,6 +34,8 @@ type Settings struct {
 	EASM EASMSettings `json:"easm,omitempty"`
 	// Scope is the organization's scope knobs (RFC-054 §6.3).
 	Scope ScopeSettings `json:"scope,omitempty"`
+	// MCP is the policy for AI applications on the MCP server (RFC-062 §8).
+	MCP MCPSettings `json:"mcp,omitempty"`
 
 	// SubscribedBundles is the set of product-bundle IDs the tenant runs
 	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the

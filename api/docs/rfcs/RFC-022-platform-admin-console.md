@@ -486,7 +486,12 @@ nothing in the console showed it. It is now the platform setting
 - a read failure means `admin_only`; a change never touches existing
   organizations, users or sessions.
 
-Details: `docs/architecture/user-onboarding.md`, "Sign-up policy".
+With request access on, people who cannot sign up may ask for an
+organization; Organizations > Access requests lists them, and approving one
+creates the organization with the requester as owner (ops_admin+, audited).
+
+Details: `docs/architecture/user-onboarding.md`, "Sign-up policy" and
+"Request access".
 
 ## Revision 11: plans and limits
 

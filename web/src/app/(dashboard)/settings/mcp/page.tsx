@@ -31,6 +31,10 @@ import { useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
 import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '@/features/api-keys/lib/expiry'
 import type { CreateAPIKeyResponse } from '@/features/api-keys/types/api-key.types'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { useTenant } from '@/context/tenant-provider'
+import { revokeOrgConnection, useOrgConnections } from '@/features/mcp-oauth/api/connections'
+import { ConnectionsList } from '@/features/mcp-oauth/components/connections-list'
+import { McpPolicyCard } from '@/features/mcp-oauth/components/mcp-policy-card'
 
 // A minted MCP key carries exactly the read scopes below — nothing more. The
 // user picks the key's purpose so it maps to what the server's MCP tools/prompts
@@ -121,6 +125,18 @@ export default function MCPConnectPage() {
     setEndpoint(`${window.location.origin}/api/v1/mcp`)
   }, [])
 
+  // Most MCP clients sign in with OAuth: the server URL is all they need.
+  const oauthConfigJson = useMemo(
+    () => JSON.stringify({ mcpServers: { openctem: { type: 'http', url: endpoint } } }, null, 2),
+    [endpoint]
+  )
+
+  const { currentTenant } = useTenant()
+  const isOrgAdmin = currentTenant?.role === 'owner' || currentTenant?.role === 'admin'
+  const canReadPolicy = useHasPermission(Permission.SettingsRead)
+  const canWritePolicy = useHasPermission(Permission.SettingsWrite)
+  const orgConnections = useOrgConnections(isOrgAdmin)
+
   const configJson = useMemo(() => {
     const key = created?.key ?? 'oct_YOUR_KEY_HERE'
     return JSON.stringify(
@@ -200,11 +216,54 @@ export default function MCPConnectPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Connect a client</CardTitle>
+            <CardTitle>Connect an AI assistant</CardTitle>
             <CardDescription>
-              Pick the key&apos;s purpose, generate a connection key, then add this configuration to
-              your MCP client. The key is scoped to exactly the read permissions above and is bound
-              to your account.
+              Add this server to your MCP client. On first use it opens OpenCTEM in your browser:
+              you sign in, choose what it may read, and approve. No key to copy; you can disconnect
+              it any time in My account, Connected applications.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Client configuration</Label>
+              <CopyButton value={oauthConfigJson} label="Configuration" />
+            </div>
+            <pre className="bg-muted overflow-x-auto rounded-md p-4 text-xs">
+              <code>{oauthConfigJson}</code>
+            </pre>
+          </CardContent>
+        </Card>
+
+        {canReadPolicy && <McpPolicyCard canEdit={canWritePolicy} />}
+
+        {isOrgAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Connected applications in this organization</CardTitle>
+              <CardDescription>
+                Every AI application a member connected. Disconnecting one ends its access at once.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ConnectionsList
+                connections={orgConnections.data?.data}
+                isLoading={orgConnections.isLoading}
+                showUser
+                onRevoke={revokeOrgConnection}
+                emptyTitle="No connected applications"
+                emptyDescription="When a member connects an AI assistant, it appears here."
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Connect a script with an API key</CardTitle>
+            <CardDescription>
+              For automation without a person at the keyboard. Pick the key&apos;s purpose, generate
+              a connection key, then add this configuration. The key is scoped to exactly the read
+              permissions above and is bound to your account.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

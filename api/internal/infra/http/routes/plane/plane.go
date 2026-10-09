@@ -72,6 +72,12 @@ var Rules = []Rule{
 	{Plane: MCP, Prefix: "/api/v1/mcp"},
 	// RFC 9728 Protected Resource Metadata of the MCP endpoint (RFC-062).
 	{Plane: MCP, Prefix: "/.well-known/oauth-protected-resource"},
+	// The authorization server of the MCP endpoint (RFC-062). The consent
+	// page /oauth/consent is the web app's.
+	{Plane: MCP, Prefix: "/.well-known/oauth-authorization-server"},
+	{Plane: MCP, Prefix: "/oauth/authorize"},
+	{Plane: MCP, Prefix: "/oauth/token"},
+	{Plane: MCP, Prefix: "/oauth/revoke"},
 
 	{Plane: Auth, Prefix: "/api/v1/auth"},
 	{Plane: Auth, Prefix: "/api/v1/invitations"},

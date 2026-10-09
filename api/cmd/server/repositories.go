@@ -129,6 +129,8 @@ type Repositories struct {
 	ScanZone *postgres.ScanZoneRepository
 	// Scan freeze windows (docs/architecture/scan-zones.md)
 	ScanFreezeWindow *postgres.ScanFreezeWindowRepository
+	// Content packs (RFC-061)
+	ContentPack *postgres.ContentPackRepository
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
@@ -177,6 +179,7 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin         *postgres.AdminRepository
 	SignupPolicy  *postgres.SignupPolicyRepository
+	AccessRequest *postgres.AccessRequestRepository
 	Plan          *postgres.PlanRepository
 	IdleLifecycle *postgres.IdleLifecycleRepository
 	AdminAuditLog *postgres.AuditLogRepository
@@ -380,6 +383,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Scan zones (RFC-023)
 		ScanZone:         postgres.NewScanZoneRepository(db),
 		ScanFreezeWindow: postgres.NewScanFreezeWindowRepository(db),
+		ContentPack:      postgres.NewContentPackRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),
@@ -426,6 +430,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:         postgres.NewAdminRepository(db),
 		SignupPolicy:  postgres.NewSignupPolicyRepository(db),
+		AccessRequest: postgres.NewAccessRequestRepository(db),
 		Plan:          postgres.NewPlanRepository(db),
 		IdleLifecycle: postgres.NewIdleLifecycleRepository(db),
 		AdminAuditLog: postgres.NewAuditLogRepository(db),

@@ -24,6 +24,9 @@ type Server struct {
 	cleanupFuncs []func() // cleanup functions to call on shutdown
 	// prefixes are handlers served ahead of the router (MountPrefix).
 	prefixes []prefixHandler
+	// rateLimit is the global per-IP rate limit, also applied to the
+	// prefix handlers (MountPrefix).
+	rateLimit func(http.Handler) http.Handler
 }
 
 type prefixHandler struct {
@@ -35,9 +38,14 @@ type prefixHandler struct {
 // ahead of the router and its global middleware. It is for a surface that
 // carries its own guards and cannot run behind the global request timeout
 // and buffered writers: the sensor protocol v3 HTTPS binding, whose control
-// stream lives for minutes (docs/rfcs/RFC-059-sensor-transport-v3.md). Call
-// it before Start.
+// stream lives for minutes (docs/rfcs/RFC-059-sensor-transport-v3.md). The
+// global per-IP rate limit still applies: the surface is reachable without
+// credentials, and its authentication costs a database lookup. Call it
+// before Start.
 func (s *Server) MountPrefix(prefix string, h http.Handler) {
+	if s.rateLimit != nil {
+		h = s.rateLimit(h)
+	}
 	s.prefixes = append(s.prefixes, prefixHandler{prefix: strings.TrimSuffix(prefix, "/") + "/", handler: h})
 	router := s.router.Handler()
 	prefixes := append([]prefixHandler(nil), s.prefixes...)
@@ -93,6 +101,7 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 	// Create rate limiter with cleanup
 	rateLimitMw, rateLimitStop := middleware.RateLimitWithStop(&cfg.RateLimit, log)
 	s.cleanupFuncs = append(s.cleanupFuncs, rateLimitStop)
+	s.rateLimit = rateLimitMw
 
 	// Configure security headers (enable HSTS in production)
 	securityCfg := middleware.SecurityHeadersConfig{

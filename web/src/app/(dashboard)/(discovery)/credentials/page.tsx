@@ -56,6 +56,7 @@ import type { Severity, Status } from '@/features/shared/types'
 import {
   useCredentialsApi,
   useCredentialIdentitiesApi,
+  useCredentialStatsApi,
   useRelatedCredentialsApi,
   mapCredentialsToAssets,
   CredentialIdentityGroups,
@@ -70,7 +71,6 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 import { useDebounce } from '@/hooks/use-debounce'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { normalizeSeverity } from '@/lib/severity'
 import { Permission, usePermissions } from '@/lib/permissions'
 
 // Filter types
@@ -158,37 +158,40 @@ export default function CredentialsPage() {
     data: apiResponse,
     isLoading,
     mutate,
-  } = useCredentialsApi({
-    // The table paginates client-side (DataTablePagination) over one server
-    // page: the API returns at most 100 per page (it used to answer the 500
-    // asked here with 20). Server paging for this list is still to do.
-    page: 1,
-    per_page: 100,
-    state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
-    search: debouncedSearch || undefined,
-  })
+  } = useCredentialsApi(
+    {
+      // The table paginates client-side (DataTablePagination) over one server
+      // page: the API returns at most 100 per page (it used to answer the 500
+      // asked here with 20). Server paging for this list is still to do.
+      page: 1,
+      per_page: 100,
+      state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
+      search: debouncedSearch || undefined,
+    },
+    undefined,
+    viewMode === 'list'
+  )
 
-  // Fetch the full credential set (all states, unfiltered) to derive the KPI
-  // stat cards and the status-filter counts. These MUST be derived from the
-  // same credentials list that feeds the table — a separate /stats aggregate
-  // endpoint can drift out of sync with the list, showing phantom counts (e.g.
-  // "3 active leaks") while the table itself renders zero rows. Deriving the
-  // counts here from the list endpoint (the source of truth) guarantees the
-  // cards and the table can never contradict each other.
-  const { data: allCredentialsResponse, isLoading: statsLoading } = useCredentialsApi({
-    page: 1,
-    per_page: 100,
-  })
+  // The strip and the status counts are page-level: the whole credential
+  // set the caller may see, whatever the filters. They come from
+  // GET /credentials/stats, built on the same scoped filter as the list, so
+  // they agree with it; they used to be counted from the first 100 rows of
+  // a second list request, wrong past 100 (research/81).
+  const { data: credentialStats, isLoading: statsLoading } = useCredentialStatsApi()
 
   // Fetch identities (grouped by username/email) for identity view
-  const { data: identitiesResponse, isLoading: identitiesLoading } = useCredentialIdentitiesApi({
-    // Client-side paginated like the credentials table above, over at most
-    // 100 identities (the API maximum per page).
-    page: 1,
-    per_page: 100,
-    state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
-    search: debouncedSearch || undefined,
-  })
+  const { data: identitiesResponse, isLoading: identitiesLoading } = useCredentialIdentitiesApi(
+    {
+      // Client-side paginated like the credentials table above, over at most
+      // 100 identities (the API maximum per page).
+      page: 1,
+      per_page: 100,
+      state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
+      search: debouncedSearch || undefined,
+    },
+    undefined,
+    viewMode === 'identity'
+  )
 
   // Map API data to CredentialLeakRow type for UI compatibility
   const credentials = useMemo(() => {
@@ -196,33 +199,22 @@ export default function CredentialsPage() {
     return mapCredentialsToAssets(apiResponse.items)
   }, [apiResponse])
 
-  // Derive stats from the full credentials list (source of truth) so the KPI
-  // cards always agree with the table below.
   const stats = useMemo(() => {
-    const items = allCredentialsResponse?.items ?? []
-    const derived = {
-      total: allCredentialsResponse?.total ?? items.length,
-      active: 0,
-      resolved: 0,
-      accepted: 0,
-      falsePositive: 0,
-      critical: 0,
-      high: 0,
-      medium: 0,
-      low: 0,
-      info: 0,
+    const byState = credentialStats?.by_state ?? {}
+    const bySeverity = credentialStats?.by_severity ?? {}
+    return {
+      total: credentialStats?.total ?? 0,
+      active: byState.active ?? 0,
+      resolved: byState.resolved ?? 0,
+      accepted: byState.accepted ?? 0,
+      falsePositive: byState.false_positive ?? 0,
+      critical: bySeverity.critical ?? 0,
+      high: bySeverity.high ?? 0,
+      medium: bySeverity.medium ?? 0,
+      low: bySeverity.low ?? 0,
+      info: bySeverity.info ?? 0,
     }
-    for (const c of items) {
-      if (c.state === 'active') derived.active += 1
-      else if (c.state === 'resolved') derived.resolved += 1
-      else if (c.state === 'accepted') derived.accepted += 1
-      else if (c.state === 'false_positive') derived.falsePositive += 1
-
-      const sev = normalizeSeverity(c.severity)
-      if (sev) derived[sev] += 1
-    }
-    return derived
-  }, [allCredentialsResponse])
+  }, [credentialStats])
 
   const [selectedCredential, setSelectedCredential] = useState<CredentialLeakRow | null>(null)
   const { can } = usePermissions()
