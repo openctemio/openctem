@@ -73,18 +73,21 @@ type CreateScanRequest struct {
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
 	ScannerConfig  map[string]any `json:"scanner_config"`
 	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
-	ScheduleRRule    string   `json:"schedule_rrule" validate:"max=500"`
-	ScheduleDay      *int     `json:"schedule_day"`
-	ScheduleTime     *string  `json:"schedule_time"`
-	Timezone         string   `json:"timezone" validate:"max=50"`
-	Tags             []string `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     bool     `json:"run_on_tenant_runner"`
-	SensorPreference string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID        string   `json:"profile_id" validate:"omitempty,uuid"`
+	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay   *int    `json:"schedule_day"`
+	ScheduleTime  *string `json:"schedule_time"`
+	// RunAt (RFC 3339) is the one run of schedule_type once: between a
+	// minute and a year from now.
+	RunAt            *time.Time `json:"run_at"`
+	Timezone         string     `json:"timezone" validate:"max=50"`
+	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     bool       `json:"run_on_tenant_runner"`
+	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        string     `json:"profile_id" validate:"omitempty,uuid"`
 	// ScanZoneID pins every target to one scan zone; empty = Automatic routing.
 	ScanZoneID          string `json:"scan_zone_id" validate:"omitempty,uuid"`
 	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
@@ -100,18 +103,21 @@ type UpdateScanRequest struct {
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
 	ScannerConfig  map[string]any `json:"scanner_config"`
 	TargetsPerJob  *int           `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
-	ScheduleRRule    string   `json:"schedule_rrule" validate:"max=500"`
-	ScheduleDay      *int     `json:"schedule_day"`
-	ScheduleTime     *string  `json:"schedule_time"`
-	Timezone         string   `json:"timezone" validate:"max=50"`
-	Tags             []string `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     *bool    `json:"run_on_tenant_runner"`
-	SensorPreference string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID        *string  `json:"profile_id" validate:"omitempty"`
+	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay   *int    `json:"schedule_day"`
+	ScheduleTime  *string `json:"schedule_time"`
+	// RunAt (RFC 3339) is the one run of schedule_type once: between a
+	// minute and a year from now.
+	RunAt            *time.Time `json:"run_at"`
+	Timezone         string     `json:"timezone" validate:"max=50"`
+	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     *bool      `json:"run_on_tenant_runner"`
+	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        *string    `json:"profile_id" validate:"omitempty"`
 	// ScanZoneID: omitted = unchanged, "" = Automatic routing, id = pin to that zone.
 	ScanZoneID          *string `json:"scan_zone_id" validate:"omitempty"`
 	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
@@ -218,6 +224,7 @@ type ScanDetailResponse struct {
 	ScheduleDay           *int                       `json:"schedule_day,omitempty"`
 	ScheduleTime          *string                    `json:"schedule_time,omitempty"`
 	ScheduleTimezone      string                     `json:"schedule_timezone"`
+	ScheduleRunAt         *string                    `json:"schedule_run_at,omitempty"` // schedule_type once
 	NextRunAt             *string                    `json:"next_run_at,omitempty"`
 	Tags                  []string                   `json:"tags,omitempty"`
 	RunOnTenantRunner     bool                       `json:"run_on_tenant_runner"`
@@ -352,6 +359,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		ScheduleRRule:       req.ScheduleRRule,
 		ScheduleDay:         req.ScheduleDay,
 		ScheduleTime:        scheduleTime,
+		RunAt:               req.RunAt,
 		Timezone:            req.Timezone,
 		Tags:                req.Tags,
 		TenantRunner:        req.TenantRunner,
@@ -564,6 +572,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		ScheduleRRule:       req.ScheduleRRule,
 		ScheduleDay:         req.ScheduleDay,
 		ScheduleTime:        scheduleTime,
+		RunAt:               req.RunAt,
 		Timezone:            req.Timezone,
 		Tags:                req.Tags,
 		TenantRunner:        req.TenantRunner,
@@ -1379,6 +1388,10 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		resp.ScheduleTime = &st
 	}
 
+	if s.ScheduleRunAt != nil {
+		ra := s.ScheduleRunAt.UTC().Format(time.RFC3339)
+		resp.ScheduleRunAt = &ra
+	}
 	if s.NextRunAt != nil {
 		nra := s.NextRunAt.Format(time.RFC3339)
 		resp.NextRunAt = &nra
