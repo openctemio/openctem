@@ -46,6 +46,7 @@ const (
 	ReasonLedgerMalformed  = jobsign.ReasonLedgerMalformed
 	ReasonLedgerTooLarge   = jobsign.ReasonLedgerTooLarge
 	ReasonNotApproved      = jobsign.ReasonLedgerNotApproved
+	ReasonTemplateNotInLed = jobsign.ReasonTemplateNotInLedger
 )
 
 // Record kinds of ledger.log.
@@ -83,13 +84,18 @@ type LedgerRecord struct {
 type tenantLedger struct {
 	entries    map[string]jobsign.LedgerEntry
 	exclusions map[string]jobsign.LedgerExclusion
+	// templates are the approved custom template versions, by template id.
+	templates map[string]jobsign.LedgerTemplate
 }
 
 func newTenantLedger() *tenantLedger {
-	return &tenantLedger{entries: map[string]jobsign.LedgerEntry{}, exclusions: map[string]jobsign.LedgerExclusion{}}
+	return &tenantLedger{entries: map[string]jobsign.LedgerEntry{}, exclusions: map[string]jobsign.LedgerExclusion{},
+		templates: map[string]jobsign.LedgerTemplate{}}
 }
 
-func (t *tenantLedger) empty() bool { return len(t.entries) == 0 && len(t.exclusions) == 0 }
+func (t *tenantLedger) empty() bool {
+	return len(t.entries) == 0 && len(t.exclusions) == 0 && len(t.templates) == 0
+}
 
 func (t *tenantLedger) clone() *tenantLedger {
 	c := newTenantLedger()
@@ -98,6 +104,9 @@ func (t *tenantLedger) clone() *tenantLedger {
 	}
 	for k, v := range t.exclusions {
 		c.exclusions[k] = v
+	}
+	for k, v := range t.templates {
+		c.templates[k] = v
 	}
 	return c
 }
@@ -118,6 +127,10 @@ func (t *tenantLedger) apply(ops []jobsign.LedgerOp, now time.Time) {
 			t.exclusions[op.Exclusion.ID] = *op.Exclusion
 		case jobsign.OpRemoveExclusion:
 			delete(t.exclusions, op.ID)
+		case jobsign.OpPutTemplate:
+			t.templates[op.Template.ID] = *op.Template
+		case jobsign.OpRemoveTemplate:
+			delete(t.templates, op.ID)
 		}
 	}
 }
@@ -306,9 +319,11 @@ func (l *Ledger) Apply(ch jobsign.LedgerChange, now time.Time) (jobsign.LedgerAp
 	}
 	next := cur.clone()
 	next.apply(ch.Ops, now)
-	if len(next.entries) > jobsign.MaxLedgerEntries || len(next.exclusions) > jobsign.MaxLedgerExclusions {
+	if len(next.entries) > jobsign.MaxLedgerEntries || len(next.exclusions) > jobsign.MaxLedgerExclusions ||
+		len(next.templates) > jobsign.MaxLedgerTemplates {
 		return jobsign.LedgerApplyResult{}, refuse(http.StatusRequestEntityTooLarge, ReasonLedgerTooLarge,
-			"an organization's ledger holds at most %d entries and %d exclusions", jobsign.MaxLedgerEntries, jobsign.MaxLedgerExclusions)
+			"an organization's ledger holds at most %d entries, %d exclusions and %d templates",
+			jobsign.MaxLedgerEntries, jobsign.MaxLedgerExclusions, jobsign.MaxLedgerTemplates)
 	}
 	counted := 0
 	if kind == jobsign.ChangeWiden {
@@ -368,6 +383,17 @@ func classify(cur *tenantLedger, ops []jobsign.LedgerOp, now time.Time) string {
 			if ok {
 				widens = widens || jobsign.ExclusionRemoveWidens(&old, now)
 			}
+		case jobsign.OpPutTemplate:
+			old, ok := t.templates[op.Template.ID]
+			var oldp *jobsign.LedgerTemplate
+			if ok {
+				oldp = &old
+			}
+			w := jobsign.TemplateWidens(oldp, *op.Template)
+			changes, widens = changes || w, widens || w
+		case jobsign.OpRemoveTemplate:
+			_, ok := t.templates[op.ID]
+			changes = changes || ok
 		}
 		t.apply([]jobsign.LedgerOp{op}, now)
 	}
@@ -528,6 +554,18 @@ func narrowingOps(cur *tenantLedger, snap jobsign.LedgerSnapshot, now time.Time)
 			diverged++
 		}
 	}
+	snapTpl := map[string]string{}
+	for _, t := range snap.Templates {
+		snapTpl[t.ID] = t.SHA256
+		if old, ok := cur.templates[t.ID]; !ok || old.SHA256 != t.SHA256 {
+			diverged++
+		}
+	}
+	for _, id := range sortedKeys(cur.templates) {
+		if d, ok := snapTpl[id]; !ok || d != cur.templates[id].SHA256 {
+			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpRemoveTemplate, ID: id})
+		}
+	}
 	return ops, diverged
 }
 
@@ -576,6 +614,10 @@ func (l *Ledger) Check(st *jobsign.Statement, now time.Time) *refusal {
 	if t == nil {
 		t = newTenantLedger()
 	}
+	if d := t.unapprovedTemplate(st.Templates); d != "" {
+		return refuse(http.StatusForbidden, ReasonTemplateNotInLed,
+			"custom template %s is not a version the organization approved", clip(d, 80))
+	}
 	tier := int(stage.ProbeTier(st.Tool))
 	for _, target := range st.Targets {
 		if x := t.excludes(target, now); x != "" {
@@ -596,6 +638,24 @@ func (l *Ledger) Check(st *jobsign.Statement, now time.Time) *refusal {
 		}
 	}
 	return nil
+}
+
+// unapprovedTemplate returns the first digest of digests that no approved
+// template version has, "" when all are approved.
+func (t *tenantLedger) unapprovedTemplate(digests []string) string {
+	if len(digests) == 0 {
+		return ""
+	}
+	approved := make(map[string]bool, len(t.templates))
+	for _, tpl := range t.templates {
+		approved[tpl.SHA256] = true
+	}
+	for _, d := range digests {
+		if !approved[d] {
+			return d
+		}
+	}
+	return ""
 }
 
 // excludes returns the pattern of an exclusion in effect matching target.
@@ -684,8 +744,13 @@ func validateOp(op jobsign.LedgerOp) error {
 			return errors.New("put_exclusion carries an exclusion only")
 		}
 		return validateExclusion(*op.Exclusion)
-	case jobsign.OpRemoveEntry, jobsign.OpRemoveExclusion:
-		if op.Entry != nil || op.Exclusion != nil || !isUUID(op.ID) {
+	case jobsign.OpPutTemplate:
+		if op.Template == nil || op.Entry != nil || op.Exclusion != nil || op.ID != "" {
+			return errors.New("put_template carries a template only")
+		}
+		return validateTemplate(*op.Template)
+	case jobsign.OpRemoveEntry, jobsign.OpRemoveExclusion, jobsign.OpRemoveTemplate:
+		if op.Entry != nil || op.Exclusion != nil || op.Template != nil || !isUUID(op.ID) {
 			return errors.New("a remove operation carries a lower-case UUID id only")
 		}
 		return nil
@@ -712,6 +777,16 @@ func validateEntry(e jobsign.LedgerEntry) error {
 	return nil
 }
 
+func validateTemplate(t jobsign.LedgerTemplate) error {
+	switch {
+	case !isUUID(t.ID):
+		return errors.New("template id must be a lower-case UUID")
+	case !jobsign.ValidDigest(t.SHA256):
+		return errors.New("template sha256 must be sha256:<64 lower-case hex>")
+	}
+	return nil
+}
+
 func validateExclusion(x jobsign.LedgerExclusion) error {
 	switch {
 	case !isUUID(x.ID):
@@ -728,9 +803,11 @@ func validateSnapshot(s jobsign.LedgerSnapshot) *refusal {
 	if !isUUID(s.TenantID) {
 		return refuse(http.StatusBadRequest, ReasonLedgerMalformed, "tenant_id must be a lower-case UUID")
 	}
-	if len(s.Entries) > jobsign.MaxLedgerEntries || len(s.Exclusions) > jobsign.MaxLedgerExclusions {
+	if len(s.Entries) > jobsign.MaxLedgerEntries || len(s.Exclusions) > jobsign.MaxLedgerExclusions ||
+		len(s.Templates) > jobsign.MaxLedgerTemplates {
 		return refuse(http.StatusRequestEntityTooLarge, ReasonLedgerTooLarge,
-			"a snapshot holds at most %d entries and %d exclusions", jobsign.MaxLedgerEntries, jobsign.MaxLedgerExclusions)
+			"a snapshot holds at most %d entries, %d exclusions and %d templates",
+			jobsign.MaxLedgerEntries, jobsign.MaxLedgerExclusions, jobsign.MaxLedgerTemplates)
 	}
 	seen := map[string]bool{}
 	for i, e := range s.Entries {
@@ -750,6 +827,15 @@ func validateSnapshot(s jobsign.LedgerSnapshot) *refusal {
 			return refuse(http.StatusBadRequest, ReasonLedgerMalformed, "exclusion %d: duplicate id", i)
 		}
 		seen[x.ID] = true
+	}
+	for i, t := range s.Templates {
+		if err := validateTemplate(t); err != nil {
+			return refuse(http.StatusBadRequest, ReasonLedgerMalformed, "template %d: %s", i, err.Error())
+		}
+		if seen[t.ID] {
+			return refuse(http.StatusBadRequest, ReasonLedgerMalformed, "template %d: duplicate id", i)
+		}
+		seen[t.ID] = true
 	}
 	return nil
 }

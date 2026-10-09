@@ -142,7 +142,7 @@ func TestRemediationCampaignProgress_FollowsTheViewer_DB(t *testing.T) {
 	// Another tenant's campaign is not found, and the findings list needs
 	// findings:read on top of remediation:read.
 	other := shared.NewID()
-	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'rc-other', $2)`, other.String(), "rc-other-"+other.String()[:8])
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'rc-other', $2)`, other.String(), "rc-other-"+other.String()[28:])
 	t.Cleanup(func() { h.exec(`DELETE FROM tenants WHERE id = $1`, other.String()) })
 	foreign := shared.NewID()
 	h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter)

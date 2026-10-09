@@ -42,7 +42,7 @@ func TestMigration001361ClassifiesComponentsFromPURL(t *testing.T) {
 		assetID, tenant.String(), "repo-"+assetID); err != nil {
 		t.Fatal(err)
 	}
-	suffix := shared.NewID().String()[:8]
+	suffix := shared.NewID().String()[28:]
 	component := func(purl, ecosystem string) string {
 		t.Helper()
 		id := shared.NewID().String()

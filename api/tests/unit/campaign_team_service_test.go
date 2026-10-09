@@ -19,7 +19,7 @@ func newTeamTestService(t *testing.T) (*compliance.PentestService, *teamMockCamp
 	t.Helper()
 	log := logger.NewNop()
 	campaignRepo := &teamMockCampaignRepo{}
-	findingRepo := newMockPentestFindingRepo()
+	findingRepo := newMockUnifiedFindingRepo()
 	retestRepo := newMockPentestRetestRepo()
 	templateRepo := newMockPentestTemplateRepo()
 	reportRepo := newMockPentestReportRepo()
