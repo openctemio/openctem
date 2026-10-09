@@ -167,7 +167,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/mcp":                                         {classScoped, "each tool runs as the key's user (API keys never get full data)"},
 
 	// --- partial -------------------------------------------------------------------
-	"/api/v1/asset-groups":      {classPartial, "members, findings and adds scoped; asset_count/risk/finding_count tenant-wide (L-18)"},
+	"/api/v1/asset-groups":      {classPartial, "members, findings, adds and counts scoped (counts, risk and finding_count follow the reader, L-18); the group list is tenant configuration"},
 	"/api/v1/attack-surface":    {classPartial, "chains dropped unless every hop is in scope; summaries graph-wide"},
 	"/api/v1/easm":              {classPartial, "summary scoped; candidates are tenant discovery output"},
 	"/api/v1/business-services": {classPartial, "asset links scoped (L-10); the service list is tenant configuration"},

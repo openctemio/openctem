@@ -40,10 +40,6 @@ type ToolViewOptions struct {
 	// to ZoneID's sensors when set.
 	Availability bool
 	ZoneID       string
-	// Stats adds the run statistics of the last StatsDays days (1..365, 30
-	// when 0).
-	Stats     bool
-	StatsDays int
 }
 
 // ListToolViewInput is the input of ListToolView.
@@ -70,8 +66,6 @@ type ToolView struct {
 	*tooldom.ToolWithConfig
 	// Availability is nil unless requested.
 	Availability *sensor.ToolAvailability
-	// Stats is nil unless requested.
-	Stats *tooldom.ToolStats
 	// Zones names the scan zones of the sensors in Availability.
 	Zones map[shared.ID]string
 }
@@ -156,19 +150,13 @@ func (s *Service) ListToolView(ctx context.Context, input ListToolViewInput) (*T
 
 	page := pagination.New(input.Page, input.PerPage)
 	out.Result = pagination.NewResult(pageOf(views, page), int64(len(views)), page)
-	if input.Stats {
-		if err := s.addStats(ctx, tid, out.Data, input.StatsDays); err != nil {
-			return nil, err
-		}
-	}
 	return out, nil
 }
 
 // GetToolView returns one tool of the tenant's view: a platform tool or the
 // tenant's own custom tool; any other id is not found.
 func (s *Service) GetToolView(ctx context.Context, tenantID, toolID string, opts ToolViewOptions) (*ToolView, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
+	if _, err := shared.IDFromString(tenantID); err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 	twc, err := s.GetToolWithConfig(ctx, tenantID, toolID)
@@ -187,11 +175,6 @@ func (s *Service) GetToolView(ctx context.Context, tenantID, toolID string, opts
 				v.Availability = &res.Tools[i].ToolAvailability
 				break
 			}
-		}
-	}
-	if opts.Stats {
-		if err := s.addStats(ctx, tid, []*ToolView{v}, opts.StatsDays); err != nil {
-			return nil, err
 		}
 	}
 	return v, nil
@@ -269,36 +252,6 @@ func (s *Service) runnable(ta *sensor.ToolAvailability) bool {
 		return true
 	}
 	return ta != nil && ta.Runnable()
-}
-
-// addStats sets the run statistics of each view (zero for a tool without
-// runs) from one tenant-wide query.
-func (s *Service) addStats(ctx context.Context, tenantID shared.ID, views []*ToolView, days int) error {
-	if len(views) == 0 {
-		return nil
-	}
-	if days <= 0 {
-		days = 30
-	}
-	if days > 365 {
-		days = 365
-	}
-	st, err := s.executionRepo.GetTenantStats(ctx, tenantID, days)
-	if err != nil {
-		return fmt.Errorf("failed to read tool statistics: %w", err)
-	}
-	byTool := make(map[shared.ID]tooldom.ToolStats, len(st.ToolBreakdown))
-	for _, b := range st.ToolBreakdown {
-		byTool[b.ToolID] = b
-	}
-	for _, v := range views {
-		ts, ok := byTool[v.Tool.ID]
-		if !ok {
-			ts = tooldom.ToolStats{ToolID: v.Tool.ID}
-		}
-		v.Stats = &ts
-	}
-	return nil
 }
 
 func matchesSource(t *tooldom.Tool, source string) bool {

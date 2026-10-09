@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AssetTypeRegistry } from './asset-registry'
-import { MAX_TYPE_FACETS, typeViewOf } from './type-view'
+import { MAX_TYPE_FACETS, typeViewOf, viewHasExpiry } from './type-view'
 
 const registry = {
   types: [
@@ -18,6 +18,16 @@ const registry = {
       ],
       columns: ['name', 'os_name', 'ip_addresses', 'findings.open', 'last_seen', 'owner'],
       scannable_by: ['host', 'ip'],
+    },
+    {
+      type: 'certificate',
+      label: 'Certificate',
+      plural: 'Certificates',
+      attributes: [
+        { name: 'issuer_org', type: 'string' },
+        { name: 'not_after', type: 'time' },
+      ],
+      columns: ['name', 'not_after'],
     },
     {
       type: 'identity',
@@ -79,5 +89,13 @@ describe('typeViewOf', () => {
       ],
     } as unknown as AssetTypeRegistry
     expect(typeViewOf(many, ['host'])!.facets.length).toBeLessThanOrEqual(MAX_TYPE_FACETS)
+  })
+})
+
+describe('viewHasExpiry', () => {
+  it('is true without a type, and for a type with an expiry attribute only', () => {
+    expect(viewHasExpiry(null)).toBe(true)
+    expect(viewHasExpiry(typeViewOf(registry, ['certificate']))).toBe(true)
+    expect(viewHasExpiry(typeViewOf(registry, ['host']))).toBe(false)
   })
 })

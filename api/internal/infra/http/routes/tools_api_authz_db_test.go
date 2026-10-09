@@ -122,9 +122,9 @@ func TestToolsAPI_Authorization_DB(t *testing.T) {
 	// The tenant's data asked for without the permission is left out and
 	// named, never a 403 (no oracle).
 	var omitted handler.ToolListResponse
-	mustJSON(t, h.expect(catalogOnly, http.MethodGet, "/api/v1/tools?include=settings,stats,availability", "", http.StatusOK), &omitted)
-	if len(omitted.Meta.OmittedIncludes) != 3 || omitted.Availability != nil || len(omitted.Items) == 0 ||
-		omitted.Items[0].Settings != nil || omitted.Items[0].Stats != nil || omitted.Items[0].Availability != nil {
+	mustJSON(t, h.expect(catalogOnly, http.MethodGet, "/api/v1/tools?include=settings,availability", "", http.StatusOK), &omitted)
+	if len(omitted.Meta.OmittedIncludes) != 2 || omitted.Availability != nil || len(omitted.Items) == 0 ||
+		omitted.Items[0].Settings != nil || omitted.Items[0].Availability != nil {
 		t.Fatalf("without scans:tenant_tools:read: meta %+v, availability %v, first item %+v", omitted.Meta, omitted.Availability, omitted.Items)
 	}
 	var one handler.ToolViewResponse
@@ -143,20 +143,20 @@ func TestToolsAPI_Authorization_DB(t *testing.T) {
 
 	// Bad parameters are refused, not ignored; filters are bounded.
 	long := strings.Repeat("a", 256)
-	for _, q := range []string{"include=secrets", "include=settings,secrets", "source=everyone", "sort=-install_cmd",
-		"enabled=yes", "q=" + long, "category=" + long[:51], "include=" + strings.Repeat("stats,", 11)} {
+	for _, q := range []string{"include=secrets", "include=settings,secrets", "include=stats", "source=everyone", "sort=-install_cmd",
+		"enabled=yes", "q=" + long, "category=" + long[:51], "include=" + strings.Repeat("settings,", 11)} {
 		h.expect(admin, http.MethodGet, "/api/v1/tools?"+q, "", http.StatusBadRequest)
 	}
 
 	// --- The view: platform plus our own custom tools, never theirs -------
-	all := listToolNames(t, h.expect(viewer, http.MethodGet, "/api/v1/tools?per_page=100&include=settings,stats", "", http.StatusOK))
+	all := listToolNames(t, h.expect(viewer, http.MethodGet, "/api/v1/tools?per_page=100&include=settings", "", http.StatusOK))
 	if _, ok := all["zz-authz-tool"]; !ok {
 		t.Fatal("our custom tool is not listed")
 	}
 	if _, leaked := all["zz-their-authz-tool"]; leaked {
 		t.Fatal("another tenant's custom tool is listed")
 	}
-	if n := all["nuclei"]; n.Source != "platform" || n.Settings == nil || n.Stats == nil {
+	if n := all["nuclei"]; n.Source != "platform" || n.Settings == nil {
 		t.Fatalf("nuclei: %+v", n)
 	}
 	custom := listToolNames(t, h.expect(admin, http.MethodGet, "/api/v1/tools?source=custom&per_page=100", "", http.StatusOK))
@@ -259,7 +259,7 @@ func TestToolsAPI_RemovedRoutes_DB(t *testing.T) {
 }
 
 // include= conformance: the shared suite, then what is
-// specific to tools (secrets in settings, the stats permission).
+// specific to tools (secrets in settings).
 func TestToolsAPI_IncludeConformance_DB(t *testing.T) {
 	h := newToolAvailabilityHarness(t)
 	tid, other := h.tenant(), h.tenant()
@@ -295,7 +295,6 @@ func TestToolsAPI_IncludeConformance_DB(t *testing.T) {
 		AllowedKeys: map[string][]string{
 			"settings":     {"is_enabled", "config", "effective_config", "custom_templates", "custom_patterns", "updated_by", "updated_at"},
 			"availability": {"enabled", "status", "sensors_online", "sensors_total", "sensors_excluded", "sensors", "versions", "min_reported_version", "max_reported_version", "min_version", "latest_version", "update_available", "content", "last_reported_at"},
-			"stats":        {"tool_id", "total_runs", "successful_runs", "failed_runs", "total_findings", "avg_duration_ms"},
 		},
 	})
 
@@ -315,16 +314,6 @@ func TestToolsAPI_IncludeConformance_DB(t *testing.T) {
 	body := h.expect(admin, http.MethodGet, "/api/v1/tools/"+ours+"?include=settings", "", http.StatusOK)
 	if strings.Contains(body, "Zq8vT3mP0wX7") || !strings.Contains(body, `"rate_limit":7`) {
 		t.Fatalf("settings must mask a stored secret and keep the rest: %s", body)
-	}
-
-	// Stats are tenant-wide counts: scans:read as well as tenant tools.
-	toolsNoScans := h.member(tid, "member")
-	h.customRoleMember(toolsNoScans, tid, permission.ToolsRead, permission.TenantToolsRead)
-	h.mintToken(&toolsNoScans, tid)
-	var one handler.ToolViewResponse
-	mustJSON(t, h.expect(toolsNoScans, http.MethodGet, "/api/v1/tools/"+ours+"?include=settings,stats", "", http.StatusOK), &one)
-	if one.Settings == nil || one.Stats != nil || one.Meta == nil || len(one.Meta.OmittedIncludes) != 1 || one.Meta.OmittedIncludes[0] != "stats" {
-		t.Fatalf("without scans:read: settings %v stats %v meta %+v", one.Settings != nil, one.Stats, one.Meta)
 	}
 }
 
