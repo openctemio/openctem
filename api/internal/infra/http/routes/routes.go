@@ -250,6 +250,9 @@ type Handlers struct {
 	IdleReadOnly middleware.IdleReadOnlyChecker
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
+	// AdminScopePolicy: the platform policy for scope-widening approvals
+	// (RFC-054 §12.6), platform default and per organization.
+	AdminScopePolicy *handler.AdminScopePolicyHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware

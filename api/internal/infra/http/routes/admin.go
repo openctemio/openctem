@@ -37,6 +37,10 @@ import (
 //	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
+//	/admin/settings/scope-policy, /admin/tenants/{id}/scope-policy
+//	                          any admin         super_admin + fresh TOTP code +
+//	                                            reason (critical audit, admins
+//	                                            emailed, tenant admins told)
 //	/admin/tenants/{id}/audit-chain
 //	                          any admin         rebaseline: super_admin + fresh
 //	                                            TOTP code (audited, both logs)
@@ -135,6 +139,17 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// Scope-widening approvals (RFC-054 §12.6): any admin reads; a super
+	// admin changes the platform default with a fresh authenticator code and
+	// a reason (checked in the handler; the service audits and notifies).
+	if h.AdminScopePolicy != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/scope-policy", func(r Router) {
+			r.GET("/", h.AdminScopePolicy.GetDefault)
+			r.PUT("/", h.AdminScopePolicy.UpdateDefault, requireSuper)
 		}, adminMiddlewares...)
 	}
 
@@ -259,6 +274,14 @@ func registerAdminRoutes(
 				r.PUT("/{tenantId}/plan", h.Plan.SetTenantPlan, with([]Middleware{opsWrite, scope})...)
 				r.PUT("/{tenantId}/plan/overrides/{key}", h.Plan.SetOverride, with([]Middleware{opsWrite, scope})...)
 				r.DELETE("/{tenantId}/plan/overrides/{key}", h.Plan.DeleteOverride, with([]Middleware{opsWrite, scope})...)
+			}
+
+			// The organization's scope approval policy (RFC-054 §12.6): any
+			// admin reads; a super admin changes it with a fresh code and a
+			// reason (the service writes the critical audit row).
+			if h.AdminScopePolicy != nil {
+				r.GET("/{tenantId}/scope-policy", h.AdminScopePolicy.GetOrganization, read...)
+				r.PUT("/{tenantId}/scope-policy", h.AdminScopePolicy.UpdateOrganization, superWrite, scope)
 			}
 
 			if h.VerifiedDomain != nil {
