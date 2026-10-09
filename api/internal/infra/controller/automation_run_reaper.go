@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
+	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -14,7 +14,7 @@ import (
 // minutes (5 at most, after up to 30 waiting for a slot), so one older than
 // the cutoff is not coming back. It runs on start and every 15 minutes.
 type AutomationRunReaper struct {
-	repo   workflowdom.StaleRunReaper
+	repo   automationdom.StaleRunReaper
 	maxAge time.Duration
 	logger *logger.Logger
 	now    func() time.Time
@@ -25,7 +25,7 @@ type AutomationRunReaper struct {
 const automationRunMaxAge = time.Hour
 
 // NewAutomationRunReaper builds the reaper; maxAge <= 0 means one hour.
-func NewAutomationRunReaper(repo workflowdom.StaleRunReaper, maxAge time.Duration, log *logger.Logger) *AutomationRunReaper {
+func NewAutomationRunReaper(repo automationdom.StaleRunReaper, maxAge time.Duration, log *logger.Logger) *AutomationRunReaper {
 	if maxAge <= 0 {
 		maxAge = automationRunMaxAge
 	}

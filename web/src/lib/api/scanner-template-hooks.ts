@@ -203,6 +203,14 @@ export function useDeprecateScannerTemplate(templateId: string) {
 }
 
 /**
+ * Approve the template's current version for sensors (scope approvers; the
+ * shared client handles the step-up re-authentication)
+ */
+export function approveScannerTemplate(templateId: string) {
+  return post<ScannerTemplate>(scannerTemplateEndpoints.approve(templateId), {})
+}
+
+/**
  * Download template content
  * Note: Uses fetch directly for blob response
  */
