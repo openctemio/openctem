@@ -264,6 +264,11 @@ type ScopeTargetResponse struct {
 	// Origin is how the entry came to exist: manual, request, import,
 	// review_rule, refusal_fix, seed, seed_migration or system.
 	Origin string `json:"origin"`
+	// AuthorizationSource: ownership, program, authorization_letter or
+	// self_attestation (RFC-065). ProgramID is set for a program entry.
+	AuthorizationSource string  `json:"authorization_source"`
+	ProgramID           *string `json:"program_id,omitempty"`
+	LetterID            *string `json:"letter_id,omitempty"`
 	// Discovery: names under the entry are discovered (Certificate
 	// Transparency) and join the inventory; only a permanent domain entry
 	// discovers.
@@ -375,6 +380,12 @@ type CreateScopeTargetRequest struct {
 	// Discovery: discover names under the entry (default true; runs only
 	// for a permanent domain entry).
 	Discovery *bool `json:"discovery"`
+	// AuthorizationSource: why the entry authorizes probes, ownership
+	// (default) or self_attestation. Program entries come from Programs
+	// (400 PROGRAM_ENTRY_VIA_PROGRAMS).
+	AuthorizationSource string `json:"authorization_source" validate:"omitempty,max=40"`
+	// LetterID names the letter of an authorization_letter entry (RFC-065 §13).
+	LetterID string `json:"letter_id" validate:"omitempty,uuid"`
 }
 
 // UpdateScopeTargetRequest represents the request to update a scope target.
@@ -440,30 +451,43 @@ type ScopeBulkOperationResponse struct {
 // =============================================================================
 
 func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
+	var programID *string
+	if pid := t.ProgramID(); pid != nil {
+		v := pid.String()
+		programID = &v
+	}
+	var letterID *string
+	if lid := t.LetterID(); lid != nil {
+		v := lid.String()
+		letterID = &v
+	}
 	return ScopeTargetResponse{
-		ID:                t.ID().String(),
-		TenantID:          t.TenantID().String(),
-		TargetType:        t.TargetType().String(),
-		Pattern:           t.Pattern(),
-		Covers:            t.Covers(),
-		Description:       t.Description(),
-		Reason:            t.Reason(),
-		Priority:          t.Priority(),
-		Status:            t.Status().String(),
-		InEffect:          t.InEffect(time.Now()),
-		ExpiresAt:         t.ExpiresAt(),
-		MaxTier:           t.MaxTier().String(),
-		ApprovalsRequired: t.ApprovalsRequired(),
-		Approvals:         approvalsResponse(t.Approvals()),
-		ApprovedAt:        t.ApprovedAt(),
-		RejectedBy:        actorRef(t.RejectedBy()),
-		RejectedAt:        t.RejectedAt(),
-		Tags:              t.Tags(),
-		CreatedBy:         actorRef(t.CreatedBy()),
-		Origin:            string(t.Origin()),
-		Discovery:         t.Discovery(),
-		CreatedAt:         t.CreatedAt(),
-		UpdatedAt:         t.UpdatedAt(),
+		ProgramID:           programID,
+		LetterID:            letterID,
+		ID:                  t.ID().String(),
+		TenantID:            t.TenantID().String(),
+		TargetType:          t.TargetType().String(),
+		Pattern:             t.Pattern(),
+		Covers:              t.Covers(),
+		Description:         t.Description(),
+		Reason:              t.Reason(),
+		Priority:            t.Priority(),
+		Status:              t.Status().String(),
+		InEffect:            t.InEffect(time.Now()),
+		ExpiresAt:           t.ExpiresAt(),
+		MaxTier:             t.MaxTier().String(),
+		ApprovalsRequired:   t.ApprovalsRequired(),
+		Approvals:           approvalsResponse(t.Approvals()),
+		ApprovedAt:          t.ApprovedAt(),
+		RejectedBy:          actorRef(t.RejectedBy()),
+		RejectedAt:          t.RejectedAt(),
+		Tags:                t.Tags(),
+		CreatedBy:           actorRef(t.CreatedBy()),
+		Origin:              string(t.Origin()),
+		AuthorizationSource: string(t.AuthorizationSource()),
+		Discovery:           t.Discovery(),
+		CreatedAt:           t.CreatedAt(),
+		UpdatedAt:           t.UpdatedAt(),
 	}
 }
 
@@ -707,6 +731,9 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		Actor:         scopeActor(r),
 		Origin:        scopedom.Origin(req.Origin),
 		Discovery:     req.Discovery,
+
+		AuthorizationSource: req.AuthorizationSource,
+		LetterID:            req.LetterID,
 	}
 
 	target, err := h.service.CreateTarget(r.Context(), input)

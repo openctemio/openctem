@@ -169,11 +169,20 @@ func (s *Service) SelfApproveTarget(ctx context.Context, targetID, tenantID stri
 	if err := s.totp.VerifyFreshTOTP(ctx, actor.UserID, code); err != nil {
 		return nil, err
 	}
+	before := ledgerEntryOf(t, now)
 	if err := t.SelfApprove(actor.UserID, reason, now); err != nil {
 		return nil, err
 	}
-	if err := s.targetRepo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to approve scope target: %w", err)
+	// The job signer's ledger gets the change with the approval marked
+	// self_approved (RFC-054 §12.3): it counts only under the sole-owner
+	// rule and only for the requester.
+	if err := s.commitEntry(ctx, before, t, false, func() error {
+		if err := s.targetRepo.Update(ctx, t); err != nil {
+			return fmt.Errorf("failed to approve scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	title := "Scope entry approved by its own requester (no other approver)"
 	body := fmt.Sprintf("%s %s (%s, max tier %s) was approved by the owner who requested it, because no other approver exists. Reason: %s",

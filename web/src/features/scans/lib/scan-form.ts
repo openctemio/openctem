@@ -19,6 +19,7 @@ import type {
   UpdateScanConfigRequest,
 } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
+import { parsePastedTargets } from './target-format'
 import {
   TENABLE_SC_TOOL,
   readTenableScanConfig,
@@ -82,17 +83,27 @@ function applySchedule(
 /** Direct targets a scan takes at most (the API refuses more). */
 export const MAX_DIRECT_TARGETS = 1000
 
-/** The direct targets the form sends: picked assets, typed and expanded, de-duplicated. */
+function dedupe(all: string[]): string[] {
+  return [...new Map(all.map((t) => [t.trim().toLowerCase(), t.trim()])).values()].filter(Boolean)
+}
+
+/** Typed targets as sent: valid lines, normalized, without repeats, plus the coverage additions. */
+function typedAndExpanded(form: NewScanFormData): string[] {
+  const { targets } = form
+  const all = [...parsePastedTargets(targets.customTargets).targets]
+  if (targets.coverage && targets.coverage !== 'host') all.push(...(targets.expandedTargets ?? []))
+  return dedupe(all)
+}
+
+/**
+ * Every direct target the scan probes: picked assets by name, typed and
+ * expanded, de-duplicated. What the limit counts and the previews show (the
+ * request sends the picked assets as asset_ids; the API names them).
+ */
 export function directTargets(form: NewScanFormData): string[] {
   const { targets } = form
-  const all: string[] = []
-  for (const id of targets.assetIds) {
-    const name = targets.assetNames?.[id]
-    if (name) all.push(name)
-  }
-  all.push(...targets.customTargets)
-  if (targets.coverage && targets.coverage !== 'host') all.push(...(targets.expandedTargets ?? []))
-  return [...new Map(all.map((t) => [t.trim().toLowerCase(), t.trim()])).values()].filter(Boolean)
+  const names = targets.assetIds.map((id) => targets.assetNames?.[id]).filter(Boolean) as string[]
+  return dedupe([...names, ...typedAndExpanded(form)])
 }
 
 /** First problem with the Targets step, or null. Shared by New and Edit. */
@@ -104,6 +115,10 @@ export function targetsError(form: NewScanFormData): string | null {
     targets.customTargets.length === 0
   ) {
     return 'Select at least one target (asset group, asset or custom target)'
+  }
+  const invalid = parsePastedTargets(targets.customTargets).invalid.length
+  if (invalid > 0) {
+    return `${invalid} typed ${invalid === 1 ? 'line is' : 'lines are'} not a target: fix or remove ${invalid === 1 ? 'it' : 'them'}`
   }
   const n = directTargets(form).length
   if (n > MAX_DIRECT_TARGETS) {
@@ -137,8 +152,11 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   }
   // Never cut silently: targetsError stops the wizard above the limit, and
   // the API refuses more than MAX_DIRECT_TARGETS with its own message.
-  const unique = directTargets(form)
-  if (unique.length > 0) request.targets = unique
+  // Picked assets go by id: the API names them and checks the creator may
+  // scan them (an id is not a name the browser could get wrong).
+  if (targets.assetIds.length > 0) request.asset_ids = [...targets.assetIds]
+  const typed = typedAndExpanded(form)
+  if (typed.length > 0) request.targets = typed
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'single') request.scanner_name = form.scannerName

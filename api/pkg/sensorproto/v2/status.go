@@ -1,6 +1,9 @@
 package v2
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ReportState is the lifecycle state of a report on the status resource.
 type ReportState string
@@ -251,6 +254,12 @@ const (
 	// the sensor holds, in numbered batches (RFC-029 §4.4.1). A sensor sends
 	// no logs to a server that does not list it.
 	FeatureLogs = "logs"
+	// FeaturePosture: the manifest may carry the sensor's posture ("posture":
+	// the platform TLS pin and the tool sandbox), which the platform stores
+	// and shows, and flags when weak (RFC-040 §11.4). A sensor sends none to
+	// a server that does not list it. Display and alert data only: it never
+	// relaxes a platform check.
+	FeaturePosture = "posture"
 	// FeatureSignedJobs: every command a claim hands out carries
 	// "signed_job", a DSSE envelope from the platform's separate job signer
 	// (RFC-040 §5.6, docs/architecture/job-signing.md), and hello lists the
@@ -261,7 +270,7 @@ const (
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
 }
 
 // Deprecation announces a deprecated protocol on hello.
@@ -293,6 +302,13 @@ type Hello struct {
 type SignedJobs struct {
 	PayloadType string         `json:"payload_type"`
 	Keys        []SignedJobKey `json:"keys"`
+	// KeySet is the current key set, a DSSE envelope signed by the
+	// installation's offline root key (payload type
+	// application/vnd.openctem.keyset.v1+json): the online keys a sensor
+	// that pins the root accepts, with a version and an expiry
+	// (docs/architecture/job-signing.md). Absent when the signer serves
+	// none.
+	KeySet json.RawMessage `json:"keyset,omitempty"`
 }
 
 // SignedJobKey is one signer key: KeyID is "SHA256:" + lower-case hex of
