@@ -151,7 +151,7 @@ type Repository interface {
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
 	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
 	// access applies the acting user's data scope, the same predicate as List.
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types, lenses, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
 
 	// GetInventoryOverview counts the caller's assets per (lens, type,
 	// sub-type) for the inventory overview, in one aggregate query.
@@ -277,6 +277,7 @@ type Filter struct {
 	TenantID         *string             // Filter by tenant ID
 	Name             *string             // Filter by name (partial match)
 	Types            []AssetType         // Filter by asset types
+	Lenses           []Lens              // Filter by registry lens (the stored asset_lens)
 	Criticalities    []Criticality       // Filter by criticality levels
 	Statuses         []Status            // Filter by statuses
 	Scopes           []Scope             // Filter by scopes
@@ -295,6 +296,8 @@ type Filter struct {
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
 	BusinessUnitIDs      []string   // Filter by business_units membership (business_unit_assets)
+	IDs                  []string   // Only these assets (a batch lookup by id; data scope still applies)
+	UnderDomains         []string   // Names equal to or below these DNS names (example.com, *.example.com)
 	HasOwner             *bool      // Filter assets with/without an assigned owner (asset_owners)
 	DataClassifications  []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
 	IsControlPlane       *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
@@ -411,6 +414,12 @@ func (f Filter) WithTenantID(tenantID string) Filter {
 	return f
 }
 
+// WithLenses adds a lens filter.
+func (f Filter) WithLenses(lenses ...Lens) Filter {
+	f.Lenses = lenses
+	return f
+}
+
 // WithScopes adds a scopes filter.
 func (f Filter) WithScopes(scopes ...Scope) Filter {
 	f.Scopes = scopes
@@ -494,6 +503,19 @@ func (f Filter) WithPropertiesFilter(kv map[string][]string) Filter {
 	return f
 }
 
+// WithUnderDomains keeps the assets named after one of these DNS names or a
+// name below it.
+func (f Filter) WithUnderDomains(names ...string) Filter {
+	f.UnderDomains = names
+	return f
+}
+
+// WithIDs narrows the list to these asset ids (a batch lookup).
+func (f Filter) WithIDs(ids ...string) Filter {
+	f.IDs = ids
+	return f
+}
+
 // WithBusinessUnitIDs filters by business_units membership.
 func (f Filter) WithBusinessUnitIDs(ids ...string) Filter {
 	f.BusinessUnitIDs = ids
@@ -566,6 +588,7 @@ func (f Filter) IsEmpty() bool {
 	return f.TenantID == nil &&
 		f.Name == nil &&
 		len(f.Types) == 0 &&
+		len(f.Lenses) == 0 &&
 		len(f.Criticalities) == 0 &&
 		len(f.Statuses) == 0 &&
 		len(f.Scopes) == 0 &&
@@ -581,6 +604,8 @@ func (f Filter) IsEmpty() bool {
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&
 		len(f.BusinessUnitIDs) == 0 &&
+		len(f.IDs) == 0 &&
+		len(f.UnderDomains) == 0 &&
 		f.HasOwner == nil &&
 		len(f.DataClassifications) == 0 &&
 		f.IsControlPlane == nil &&

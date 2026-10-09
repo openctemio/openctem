@@ -58,15 +58,26 @@ type V2Header struct {
 	Metadata ctis.ReportMetadata `json:"metadata"`
 }
 
+// MaxV2HeaderBytes caps the header of a report (its tool and metadata,
+// without the items), which is stored with the report.
+const MaxV2HeaderBytes = 64 << 10
+
 // V2HeaderOf returns the canonical header JSON of a segment and its digest.
 // The report id is not part of it: metadata.id is either empty or the report
 // id, and both spellings describe the same report.
+//
+// The header is stored with the report and kept as long as the report, so
+// it is capped (MaxV2HeaderBytes): over it the segment is report-too-large.
 func V2HeaderOf(r *ctis.Report) (canonical []byte, digest string, err error) {
 	md := r.Metadata
 	md.ID = ""
 	canonical, err = json.Marshal(V2Header{Tool: r.Tool, Metadata: md})
 	if err != nil {
 		return nil, "", fmt.Errorf("encode v2 header: %w", err)
+	}
+	if len(canonical) > MaxV2HeaderBytes {
+		return nil, "", &V2ReportError{Problem: protov2.ProblemReportTooLarge, Errors: []protov2.ItemError{
+			item("/metadata", protov2.CodeTooMany, protov2.DetailTooMany)}}
 	}
 	sum := sha256.Sum256(canonical)
 	return canonical, protov2.FormatSHA256(sum[:]), nil

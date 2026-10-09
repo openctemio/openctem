@@ -53,6 +53,8 @@ export interface AssetSearchFilters {
   // Filtering
   name?: string
   types?: AssetType[]
+  /** Registry lenses (the stored asset_lens), aliases included. */
+  lenses?: string[]
   subType?: string
   criticalities?: Criticality[]
   statuses?: ('active' | 'inactive' | 'archived')[]
@@ -381,6 +383,7 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
   // Filtering - arrays need to be comma-separated for backend
   if (filters.name) params.name = filters.name
   if (filters.types?.length) params.types = filters.types.join(',')
+  if (filters.lenses?.length) params.lenses = filters.lenses.join(',')
   if (filters.subType) params.sub_type = filters.subType
   if (filters.criticalities?.length) params.criticalities = filters.criticalities.join(',')
   if (filters.statuses?.length) params.statuses = filters.statuses.join(',')
@@ -525,8 +528,9 @@ export function useAsset(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendAsset>(
-    shouldFetch ? ['asset', assetId] : null,
-    () => get<BackendAsset>(endpoints.assets.get(assetId!)),
+    // The endpoint URL, so a mutate() of the asset URL reaches this cache.
+    shouldFetch ? endpoints.assets.get(assetId!) : null,
+    (url: string) => get<BackendAsset>(url),
     {
       revalidateOnFocus: false,
     }
@@ -694,16 +698,20 @@ export async function bulkDeleteAssets(assetIds: string[]): Promise<void> {
  * This provides comprehensive cached asset statistics with all breakdowns
  * Only fetches if user has assets:read permission
  *
- * Optionally filter by asset types and/or tags. Both filters mirror the List
- * endpoint semantics so the stats card always reflects whatever the user has
- * filtered to in the table (e.g. type=host AND tag=production).
+ * Optionally filter by asset types, lenses, tags and sub-type. The filters
+ * mirror the List endpoint semantics so the stats card always reflects
+ * whatever the user has filtered to in the table (e.g. type=host AND
+ * tag=production). `countBy` names property keys to count the values of.
  */
-export function useAssetStats(
-  types?: string[],
-  tags?: string[],
-  subType?: string,
+export interface AssetStatsQuery {
+  types?: string[]
+  lenses?: string[]
+  tags?: string[]
+  subType?: string
   countBy?: string[]
-) {
+}
+
+export function useAssetStats({ types, lenses, tags, subType, countBy }: AssetStatsQuery = {}) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const canReadAssets = can(Permission.AssetsRead)
@@ -713,6 +721,7 @@ export function useAssetStats(
 
   const params = new URLSearchParams()
   if (types && types.length > 0) params.set('types', types.join(','))
+  if (lenses && lenses.length > 0) params.set('lenses', lenses.join(','))
   if (tags && tags.length > 0) params.set('tags', tags.join(','))
   if (subType) params.set('sub_type', subType)
   if (countBy && countBy.length > 0) params.set('count_by', countBy.join(','))
@@ -781,8 +790,8 @@ export function useAssetWithRepository(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendAssetWithRepository>(
-    shouldFetch ? ['asset-with-repository', assetId] : null,
-    () => get<BackendAssetWithRepository>(endpoints.assets.getFull(assetId!)),
+    shouldFetch ? endpoints.assets.getFull(assetId!) : null,
+    (url: string) => get<BackendAssetWithRepository>(url),
     {
       revalidateOnFocus: false,
     }
@@ -809,8 +818,8 @@ export function useRepositoryExtension(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendRepositoryExtension>(
-    shouldFetch ? ['repository-extension', assetId] : null,
-    () => get<BackendRepositoryExtension>(endpoints.assets.getRepository(assetId!)),
+    shouldFetch ? endpoints.assets.getRepository(assetId!) : null,
+    (url: string) => get<BackendRepositoryExtension>(url),
     {
       revalidateOnFocus: false,
     }

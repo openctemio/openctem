@@ -20,13 +20,15 @@
  *   the file off (404).
  */
 
+import { DOCS_URL } from '@/lib/docs-links'
+
 type Env = Record<string, string | undefined>
 
 export const DEFAULT_CONTACTS = {
   general: 'info@openctem.io',
   security: 'security@openctem.io',
   website: 'https://openctem.io',
-  docs: 'https://docs.openctem.io',
+  docs: DOCS_URL,
 } as const
 
 export interface LegalValues {

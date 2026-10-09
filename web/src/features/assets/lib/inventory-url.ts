@@ -13,6 +13,7 @@
 
 import type { SortingState } from '@tanstack/react-table'
 import { isPropertyKey } from '@/features/asset-types/lib/property-schema'
+import { ASSET_LENSES, type AssetLens } from '@/features/asset-types/registry.generated'
 import type { AssetSearchFilters } from '../hooks/use-assets'
 import type { AssetType, Criticality, ExposureLevel, AssetScope } from '../types/asset.types'
 
@@ -21,6 +22,7 @@ export type InventoryFilters = Pick<
   AssetSearchFilters,
   | 'search'
   | 'types'
+  | 'minRiskScore'
   | 'subType'
   | 'propertiesFilter'
   | 'criticalities'
@@ -45,7 +47,20 @@ export type InventoryFilters = Pick<
   | 'sort'
   | 'page'
   | 'pageSize'
->
+> & {
+  /** One registry lens (`?lens=code`): every type of it, aliases included. */
+  lens?: AssetLens
+}
+
+/** The risk score from which an asset counts as high risk (the API's high_risk_count). */
+export const HIGH_RISK_SCORE = 70
+
+const LENS_PARAM = 'lens'
+const MIN_RISK_PARAM = 'min_risk_score'
+
+function isLens(v: string): v is AssetLens {
+  return ASSET_LENSES.some((l) => l.id === v)
+}
 
 // Array-valued filter keys and their URL param names.
 const ARRAY_PARAMS = {
@@ -119,6 +134,14 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
   const props = parsePropertiesParam(sp.get(PROPERTIES_PARAM))
   if (props) out.propertiesFilter = props
 
+  // An unknown lens would only ever match nothing: drop it.
+  const lens = sp.get(LENS_PARAM)
+  if (lens && isLens(lens)) out.lens = lens
+  const minRisk = Number(sp.get(MIN_RISK_PARAM))
+  if (sp.get(MIN_RISK_PARAM) && Number.isInteger(minRisk) && minRisk >= 0 && minRisk <= 100) {
+    out.minRiskScore = minRisk
+  }
+
   const page = Number(sp.get('page'))
   if (Number.isFinite(page) && page > 0) out.page = page
   const perPage = Number(sp.get('per_page'))
@@ -145,6 +168,8 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   }
   const props = serializePropertiesParam(f.propertiesFilter)
   if (props) sp.set(PROPERTIES_PARAM, props)
+  if (f.lens) sp.set(LENS_PARAM, f.lens)
+  if (f.minRiskScore !== undefined) sp.set(MIN_RISK_PARAM, String(f.minRiskScore))
   if (f.page && f.page > 1) sp.set('page', String(f.page))
   if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('per_page', String(f.pageSize))
 
@@ -239,6 +264,8 @@ export function isInventoryFilterEmpty(f: InventoryFilters): boolean {
     boolsEmpty &&
     !f.search &&
     !f.subType &&
+    !f.lens &&
+    f.minRiskScore === undefined &&
     !f.propertiesFilter &&
     !f.lastSeenBefore &&
     !f.lastSeenAfter &&
@@ -258,6 +285,8 @@ export function countActiveFilters(f: InventoryFilters): number {
   }
   if (f.search) n += 1
   if (f.subType) n += 1
+  if (f.lens) n += 1
+  if (f.minRiskScore !== undefined) n += 1
   for (const values of Object.values(f.propertiesFilter ?? {})) n += values.length
   if (f.lastSeenBefore || f.lastSeenAfter) n += 1
   if (f.expiresBefore || f.expiresAfter) n += 1

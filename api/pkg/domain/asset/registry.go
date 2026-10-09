@@ -271,6 +271,16 @@ func AllClasses() []Class {
 	return out
 }
 
+// IsLens reports whether s is a lens of the registry.
+func IsLens(s string) bool {
+	for _, l := range registryLenses {
+		if string(l.ID) == s {
+			return true
+		}
+	}
+	return false
+}
+
 // AllLenses returns every lens in display order.
 func AllLenses() []Lens {
 	out := make([]Lens, len(registryLenses))

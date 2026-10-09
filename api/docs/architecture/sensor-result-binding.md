@@ -1,9 +1,9 @@
 # Sensor result binding and the results quarantine
 
 > RFC: RFC-040 §5.3 and §6.1 group (C) (mutual distrust between the platform
-> and sensors; owner decision Q6 (a), 2026-10-03). Protocols:
+> and sensors; decision Q6 (a)). Protocols:
 > [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (v2 results),
-> [sensors.md](sensors.md) (v1 and v2). Migration: `000287_sensor_result_quarantine`.
+> [sensors.md](sensors.md). Migration: `000287_sensor_result_quarantine`.
 
 A sensor key used to be enough to write and change any asset and finding of
 its tenant, with no job behind it. Since RFC-040 group (C) every sensor report
@@ -43,6 +43,11 @@ creates and updates findings but changes no existing asset.
 
 Also part of group (C):
 
+- Scan coverage auto-resolve (`INGEST_COVERAGE_AUTO_RESOLVE`) considers only
+  the assets the command covers. A report still "touches" every existing
+  asset it names (an uncovered one only gets its last-seen time), but the
+  absence of a finding proves something only where the command was sent to
+  scan.
 - A sensor with no declared and no reported tools no longer auto-resolves
   (it could close any tool's findings with a "full" report).
 - Validation evidence without the validate command assigned to the sensor
@@ -58,7 +63,7 @@ Also part of group (C):
 | v2 `PUT /api/v2/sensor/commands/{command_id}/results/{report_id}` | yes, in the path | every sensor on sdk-go ≥ v0.10.0 (sensor ≥ v0.6.0, so all deployed v0.6.x and v0.7.0 sensors) for results produced while running a command (`core.WithCommandID` on the executor context, kept by the outbox) |
 | v2 `PUT /api/v2/sensor/results/{report_id}` | no | sdk-go when the command is no longer open (it re-sends unbound after `command-not-found`), and pushes outside a command |
 
-So scheduled scans, pipeline steps and quick scans run by current sensors are
+So scheduled scans, scan workflow steps and quick scans run by current sensors are
 bound and apply as before. A v1 report bound with the header is processed
 synchronously even when `INGEST_MODE=async` (the queue keeps no binding).
 
@@ -77,8 +82,8 @@ quarantine at the bearer-key sunset.
 
 `sensor_result_quarantine` stores the CTIS report (one row per v1 request or
 v2 segment) as JSON, with the sensor, route, report id, tool and counts. At
-most 1000 pending items per tenant, 200 per sensor, 16 MiB per item; beyond
-that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
+most 1000 pending items per tenant, 200 per sensor, 16 MiB per item and 512 MiB
+of pending payload per tenant; beyond that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
 `quarantine_full`), so a stolen key cannot fill the database.
 
 | Endpoint | Permission | |

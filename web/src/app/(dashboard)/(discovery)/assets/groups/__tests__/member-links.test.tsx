@@ -22,6 +22,7 @@ let current: Record<string, unknown> | null = null
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace, push: vi.fn(), back: vi.fn() }),
   useParams: () => ({ id: ID }),
+  usePathname: () => `/assets/${ID}`,
 }))
 // The detail page's own data sections (identity, attribution, ...) fetch on
 // their own; stub every `*Section(s)` export so a section added later does not

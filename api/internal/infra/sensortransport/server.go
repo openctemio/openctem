@@ -74,6 +74,15 @@ type Config struct {
 	MaxStreamsPerSensor int
 	// UnaryTimeout bounds one unary call.
 	UnaryTimeout time.Duration
+	// MaxUnaryInFlight bounds the unary calls this replica serves at once,
+	// across both bindings and every sensor, counted before authentication
+	// reads a byte (control streams have their own per-sensor bound).
+	MaxUnaryInFlight int
+	// MaxUnaryPerSensor bounds the unary calls of one sensor in flight on
+	// the gRPC binding, where the identity is known before the body is
+	// read: one sensor cannot hold many full-size messages in memory at
+	// once before its rate budget applies.
+	MaxUnaryPerSensor int
 }
 
 func (c Config) withDefaults() Config {
@@ -94,6 +103,12 @@ func (c Config) withDefaults() Config {
 	}
 	if c.MaxContentBytes <= 0 {
 		c.MaxContentBytes = 16 << 20
+	}
+	if c.MaxUnaryInFlight <= 0 {
+		c.MaxUnaryInFlight = 256
+	}
+	if c.MaxUnaryPerSensor <= 0 {
+		c.MaxUnaryPerSensor = 8
 	}
 	return c
 }
@@ -126,6 +141,13 @@ type Server struct {
 	// running is each sensor's last reported running list (from its v3
 	// heartbeat), for the cancel ids of control-stream events.
 	running sync.Map // sensor id -> []string
+
+	// unary holds one slot per unary call in flight (MaxUnaryInFlight).
+	unary chan struct{}
+	// perSensor counts each sensor's unary calls in flight on the gRPC
+	// binding (MaxUnaryPerSensor).
+	perSensorMu sync.Mutex
+	perSensor   map[string]int
 }
 
 // CertificateIssuer issues client certificates (IssueCertificate). nil
@@ -141,7 +163,52 @@ func NewServer(cfg Config, hub *Hub, log *logger.Logger) *Server {
 	}
 	cfg = cfg.withDefaults()
 	hub.maxPerSensor = cfg.MaxStreamsPerSensor
-	return &Server{cfg: cfg, hub: hub, log: log.With("component", "sensor-v3"), done: make(chan struct{})}
+	return &Server{cfg: cfg, hub: hub, log: log.With("component", "sensor-v3"), done: make(chan struct{}),
+		unary: make(chan struct{}, cfg.MaxUnaryInFlight)}
+}
+
+// admitSensorUnary takes one of the sensor's unary slots on the gRPC
+// binding, or answers 503 and returns false. A control stream takes none.
+// release is never nil.
+func (s *Server) admitSensorUnary(w http.ResponseWriter, r *http.Request, sensorID string) (release func(), ok bool) {
+	if isStream(r) || sensorID == "" {
+		return func() {}, true
+	}
+	s.perSensorMu.Lock()
+	defer s.perSensorMu.Unlock()
+	if s.perSensor == nil {
+		s.perSensor = map[string]int{}
+	}
+	if s.perSensor[sensorID] >= s.cfg.MaxUnaryPerSensor {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		return func() {}, false
+	}
+	s.perSensor[sensorID]++
+	return func() {
+		s.perSensorMu.Lock()
+		defer s.perSensorMu.Unlock()
+		if s.perSensor[sensorID]--; s.perSensor[sensorID] <= 0 {
+			delete(s.perSensor, sensorID)
+		}
+	}, true
+}
+
+// admitUnary takes a unary slot for r, or answers 503 and returns false
+// when every slot is taken. A control stream takes none (its own bound is
+// per sensor, after authentication). release is never nil.
+func (s *Server) admitUnary(w http.ResponseWriter, r *http.Request) (release func(), ok bool) {
+	if isStream(r) {
+		return func() {}, true
+	}
+	select {
+	case s.unary <- struct{}{}:
+		return func() { <-s.unary }, true
+	default:
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		return func() {}, false
+	}
 }
 
 // Attach wires the in-process v2 route group, the doorbell and the

@@ -99,6 +99,22 @@ func AuthenticateInProcess(next http.Handler) http.Handler {
 	})
 }
 
+// AuthenticateInProcessWithPolicies is AuthenticateInProcess plus the key
+// policies the v2 listener applies after authentication (the organization's
+// "OIDC required for CI" rule), so protocol v3, on either binding, is
+// refused what protocol v2 refuses.
+func (h *SensorResultsV2Handler) AuthenticateInProcessWithPolicies(next http.Handler) http.Handler {
+	return AuthenticateInProcess(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, _ := SensorIdentityFrom(r.Context())
+		peer := SensorPeerFrom(r.Context())
+		if h.ciKeys != nil && id.Sensor != nil && h.ciKeys.Refused(r.Context(), id.Sensor, peer.IP, peer.UserAgent) {
+			protov2.NewProblem(protov2.ProblemCIOIDCRequired).Write(w)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
 // errBearerOnV3 refuses a bearer key on protocol v3: v3 needs a key-bound
 // sensor (RFC-052).
 var errBearerOnV3 = errors.New("protocol v3 needs a key-bound sensor")

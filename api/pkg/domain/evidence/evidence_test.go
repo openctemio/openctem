@@ -243,3 +243,13 @@ func TestMaskLeavesToolMaskedValuesAlone(t *testing.T) {
 		t.Errorf("Authorization = %q, want the tool mask kept", v)
 	}
 }
+
+func TestCredentialShapes(t *testing.T) {
+	got := CredentialShapes("token: {{token}}\nkey AKIAABCDEFGHIJKLMNOP and AKIAABCDEFGHIJKLMNOQ ghp_abcdefghijklmnopqrstuvwxyz")
+	if len(got) != 2 || got[0] != "aws_key" || got[1] != "token" {
+		t.Fatalf("kinds %v", got)
+	}
+	if got := CredentialShapes("Authorization: Bearer {{token}}\npassword: {{pass}}"); len(got) != 0 {
+		t.Fatalf("names flagged: %v", got)
+	}
+}

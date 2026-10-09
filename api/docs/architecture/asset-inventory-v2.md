@@ -269,6 +269,13 @@ dependency, monitor only or none, so a card equals the list it opens), the
 unowned, high-risk and first-seen-this-week ones, and the names in the
 review queue.
 
+A lens is a filter too: `/assets?lens=code` (the pills above the list)
+asks the list and stats for `lenses=code`, which matches the stored
+`asset_lens`. It is not a list of types: an alias stored under another
+type's name (a container registry is `storage`/`container_registry`)
+belongs to its own lens. An overview card links to its lens, and its
+high-risk count to `min_risk_score=70`, the threshold of the count.
+
 ## Three layers: source record, link, canonical row
 
 | Layer | Asset | Service |

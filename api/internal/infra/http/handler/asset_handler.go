@@ -573,6 +573,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
 // @Param        expires_after   query   string  false  "Expiry (certificate not_after, domain expires_at) after this time (RFC 3339 or YYYY-MM-DD)"
 // @Param        expires_before  query   string  false  "Expiry before this time (RFC 3339 or YYYY-MM-DD)"
+// @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        criticalities query     string  false  "Filter by criticalities (comma-separated)"
 // @Param        statuses      query     string  false  "Filter by statuses (comma-separated)"
 // @Param        scopes        query     string  false  "Filter by scopes (comma-separated)"
@@ -585,6 +586,8 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
 // @Param        sub_type      query     string  false  "Filter by sub_type"
 // @Param        business_unit_ids     query string false "Filter by business unit membership (comma-separated UUIDs)"
+// @Param        under                 query string false "Names equal to or below these DNS names (comma-separated, at most 10)"
+// @Param        ids                   query string false "Only these assets (comma-separated UUIDs, at most 100): one batch read instead of one request per asset"
 // @Param        has_owner             query bool   false "Filter assets with (true) / without (false) an assigned owner"
 // @Param        data_classifications  query string false "Filter by data classification (comma-separated: public,internal,confidential,restricted,secret)"
 // @Param        is_control_plane      query bool   false "Filter assets that are a control-plane dependency"
@@ -617,6 +620,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		TenantID:         tenantID,
 		Name:             query.Get("name"),
 		Types:            parseQueryArray(query.Get("types")),
+		Lenses:           parseQueryArray(query.Get("lenses")),
 		Criticalities:    parseQueryArray(query.Get("criticalities")),
 		Statuses:         parseQueryArray(query.Get("statuses")),
 		Scopes:           parseQueryArray(query.Get("scopes")),
@@ -631,6 +635,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
 		// CTEM inventory dimensions
 		BusinessUnitIDs:      parseQueryArray(query.Get("business_unit_ids")),
+		IDs:                  parseQueryArray(query.Get("ids")),
+		UnderDomains:         parseQueryArray(query.Get("under")),
 		HasOwner:             parseQueryBoolPtr(query.Get("has_owner")),
 		DataClassifications:  parseQueryArray(query.Get("data_classifications")),
 		IsControlPlane:       parseQueryBoolPtr(query.Get("is_control_plane")),
@@ -1576,6 +1582,7 @@ type AssetStatsResponse struct {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
+// @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        tags          query     string  false  "Filter by tags (comma-separated, overlap)"
 // @Success      200  {object}  AssetStatsResponse
 // @Failure      401  {object}  map[string]string
@@ -1586,6 +1593,7 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	typesFilter := parseQueryArray(query.Get("types"))
+	lensesFilter := parseQueryArray(query.Get("lenses"))
 	tagsFilter := parseQueryArray(query.Get("tags"))
 	subTypeFilter := query.Get("sub_type")
 
@@ -1594,7 +1602,7 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	// Use service method with SQL aggregation for efficient stats
 	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID,
-		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), typesFilter, tagsFilter, subTypeFilter, countByFields...)
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), typesFilter, lensesFilter, tagsFilter, subTypeFilter, countByFields...)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

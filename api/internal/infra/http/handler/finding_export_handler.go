@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -58,14 +57,11 @@ var findingCSVHeader = []string{
 }
 
 // csvSafe neutralizes a cell a spreadsheet would evaluate as a formula
-// (OWASP CSV injection): a leading = + - @ tab or carriage return gets a
+// (OWASP CSV injection). It is sanitizeCSVCell, the one rule every CSV
+// export uses: a leading tab or carriage return, or = + - @ after any
+// leading whitespace (" =HYPERLINK(...)" is still a formula), gets a
 // leading apostrophe.
-func csvSafe(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
-		return "'" + s
-	}
-	return s
-}
+func csvSafe(s string) string { return sanitizeCSVCell(s) }
 
 func findingCSVRow(f FindingResponse) []string {
 	str := func(p *string) string {
@@ -156,8 +152,8 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
 // @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
-// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, not_observed, resolved, false_positive, accepted, duplicate, draft, in_review, remediation, retest, verified, accepted_risk)
-// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, not_observed, resolved, false_positive, accepted, duplicate, draft, in_review, remediation, retest, verified, accepted_risk)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, not_observed, resolved, false_positive, accepted, duplicate, draft, in_review)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, not_observed, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  state  query  string  false  "state equals"  Enums(open, fixed, dispositioned, all)
 // @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
 // @Param  source_not  query  []string  false  "source: none of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)

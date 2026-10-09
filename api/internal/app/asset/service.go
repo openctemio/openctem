@@ -1238,6 +1238,7 @@ type ListAssetsInput struct {
 	TenantID         string              `validate:"omitempty,uuid"`
 	Name             string              `validate:"max=255"`
 	Types            []string            `validate:"max=20,dive,asset_type"`
+	Lenses           []string            `validate:"max=10,dive,asset_lens"`
 	Criticalities    []string            `validate:"max=5,dive,criticality"`
 	Statuses         []string            `validate:"max=3,dive,status"`
 	Scopes           []string            `validate:"max=6,dive,scope"`
@@ -1252,7 +1253,13 @@ type ListAssetsInput struct {
 	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
-	BusinessUnitIDs      []string `validate:"max=50,dive,uuid"`
+	BusinessUnitIDs []string `validate:"max=50,dive,uuid"`
+	// IDs narrows the list to these assets: one request instead of one
+	// GET /assets/{id} per row (research/81). At most a page of them.
+	IDs []string `validate:"max=100,dive,uuid"`
+	// UnderDomains keeps the names equal to or below these DNS names (the
+	// scan wizard's coverage expansion: one request for every typed domain).
+	UnderDomains         []string `validate:"max=10,dive,fqdn"`
 	HasOwner             *bool    // Assets with/without an assigned owner
 	DataClassifications  []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
 	IsControlPlane       *bool    // Asset is a control-plane dependency
@@ -1303,6 +1310,15 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 			}
 		}
 		filter = filter.WithTypes(types...)
+	}
+
+	// Lens filter (validated against the registry by the input tags).
+	if len(input.Lenses) > 0 {
+		lenses := make([]assetdom.Lens, 0, len(input.Lenses))
+		for _, l := range input.Lenses {
+			lenses = append(lenses, assetdom.Lens(l))
+		}
+		filter = filter.WithLenses(lenses...)
 	}
 
 	// Criticalities filter
@@ -1390,6 +1406,12 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	// CTEM inventory dimensions.
 	if len(input.BusinessUnitIDs) > 0 {
 		filter = filter.WithBusinessUnitIDs(input.BusinessUnitIDs...)
+	}
+	if len(input.IDs) > 0 {
+		filter = filter.WithIDs(input.IDs...)
+	}
+	if len(input.UnderDomains) > 0 {
+		filter = filter.WithUnderDomains(input.UnderDomains...)
 	}
 	if input.HasOwner != nil {
 		filter = filter.WithHasOwner(*input.HasOwner)
@@ -1507,8 +1529,9 @@ func (s *AssetService) GetInventoryOverview(ctx context.Context, tenantID, actin
 
 // GetAssetStats returns aggregated asset statistics using SQL aggregation,
 // counted only over the assets the acting user may list.
-// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types []string, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
+// Filters: types (asset_type ANY), lenses (asset_lens ANY), tags (overlap,
+// matches List semantics).
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types, lenses, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -1517,7 +1540,12 @@ func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, tags, subType, countByFields...)
+	for _, l := range lenses {
+		if !assetdom.IsLens(l) {
+			return nil, fmt.Errorf("%w: unknown lens %q", shared.ErrValidation, l)
+		}
+	}
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, lenses, tags, subType, countByFields...)
 }
 
 // ListTags returns distinct tags across all assets for a tenant.
