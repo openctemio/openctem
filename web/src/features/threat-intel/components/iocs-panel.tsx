@@ -47,6 +47,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -500,7 +501,7 @@ function CreateIOCDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Add indicator</DialogTitle>
           <DialogDescription>
@@ -508,60 +509,62 @@ function CreateIOCDialog({
             type&apos;s format.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="ioc-type">Type</Label>
-            <Select value={type} onValueChange={(v) => setType(v as IOCType)}>
-              <SelectTrigger id="ioc-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {IOC_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {IOC_TYPE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ioc-value">Value *</Label>
-            <Input
-              id="ioc-value"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="e.g. 203.0.113.10"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+        <DialogBody>
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="ioc-source">Source</Label>
-              <Select value={source} onValueChange={(v) => setSource(v as IOCSource)}>
-                <SelectTrigger id="ioc-source">
+              <Label htmlFor="ioc-type">Type</Label>
+              <Select value={type} onValueChange={(v) => setType(v as IOCType)}>
+                <SelectTrigger id="ioc-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {IOC_SOURCES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {IOC_SOURCE_LABELS[s]}
+                  {IOC_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {IOC_TYPE_LABELS[t]}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ioc-confidence">Confidence (0-100)</Label>
+              <Label htmlFor="ioc-value">Value *</Label>
               <Input
-                id="ioc-confidence"
-                type="number"
-                min={0}
-                max={100}
-                value={confidence}
-                onChange={(e) => setConfidence(e.target.value)}
+                id="ioc-value"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="e.g. 203.0.113.10"
               />
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ioc-source">Source</Label>
+                <Select value={source} onValueChange={(v) => setSource(v as IOCSource)}>
+                  <SelectTrigger id="ioc-source">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IOC_SOURCES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {IOC_SOURCE_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ioc-confidence">Confidence (0-100)</Label>
+                <Input
+                  id="ioc-confidence"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={confidence}
+                  onChange={(e) => setConfidence(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel

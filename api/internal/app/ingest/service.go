@@ -124,6 +124,9 @@ type Service struct {
 	// contracts reads the submitting sensor's manifest, where a ported
 	// tool declares what it produces (output_binding.go). Nil-safe.
 	contracts ToolContractSource
+	// reach reads what a sensor's lookups may answer about
+	// (sensor_reach.go); nil: nothing outside the tenant-wide roles.
+	reach ReachSource
 
 	logger *logger.Logger
 
@@ -687,7 +690,9 @@ func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID,
 	}
 }
 
-// CheckFingerprints checks which fingerprints already exist in the database.
+// CheckFingerprints checks which fingerprints already exist in the database,
+// among the findings on assets the sensor reaches (sensor_reach.go): a
+// fingerprint outside its reach is answered as missing.
 func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, input CheckFingerprintsInput) (*CheckFingerprintsOutput, error) {
 	// Platform sensors must have tenant context from job assignment
 	if agt.TenantID == nil {
@@ -695,9 +700,25 @@ func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, inp
 	}
 	tenantID := *agt.TenantID
 
-	existing, missing, err := s.findingProcessor.CheckFingerprints(ctx, tenantID, input.Fingerprints)
+	reach, err := s.reachOf(ctx, agt, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	known, err := s.findingProcessor.knownFingerprints(ctx, tenantID, input.Fingerprints)
+	if err != nil {
+		return nil, err
+	}
+	if known, err = s.reachableFingerprints(ctx, tenantID, reach, known); err != nil {
+		return nil, err
+	}
+	existing := make([]string, 0, len(input.Fingerprints))
+	missing := make([]string, 0, len(input.Fingerprints))
+	for _, fp := range input.Fingerprints {
+		if _, ok := known[fp]; ok {
+			existing = append(existing, fp)
+		} else {
+			missing = append(missing, fp)
+		}
 	}
 
 	return &CheckFingerprintsOutput{
@@ -711,7 +732,8 @@ func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, inp
 // branch is pre-existing tech debt — not introduced by the PR — so a PR gate /
 // inline comments should focus on the genuinely-new set. Tenant-scoped via the
 // authenticated sensor. If the repository or base branch is unknown (no history),
-// every fingerprint is treated as new.
+// every fingerprint is treated as new; so is a repository outside the sensor's
+// reach (sensor_reach.go), with the same answer, so it is no existence oracle.
 func (s *Service) BaselineDiff(ctx context.Context, agt *sensor.Sensor, input BaselineDiffInput) (*BaselineDiffOutput, error) {
 	if agt == nil || agt.TenantID == nil {
 		return nil, fmt.Errorf("sensor has no tenant context: platform sensors require job assignment")
@@ -729,9 +751,16 @@ func (s *Service) BaselineDiff(ctx context.Context, agt *sensor.Sensor, input Ba
 		return allNew(), nil
 	}
 
+	reach, err := s.reachOf(ctx, agt, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	repoAsset, err := s.assetRepo.GetByName(ctx, tenantID, input.Repository)
 	if err != nil || repoAsset == nil {
 		return allNew(), nil // unknown repo → no base history
+	}
+	if !reach.covers(repoAsset.Name(), repoAsset.Properties()) {
+		return allNew(), nil // outside the sensor's reach: answered as unknown
 	}
 	baseBranch, err := s.branchRepo.GetByName(ctx, repoAsset.ID(), input.BaseBranch)
 	if err != nil || baseBranch == nil {

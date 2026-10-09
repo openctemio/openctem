@@ -135,6 +135,9 @@ const (
 	PropertyFormatURL PropertyFormat = "url"
 	// PropertyFormatCode: an identifier, shown monospace.
 	PropertyFormatCode PropertyFormat = "code"
+	// PropertyFormatExpiry: a timestamp after which the asset is no longer
+	// valid (a certificate's not_after, a domain's expires_at).
+	PropertyFormatExpiry PropertyFormat = "expiry"
 )
 
 // PropertyDefinition is one key of the property schema (RFC-042 §6.3.9):

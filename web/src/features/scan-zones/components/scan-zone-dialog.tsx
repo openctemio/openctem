@@ -13,6 +13,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -124,7 +126,7 @@ export function ScanZoneDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{editing ? 'Edit scan zone' : 'New scan zone'}</DialogTitle>
           <DialogDescription>
@@ -133,106 +135,107 @@ export function ScanZoneDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form
-          className="space-y-4"
+        <DialogForm
           onSubmit={(e) => {
             e.preventDefault()
             void handleSave()
           }}
         >
-          {serverError && (
-            <Alert variant="destructive" role="alert" data-testid="zone-server-error">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>{serverError.message}</AlertTitle>
-              {serverError.hint && <AlertDescription>{serverError.hint}</AlertDescription>}
-            </Alert>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="zone-name">Name</Label>
-            <Input
-              id="zone-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="HQ data centre"
-              maxLength={MAX_ZONE_NAME_LENGTH + 20}
-              aria-invalid={showErrors && !!nameError}
-              autoFocus
-            />
-            {showErrors && nameError && <p className="text-xs text-destructive">{nameError}</p>}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="zone-description">Description</Label>
-            <Textarea
-              id="zone-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              placeholder="Optional"
-              aria-invalid={showErrors && !!descriptionError}
-            />
-            {showErrors && descriptionError && (
-              <p className="text-xs text-destructive">{descriptionError}</p>
+          <DialogBody className="space-y-4">
+            {serverError && (
+              <Alert variant="destructive" role="alert" data-testid="zone-server-error">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>{serverError.message}</AlertTitle>
+                {serverError.hint && <AlertDescription>{serverError.hint}</AlertDescription>}
+              </Alert>
             )}
-          </div>
 
-          <div className="flex items-start justify-between gap-4 rounded-md border p-3">
-            <div className="min-w-0 space-y-0.5">
-              <Label htmlFor="zone-default">Default zone</Label>
-              <p className="text-xs text-muted-foreground">
-                Receives public targets and hostnames no other zone holds. One per team; it may have
-                no ranges.
-              </p>
-              {defaultConflict && (
-                <p className="text-xs text-warning">
-                  &quot;{otherDefaultZone.name}&quot; is the default zone now. Unset it there first,
-                  or the server refuses this.
-                </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="zone-name">Name</Label>
+              <Input
+                id="zone-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="HQ data centre"
+                maxLength={MAX_ZONE_NAME_LENGTH + 20}
+                aria-invalid={showErrors && !!nameError}
+                autoFocus
+              />
+              {showErrors && nameError && <p className="text-xs text-destructive">{nameError}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="zone-description">Description</Label>
+              <Textarea
+                id="zone-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                placeholder="Optional"
+                aria-invalid={showErrors && !!descriptionError}
+              />
+              {showErrors && descriptionError && (
+                <p className="text-xs text-destructive">{descriptionError}</p>
               )}
             </div>
-            <Switch id="zone-default" checked={isDefault} onCheckedChange={setIsDefault} />
-          </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="zone-ranges">Ranges</Label>
-            <Textarea
-              id="zone-ranges"
-              value={rangesText}
-              onChange={(e) => setRangesText(e.target.value)}
-              rows={5}
-              className="font-mono text-sm"
-              placeholder={'10.230.0.0/16\n192.168.10.1-192.168.10.200\nfd00:230::/48'}
-              aria-invalid={showErrors && (parsed.errors.length > 0 || !!rangesRequiredError)}
-              aria-describedby="zone-ranges-help"
-            />
-            <p id="zone-ranges-help" className="text-xs text-muted-foreground">
-              One per line: an address, a CIDR or a range (a-b). IPv4 up to /8, IPv6 up to /32.
-              Loopback, link-local, metadata, multicast and reserved space are refused.
-            </p>
-            {parsed.errors.length > 0 && (
-              <ul className="space-y-0.5" data-testid="zone-range-errors">
-                {parsed.errors.map((e) => (
-                  <li key={`${e.line}-${e.input}`} className="text-xs text-destructive">
-                    {e.line > 0 ? `Line ${e.line}: ` : ''}
-                    {e.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {showErrors && rangesRequiredError && (
-              <p className="text-xs text-destructive">{rangesRequiredError}</p>
-            )}
-            {parsed.errors.length === 0 && parsed.ranges.length > 0 && (
-              <div className="space-y-1 pt-1">
+            <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+              <div className="min-w-0 space-y-0.5">
+                <Label htmlFor="zone-default">Default zone</Label>
                 <p className="text-xs text-muted-foreground">
-                  Saved as {parsed.ranges.length} range{parsed.ranges.length === 1 ? '' : 's'}
-                  {parsed.privateCount > 0 ? `, ${parsed.privateCount} private` : ''}:
+                  Receives public targets and hostnames no other zone holds. One per team; it may
+                  have no ranges.
                 </p>
-                <RangeChips ranges={parsed.ranges} max={6} />
+                {defaultConflict && (
+                  <p className="text-xs text-warning">
+                    &quot;{otherDefaultZone.name}&quot; is the default zone now. Unset it there
+                    first, or the server refuses this.
+                  </p>
+                )}
               </div>
-            )}
-          </div>
+              <Switch id="zone-default" checked={isDefault} onCheckedChange={setIsDefault} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="zone-ranges">Ranges</Label>
+              <Textarea
+                id="zone-ranges"
+                value={rangesText}
+                onChange={(e) => setRangesText(e.target.value)}
+                rows={5}
+                className="font-mono text-sm"
+                placeholder={'10.230.0.0/16\n192.168.10.1-192.168.10.200\nfd00:230::/48'}
+                aria-invalid={showErrors && (parsed.errors.length > 0 || !!rangesRequiredError)}
+                aria-describedby="zone-ranges-help"
+              />
+              <p id="zone-ranges-help" className="text-xs text-muted-foreground">
+                One per line: an address, a CIDR or a range (a-b). IPv4 up to /8, IPv6 up to /32.
+                Loopback, link-local, metadata, multicast and reserved space are refused.
+              </p>
+              {parsed.errors.length > 0 && (
+                <ul className="space-y-0.5" data-testid="zone-range-errors">
+                  {parsed.errors.map((e) => (
+                    <li key={`${e.line}-${e.input}`} className="text-xs text-destructive">
+                      {e.line > 0 ? `Line ${e.line}: ` : ''}
+                      {e.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {showErrors && rangesRequiredError && (
+                <p className="text-xs text-destructive">{rangesRequiredError}</p>
+              )}
+              {parsed.errors.length === 0 && parsed.ranges.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  <p className="text-xs text-muted-foreground">
+                    Saved as {parsed.ranges.length} range{parsed.ranges.length === 1 ? '' : 's'}
+                    {parsed.privateCount > 0 ? `, ${parsed.privateCount} private` : ''}:
+                  </p>
+                  <RangeChips ranges={parsed.ranges} max={6} />
+                </div>
+              )}
+            </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button
@@ -248,7 +251,7 @@ export function ScanZoneDialog({
               {editing ? 'Save' : 'Create zone'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )
