@@ -335,7 +335,7 @@ func PlanLimitMessage(lim *plan.ErrLimitReached) string {
 	label := map[plan.Key]string{
 		plan.Seats: "seats", plan.Assets: "assets", plan.Sensors: "sensors", plan.APIKeys: "API keys",
 		plan.CITrusts: "CI trust configurations", plan.InvitesPerDay: "invitations a day",
-		plan.FreeTeamsPerUser: "Free organizations per person",
+		plan.FreeTeamsPerUser: "Free organizations per person", plan.Findings: "findings",
 	}[lim.Key]
 	if label == "" {
 		label = string(lim.Key)

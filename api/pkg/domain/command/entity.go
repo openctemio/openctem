@@ -159,6 +159,11 @@ type Command struct {
 	// Written on create only; never sent to a sensor.
 	DispatchGate *DispatchGate
 
+	// SignedJob is the signer's envelope for this delivery of the command
+	// (docs/architecture/job-signing.md): set on the copy a claim hands a
+	// sensor, never stored and never read back.
+	SignedJob json.RawMessage
+
 	// ==========================================================================
 	// Platform Job Fields (v3.2)
 	// ==========================================================================

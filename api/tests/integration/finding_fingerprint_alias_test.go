@@ -226,7 +226,11 @@ func TestIngest_FormerKeyLandsOnTheFinding(t *testing.T) {
 		t.Fatalf("status = %s, want false_positive (triage lost)", status)
 	}
 
-	res, err := svc.CheckFingerprints(context.Background(), agt, ingest.CheckFingerprintsInput{Fingerprints: []string{former, "unknown-key"}})
+	// A collector's lookups are tenant-wide (a worker answers only about
+	// what it reaches: sensor_reach.go).
+	collector := *agt
+	collector.Type = sensor.SensorTypeCollector
+	res, err := svc.CheckFingerprints(context.Background(), &collector, ingest.CheckFingerprintsInput{Fingerprints: []string{former, "unknown-key"}})
 	if err != nil {
 		t.Fatal(err)
 	}
