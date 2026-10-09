@@ -12,6 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -115,7 +117,7 @@ export function CreateOrganizationDialog({
           New organization
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         {created?.owner_setup ? (
           <>
             <DialogHeader>
@@ -125,15 +127,17 @@ export function CreateOrganizationDialog({
                 password.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-2">
-              <SetupLinkResult outcome={created.owner_setup} email={owner.trim()} />
-            </div>
+            <DialogBody>
+              <div className="py-2">
+                <SetupLinkResult outcome={created.owner_setup} email={owner.trim()} />
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button onClick={() => finish(created)}>Done</Button>
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={submit}>
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>New organization</DialogTitle>
               <DialogDescription>
@@ -141,76 +145,78 @@ export function CreateOrganizationDialog({
                 one is created and they get a link to set their password.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="org-name">Name</Label>
-                <Input
-                  id="org-name"
-                  required
-                  minLength={2}
-                  maxLength={100}
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value)
-                    if (!slugEdited) setSlug(slugify(e.target.value))
-                  }}
-                />
+            <DialogBody>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="org-name">Name</Label>
+                  <Input
+                    id="org-name"
+                    required
+                    minLength={2}
+                    maxLength={100}
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value)
+                      if (!slugEdited) setSlug(slugify(e.target.value))
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="org-slug">Slug</Label>
+                  <Input
+                    id="org-slug"
+                    required
+                    minLength={3}
+                    maxLength={100}
+                    pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                    title="Lowercase letters, digits and hyphens"
+                    value={slug}
+                    onChange={(e) => {
+                      setSlugEdited(true)
+                      setSlug(e.target.value.toLowerCase())
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Used in URLs, including the SAML sign-in addresses.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="org-owner">Owner email</Label>
+                  <Input
+                    id="org-owner"
+                    type="email"
+                    required
+                    value={owner}
+                    onChange={(e) => setOwner(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    An existing account, or a new person (an account is created for them).
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="org-owner-name">Owner name (optional)</Label>
+                  <Input
+                    id="org-owner-name"
+                    maxLength={255}
+                    value={ownerName}
+                    onChange={(e) => setOwnerName(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Used only when a new account is created for the owner.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="org-description">Description (optional)</Label>
+                  <Textarea
+                    id="org-description"
+                    maxLength={500}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </div>
+                {error && <p className="text-sm text-destructive">{error}</p>}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="org-slug">Slug</Label>
-                <Input
-                  id="org-slug"
-                  required
-                  minLength={3}
-                  maxLength={100}
-                  pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                  title="Lowercase letters, digits and hyphens"
-                  value={slug}
-                  onChange={(e) => {
-                    setSlugEdited(true)
-                    setSlug(e.target.value.toLowerCase())
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Used in URLs, including the SAML sign-in addresses.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="org-owner">Owner email</Label>
-                <Input
-                  id="org-owner"
-                  type="email"
-                  required
-                  value={owner}
-                  onChange={(e) => setOwner(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  An existing account, or a new person (an account is created for them).
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="org-owner-name">Owner name (optional)</Label>
-                <Input
-                  id="org-owner-name"
-                  maxLength={255}
-                  value={ownerName}
-                  onChange={(e) => setOwnerName(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Used only when a new account is created for the owner.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="org-description">Description (optional)</Label>
-                <Textarea
-                  id="org-description"
-                  maxLength={500}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-            </div>
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
@@ -220,7 +226,7 @@ export function CreateOrganizationDialog({
                 Create organization
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>

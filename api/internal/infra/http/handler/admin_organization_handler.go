@@ -44,39 +44,6 @@ func (h *AdminOrganizationHandler) WithStepUp(v StepUpVerifier) *AdminOrganizati
 	return h
 }
 
-// confirmRecoveryStepUp demands a fresh authenticator code. Without a
-// verifier the recovery is refused rather than run unconfirmed.
-func (h *AdminOrganizationHandler) confirmRecoveryStepUp(w http.ResponseWriter, r *http.Request, code string) bool {
-	actor := middleware.GetAdminUser(r.Context())
-	if actor == nil {
-		apierror.Unauthorized("administrator session required").WriteJSON(w)
-		return false
-	}
-	if h.stepUp == nil {
-		apierror.ServiceUnavailable("Owner recovery is not available").WriteJSON(w)
-		return false
-	}
-	code = strings.TrimSpace(code)
-	if code == "" {
-		apierror.New(http.StatusUnauthorized, codeStepUpRequired, "Enter a code from your authenticator to confirm the owner recovery").WriteJSON(w)
-		return false
-	}
-	if err := h.stepUp.StepUp(r.Context(), actor, code, stepUpPurposeOwnerRecovery, clientInfo(r)); err != nil {
-		switch {
-		case errors.Is(err, admin.ErrStepUpUnavailable):
-			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
-				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
-		case errors.Is(err, admin.ErrInvalidMFACode):
-			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
-		default:
-			h.logger.Error("owner recovery step-up", "error", err)
-			apierror.InternalServerError("could not verify the code").WriteJSON(w)
-		}
-		return false
-	}
-	return true
-}
-
 // WithUserProvisioning wires administrator-created accounts.
 func (h *AdminOrganizationHandler) WithUserProvisioning(svc *tenantapp.UserProvisioningService) *AdminOrganizationHandler {
 	h.provisioning = svc
@@ -471,7 +438,7 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 			apierror.BadRequest("Give a reason for the owner recovery (10 to 500 characters); it is kept in the audit log.").WriteJSON(w)
 			return
 		}
-		if !h.confirmRecoveryStepUp(w, r, req.TOTPCode) {
+		if !confirmAdminStepUp(w, r, h.stepUp, req.TOTPCode, stepUpPurposeOwnerRecovery, h.logger) {
 			return
 		}
 		create = h.provisioning.RecoverOwner

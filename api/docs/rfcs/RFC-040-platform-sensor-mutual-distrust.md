@@ -6,6 +6,12 @@
 > and in sdk-go/sensor `main`, not yet in a sensor release (§6.1).
 > Amended 2026-10-08 (§11): review of every sensor → platform input, the
 > outbound-only invariant, and decisions Q9–Q12 (Q3 revised for new installs).
+> P1 signer (§5.6, Q11): the `openctem-signer` process (K1 key file, Unix
+> socket, per-sensor `seq`, hash-chained signing log) and claim-time signed
+> jobs on v2 and v3 are built, off by default (`SIGNER_SOCKET`):
+> [architecture/job-signing.md](../architecture/job-signing.md). Sensor
+> verification (sdk-go), the offline root key set, the scope ledger and
+> template signing by the signer are next.
 > Scope: api (sensor gateway, signer, ingest pipeline, audit, detections) +
 > web (output encoding) + sdk-go (job verification, local policy, credential
 > providers, local audit) + sensor (`openctemio/sensor`) + helm-charts and
@@ -1016,5 +1022,5 @@ Each is tracked in [architecture/sensor-platform-trust.md](../architecture/senso
 | Q9 | Outbound-only | **Invariant** (§11.1), with a regression test in the sensor. |
 | Q3 (revised) | Sensor without a local policy file | **New installs fail closed**: network jobs are refused with `no_local_policy` and a clear reason, and custom templates and out-of-band callbacks are refused. Existing paired sensors keep working and report `policy=none`. The Sensors page and an alert flag them, with a one-click "generate policy" built from the organization's scope. Q3 (a) stays for existing installs only, as an upgrade path. |
 | Q10 | Platform TLS identity on the sensor | **Pinned at pairing.** The CA/SPKI fingerprint is stored in the identity and emitted in every install snippet. The v3 CA bundle is fetched only over the pinned channel and is sticky. An x509 failure never falls back to another binding. Unpinned sensors report `pin=none` and are flagged. |
-| Q11 | Job signing | **Build §5.6 now** with a signer key separate from the API. It is never derived from `APP_ENCRYPTION_KEY`. Template signing moves to the signer. The sensor verifies before execution, and new enrollments require signed jobs. |
+| Q11 | Job signing | **Build §5.6 now** with a signer key separate from the API. It is never derived from `APP_ENCRYPTION_KEY`. Template signing moves to the signer. The sensor verifies before execution, and new enrollments require signed jobs. Platform side built (signer process, K1 custody, claim-time envelopes, off by default): [job-signing.md](../architecture/job-signing.md); sdk-go verification next. |
 | Q12 | Unconfined sandbox | `auto` must not run unconfined silently. `network_enforced=false` is reported prominently: on the manifest, as a Sensors page warning and as an alert. Compose and Helm ship the seccomp profile by default. The forwarder re-checks every resolved address at connect time, refusing link-local, loopback and private ranges unless the zone or policy allows them. When unconfined, custom templates are refused and nuclei runs with local-network access restricted. |

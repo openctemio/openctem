@@ -23,6 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -154,24 +155,30 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
               for applications that run on a computer.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="mcp-client-name">Name</Label>
-              <Input id="mcp-client-name" value={name} onChange={(e) => setName(e.target.value)} />
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="mcp-client-name">Name</Label>
+                <Input
+                  id="mcp-client-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-client-uris">Return addresses (redirect URIs)</Label>
+                <Textarea
+                  id="mcp-client-uris"
+                  rows={3}
+                  value={uris}
+                  onChange={(e) => setUris(e.target.value)}
+                  placeholder={
+                    'http://127.0.0.1:33418/callback\nhttps://assistant.example.com/oauth/callback'
+                  }
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="mcp-client-uris">Return addresses (redirect URIs)</Label>
-              <Textarea
-                id="mcp-client-uris"
-                rows={3}
-                value={uris}
-                onChange={(e) => setUris(e.target.value)}
-                placeholder={
-                  'http://127.0.0.1:33418/callback\nhttps://assistant.example.com/oauth/callback'
-                }
-              />
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
               Cancel
