@@ -81,7 +81,7 @@ func (r *ValidationEvidenceRepository) Create(ctx context.Context, ev validation
 // many have at least one validation evidence record (tenant-scoped). Drives the
 // validation coverage KPI — "how much of live exposure is validated" — so the
 // denominator excludes closed findings (resolved/false_positive/accepted/
-// duplicate/verified/accepted_risk); otherwise a tenant with a large closed
+// duplicate); otherwise a tenant with a large closed
 // history would show a permanently low coverage. Findings with no severity are
 // grouped under "".
 func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error) {
@@ -93,7 +93,7 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 		  LEFT JOIN validation_evidence ve
 		         ON ve.tenant_id = f.tenant_id AND ve.finding_id = f.id
 		 WHERE f.tenant_id = $1
-		   AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		   AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 		 GROUP BY f.severity
 		 ORDER BY f.severity
 	`

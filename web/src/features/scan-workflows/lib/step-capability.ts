@@ -73,3 +73,23 @@ export function withTool(
   }
   return { step: { ...base, capabilities: [...declared] }, choose: [] }
 }
+
+/**
+ * The capabilities a step in the old format can take: a step that names a
+ * tool but not a catalog capability (its tool's old words, "recon,
+ * subdomain"). Empty when the step is not in the old format or its tool
+ * implements no catalog capability.
+ */
+export function legacyCapabilityFix(
+  table: CapabilityTable,
+  step: Pick<ScanWorkflowStep, 'tool' | 'capabilities'>
+): Capability[] {
+  const tool = (step.tool ?? '').trim()
+  if (!tool || namedCapability(table, step)) return []
+  return capabilitiesOfTool(table, tool)
+}
+
+/** The step in the new format: its capability named, its tool kept pinned. */
+export function applyLegacyFix(step: ScanWorkflowStep, cap: Capability): ScanWorkflowStep {
+  return { ...step, capabilities: [cap.key], prefer_tools: [] }
+}

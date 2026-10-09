@@ -451,6 +451,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
 		ScannerTemplate: handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
 		TemplateSource:  handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
+		ContentPack:     handler.NewContentPackHandler(svc.ContentPacks, log),
 		SecretStore:     handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:            handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
@@ -540,9 +541,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 				return postgres.ReadOpsSnapshot(ctx, deps.DB.DB)
 			},
 			repos.Admin, shippedSchemaVersion(log), log),
-		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
-		AdminAuditChain:     handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
-		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
+			postgres.NewPlatformUserDirectory(deps.DB),
+			newPlatformUserService(repos, svc, cfg, deps.DB),
+			log),
+		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
+		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
+		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
+		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
 
 		// Admin Audit middleware (audit logging for admin operations)
 		AdminAuditMiddleware: middleware.NewAuditMiddleware(repos.AdminAuditLog, log),
@@ -669,6 +675,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.CredentialImport.SetAuditService(svc.Audit)
 	}
 
+	if svc.AccessRequest != nil {
+		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+	}
 	if svc.Entitlement != nil {
 		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
 		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})

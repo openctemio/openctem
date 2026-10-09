@@ -24,7 +24,7 @@ func TestMarkDuplicateOf_RepositoryRechecksUnderLock(t *testing.T) {
 	a := f.composite(f.keep, "base-a", "new", now.Add(-time.Hour))
 	b := f.composite(f.keep, "base-b", "new", now)
 	away := f.composite(f.away, "base-c", "new", now)
-	accepted := f.composite(f.keep, "base-d", "accepted_risk", now)
+	accepted := f.composite(f.keep, "base-d", "accepted", now)
 	foreign := other.composite(other.keep, "base-a", "new", now)
 
 	cases := []struct {

@@ -1,3 +1,4 @@
+import type { FindingStatus } from '@/features/findings/types/finding.types'
 /**
  * Repository Types
  *
@@ -180,22 +181,13 @@ export const SEVERITY_COLORS: Record<Severity, { bg: string; text: string; borde
 // Findings Summary Types
 // ============================================
 
-export type FindingStatus =
-  'open' | 'confirmed' | 'in_progress' | 'resolved' | 'false_positive' | 'accepted_risk'
-
-export const FINDING_STATUS_LABELS: Record<FindingStatus, string> = {
-  open: 'Open',
-  confirmed: 'Confirmed',
-  in_progress: 'In Progress',
-  resolved: 'Resolved',
-  false_positive: 'False Positive',
-  accepted_risk: 'Accepted Risk',
-}
+// Finding statuses are the one registry's (features/findings/types/finding.types.ts).
+export type { FindingStatus } from '@/features/findings/types/finding.types'
 
 export interface FindingsSummary {
   total: number
   bySeverity: Record<Severity, number>
-  byStatus: Record<FindingStatus, number>
+  byStatus: Partial<Record<FindingStatus, number>>
   byType: Record<ScannerType, number>
   newLast7Days?: number
   resolvedLast7Days?: number

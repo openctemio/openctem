@@ -364,8 +364,8 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		input.Payload = gated.Payload
 		input.ScanZoneID = gated.ScanZoneID
 		// The claim re-checks the targets as GateCommandPayload checked
-		// them: the caller's act scope, no tier ceiling.
-		input.DispatchGate = &commanddom.DispatchGate{ActScope: true, Actor: requestUserID(r.Context())}
+		// them: the scanner's tier ceiling and the caller's act scope.
+		input.DispatchGate = &commanddom.DispatchGate{Tier: int(gated.Tier), ActScope: true, Actor: requestUserID(r.Context())}
 		targets = gated.Targets
 	}
 

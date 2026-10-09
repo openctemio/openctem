@@ -98,7 +98,7 @@ const breachSelectUpdateQuery = `
 		WHERE f.sla_deadline < NOW()
 		  AND f.sla_deadline IS NOT NULL
 		  AND (f.sla_status IS NULL OR f.sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
-		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 		  AND NOT f.branch_only
 	)
 	UPDATE findings SET
@@ -340,7 +340,7 @@ const warningSelectUpdateQuery = `
 		WHERE f.sla_deadline IS NOT NULL
 		  AND f.sla_deadline > NOW()
 		  AND (f.sla_status IS NULL OR f.sla_status = 'on_track')
-		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 		  AND NOT f.branch_only
 		  AND NOW() >= COALESCE(f.first_detected_at, f.created_at)
 		      + (f.sla_deadline - COALESCE(f.first_detected_at, f.created_at))

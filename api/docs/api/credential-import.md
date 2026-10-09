@@ -48,8 +48,8 @@ server on start (idempotent), or offline with `go run ./cmd/encrypt-credentials`
 
 ### Sensors
 
-Sensors have no credential ingest route: the protocol v1 route
-`/api/v1/agent/credentials/ingest` was retired with protocol v1 (2026-10-05).
+Sensors have no credential ingest route (the former protocol v1 route was
+retired with protocol v1).
 Import credentials through the administrator routes above.
 
 ---

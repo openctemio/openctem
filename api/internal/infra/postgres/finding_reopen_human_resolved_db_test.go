@@ -80,7 +80,7 @@ func TestAutoReopenBatch_HumanResolvedReopens_DeliberateDispositionsDoNot(t *tes
 	// verified, and a resolved finding with NULL resolution.
 	humanID, humanFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "security_reviewed")
 	autoID, autoFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "auto_fixed")
-	verifiedID, verifiedFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "verified", "manual_retest_passed")
+	verifiedID, verifiedFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "manual_retest_passed")
 	nullResID, nullResFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "")
 
 	// Should NOT reopen: deliberate dispositions carried in the resolution column.

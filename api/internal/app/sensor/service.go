@@ -31,6 +31,8 @@ const sensorAuditSystemActor = "system"
 
 // SensorService handles sensor-related business operations.
 type SensorService struct {
+	// keyUse debounces the key-use writes of recordKeyUseAsync.
+	keyUse       keyUseDebouncer
 	repo         sensordom.Repository
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
@@ -1135,6 +1137,13 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 	if err != nil {
 		return "", err
 	}
+	// An organization that requires key-bound identity mints no bearer keys,
+	// regenerated ones included (as CreateSensor): the sensor pairs instead.
+	if allowed, err := s.BearerKeysAllowed(ctx, shared.MustIDFromString(tenantID)); err != nil {
+		return "", err
+	} else if !allowed {
+		return "", sensordom.ErrBearerKeysDisabled
+	}
 
 	apiKey, hash, prefix, err := s.generateSensorAPIKey()
 	if err != nil {
@@ -1595,6 +1604,9 @@ func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, 
 	// When the key was used, taken on the request path: the goroutines below
 	// can reach the database out of order.
 	usedAt := s.now()
+	if !s.keyUse.due(sensorID.String()+"|"+clientIP, usedAt) {
+		return
+	}
 	go func() {
 		bg, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

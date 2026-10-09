@@ -163,6 +163,57 @@ export function useScanChannel<T = unknown>(
 }
 
 /**
+ * Subscribe to the run:{id} channel of every run in `runIds` (the live runs
+ * of a list) and call `onChange` on any of their change notices. Returns true
+ * while every one of them is subscribed: the list may then stop polling for
+ * them and rely on the notices; while it is false (socket down, a subscription
+ * refused) it keeps polling as the fallback.
+ *
+ * The server checks each subscription like a read of that run (tenant, and
+ * findings:read plus data scope for a run about a finding); a notice carries
+ * only the run id, and the list re-reads through the gated endpoints.
+ */
+export function useRunChannels(runIds: string[], onChange: () => void): boolean {
+  const { isConnected } = useWebSocket()
+  const [subscribed, setSubscribed] = useState<string>('')
+  const callbackRef = useRef(onChange)
+  useEffect(() => {
+    callbackRef.current = onChange
+  }, [onChange])
+
+  const idsKey = [...new Set(runIds)].sort().join(',')
+
+  useEffect(() => {
+    if (!idsKey || !isConnected) return
+    let client: WebSocketClient | null = null
+    try {
+      client = getWebSocketClient()
+    } catch {
+      return
+    }
+    if (!client) return
+    const channels = idsKey.split(',').map((id) => makeChannel('run', id))
+    const handler = () => callbackRef.current?.()
+    let cancelled = false
+    Promise.all(channels.map((c) => client!.subscribe(c, handler)))
+      .then(() => {
+        if (!cancelled) setSubscribed(idsKey)
+      })
+      .catch((error) => {
+        devLog.error('[useRunChannels] Subscribe error:', error)
+        if (!cancelled) setSubscribed('')
+      })
+    return () => {
+      cancelled = true
+      setSubscribed('')
+      for (const c of channels) client?.unsubscribe(c, handler).catch(() => {})
+    }
+  }, [idsKey, isConnected])
+
+  return isConnected && idsKey !== '' && subscribed === idsKey
+}
+
+/**
  * Hook to subscribe to AI triage updates
  */
 export function useTriageChannel<T = unknown>(

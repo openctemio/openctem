@@ -176,7 +176,7 @@ every `mcp.tool_called` carries `auth_method`, `grant_id`, `client_id` and
 
 ### Storage
 
-Migration `001367_mcp_oauth`: `mcp_oauth_clients`, `mcp_oauth_requests`,
+Migration `001381_mcp_oauth`: `mcp_oauth_clients`, `mcp_oauth_requests`,
 `mcp_oauth_grants`, `mcp_oauth_tokens`; grants and requests cascade on
 organization and user deletion.
 
@@ -237,7 +237,7 @@ Sender-constrained tokens (RFC 9449), `pkg/dpop` and `mcpoauth/dpop.go`:
 - A client that sends a `DPoP` proof (ES256 or EdDSA, `typ: dpop+jwt`,
   public `jwk`, `htm`/`htu` of the token endpoint, `iat` within 60 s, a
   unique `jti`) to `/oauth/token` gets a grant bound to the key's RFC 7638
-  thumbprint (`mcp_oauth_grants.dpop_jkt`, migration `001371`) and
+  thumbprint (`mcp_oauth_grants.dpop_jkt`, migration `001386`) and
   `token_type: DPoP`. The proof is checked before the code is redeemed, so a
   bad proof does not burn the code.
 - Refreshing a bound grant needs a proof of the same key.

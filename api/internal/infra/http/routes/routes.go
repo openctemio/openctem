@@ -129,6 +129,7 @@ type Handlers struct {
 	CIRunner        *handler.CIRunnerHandler
 	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
 	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
+	ContentPack     *handler.ContentPackHandler     // nil if not initialized (no database)
 	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
@@ -232,8 +233,13 @@ type Handlers struct {
 	AdminAuth         *handler.AdminAuthHandler
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminOverview     *handler.AdminOverviewHandler
-	AdminConsole      *handler.AdminConsoleHandler
-	AdminAuditChain   *handler.AdminAuditChainHandler
+	AdminPlatformUser *handler.AdminPlatformUserHandler
+	// AdminSupportRateLimiter caps console support actions per administrator.
+	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
+	AdminConsole            *handler.AdminConsoleHandler
+	AdminAuditChain         *handler.AdminAuditChainHandler
+	// AccessRequest: the request-access queue (public form + console).
+	AccessRequest *handler.AccessRequestHandler
 	// Plan: plans and limits (console plan defaults, organization plans and
 	// overrides, the organization's own usage).
 	Plan *handler.PlanHandler
@@ -874,6 +880,10 @@ func Register(
 	}
 
 	// Template Source routes (tenant from JWT token)
+	if h.ContentPack != nil {
+		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+
 	if h.TemplateSource != nil {
 		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
 	}

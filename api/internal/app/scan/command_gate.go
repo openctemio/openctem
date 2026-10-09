@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -33,6 +34,9 @@ type GatedCommand struct {
 	// tenant has no zones or the targets are unzoned. A zoned command is
 	// claimable only by that zone's sensors.
 	ScanZoneID *shared.ID
+	// Tier is the probe tier the targets were checked at (the scanner's
+	// ProbeTier); the claim re-checks them at it.
+	Tier scopedom.Tier
 }
 
 // GateCommandPayload checks a `scan` command payload created outside a scan
@@ -89,15 +93,23 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
 	}
 
+	scanner, _ := fields["scanner"].(string)
+	if scanner == "" {
+		scanner, _ = fields["scanner_name"].(string)
+	}
+	// The tier ceiling of a scan trigger (RFC-054 §4.2 step 6): a target
+	// whose scope entries allow less than the scanner probes at is refused.
+	// A command that names no known scanner probes at t1.
+	tier := ProbeTier(scanner)
+	if err := s.refuseTargetsOverTier(ctx, tenantID, tier, checked); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
+	}
+
 	zoneID, err := s.commandZone(ctx, tenantID, sensorID, checked)
 	if err != nil {
 		return nil, err
 	}
 
-	scanner, _ := fields["scanner"].(string)
-	if scanner == "" {
-		scanner, _ = fields["scanner_name"].(string)
-	}
 	delete(fields, "target")
 	delete(fields, "targets")
 	applyTargetsToPayload(fields, scanner, checked)
@@ -105,7 +117,7 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 	if err != nil {
 		return nil, fmt.Errorf("encode scan command payload: %w", err)
 	}
-	return &GatedCommand{Payload: out, Targets: checked, ScanZoneID: zoneID}, nil
+	return &GatedCommand{Payload: out, Targets: checked, ScanZoneID: zoneID, Tier: tier}, nil
 }
 
 func refused(msg string) error {

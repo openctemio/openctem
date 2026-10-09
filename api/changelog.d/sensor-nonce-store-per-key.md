@@ -1,0 +1,3 @@
+### Security: one sensor can no longer fill the nonce store of every key-bound sensor
+
+- Each replica also remembers spent request nonces in memory, which is the fallback when Redis is unavailable. That store was one map of 100,000 entries shared by every sensor of every organization. One sensor that signed enough requests filled it, and while it was full every key-bound sensor on that replica was refused. Each request also swept the whole map under a lock. Nonces are now kept per signing key, with a bound per key (20,000 within the 9-minute window), so a flooding key is refused alone. Expired entries are swept per key, and idle keys are dropped periodically.
