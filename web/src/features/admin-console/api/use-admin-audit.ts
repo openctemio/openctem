@@ -15,6 +15,9 @@ export function useAdminAuditLogs(query: {
   /** Only rows about this resource (e.g. one organization). */
   resourceId?: string
   perPage?: number
+  /** RFC 3339 bounds of created_at. */
+  from?: string
+  to?: string
 }) {
   const q = new URLSearchParams({
     page: String(query.page ?? 1),
@@ -22,6 +25,8 @@ export function useAdminAuditLogs(query: {
   })
   if (query.action?.trim()) q.set('action', query.action.trim())
   if (query.adminEmail?.trim()) q.set('admin_email', query.adminEmail.trim())
+  if (query.from) q.set('from', query.from)
+  if (query.to) q.set('to', query.to)
   if (query.resourceId) q.set('resource_id', query.resourceId)
   if (query.outcome) q.set('success', query.outcome === 'success' ? 'true' : 'false')
   return useSWR<Paged<AdminAuditEntry>>(`/audit-logs?${q.toString()}`, adminFetcher, {

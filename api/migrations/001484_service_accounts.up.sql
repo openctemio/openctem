@@ -9,12 +9,11 @@ ALTER TABLE users
     ADD COLUMN service_tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
     ADD COLUMN service_owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
     ADD CONSTRAINT chk_users_kind CHECK (kind IN ('person', 'service')),
-    -- A service account belongs to one organization and has no credential a
-    -- person could use: no password, no federated identity.
+    -- A service account belongs to one organization and has no password; the
+    -- trigger below refuses it a federated identity (user_identities).
     ADD CONSTRAINT chk_users_service_account CHECK (
         (kind = 'person' AND service_tenant_id IS NULL AND service_owner_id IS NULL)
-        OR (kind = 'service' AND service_tenant_id IS NOT NULL
-            AND password_hash IS NULL AND federated_subject IS NULL));
+        OR (kind = 'service' AND service_tenant_id IS NOT NULL AND password_hash IS NULL));
 
 COMMENT ON COLUMN users.kind IS
     'person, or service: an organization-owned identity that never signs in and acts only through API keys.';
@@ -69,3 +68,20 @@ $$;
 CREATE TRIGGER trigger_refuse_service_account_privileged_role
     BEFORE INSERT OR UPDATE ON user_roles
     FOR EACH ROW EXECUTE FUNCTION refuse_service_account_privileged_role();
+
+-- A service account never signs in, so it never gets a federated identity.
+CREATE FUNCTION refuse_service_account_identity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM users u WHERE u.id = NEW.user_id AND u.kind = 'service') THEN
+        RAISE EXCEPTION 'a service account cannot have a sign-in identity'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trigger_refuse_service_account_identity
+    BEFORE INSERT OR UPDATE ON user_identities
+    FOR EACH ROW EXECUTE FUNCTION refuse_service_account_identity();

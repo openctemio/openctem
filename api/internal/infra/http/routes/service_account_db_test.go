@@ -72,6 +72,9 @@ func TestServiceAccounts(t *testing.T) {
 	if _, err := h.db.Exec(`UPDATE users SET password_hash = 'x' WHERE id = $1`, a.ID.String()); err == nil {
 		t.Error("a service account got a password")
 	}
+	if _, err := h.db.Exec(`INSERT INTO user_identities (user_id, issuer, subject) VALUES ($1, https://idp.example, sub-1)`, a.ID.String()); err == nil {
+		t.Error("a service account got a sign-in identity")
+	}
 	if _, err := h.db.Exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'viewer')`, a.ID.String(), h.other.String()); err == nil {
 		t.Error("a service account joined another organization")
 	}

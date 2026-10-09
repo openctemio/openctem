@@ -11,6 +11,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -111,59 +113,61 @@ export function AdminConfirmDialog({
         onOpenChange(next)
       }}
     >
-      <DialogContent className="sm:max-w-lg">
-        <form onSubmit={submit} className="space-y-4">
+      <DialogContent>
+        <DialogForm onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">{description}</div>
             </DialogDescription>
           </DialogHeader>
-          {children}
-          <div className="space-y-1.5">
-            <Label htmlFor={reasonId}>{t('admin.confirm.reason', 'Reason')}</Label>
-            <Textarea
-              id={reasonId}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              maxLength={REASON_MAX}
-              rows={3}
-              placeholder={t(
-                'admin.confirm.reasonPlaceholder',
-                'Ticket or request and why, e.g. "Support case 4411: owner left the company"'
-              )}
-              aria-describedby={`${reasonId}-hint`}
-              required
-            />
-            <p id={`${reasonId}-hint`} className="text-xs text-muted-foreground">
-              {t(
-                'admin.confirm.reasonHint',
-                'At least {min} characters. Kept in the administrator audit log.',
-                { min: REASON_MIN }
-              )}
-            </p>
-          </div>
-          {requireCode && (
+          <DialogBody className="space-y-4">
+            {children}
             <div className="space-y-1.5">
-              <Label htmlFor={codeId}>
-                {t('admin.confirm.code', 'Code from your authenticator')}
-              </Label>
-              <Input
-                id={codeId}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                className="w-36 font-mono tracking-widest"
+              <Label htmlFor={reasonId}>{t('admin.confirm.reason', 'Reason')}</Label>
+              <Textarea
+                id={reasonId}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                maxLength={REASON_MAX}
+                rows={3}
+                placeholder={t(
+                  'admin.confirm.reasonPlaceholder',
+                  'Ticket or request and why, e.g. "Support case 4411: owner left the company"'
+                )}
+                aria-describedby={`${reasonId}-hint`}
                 required
               />
+              <p id={`${reasonId}-hint`} className="text-xs text-muted-foreground">
+                {t(
+                  'admin.confirm.reasonHint',
+                  'At least {min} characters. Kept in the administrator audit log.',
+                  { min: REASON_MIN }
+                )}
+              </p>
             </div>
-          )}
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+            {requireCode && (
+              <div className="space-y-1.5">
+                <Label htmlFor={codeId}>
+                  {t('admin.confirm.code', 'Code from your authenticator')}
+                </Label>
+                <Input
+                  id={codeId}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="w-36 font-mono tracking-widest"
+                  required
+                />
+              </div>
+            )}
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel', 'Cancel')}
@@ -177,7 +181,7 @@ export function AdminConfirmDialog({
               {confirmLabel}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )

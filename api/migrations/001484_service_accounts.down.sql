@@ -1,5 +1,7 @@
 -- Service accounts go with the kind column: remove them first.
 DELETE FROM users WHERE kind = 'service';
+DROP TRIGGER IF EXISTS trigger_refuse_service_account_identity ON user_identities;
+DROP FUNCTION IF EXISTS refuse_service_account_identity();
 DROP TRIGGER IF EXISTS trigger_refuse_service_account_privileged_role ON user_roles;
 DROP FUNCTION IF EXISTS refuse_service_account_privileged_role();
 DROP TRIGGER IF EXISTS trigger_refuse_service_account_membership ON tenant_members;
