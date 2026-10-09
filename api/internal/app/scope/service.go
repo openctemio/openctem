@@ -30,6 +30,8 @@ type Service struct {
 	guardrails *scopedom.Guardrails
 	// programExcl lists program exclusions for the authority check (RFC-065).
 	programExcl ProgramExclusionReader
+	// letters are the authorization letters letter entries name (letters.go).
+	letters scopedom.LetterRepository
 	// Coverage of the inventory (GetStats): counted in SQL over the
 	// caller's data scope.
 	coverage  CoverageCounter
@@ -83,10 +85,13 @@ type CreateTargetInput struct {
 	// Discovery: discovery from the entry (nil: on). It runs only for a
 	// permanent domain entry (research/53 SC1).
 	Discovery *bool
-	// AuthorizationSource: ownership (default) or self_attestation; both
-	// follow the organization's approval policy. Program entries are created
-	// only by the programs service (RFC-065).
+	// AuthorizationSource: ownership (default), self_attestation or
+	// authorization_letter; all follow the organization's approval policy.
+	// Program entries are created only by the programs service (RFC-065).
 	AuthorizationSource string
+	// LetterID names the letter of an authorization_letter entry: the
+	// tenant's, valid now (RFC-065 §13).
+	LetterID string
 }
 
 // CreateTarget creates a scope entry: effective at once, pending approval,
@@ -147,7 +152,13 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		target.UpdateTags(input.Tags)
 	}
 	target.SetOrigin(entryOrigin(input.Origin, input.Actor, d.request))
-	if err := target.SetAuthorization(source, nil); err != nil {
+	var ref *shared.ID
+	if source == scopedom.AuthLetter {
+		if ref, err = s.letterRef(ctx, tenantID, input.LetterID); err != nil {
+			return nil, err
+		}
+	}
+	if err := target.SetAuthorization(source, ref); err != nil {
 		return nil, err
 	}
 	if input.Discovery != nil {
