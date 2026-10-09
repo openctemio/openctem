@@ -370,6 +370,23 @@ generate-relationships:
 	@echo "Generating relationship types from configs/relationship-types.yaml..."
 	@GOWORK=off $(GOCMD) run ./cmd/gen-relationships
 
+## generate-modules: Regenerate the module registry (Go + TS) from YAML
+##
+## Single source of truth: configs/modules.yaml (RFC-064). Edit the YAML, run
+## this target, commit YAML + the two generated files. If a catalog row
+## changed (id, name, core, release, parent, order...), also add a migration
+## whose body is `make modules-sql`.
+generate-modules:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-modules
+
+## modules-sql: Print the SQL block that writes the modules rows (the body of a registry migration)
+modules-sql:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-modules -sql
+
+## modules-check: Fail when the generated module files or the newest registry migration drifted
+modules-check:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-modules -check
+
 ## generate-asset-types: Regenerate the asset type registry (Go + TS) from YAML
 ##
 ## Single source of truth: configs/asset-types.yaml (RFC-042 §6.3).

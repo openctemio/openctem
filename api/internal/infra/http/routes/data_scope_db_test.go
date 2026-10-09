@@ -206,7 +206,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	registerWebEndpointRoutes(router, handler.NewWebEndpointHandler(webendpointapp.NewService(postgres.NewWebEndpointRepository(db), enforcer), nil, log), auth, nil)
 	registerAssetStateHistoryRoutes(router, historyHandler, auth, nil)
 	registerAssetRelationshipRoutes(router, handler.NewAssetRelationshipHandler(relSvc, v, log), auth, nil, passthrough)
-	registerRelationshipSuggestionRoutes(router, handler.NewRelationshipSuggestionHandler(suggSvc, log), auth, nil)
+	registerRelationshipSuggestionRoutes(router, handler.NewRelationshipSuggestionHandler(suggSvc, log), auth, nil, passthrough)
 	registerAssetDedupRoutes(router, dedupHandler, auth, nil)
 	// A sub-resource with no scope code of its own: the guard alone covers it.
 	router.Group("/api/v1/assets/{id}/owners", func(r Router) {
