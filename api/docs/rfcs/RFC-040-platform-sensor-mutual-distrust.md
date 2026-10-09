@@ -18,7 +18,8 @@
 > P2 scope ledger (§11.5, 2026-10-09): the signer keeps its own ledger of
 > approved scope, fed by the scope service and checked at sign time
 > (`enforce` for new installs, `audit` for upgraded ones until the
-> bootstrap ceremony). Template signing by the signer is next.
+> bootstrap ceremony). Custom template versions are approved through the
+> ledger and listed by digest in the signed job (§11.5).
 > Scope: api (sensor gateway, signer, ingest pipeline, audit, detections) +
 > web (output encoding) + sdk-go (job verification, local policy, credential
 > providers, local audit) + sensor (`openctemio/sensor`) + helm-charts and
@@ -1073,6 +1074,15 @@ installation, `audit` (sign, record `ledger_audit`, warn) for one whose
 signer signed before the ledger existed, `enforce` after an import. This
 mirrors Q3 revised: new installs fail closed, existing ones get an upgrade
 path (the export/import ceremony).
+
+**Custom templates (§5.8).** A template version is approved for sensors
+like a scope widening (the same policy count and rule, never its author)
+and recorded in the ledger by digest; the job statement lists the digests
+of the job's custom templates (`templates`), the signer refuses any it did
+not record (`template_not_in_ledger`), and a sensor that verifies signed
+jobs trusts the templates through the envelope. The per-tenant template
+key the API derives remains only for sensors without signed jobs and is
+removed once signed jobs are required.
 
 **Residual risk until P3.** Approvals are as the API recorded them: an
 attacker in the API process can claim approvals and widen (recorded in the

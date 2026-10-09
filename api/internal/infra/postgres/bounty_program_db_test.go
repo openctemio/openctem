@@ -152,7 +152,7 @@ func TestBountyProgramRepository(t *testing.T) {
 	}
 }
 
-// Program sync columns (migration 001565): source settings, sync state and
+// Program sync columns (migration 001610): source settings, sync state and
 // pending terms round-trip; due programs are listed across tenants; another
 // tenant cannot write them.
 func TestBountyProgramSync(t *testing.T) {
