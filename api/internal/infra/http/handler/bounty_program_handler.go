@@ -348,7 +348,7 @@ func (h *BountyProgramHandler) Reimport(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, ProgramChangeResponse{Program: toProgramResponse(p), Preview: pv})
 }
 
-// Pause handles POST /api/v1/programs/{id}/pause
+// Pause handles POST /api/v1/programs/{id}/suspend
 // @Summary      Pause program
 // @Description  Every entry of the program stops authorizing at once. Audited.
 // @Tags         Programs
@@ -358,7 +358,7 @@ func (h *BountyProgramHandler) Reimport(w http.ResponseWriter, r *http.Request) 
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /programs/{id}/pause [post]
+// @Router       /programs/{id}/suspend [post]
 func (h *BountyProgramHandler) Pause(w http.ResponseWriter, r *http.Request) {
 	h.lifecycle(w, r, audit.ActionBountyProgramPaused, "Program paused", h.svc.Pause)
 }
@@ -398,7 +398,7 @@ func (h *BountyProgramHandler) lifecycle(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, toProgramResponse(p))
 }
 
-// Resume handles POST /api/v1/programs/{id}/resume
+// Resume handles POST /api/v1/programs/{id}/reactivate
 // @Summary      Resume program
 // @Description  Put a paused program's entries back into effect on a new attestation of its current terms (accept_terms_sha256). Needs a recent re-authentication. Audited; administrators are notified.
 // @Tags         Programs
@@ -410,7 +410,7 @@ func (h *BountyProgramHandler) lifecycle(w http.ResponseWriter, r *http.Request,
 // @Failure      404   {object}  apierror.Error
 // @Failure      409   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /programs/{id}/resume [post]
+// @Router       /programs/{id}/reactivate [post]
 func (h *BountyProgramHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	tenantID, actor, ok := h.caller(r)
 	if !ok {
