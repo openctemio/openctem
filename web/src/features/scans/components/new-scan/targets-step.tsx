@@ -45,6 +45,11 @@ import { ScopePreview } from './scope-preview'
 import { firstWildcard, scannerTakesWildcard } from '../../lib/wildcard-targets'
 import { WildcardTargetHint } from './wildcard-target-hint'
 import { TargetLinesInput } from './target-lines-input'
+import { useDebounce } from '@/hooks/use-debounce'
+import { directTargets, MAX_DIRECT_TARGETS } from '../../lib/scan-form'
+
+/** Asset groups listed at once (the API's largest page). */
+const GROUP_PAGE_SIZE = 100
 
 // Target validation patterns (matching backend validator)
 const TARGET_PATTERNS = {
@@ -219,7 +224,22 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
     individual: false,
     custom: true,
   })
-  const { data: assetGroups, isLoading: isLoadingGroups } = useAssetGroups()
+  const [groupSearch, setGroupSearch] = useState('')
+  const debouncedGroupSearch = useDebounce(groupSearch, 300)
+  // One page of 100 groups, by name, searchable: the default page was the
+  // first 20, and every group after it could not be picked.
+  const {
+    data: assetGroups,
+    total: groupTotal,
+    isLoading: isLoadingGroups,
+  } = useAssetGroups({
+    filters: {
+      per_page: GROUP_PAGE_SIZE,
+      sort_by: 'name',
+      sort_order: 'asc',
+      search: debouncedGroupSearch || undefined,
+    },
+  })
 
   // Debounce search query
   useEffect(() => {
@@ -370,6 +390,7 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
     }))
   }
 
+  const directCount = directTargets(data).length
   const hasAssetGroups = data.targets.assetGroupIds.length > 0
   const hasIndividualAssets = data.targets.assetIds.length > 0
   const hasCustomTargets = data.targets.customTargets.length > 0
@@ -444,7 +465,19 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
             />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="border-t p-3">
+            <div className="border-t p-3 space-y-2">
+              {(groupTotal > GROUP_PAGE_SIZE || groupSearch) && (
+                <div className="relative">
+                  <Search className="text-muted-foreground absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
+                  <Input
+                    placeholder="Search asset groups..."
+                    aria-label="Search asset groups"
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                    className="ps-10"
+                  />
+                </div>
+              )}
               {isLoadingGroups ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
@@ -459,7 +492,9 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
                 </div>
               ) : (assetGroups ?? []).length === 0 ? (
                 <p className="text-muted-foreground py-4 text-center text-sm">
-                  No asset groups found. Create one first.
+                  {debouncedGroupSearch
+                    ? `No asset groups match "${debouncedGroupSearch}"`
+                    : 'No asset groups found. Create one first.'}
                 </p>
               ) : (
                 <div className="max-h-48 space-y-1 overflow-y-auto">
@@ -486,6 +521,12 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
                     </div>
                   ))}
                 </div>
+              )}
+              {groupTotal > (assetGroups ?? []).length && (
+                <p className="text-xs text-muted-foreground">
+                  Showing {(assetGroups ?? []).length} of {groupTotal} groups: search to find the
+                  others.
+                </p>
               )}
             </div>
           </CollapsibleContent>
@@ -527,7 +568,9 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
                     return (
                       <Badge key={assetId} variant="secondary" className="gap-1 pe-1">
                         <span className="truncate max-w-[150px]">
-                          {assetMeta?.name ?? assetId.slice(0, 8)}
+                          {assetMeta?.name ??
+                            data.targets.assetNames[assetId] ??
+                            assetId.slice(0, 8)}
                         </span>
                         <Button
                           variant="ghost"
@@ -909,7 +952,11 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
         </fieldset>
       )}
 
-      <ScopePreview targets={previewTargets} sensorPreference={sensorPreference} />
+      <ScopePreview
+        targets={previewTargets}
+        sensorPreference={sensorPreference}
+        scannerName={data.mode === 'single' ? data.scannerName : undefined}
+      />
 
       {/* Selected count summary */}
       <div className="bg-muted/50 rounded-lg border p-3">
@@ -920,6 +967,12 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
         {!hasAssetGroups && !hasIndividualAssets && !hasCustomTargets && (
           <p className="text-muted-foreground mt-2 text-xs">
             Please select at least one target source
+          </p>
+        )}
+        {directCount > MAX_DIRECT_TARGETS && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            {directCount.toLocaleString()} direct targets: a scan takes at most{' '}
+            {MAX_DIRECT_TARGETS.toLocaleString()}. Remove some, or scan them as an asset group.
           </p>
         )}
       </div>
