@@ -32,6 +32,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
@@ -94,6 +95,9 @@ interface AssetOwnersTabProps {
   assetId: string
 }
 
+/** User vs group owner icon colour. */
+const OWNER_KIND_COLOR = { user: 'text-blue-500', group: 'text-purple-500' } // palette-ok: two distinct accents
+
 function OwnershipBadge({ type }: { type: OwnershipType }) {
   const colors = OWNERSHIP_TYPE_COLORS[type]
   return (
@@ -116,7 +120,7 @@ function PickerItemRow({
   onSelect: () => void
 }) {
   const Icon = option.kind === 'user' ? User : Building2
-  const iconColor = option.kind === 'user' ? 'text-blue-500' : 'text-purple-500'
+  const iconColor = option.kind === 'user' ? OWNER_KIND_COLOR.user : OWNER_KIND_COLOR.group
   return (
     <CommandItem
       // Including kind in the value lets Radix's selection state distinguish
@@ -589,7 +593,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           // buttons) always remains reachable, even when the dialog content
           // is taller than the viewport. Without this the buttons could be
           // pushed below the visible area on short screens.
-          className="max-h-[90vh] overflow-y-auto"
+
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
@@ -600,65 +604,68 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
               can see the asset; a user owner gains no access.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Unified picker — both users and groups in a single list,
+          <DialogBody>
+            <div className="space-y-4">
+              {/* Unified picker — both users and groups in a single list,
                 grouped into "Users" and "Groups" sections. The previous
                 version had a separate "Owner Type" Select that operators
                 kept missing, leading them to believe only groups were
                 assignable. */}
-            <div className="space-y-2">
-              <Label>Owner</Label>
-              <Popover
-                open={pickerOpen}
-                onOpenChange={(open) => {
-                  setPickerOpen(open)
-                  // Clear search when popover closes so reopening starts fresh
-                  if (!open) setSearchValue('')
-                }}
-                modal
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={pickerOpen}
-                    // The trigger shows the label plus a small icon hinting
-                    // at the kind (User vs Group). Never the sublabel — we
-                    // learned the hard way that rendering long emails inline
-                    // can blow out the dialog width.
-                    className="w-full min-w-0 overflow-hidden justify-between font-normal"
-                    title={selectedOption?.label}
-                  >
-                    <span className="flex-1 min-w-0 flex items-center gap-2 text-start text-sm">
-                      {selectedOption ? (
-                        <>
-                          {selectedOption.kind === 'user' ? (
-                            <User className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-                          ) : (
-                            <Building2 className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                          )}
-                          <span className="truncate">{selectedOption.label}</span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">Select a user or group…</span>
-                      )}
-                    </span>
-                    <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-[var(--radix-popover-trigger-width)] p-0"
-                  align="start"
-                  // Same nested-dialog guards: prevent the parent dialog from
-                  // interpreting clicks inside the popover as outside-clicks.
-                  onPointerDownOutside={(e) => {
-                    const target = e.target as HTMLElement | null
-                    if (target?.closest('[data-radix-popper-content-wrapper]')) {
-                      e.preventDefault()
-                    }
+              <div className="space-y-2">
+                <Label>Owner</Label>
+                <Popover
+                  open={pickerOpen}
+                  onOpenChange={(open) => {
+                    setPickerOpen(open)
+                    // Clear search when popover closes so reopening starts fresh
+                    if (!open) setSearchValue('')
                   }}
+                  modal
                 >
-                  {/*
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={pickerOpen}
+                      // The trigger shows the label plus a small icon hinting
+                      // at the kind (User vs Group). Never the sublabel — we
+                      // learned the hard way that rendering long emails inline
+                      // can blow out the dialog width.
+                      className="w-full min-w-0 overflow-hidden justify-between font-normal"
+                      title={selectedOption?.label}
+                    >
+                      <span className="flex-1 min-w-0 flex items-center gap-2 text-start text-sm">
+                        {selectedOption ? (
+                          <>
+                            {selectedOption.kind === 'user' ? (
+                              <User className={cn('h-3.5 w-3.5 shrink-0', OWNER_KIND_COLOR.user)} />
+                            ) : (
+                              <Building2
+                                className={cn('h-3.5 w-3.5 shrink-0', OWNER_KIND_COLOR.group)}
+                              />
+                            )}
+                            <span className="truncate">{selectedOption.label}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">Select a user or group…</span>
+                        )}
+                      </span>
+                      <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-[var(--radix-popover-trigger-width)] p-0"
+                    align="start"
+                    // Same nested-dialog guards: prevent the parent dialog from
+                    // interpreting clicks inside the popover as outside-clicks.
+                    onPointerDownOutside={(e) => {
+                      const target = e.target as HTMLElement | null
+                      if (target?.closest('[data-radix-popper-content-wrapper]')) {
+                        e.preventDefault()
+                      }
+                    }}
+                  >
+                    {/*
                     shouldFilter={false} disables Radix Command's client-side
                     filtering. The server is the authoritative filter — we
                     pass `searchValue` straight to the API. Otherwise Radix
@@ -666,132 +673,133 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                     which would HIDE results that matched the server query
                     but didn't happen to match Radix's local fuzzy match.
                   */}
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      value={searchValue}
-                      onValueChange={setSearchValue}
-                      placeholder="Search by name, email, or group…"
-                    />
-                    <CommandList>
-                      {pickerLoading ? (
-                        <div className="py-6 text-center text-sm text-muted-foreground">
-                          Loading…
-                        </div>
-                      ) : totalOptions === 0 ? (
-                        <CommandEmpty>
-                          <div className="space-y-1">
-                            <p>
-                              {debouncedSearch
-                                ? `No users or groups match "${debouncedSearch}".`
-                                : 'No users or groups available.'}
-                            </p>
-                            {/* Tell the user *why* the picker may be empty
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        value={searchValue}
+                        onValueChange={setSearchValue}
+                        placeholder="Search by name, email, or group…"
+                      />
+                      <CommandList>
+                        {pickerLoading ? (
+                          <div className="py-6 text-center text-sm text-muted-foreground">
+                            Loading…
+                          </div>
+                        ) : totalOptions === 0 ? (
+                          <CommandEmpty>
+                            <div className="space-y-1">
+                              <p>
+                                {debouncedSearch
+                                  ? `No users or groups match "${debouncedSearch}".`
+                                  : 'No users or groups available.'}
+                              </p>
+                              {/* Tell the user *why* the picker may be empty
                                 when the only reason is "everything is
                                 already an owner". Otherwise the empty
                                 state looks like a bug. */}
-                            {totalTaken > 0 && !debouncedSearch && (
-                              <p className="text-[11px]">
-                                {totalTaken} owner
-                                {totalTaken === 1 ? ' is' : 's are'} already assigned to this asset
-                                and therefore hidden.
-                              </p>
-                            )}
-                          </div>
-                        </CommandEmpty>
-                      ) : (
-                        <>
-                          {userOptions.length > 0 && (
-                            <CommandGroup heading="Users">
-                              {userOptions.map((option) => (
-                                <PickerItemRow
-                                  key={`user:${option.id}`}
-                                  option={option}
-                                  selected={
-                                    selectedOption?.kind === 'user' &&
-                                    selectedOption.id === option.id
-                                  }
-                                  onSelect={() => {
-                                    setSelectedOption(option)
-                                    setPickerOpen(false)
-                                    setSearchValue('')
-                                  }}
-                                />
-                              ))}
-                            </CommandGroup>
-                          )}
-                          {groupOptions.length > 0 && (
-                            <CommandGroup heading="Groups">
-                              {groupOptions.map((option) => (
-                                <PickerItemRow
-                                  key={`group:${option.id}`}
-                                  option={option}
-                                  selected={
-                                    selectedOption?.kind === 'group' &&
-                                    selectedOption.id === option.id
-                                  }
-                                  onSelect={() => {
-                                    setSelectedOption(option)
-                                    setPickerOpen(false)
-                                    setSearchValue('')
-                                  }}
-                                />
-                              ))}
-                            </CommandGroup>
-                          )}
-                          {/* Hint when EITHER list is capped at PICKER_PAGE_SIZE
-                              — encourages user to refine their search */}
-                          {(userOptions.length >= PICKER_PAGE_SIZE ||
-                            groupOptions.length >= PICKER_PAGE_SIZE) && (
-                            <div className="border-t px-3 py-2 text-[11px] text-muted-foreground text-center">
-                              Showing first {PICKER_PAGE_SIZE} per section — type to refine
+                              {totalTaken > 0 && !debouncedSearch && (
+                                <p className="text-[11px]">
+                                  {totalTaken} owner
+                                  {totalTaken === 1 ? ' is' : 's are'} already assigned to this
+                                  asset and therefore hidden.
+                                </p>
+                              )}
                             </div>
-                          )}
-                        </>
-                      )}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {/* Show the selected option's sublabel (email for users,
+                          </CommandEmpty>
+                        ) : (
+                          <>
+                            {userOptions.length > 0 && (
+                              <CommandGroup heading="Users">
+                                {userOptions.map((option) => (
+                                  <PickerItemRow
+                                    key={`user:${option.id}`}
+                                    option={option}
+                                    selected={
+                                      selectedOption?.kind === 'user' &&
+                                      selectedOption.id === option.id
+                                    }
+                                    onSelect={() => {
+                                      setSelectedOption(option)
+                                      setPickerOpen(false)
+                                      setSearchValue('')
+                                    }}
+                                  />
+                                ))}
+                              </CommandGroup>
+                            )}
+                            {groupOptions.length > 0 && (
+                              <CommandGroup heading="Groups">
+                                {groupOptions.map((option) => (
+                                  <PickerItemRow
+                                    key={`group:${option.id}`}
+                                    option={option}
+                                    selected={
+                                      selectedOption?.kind === 'group' &&
+                                      selectedOption.id === option.id
+                                    }
+                                    onSelect={() => {
+                                      setSelectedOption(option)
+                                      setPickerOpen(false)
+                                      setSearchValue('')
+                                    }}
+                                  />
+                                ))}
+                              </CommandGroup>
+                            )}
+                            {/* Hint when EITHER list is capped at PICKER_PAGE_SIZE
+                              — encourages user to refine their search */}
+                            {(userOptions.length >= PICKER_PAGE_SIZE ||
+                              groupOptions.length >= PICKER_PAGE_SIZE) && (
+                              <div className="border-t px-3 py-2 text-[11px] text-muted-foreground text-center">
+                                Showing first {PICKER_PAGE_SIZE} per section — type to refine
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {/* Show the selected option's sublabel (email for users,
                   description for groups) below the button where it can
                   wrap freely without breaking the dialog layout. */}
-              {selectedOption?.sublabel && (
-                <p className="text-xs text-muted-foreground break-words">
-                  {selectedOption.sublabel}
-                </p>
-              )}
-            </div>
+                {selectedOption?.sublabel && (
+                  <p className="text-xs text-muted-foreground break-words">
+                    {selectedOption.sublabel}
+                  </p>
+                )}
+              </div>
 
-            {/* Ownership role — SelectItem children intentionally show ONLY
+              {/* Ownership role — SelectItem children intentionally show ONLY
                 the label (e.g. "Primary"). The description for the currently
                 selected role is the single helper line below the dropdown.
                 Putting the description inside the SelectItem made Radix
                 render it inside the trigger AS WELL, creating a 2-line
                 trigger and a duplicate of the helper text. */}
-            <div className="space-y-2">
-              <Label>Ownership Role</Label>
-              <Select
-                value={addOwnershipType}
-                onValueChange={(v) => setAddOwnershipType(v as OwnershipType)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
-                    ([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {OWNERSHIP_TYPE_DESCRIPTIONS[addOwnershipType]}
-              </p>
+              <div className="space-y-2">
+                <Label>Ownership Role</Label>
+                <Select
+                  value={addOwnershipType}
+                  onValueChange={(v) => setAddOwnershipType(v as OwnershipType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
+                      ([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {OWNERSHIP_TYPE_DESCRIPTIONS[addOwnershipType]}
+                </p>
+              </div>
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button
               variant="outline"
@@ -822,24 +830,26 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
               {editOwner?.userName || editOwner?.groupName || 'this owner'}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>Ownership Type</Label>
-            <Select
-              value={editOwnershipType}
-              onValueChange={(v) => setEditOwnershipType(v as OwnershipType)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(OWNERSHIP_TYPE_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <DialogBody>
+            <div className="space-y-2">
+              <Label>Ownership Type</Label>
+              <Select
+                value={editOwnershipType}
+                onValueChange={(v) => setEditOwnershipType(v as OwnershipType)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(OWNERSHIP_TYPE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOwner(null)}>
               Cancel

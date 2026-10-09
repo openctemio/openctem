@@ -11,6 +11,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -68,7 +69,7 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PlayCircle className="h-5 w-5" />
@@ -80,82 +81,84 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
           </DialogDescription>
         </DialogHeader>
 
-        {!report && !loading && !error && (
-          <div className="py-4 text-sm text-muted-foreground">
-            Click <span className="font-medium">Run now</span> to preview how many assets would
-            transition with your current settings.
-          </div>
-        )}
-
-        {loading && (
-          <div className="space-y-3 py-2">
-            <Skeleton className="h-5 w-2/3" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        )}
-
-        {error && (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Dry-run failed</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {report && (
-          <div className="space-y-4">
-            <Alert>
-              <CheckCircle2 className="h-4 w-4" />
-              <AlertTitle>Dry-run complete</AlertTitle>
-              <AlertDescription>
-                Finished in {durationSeconds(report)}s. Nothing was written. Review the counts below
-                before enabling the feature.
-              </AlertDescription>
-            </Alert>
-
-            <div className="grid grid-cols-2 gap-3">
-              <StatBox
-                label="Would be flagged stale"
-                value={report.transitioned_to_stale.toLocaleString()}
-                emphasize={report.transitioned_to_stale > 0}
-              />
-              <StatBox label="Stale threshold" value={`${report.stale_threshold_days}d`} />
-              <StatBox label="Grace period" value={`${report.grace_period_days}d`} />
-              <StatBox
-                label="Excluded source types"
-                value={report.excluded_source_types.join(', ') || '—'}
-              />
+        <DialogBody className="grid gap-4">
+          {!report && !loading && !error && (
+            <div className="py-4 text-sm text-muted-foreground">
+              Click <span className="font-medium">Run now</span> to preview how many assets would
+              transition with your current settings.
             </div>
+          )}
 
-            {report.skipped && (
+          {loading && (
+            <div className="space-y-3 py-2">
+              <Skeleton className="h-5 w-2/3" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          )}
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Dry-run failed</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {report && (
+            <div className="space-y-4">
               <Alert>
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Tenant skipped</AlertTitle>
+                <CheckCircle2 className="h-4 w-4" />
+                <AlertTitle>Dry-run complete</AlertTitle>
                 <AlertDescription>
-                  Reason: <span className="font-mono">{report.skip_reason}</span>. When the worker
-                  runs live the same condition will cause it to no-op.
+                  Finished in {durationSeconds(report)}s. Nothing was written. Review the counts
+                  below before enabling the feature.
                 </AlertDescription>
               </Alert>
-            )}
 
-            {report.affected_asset_ids && report.affected_asset_ids.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-sm font-medium">
-                  Sample affected assets ({report.affected_asset_ids.length} of up to 100):
-                </p>
-                <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto rounded border bg-muted/30 p-2">
-                  {report.affected_asset_ids.map((id) => (
-                    <Badge key={id} variant="outline" className="font-mono text-xs">
-                      {id.slice(0, 8)}
-                    </Badge>
-                  ))}
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <StatBox
+                  label="Would be flagged stale"
+                  value={report.transitioned_to_stale.toLocaleString()}
+                  emphasize={report.transitioned_to_stale > 0}
+                />
+                <StatBox label="Stale threshold" value={`${report.stale_threshold_days}d`} />
+                <StatBox label="Grace period" value={`${report.grace_period_days}d`} />
+                <StatBox
+                  label="Excluded source types"
+                  value={report.excluded_source_types.join(', ') || '—'}
+                />
               </div>
-            )}
-          </div>
-        )}
+
+              {report.skipped && (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Tenant skipped</AlertTitle>
+                  <AlertDescription>
+                    Reason: <span className="font-mono">{report.skip_reason}</span>. When the worker
+                    runs live the same condition will cause it to no-op.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {report.affected_asset_ids && report.affected_asset_ids.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    Sample affected assets ({report.affected_asset_ids.length} of up to 100):
+                  </p>
+                  <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto rounded border bg-muted/30 p-2">
+                    {report.affected_asset_ids.map((id) => (
+                      <Badge key={id} variant="outline" className="font-mono text-xs">
+                        {id.slice(0, 8)}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

@@ -26,6 +26,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -256,7 +257,7 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -266,214 +267,212 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
           </DialogDescription>
         </DialogHeader>
 
-        {blocked ? (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>{t('scope.error.REQUEST_NOT_ALLOWED')}</AlertDescription>
-          </Alert>
-        ) : (
-          <form
-            id={formId}
-            onSubmit={submit}
-            className="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-1"
-          >
-            {error && (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+        <DialogBody>
+          {blocked ? (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>{t('scope.error.REQUEST_NOT_ALLOWED')}</AlertDescription>
+            </Alert>
+          ) : (
+            <form id={formId} onSubmit={submit} className="space-y-4">
+              {error && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
 
-            <div className="space-y-2">
-              <Label htmlFor={`${formId}-name`}>What</Label>
-              <Input
-                id={`${formId}-name`}
-                value={name}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder={SCOPE_KIND_PLACEHOLDER[type]}
-                onChange={(e) => {
-                  const v = e.target.value
-                  const apex = wildcardApex(v)
-                  // Typing "*.x" picks "x and every name below it".
-                  if (apex && !isRequest) {
-                    setName(apex)
-                    setCoverage('subdomains')
-                    setCoverageTouched(true)
-                  } else {
-                    setName(v)
-                    if (!coverageTouched) setCoverage(defaultCoverage(v))
-                  }
-                  setError(null)
-                }}
-              />
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {override ? (
-                  <>
-                    <span>Kind:</span>
-                    <ScopeTargetTypeSelect
-                      value={override}
-                      onValueChange={(v) => setOverride(v as ScopeKind)}
-                      only={isRequest ? REQUESTABLE_TARGET_TYPES : undefined}
-                      className="h-7 w-44 text-xs"
-                      aria-label="Kind"
-                    />
-                    <button
-                      type="button"
-                      className="underline underline-offset-2 hover:text-foreground"
-                      onClick={() => setOverride(null)}
-                    >
-                      Detect it
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span aria-live="polite">
-                      {name.trim()
-                        ? detected
-                          ? `Detected: ${SCOPE_KIND_LABEL[detected]}`
-                          : 'Kind not recognised'
-                        : 'A domain, IP address, IP range, URL, repository or cloud account.'}
-                    </span>
-                    {name.trim() && (
+              <div className="space-y-2">
+                <Label htmlFor={`${formId}-name`}>What</Label>
+                <Input
+                  id={`${formId}-name`}
+                  value={name}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={SCOPE_KIND_PLACEHOLDER[type]}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    const apex = wildcardApex(v)
+                    // Typing "*.x" picks "x and every name below it".
+                    if (apex && !isRequest) {
+                      setName(apex)
+                      setCoverage('subdomains')
+                      setCoverageTouched(true)
+                    } else {
+                      setName(v)
+                      if (!coverageTouched) setCoverage(defaultCoverage(v))
+                    }
+                    setError(null)
+                  }}
+                />
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  {override ? (
+                    <>
+                      <span>Kind:</span>
+                      <ScopeTargetTypeSelect
+                        value={override}
+                        onValueChange={(v) => setOverride(v as ScopeKind)}
+                        only={isRequest ? REQUESTABLE_TARGET_TYPES : undefined}
+                        className="h-7 w-44 text-xs"
+                        aria-label="Kind"
+                      />
                       <button
                         type="button"
                         className="underline underline-offset-2 hover:text-foreground"
-                        onClick={() => setOverride(detected ?? 'domain')}
+                        onClick={() => setOverride(null)}
                       >
-                        {detected ? 'Change' : 'Pick the kind'}
+                        Detect it
                       </button>
-                    )}
-                  </>
-                )}
+                    </>
+                  ) : (
+                    <>
+                      <span aria-live="polite">
+                        {name.trim()
+                          ? detected
+                            ? `Detected: ${SCOPE_KIND_LABEL[detected]}`
+                            : 'Kind not recognised'
+                          : 'A domain, IP address, IP range, URL, repository or cloud account.'}
+                      </span>
+                      {name.trim() && (
+                        <button
+                          type="button"
+                          className="underline underline-offset-2 hover:text-foreground"
+                          onClick={() => setOverride(detected ?? 'domain')}
+                        >
+                          {detected ? 'Change' : 'Pick the kind'}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {isDomain && !isRequest && (
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Covers</legend>
-                <RadioGroup
-                  value={coverage}
-                  onValueChange={(v) => {
-                    setCoverage(v as DomainCoverage)
-                    setCoverageTouched(true)
-                  }}
-                  className="gap-2"
-                >
-                  <CoverageOption
-                    value="subdomains"
-                    title={`${name.trim() || 'example.com'} and every name below it`}
-                    hint={`Pattern *.${name.trim() || 'example.com'}. Add an exclusion of exactly the domain to leave it out.`}
-                  />
-                  <CoverageOption
-                    value="name"
-                    title={`${name.trim() || 'example.com'} only`}
-                    hint="Names below it stay out of scope."
-                  />
-                </RadioGroup>
-              </fieldset>
-            )}
+              {isDomain && !isRequest && (
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Covers</legend>
+                  <RadioGroup
+                    value={coverage}
+                    onValueChange={(v) => {
+                      setCoverage(v as DomainCoverage)
+                      setCoverageTouched(true)
+                    }}
+                    className="gap-2"
+                  >
+                    <CoverageOption
+                      value="subdomains"
+                      title={`${name.trim() || 'example.com'} and every name below it`}
+                      hint={`Pattern *.${name.trim() || 'example.com'}. Add an exclusion of exactly the domain to leave it out.`}
+                    />
+                    <CoverageOption
+                      value="name"
+                      title={`${name.trim() || 'example.com'} only`}
+                      hint="Names below it stay out of scope."
+                    />
+                  </RadioGroup>
+                </fieldset>
+              )}
 
-            {!isRequest && (
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Duration</legend>
-                <RadioGroup
-                  value={duration}
-                  onValueChange={(v) => setDuration(v as ScopeEntryDuration)}
-                  className="gap-2"
-                >
-                  <CoverageOption
-                    value="permanent"
-                    title="Permanent"
-                    hint="Stays until someone removes it. Names found under it join the inventory."
-                  />
-                  <CoverageOption
-                    value="one_off"
-                    title="One-off"
-                    hint="Expires on its own. Authorizes scans only; found names still need review."
-                    disabled={!oneOffAllowed}
-                  />
-                </RadioGroup>
-              </fieldset>
-            )}
+              {!isRequest && (
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Duration</legend>
+                  <RadioGroup
+                    value={duration}
+                    onValueChange={(v) => setDuration(v as ScopeEntryDuration)}
+                    className="gap-2"
+                  >
+                    <CoverageOption
+                      value="permanent"
+                      title="Permanent"
+                      hint="Stays until someone removes it. Names found under it join the inventory."
+                    />
+                    <CoverageOption
+                      value="one_off"
+                      title="One-off"
+                      hint="Expires on its own. Authorizes scans only; found names still need review."
+                      disabled={!oneOffAllowed}
+                    />
+                  </RadioGroup>
+                </fieldset>
+              )}
 
-            {effectiveDuration === 'one_off' && (
+              {effectiveDuration === 'one_off' && (
+                <div className="space-y-2">
+                  <Label htmlFor={`${formId}-days`}>Days</Label>
+                  <Input
+                    id={`${formId}-days`}
+                    type="number"
+                    min={1}
+                    max={dayCap}
+                    value={days}
+                    onChange={(e) => setDays(Number(e.target.value))}
+                    className="w-28"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    1 to {dayCap} days (your organization&apos;s limit
+                    {tier === 't2' ? ' for intrusive entries' : ''}).
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-2">
-                <Label htmlFor={`${formId}-days`}>Days</Label>
-                <Input
-                  id={`${formId}-days`}
-                  type="number"
-                  min={1}
-                  max={dayCap}
-                  value={days}
-                  onChange={(e) => setDays(Number(e.target.value))}
-                  className="w-28"
+                <Label htmlFor={`${formId}-tier`}>Deepest probe allowed</Label>
+                <Select value={tier} onValueChange={(v) => setTier(v as ScopeTier)}>
+                  <SelectTrigger id={`${formId}-tier`} className="w-full sm:w-56">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(isRequest ? ['t0', 't1'] : ['t0', 't1', 't2']).map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {TIER_LABEL[k]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{TIER_HINT[tier]}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`${formId}-reason`}>Reason{needsReason ? '' : ' (optional)'}</Label>
+                <Textarea
+                  id={`${formId}-reason`}
+                  rows={2}
+                  value={reason}
+                  maxLength={1000}
+                  placeholder="Why may this be probed? For example: our domain, registrar account 123; pentest ticket OPS-12."
+                  onChange={(e) => {
+                    setReason(e.target.value)
+                    setError(null)
+                  }}
                 />
-                <p className="text-xs text-muted-foreground">
-                  1 to {dayCap} days (your organization&apos;s limit
-                  {tier === 't2' ? ' for intrusive entries' : ''}).
+                <p className="text-xs text-muted-foreground">Kept in the audit log.</p>
+              </div>
+
+              {!isRequest && (
+                <div className="space-y-2">
+                  <Label htmlFor={`${formId}-desc`}>Description (optional)</Label>
+                  <Input
+                    id={`${formId}-desc`}
+                    value={description}
+                    maxLength={1000}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm" aria-live="polite">
+                <p className="font-medium">{summary}</p>
+                <p className="text-muted-foreground">
+                  {approvals > 0
+                    ? `Needs ${approvals} ${approvals === 1 ? 'approval' : 'approvals'} from ${isRequest ? 'a scope approver' : 'another approver'}; it authorizes nothing until then.`
+                    : 'Takes effect at once. You may be asked to confirm your identity first.'}
                 </p>
               </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor={`${formId}-tier`}>Deepest probe allowed</Label>
-              <Select value={tier} onValueChange={(v) => setTier(v as ScopeTier)}>
-                <SelectTrigger id={`${formId}-tier`} className="w-full sm:w-56">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(isRequest ? ['t0', 't1'] : ['t0', 't1', 't2']).map((k) => (
-                    <SelectItem key={k} value={k}>
-                      {TIER_LABEL[k]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">{TIER_HINT[tier]}</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor={`${formId}-reason`}>Reason{needsReason ? '' : ' (optional)'}</Label>
-              <Textarea
-                id={`${formId}-reason`}
-                rows={2}
-                value={reason}
-                maxLength={1000}
-                placeholder="Why may this be probed? For example: our domain, registrar account 123; pentest ticket OPS-12."
-                onChange={(e) => {
-                  setReason(e.target.value)
-                  setError(null)
-                }}
-              />
-              <p className="text-xs text-muted-foreground">Kept in the audit log.</p>
-            </div>
-
-            {!isRequest && (
-              <div className="space-y-2">
-                <Label htmlFor={`${formId}-desc`}>Description (optional)</Label>
-                <Input
-                  id={`${formId}-desc`}
-                  value={description}
-                  maxLength={1000}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
-            )}
-
-            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm" aria-live="polite">
-              <p className="font-medium">{summary}</p>
-              <p className="text-muted-foreground">
-                {approvals > 0
-                  ? `Needs ${approvals} ${approvals === 1 ? 'approval' : 'approvals'} from ${isRequest ? 'a scope approver' : 'another approver'}; it authorizes nothing until then.`
-                  : 'Takes effect at once. You may be asked to confirm your identity first.'}
-              </p>
-            </div>
-          </form>
-        )}
+            </form>
+          )}
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>

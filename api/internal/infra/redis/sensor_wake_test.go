@@ -133,3 +133,59 @@ func TestSensorWakeBusNeverBlocks(t *testing.T) {
 		t.Fatalf("local wakes %d", len(w))
 	}
 }
+
+// The publish queue is shared by every tenant: one tenant flooding wakes
+// (many sensors, so no per-key coalescing applies) holds at most its quota
+// of it, so another tenant's wake is still queued; the flooding tenant's
+// excess is folded into one tenant-wide wake queued when its first queued
+// wake is published (research/84 RE-12).
+func TestSensorWakeBus_OneTenantFloodDoesNotDropAnothersWake(t *testing.T) {
+	hub := &recordingHub{}
+	// Not started: nothing is published, the queue only fills.
+	bus := newSensorWakeBus(redislib.NewClient(&redislib.Options{Addr: "127.0.0.1:1"}), hub, logger.NewNop())
+	noisy, quiet := shared.NewID().String(), shared.NewID().String()
+	for range sensorWakeQueue * 2 {
+		bus.Wake(noisy, shared.NewID().String())
+	}
+	quietSensor := shared.NewID().String()
+	bus.Wake(quiet, quietSensor)
+
+	if got := len(bus.queue); got != sensorWakeTenantQuota+1 {
+		t.Fatalf("queued %d wakes, want the noisy tenant's quota (%d) plus the quiet one", got, sensorWakeTenantQuota)
+	}
+	var sawQuiet bool
+	var first sensorWake
+	n := len(bus.queue)
+	for i := range n {
+		w := <-bus.queue
+		if i == 0 {
+			first = w
+		}
+		if w.TenantID == quiet && w.SensorID == quietSensor {
+			sawQuiet = true
+		}
+		bus.queue <- w
+	}
+	if !sawQuiet {
+		t.Fatal("the quiet tenant's wake was dropped")
+	}
+
+	// Publishing one of the noisy tenant's wakes queues its owed
+	// tenant-wide wake (the folded excess), once.
+	<-bus.queue
+	bus.dequeued(first)
+	var owed int
+	for range len(bus.queue) {
+		w := <-bus.queue
+		if w.TenantID == noisy && w.SensorID == "" && !w.All {
+			owed++
+		}
+	}
+	if owed != 1 {
+		t.Fatalf("owed tenant-wide wakes queued = %d, want 1", owed)
+	}
+	// Every local stream was still woken directly.
+	if w, _ := hub.snapshot(); len(w) != sensorWakeQueue*2+1 {
+		t.Fatalf("local wakes %d", len(w))
+	}
+}

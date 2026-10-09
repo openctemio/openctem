@@ -4,15 +4,15 @@ import "testing"
 
 func TestCSVSafeNeutralisesFormulas(t *testing.T) {
 	for in, want := range map[string]string{
-		"=HYPERLINK(\"http://x\")": "'=HYPERLINK(\"http://x\")",
-		"+1":                       "'+1",
-		"-2+3":                     "'-2+3",
-		"@SUM(A1)":                 "'@SUM(A1)",
-		"\tx":                      "'\tx",
-		"\rx":                      "'\rx",
-		"plain":                    "plain",
-		"":                         "",
-		"a=b":                      "a=b",
+		"=HYPERLINK(\"http://x\")":  "'=HYPERLINK(\"http://x\")",
+		"+1":                        "'+1",
+		"-2+3":                      "'-2+3",
+		"@SUM(A1)":                  "'@SUM(A1)",
+		"\tx":                       "'\tx",
+		"\rx":                       "'\rx",
+		"plain":                     "plain",
+		"":                          "",
+		"a=b":                       "a=b",
 		" =HYPERLINK(\"http://x\")": "' =HYPERLINK(\"http://x\")",
 		"\n@SUM(A1)":                "'\n@SUM(A1)",
 	} {

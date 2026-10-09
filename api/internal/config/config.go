@@ -297,6 +297,16 @@ type SensorConfigConfig struct {
 	// manifest again, so the sensor goes back to full heartbeats.
 	SlimHeartbeat bool
 
+	// SignerSocket is the Unix socket of the job signer (cmd/signer,
+	// RFC-040 §5.6, docs/architecture/job-signing.md): SIGNER_SOCKET.
+	// Empty (the default): jobs are not signed and claims are as before.
+	// Set: every command a claim hands a sensor carries a signed job, and a
+	// command the signer does not sign is not handed out.
+	SignerSocket string
+	// SignerTimeout bounds one call to the signer: SIGNER_TIMEOUT, default
+	// 2s.
+	SignerTimeout time.Duration
+
 	// Heartbeat doorbell (RFC-023 §9.2a): the intervals the heartbeat
 	// response advises in next_heartbeat_seconds. Every value is clamped to
 	// [HeartbeatMinInterval, HeartbeatMaxInterval], and the maximum to half
@@ -1137,6 +1147,8 @@ func Load() (*Config, error) {
 
 			KeyRenewBefore:          getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
 			SlimHeartbeat:           getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
+			SignerSocket:            getEnv("SIGNER_SOCKET", ""),
+			SignerTimeout:           getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
 			HeartbeatInterval:       getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
 			HeartbeatBusyInterval:   getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
 			HeartbeatLoadedInterval: getEnvDuration("SENSOR_HEARTBEAT_LOADED_INTERVAL", 2*time.Minute),
