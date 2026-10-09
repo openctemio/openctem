@@ -53,8 +53,11 @@ Coverage tests read the registry:
 ## State
 
 ```
-enabled(org, module) = core(module)
-                    || !(explicit_off(org, module) || outside_bundles(org, module))
+on(org, module) = core(module)
+               || (entitled(org, module) && !explicit_off(org, module))
+
+entitled(org, module) = !deny(org, module)
+                     && (plan_includes(plan(org), module) || grant(org, module))
 ```
 
 - **Core** (`CoreModuleIDs`, and `modules.is_core`, which a parity test keeps
@@ -64,15 +67,25 @@ enabled(org, module) = core(module)
 - **Explicit overrides:** `tenant_modules`, written by Settings > Modules
   (team admin with `settings:write`). Every change is audited as
   `tenant.modules_updated`.
-- **Bundles:** `tenants.settings.subscribed_bundles`. When set, every
-  non-core module outside the bundles is off unless an override turns it on.
-- **Presets** write overrides once and change nothing else.
-- **Failures fail open:** a lookup error, or bundles that are all unknown,
-  disables nothing.
+- **Entitlements** (`internal/app/entitlement`, RFC-064): the plan to module
+  map (`platform_settings['plan_modules']`, every module for every plan until
+  a super admin narrows it in Console > System > Plans) and the grants and
+  denies of one organization (`tenant_module_grants`, Console >
+  Organizations > Plan, ops admin and up, with a reason and an optional
+  expiry). Changes are in the admin audit log and refresh the organization's
+  module state at once (a plan mapping change refreshes every organization).
+  An organization cannot switch on a module it is not entitled to.
+- **Presets** write overrides once (Settings > Modules, or the starting set
+  picked at onboarding) and change nothing else. The organization-chosen
+  product bundles are retired: packaging is the plan's.
+- **Failures:** a preference read error fails open (nothing disabled); an
+  entitlement read error fails closed: every non-core module is
+  `unavailable` and the gate answers 503 until it can be read again.
 
-Plans do not gate modules today; they set numeric limits
-([plans-and-limits.md](plans-and-limits.md)). Entitlements per plan are
-RFC-064 M3.
+Each off module has a reason, returned in `MODULE_NOT_ENABLED` details:
+`not_entitled`, `disabled_by_admin` (403) or `unavailable` (503). The console
+says "Not in your plan" (with no way to turn it on) or "Turned off for your
+organization" (with Settings > Modules for an administrator).
 
 ## Where a module is enforced
 

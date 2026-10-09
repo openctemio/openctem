@@ -218,8 +218,8 @@ organization, so this can be layered on later.
 | Step | Content | Status |
 |---|---|---|
 | M0 | SLA core; every surface (MCP, AI triage, automations, remediation progress); cross-replica invalidation; console refresh; catalog cleanup; permissions under live modules; console consistency | #1583, #1590, #1594, #1596 |
-| M1 | `details.reason` on `MODULE_NOT_ENABLED`; one `ModuleUnavailable` console state | next |
-| M2 | Registry, generators and coverage tests | after M1 |
-| M3 | Entitlements: plan mapping, grants, admin console pages, organization view | after M2 |
+| M1 | `details.reason` on `MODULE_NOT_ENABLED` | #1605 |
+| M2 | Registry, generators and coverage tests | #1619 |
+| M3 | Entitlements: plan mapping, grants, admin console pages, organization view, reasons in the console | this step's PR |
 | M4 | Downgrade grace, schedule pause and resume | after M3 |
-| M5 | Bundles move to the platform; the organization bundle endpoint is removed | with M3 |
+| M5 | Organization bundles retired (packaging is the plan's; presets remain for preferences) | with M3 |
