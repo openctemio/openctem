@@ -22,7 +22,9 @@ type SchedulePreviewInput struct {
 	ScheduleRRule string
 	ScheduleDay   *int
 	ScheduleTime  *time.Time
-	Timezone      string
+	// RunAt is the one run of a once schedule.
+	RunAt    *time.Time
+	Timezone string
 	// Count is how many occurrences to list (1..scan.MaxUpcomingOccurrences;
 	// 0 means DefaultSchedulePreviewCount).
 	Count int
@@ -58,6 +60,7 @@ func PreviewSchedule(input SchedulePreviewInput, now time.Time) (*SchedulePrevie
 		ScheduleRRule: input.ScheduleRRule,
 		ScheduleDay:   input.ScheduleDay,
 		ScheduleTime:  input.ScheduleTime,
+		RunAt:         input.RunAt,
 		Timezone:      input.Timezone,
 	}); err != nil {
 		return nil, err

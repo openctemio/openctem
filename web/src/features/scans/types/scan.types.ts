@@ -97,7 +97,14 @@ export interface ScanSchedule {
   runImmediately: boolean
   frequency?: ScheduleFrequency
   dayOfWeek?: number // 0 = Sunday, 1 = Monday, etc.
+  /** Monthly: day of the month, 1-31 (a shorter month runs on its last day). */
+  dayOfMonth?: number
   time?: string // "02:00" format
+  /** Once: the run's date (YYYY-MM-DD) and time (HH:MM) in `timezone`. */
+  runAtDate?: string
+  runAtTime?: string
+  /** IANA zone the schedule is in; empty = the viewer's zone. */
+  timezone?: string
 }
 
 export const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
