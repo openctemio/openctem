@@ -626,7 +626,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Scope.SetActorNamer(scopeActors)
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
-	wireScopeApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
+	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	if svc.EASMSweep != nil {
 		handlers.Scope.SetSweeper(svc.EASMSweep)
 	}
@@ -718,6 +718,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
+	}
+	// The platform policy for scope-widening approvals (RFC-054 §12.6).
+	if svc.ScopePolicy != nil {
+		handlers.AdminScopePolicy = handler.NewAdminScopePolicyHandler(svc.ScopePolicy, adminConsoleSvc, log)
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {

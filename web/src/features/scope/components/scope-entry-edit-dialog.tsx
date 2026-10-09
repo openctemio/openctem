@@ -102,7 +102,10 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
     ...(expiry === 'permanent' ? { clear_expiry: true } : {}),
   }
   const widening = isWideningChange(entry, change)
-  const needsApprovals = (settings?.effective_widening_approvals ?? 0) > 0 || tier === 't2'
+  // The platform policy decides whether t2 always needs an approval.
+  const policy = settings?.approval_policy?.mode ?? 'required'
+  const needsApprovals =
+    (settings?.effective_widening_approvals ?? 0) > 0 || (tier === 't2' && policy === 'required')
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -236,7 +239,9 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
                 {canApprove
                   ? needsApprovals
                     ? 'It goes back to pending and authorizes nothing until another approver approves it.'
-                    : 'You may be asked to confirm your identity.'
+                    : policy === 'disabled'
+                      ? 'Approvals are disabled by your platform administrator: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                      : 'It takes effect at once; every administrator is told. You may be asked to confirm your identity.'
                   : 'Only a scope approver can make this change.'}
               </p>
             )}
