@@ -94,9 +94,6 @@ var ModuleDependencies = map[string][]Dependency{
 		{ModuleID: "assets", Type: DependencyHard, Reason: "branches belong to repository assets"},
 		{ModuleID: "components", Type: DependencySoft, Reason: "branch views surface component inventories per branch"},
 	},
-	"vulnerabilities": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "vulnerability views list findings of type=vulnerability"},
-	},
 
 	// Prioritisation cluster -----------------------------------------------
 	"threat_intel": {
@@ -143,9 +140,6 @@ var ModuleDependencies = map[string][]Dependency{
 	// Mobilisation cluster -------------------------------------------------
 	"remediation": {
 		{ModuleID: "findings", Type: DependencyHard, Reason: "remediation closes findings"},
-	},
-	"remediation_tasks": {
-		{ModuleID: "remediation", Type: DependencyHard, Reason: "tasks are the operator-facing queue of the remediation engine"},
 	},
 	"workflows": {
 		// Soft because workflows can also trigger on scan-completion and asset-ingest events —

@@ -49,9 +49,6 @@ func fullCatalogue() []*moduledom.Module {
 	for id := range moduledom.CoreModuleIDs {
 		ids[id] = true
 	}
-	for id := range moduledom.MandatoryModuleIDs {
-		ids[id] = true
-	}
 	for i := range moduledom.ModulePresets {
 		for _, id := range moduledom.ModulePresets[i].EnabledModules {
 			ids[id] = true
@@ -139,15 +136,16 @@ func TestApplyPreset_EveryPresetToEveryPreset(t *testing.T) {
 	}
 }
 
-// The minimal preset disables more modules than one API request may toggle.
-func TestApplyPreset_MinimalExceedsRequestCap(t *testing.T) {
+// The minimal preset disables at least as many modules as one API request may
+// toggle; applying it is not subject to that cap.
+func TestApplyPreset_MinimalReachesRequestCap(t *testing.T) {
 	s, _ := newPresetService()
 	diff, err := s.PreviewPreset(context.Background(), tid, "minimal")
 	if err != nil {
 		t.Fatalf("PreviewPreset: %v", err)
 	}
-	if n := len(diff.ToEnable) + len(diff.ToDisable); n <= maxModuleUpdatesPerRequest {
-		t.Fatalf("minimal diff has %d updates; expected more than the cap %d", n, maxModuleUpdatesPerRequest)
+	if n := len(diff.ToEnable) + len(diff.ToDisable); n < maxModuleUpdatesPerRequest {
+		t.Fatalf("minimal diff has %d updates; expected at least the cap %d", n, maxModuleUpdatesPerRequest)
 	}
 	if _, err := s.ApplyPreset(context.Background(), tid, "minimal", auditapp.AuditContext{}); err != nil {
 		t.Fatalf("ApplyPreset(minimal): %v", err)

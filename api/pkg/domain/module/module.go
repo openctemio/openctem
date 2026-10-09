@@ -160,10 +160,9 @@ const (
 	ModuleScans     = "scans"
 
 	// Discovery
-	ModuleCredentials     = "credentials"
-	ModuleComponents      = "components"
-	ModuleBranches        = "branches"
-	ModuleVulnerabilities = "vulnerabilities"
+	ModuleCredentials = "credentials"
+	ModuleComponents  = "components"
+	ModuleBranches    = "branches"
 
 	// Prioritization
 	ModuleThreatIntel = "threat_intel"
@@ -185,7 +184,6 @@ const (
 	// Mobilization
 	ModuleRemediation  = "remediation"
 	ModuleSuppressions = "suppressions"
-	ModulePolicies     = "policies"
 
 	// Insights
 	ModuleReports = "reports"
@@ -199,17 +197,12 @@ const (
 	ModuleRoles                = "roles"
 	ModuleSettings             = "settings"
 	ModuleAPIKeys              = "api_keys"
-	ModuleWebhooks             = "webhooks"
 	ModuleNotificationSettings = "notification_settings"
 
 	// Data
-	ModuleSources = "sources"
-	ModuleSecrets = "secrets"
-	ModuleScope   = "scope"
 
 	// Operations
 	ModuleTools        = "tools"
-	ModuleCommands     = "commands"
 	ModuleScanProfiles = "scan_profiles"
 	ModuleIOCs         = "iocs"
 
@@ -239,8 +232,7 @@ const (
 	ModuleCompensatingControls = "compensating_controls"
 
 	// Mobilisation — seeded by migration 000161.
-	ModuleWorkflows        = "workflows"
-	ModuleRemediationTasks = "remediation_tasks"
+	ModuleWorkflows = "workflows"
 
 	// Insights — seeded by migration 000161.
 	ModuleCTEMMaturity     = "ctem_maturity"
@@ -258,7 +250,6 @@ const (
 const (
 	ModuleIntegrationsSCM           = "integrations.scm"
 	ModuleIntegrationsNotifications = "integrations.notifications"
-	ModuleIntegrationsWebhooks      = "integrations.webhooks"
 	ModuleIntegrationsAPI           = "integrations.api"
 	ModuleIntegrationsPipelines     = "integrations.pipelines"
 	ModuleIntegrationsTicketing     = "integrations.ticketing"
@@ -291,6 +282,15 @@ var CoreModuleIDs = map[string]bool{
 	ModuleRoles:     true,
 	ModuleAudit:     true,
 	ModuleSettings:  true,
+	// Always on: the ingestion path (sensors), access (groups, API keys) and
+	// the notification and integration framework. Specific integration kinds
+	// stay toggleable sub-modules.
+	ModuleSensors:                   true,
+	ModuleGroups:                    true,
+	ModuleAPIKeys:                   true,
+	ModuleNotificationSettings:      true,
+	ModuleIntegrations:              true,
+	ModuleIntegrationsNotifications: true,
 }
 
 // IsCoreModule returns true if the module is essential for platform operation.
@@ -350,8 +350,7 @@ var UserFacingModuleIDs = map[string]bool{
 	ModuleCompensatingControls: true,
 
 	// Mobilisation extensions (seeded by 000161).
-	ModuleWorkflows:        true,
-	ModuleRemediationTasks: true,
+	ModuleWorkflows: true,
 
 	// Insights extensions (seeded by 000161).
 	ModuleCTEMMaturity:     true,
@@ -383,10 +382,9 @@ var ModulePermissionMapping = map[string]string{
 	ModuleScans:     "scans:read",
 
 	// Discovery modules (hierarchical under parent modules)
-	ModuleCredentials:     "findings:credentials:read",
-	ModuleComponents:      "assets:components:read",
-	ModuleBranches:        "assets:read", // Branches are asset types, use assets:read
-	ModuleVulnerabilities: "findings:vulnerabilities:read",
+	ModuleCredentials: "findings:credentials:read",
+	ModuleComponents:  "assets:components:read",
+	ModuleBranches:    "assets:read", // Branches are asset types, use assets:read
 
 	// Prioritization modules
 	ModuleThreatIntel: "threat_intel:read",
@@ -419,9 +417,6 @@ var ModulePermissionMapping = map[string]string{
 	ModuleNotificationSettings: "integrations:notifications:read",
 
 	// Data modules
-	ModuleSources: "scans:sources:read",
-	ModuleSecrets: "scans:secret_store:read",
-	ModuleScope:   "attack_surface:scope:read",
 
 	// Operations modules
 	ModuleTools:        "scans:tools:read",
@@ -456,8 +451,7 @@ var ModulePermissionMapping = map[string]string{
 	ModuleCompensatingControls: "ctem:compensating_controls:read",
 
 	// Mobilisation extensions.
-	ModuleWorkflows:        "findings:workflows:read",
-	ModuleRemediationTasks: "findings:remediation:read",
+	ModuleWorkflows: "findings:workflows:read",
 
 	// Insights extensions.
 	ModuleCTEMMaturity:     "dashboard:read",

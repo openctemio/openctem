@@ -53,9 +53,7 @@ import {
   CreateRoleSheet,
   RoleDetailSheet,
   EditRoleSheet,
-  filterPermissionsByTenantModules,
 } from '@/features/access-control'
-import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { useUrlFilter } from '@/hooks/use-url-param'
 
 type TypeFilter = 'all' | 'system' | 'custom'
@@ -79,16 +77,8 @@ export default function RolesPage() {
 
   // API Hooks
   const { roles, isLoading, isError, mutate: mutateRoles } = useRoles()
-  const { moduleIds: enabledModuleIds } = useTenantModules()
-
-  // Helper to get filtered permission count based on tenant's modules
-  const getFilteredPermissionCount = useCallback(
-    (role: Role) => {
-      if (!enabledModuleIds.length) return role.permission_count
-      return filterPermissionsByTenantModules(role.permissions, enabledModuleIds).length
-    },
-    [enabledModuleIds]
-  )
+  // A role grants every permission it holds, whatever the modules: count all.
+  const getFilteredPermissionCount = useCallback((role: Role) => role.permission_count, [])
 
   // UI State
   const [selectedRole, setSelectedRole] = useState<Role | null>(null)
