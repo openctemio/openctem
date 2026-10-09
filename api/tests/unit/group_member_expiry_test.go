@@ -89,7 +89,7 @@ func TestAddMember_ExternalTeamNeedsAnEndDate(t *testing.T) {
 
 // Clearing the end date of an external team's member is refused; moving it
 // is allowed, and nobody changes their own membership.
-func TestSetMemberAccess(t *testing.T) {
+func TestUpdateMemberAccess(t *testing.T) {
 	ctx := context.Background()
 	tenantID, user := shared.NewID(), shared.NewID()
 	ext, _ := group.NewGroup(tenantID, "Engagement", "engagement", group.GroupTypeExternal)
@@ -102,20 +102,20 @@ func TestSetMemberAccess(t *testing.T) {
 	svc := expiryService(repo, nil)
 	actx := auditapp.AuditContext{TenantID: tenantID.String(), ActorID: shared.NewID().String()}
 
-	if _, err := svc.SetMemberAccess(ctx, accesscontrolsvc.SetGroupMemberAccessInput{
+	if _, err := svc.UpdateMemberAccess(ctx, accesscontrolsvc.SetGroupMemberAccessInput{
 		GroupID: ext.ID().String(), UserID: user, ExpiresAt: nil,
 	}, actx); !errors.Is(err, accesscontrolsvc.ErrExpiryRequired) {
 		t.Fatalf("clearing an external member's end date: %v", err)
 	}
 	later := time.Now().UTC().Add(10 * 24 * time.Hour)
-	if m, err := svc.SetMemberAccess(ctx, accesscontrolsvc.SetGroupMemberAccessInput{
+	if m, err := svc.UpdateMemberAccess(ctx, accesscontrolsvc.SetGroupMemberAccessInput{
 		GroupID: ext.ID().String(), UserID: user, ExpiresAt: &later, Reason: "extended",
 	}, actx); err != nil || !m.ExpiresAt().Equal(later) {
 		t.Fatalf("moving the end date: %v", err)
 	}
 	// Another organization's caller cannot see the team.
 	other := auditapp.AuditContext{TenantID: shared.NewID().String(), ActorID: actx.ActorID}
-	if _, err := svc.SetMemberAccess(ctx, accesscontrolsvc.SetGroupMemberAccessInput{
+	if _, err := svc.UpdateMemberAccess(ctx, accesscontrolsvc.SetGroupMemberAccessInput{
 		GroupID: ext.ID().String(), UserID: user, ExpiresAt: &later,
 	}, other); err == nil {
 		t.Fatal("a caller from another organization changed the membership")
