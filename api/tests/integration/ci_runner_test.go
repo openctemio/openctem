@@ -154,7 +154,7 @@ func (r *ciRig) newTenant() shared.ID {
 func (r *ciRig) trust(tenant shared.ID, rules cirun.Rules) *cirun.TrustConfig {
 	r.t.Helper()
 	c, err := r.svc.CreateTrustConfig(context.Background(), tenant, cirunapp.TrustConfigInput{
-		Name: "gitlab-" + shared.NewID().String()[:8], Provider: "gitlab", Issuer: r.idp.srv.URL, Rules: rules,
+		Name: "gitlab-" + shared.NewID().String()[28:], Provider: "gitlab", Issuer: r.idp.srv.URL, Rules: rules,
 	}, cirunapp.Actor{Email: "admin@acme.test"})
 	if err != nil {
 		r.t.Fatalf("create trust config: %v", err)
