@@ -68,8 +68,8 @@ func accessReport(ctx context.Context, q lifecycleQueryer, m *tenant.Membership)
 		query string
 	}{
 		{&rep.Roles, `
-			SELECT ro.id::text, ro.name, '', ''
-			FROM user_roles ur JOIN roles ro ON ro.id = ur.role_id
+			SELECT DISTINCT ro.id::text, ro.name, '', ''
+			FROM v_user_role_grants ur JOIN roles ro ON ro.id = ur.role_id
 			WHERE ur.tenant_id = $1 AND ur.user_id = $2
 			ORDER BY ro.name`},
 		{&rep.Groups, `

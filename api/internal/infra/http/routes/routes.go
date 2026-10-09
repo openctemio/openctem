@@ -238,6 +238,7 @@ type Handlers struct {
 	AdminPlatformUser *handler.AdminPlatformUserHandler
 	AdminSession      *handler.AdminSessionHandler
 	AdminOperations   *handler.AdminOperationsHandler
+	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	AdminConsole            *handler.AdminConsoleHandler
@@ -490,6 +491,9 @@ func Register(
 
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
+	if h.Announcement != nil {
+		registerAnnouncementRoute(router, h.Announcement, authMiddleware)
+	}
 
 	// User routes (protected with user sync for OIDC)
 	if h.User != nil {
