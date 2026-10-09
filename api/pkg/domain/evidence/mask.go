@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,6 +91,21 @@ var shapePatterns = []struct { //nolint:gochecknoglobals // static table
 	{"token", regexp.MustCompile(`\bxox[baprs]-[0-9A-Za-z-]{10,}\b`)},
 	{"api_key", regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35}\b`)},
 	{"api_key", regexp.MustCompile(`\bsk_(?:live|test)_[0-9A-Za-z]{16,}\b`)},
+}
+
+// CredentialShapes returns the kinds of the well-known credential shapes
+// (private keys, cloud and forge tokens, JWTs) present in s, each once, in
+// table order. It never returns the values. Unlike Mask it ignores names
+// ("token: x"), so content such as templates and rules, full of such names,
+// is not flagged for them.
+func CredentialShapes(s string) []string {
+	var kinds []string
+	for _, p := range shapePatterns {
+		if !slices.Contains(kinds, p.kind) && p.re.MatchString(s) {
+			kinds = append(kinds, p.kind)
+		}
+	}
+	return kinds
 }
 
 // bearerPattern: "Bearer <token>" / "Basic <creds>" anywhere in text.

@@ -19,7 +19,7 @@ import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { AlertCircle, ArrowLeft, Globe, Loader2, Server, Shield } from 'lucide-react'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,6 +37,7 @@ export default function AssetDetailPage() {
   const assetId = params?.id ?? null
 
   const { asset, isLoading, error } = useAsset(assetId)
+  useBreadcrumbTitle(asset?.name)
 
   if (isLoading) {
     return (

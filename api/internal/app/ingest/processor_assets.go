@@ -551,6 +551,9 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
+			if createErr == nil && (scope == nil || !scope.all) {
+				sensorProvenance(newAsset)
+			}
 			if createErr != nil {
 				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, shortName(normalizedName), createErr))
 				return
@@ -1840,9 +1843,10 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		discoveryTool = toolName
 	}
 
+	// A discovery time in the future would keep the asset out of the
+	// lifecycle's grace check for as long as the reporter likes.
 	discoveredAt := ctisAsset.DiscoveredAt
-	if discoveredAt == nil {
-		now := time.Now()
+	if now := time.Now(); discoveredAt == nil || discoveredAt.After(now) {
 		discoveredAt = &now
 	}
 	newAsset.SetDiscoveryInfo(discoverySource, discoveryTool, discoveredAt)
@@ -2185,4 +2189,18 @@ func looksLikeIPv4(s string) bool {
 		}
 	}
 	return true
+}
+
+// sensorProvenance keeps a sensor's report from claiming a provenance that
+// is not a scan. The lifecycle worker leaves assets of the manual, import
+// and integration categories alone by default (assetProvenanceSQL), so a
+// sensor that labels a planted asset "manual" would keep it from ever going
+// stale and show it as made by a person. Such a claim is recorded as
+// "sensor"; scanner categories (dns, cert_transparency, …) are kept.
+func sensorProvenance(a *asset.Asset) {
+	switch strings.ToLower(strings.TrimSpace(a.DiscoverySource())) {
+	case "", asset.DiscoverySourceManual, "import", "nessus", "kubernetes",
+		"integration", "aws", "gcp", "azure", "git-host":
+		a.SetDiscoveryInfo(DiscoverySourceSensor, a.DiscoveryTool(), a.DiscoveredAt())
+	}
 }

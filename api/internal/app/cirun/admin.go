@@ -355,7 +355,7 @@ func (s *Service) CreateOverride(ctx context.Context, tenantID shared.ID, in Ove
 		Title: "CI break-glass created: " + repo.Name(),
 		Body: fmt.Sprintf("%s let commit %s of %s pass the CI gate until %s. Reason: %s",
 			nonEmpty(a.Email, "an administrator"), shortSHA(o.CommitSHA), repo.Name(), o.ExpiresAt.Format(time.RFC3339), o.Reason),
-		URL: "/settings/scanning/ci", Aggregate: "ci_gate_override", AggregateID: &oid,
+		URL: "/ci-cd?tab=setup", Aggregate: "ci_gate_override", AggregateID: &oid,
 		Metadata: map[string]any{"action": "created", "repository": repo.Name(), "commit_sha": o.CommitSHA,
 			"expires_at": o.ExpiresAt.Format(time.RFC3339)},
 	}))

@@ -182,7 +182,7 @@ func NewScanRegressions(sla RegressionSLA, announce Announcer, log *logger.Logge
 func (h *ScanRegressions) HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string) {
 	ids := make([]shared.ID, 0, len(reopened))
 	for _, rf := range reopened {
-		if rf.PreviousStatus == vulnerability.FindingStatusResolved || rf.PreviousStatus == vulnerability.FindingStatusVerified {
+		if rf.PreviousStatus == vulnerability.FindingStatusResolved {
 			ids = append(ids, rf.ID)
 		}
 	}

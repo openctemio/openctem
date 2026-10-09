@@ -28,6 +28,8 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -133,11 +135,14 @@ func (p *FindingProcessor) applySourceMitigations(ctx context.Context, tenantID 
 	if mode == SourceResolveOff || scope == nil || !scope.commandBound {
 		return
 	}
+	tool := strings.ToLower(strings.TrimSpace(report.Tool.Name))
+	if items = sourceResolvable(scope, tool, items); len(items) == 0 {
+		return
+	}
 	repo, ok := p.repo.(sourceResolver)
 	if !ok {
 		return
 	}
-	tool := strings.ToLower(strings.TrimSpace(report.Tool.Name))
 	ids, err := repo.ResolveSourceMitigated(ctx, tenantID, tool, items, mode != SourceResolveEnforce)
 	if err != nil {
 		p.logger.Warn("source-asserted resolve failed", "tenant_id", tenantID.String(), "tool", logValue(tool), "error", err)
@@ -189,5 +194,31 @@ func (s *Service) auditSourceResolve(ctx context.Context, tenantID shared.ID, bi
 	}
 	if err := s.writeIngestAuditLog(ctx, auditapp.AuditContext{TenantID: tenantID.String()}, event); err != nil {
 		s.logger.Warn("failed to write source-asserted resolve audit log", "error", err)
+	}
+}
+
+// sourceResolvable keeps the mitigations a bound report may close on its
+// source's say-so. Only a connector command of the same tool may: a sync
+// covers the connector's whole inventory, a connector scan only the assets
+// this report may change (its targets and what it created). Any other
+// command (a scan, a validate command that names no tool) resolves nothing,
+// so a report cannot choose a source tool to close another tool's findings.
+func sourceResolvable(scope *alterScope, tool string, items []vulnerability.SourceMitigation) []vulnerability.SourceMitigation {
+	if scope.commandTool == "" || !tooldom.SameTool(scope.commandTool, tool) {
+		return nil
+	}
+	switch scope.commandType {
+	case command.CommandTypeConnectorSync:
+		return items
+	case command.CommandTypeConnectorScan:
+		kept := items[:0:0]
+		for _, it := range items {
+			if scope.allowedAsset(it.AssetID) {
+				kept = append(kept, it)
+			}
+		}
+		return kept
+	default:
+		return nil
 	}
 }

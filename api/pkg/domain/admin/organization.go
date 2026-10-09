@@ -42,9 +42,12 @@ type OrganizationFilter struct {
 	// or empty (any).
 	Owner string
 	// Plan keeps organizations on this plan; empty means any.
-	Plan   string
-	Limit  int
-	Offset int
+	Plan string
+	// IncludeSystem lists the platform system tenant too. It is internal
+	// (seeded data, no members): left out of the list unless asked for.
+	IncludeSystem bool
+	Limit         int
+	Offset        int
 }
 
 // OrganizationReader is a platform-level (cross-tenant) read model. It exists

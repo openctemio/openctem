@@ -7,4 +7,4 @@
   seconds.
 - Organizations can require DPoP (`require_dpop` in the MCP policy); bearer
   connections then stop working.
-- Migration `001371_mcp_oauth_dpop`.
+- Migration `001386_mcp_oauth_dpop`.

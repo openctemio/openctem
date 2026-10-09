@@ -3,6 +3,7 @@
 import { useCallback } from 'react'
 import useSWR from 'swr'
 import { fetcher } from '@/lib/api/client'
+import { SWR_STATIC } from '@/lib/swr-config'
 import { classAndLensLabel, type AssetTypeRegistry } from '../lib/asset-registry'
 
 /** GET /api/v1/asset-types: the RFC-042 asset type registry. */
@@ -17,14 +18,13 @@ export const ASSET_TYPE_REGISTRY_ENDPOINT = '/api/v1/asset-types'
  * answers from the generated constants until the registry has loaded.
  */
 export function useAssetTypeRegistry() {
+  // Static data: once per session in memory. Across page loads the browser
+  // keeps the response and revalidates it with its ETag (a 304 without the
+  // 107 KB body), through the API proxy.
   const { data, error, isLoading } = useSWR<AssetTypeRegistry>(
     ASSET_TYPE_REGISTRY_ENDPOINT,
     fetcher<AssetTypeRegistry>,
-    {
-      revalidateOnFocus: false,
-      revalidateIfStale: false,
-      dedupingInterval: 10 * 60 * 1000,
-    }
+    { ...SWR_STATIC, revalidateOnFocus: false }
   )
 
   const classAndLens = useCallback(

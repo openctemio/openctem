@@ -256,22 +256,22 @@ const { preferences, update, isLoading, isUpdating } = useLocalPreferences()
 
 ## API Endpoints
 
-| Endpoint                           | Method | Description                 |
-| ---------------------------------- | ------ | --------------------------- |
-| `/api/v1/users/me`                 | GET    | Get current user profile    |
-| `/api/v1/users/me`                 | PUT    | Update current user profile |
-| `/api/v1/users/me/change-password` | POST   | Change password             |
-| `/api/v1/users/me/2fa`             | GET    | Get 2FA status              |
-| `/api/v1/users/me/2fa/setup`       | POST   | Start 2FA setup             |
-| `/api/v1/users/me/2fa/enable`      | POST   | Verify a code and enable 2FA |
-| `/api/v1/users/me/2fa/disable`     | POST   | Disable 2FA                 |
-| `/api/v1/users/me/2fa/recovery-codes` | POST | Regenerate recovery codes |
-| `/api/v1/users/me/sessions`        | GET    | List active sessions        |
-| `/api/v1/users/me/sessions/{id}`   | DELETE | Revoke specific session     |
-| `/api/v1/users/me/sessions`        | DELETE | Revoke all other sessions   |
-| `/api/v1/users/me/preferences`     | GET    | Get user preferences        |
-| `/api/v1/users/me/preferences`     | PUT    | Update user preferences     |
-| `/api/v1/audit-logs/user/{userId}` | GET    | The user's own activity (audit events), paged |
+| Endpoint                              | Method | Description                                   |
+| ------------------------------------- | ------ | --------------------------------------------- |
+| `/api/v1/users/me`                    | GET    | Get current user profile                      |
+| `/api/v1/users/me`                    | PUT    | Update current user profile                   |
+| `/api/v1/users/me/change-password`    | POST   | Change password                               |
+| `/api/v1/users/me/2fa`                | GET    | Get 2FA status                                |
+| `/api/v1/users/me/2fa/setup`          | POST   | Start 2FA setup                               |
+| `/api/v1/users/me/2fa/enable`         | POST   | Verify a code and enable 2FA                  |
+| `/api/v1/users/me/2fa/disable`        | POST   | Disable 2FA                                   |
+| `/api/v1/users/me/2fa/recovery-codes` | POST   | Regenerate recovery codes                     |
+| `/api/v1/users/me/sessions`           | GET    | List active sessions                          |
+| `/api/v1/users/me/sessions/{id}`      | DELETE | Revoke specific session                       |
+| `/api/v1/users/me/sessions`           | DELETE | Revoke all other sessions                     |
+| `/api/v1/users/me/preferences`        | GET    | Get user preferences                          |
+| `/api/v1/users/me/preferences`        | PUT    | Update user preferences                       |
+| `/api/v1/audit-logs/user/{userId}`    | GET    | The user's own activity (audit events), paged |
 
 ## Pages
 
