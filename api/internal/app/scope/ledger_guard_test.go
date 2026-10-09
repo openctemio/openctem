@@ -125,6 +125,12 @@ func TestLedgerGuard_SQLWritersAreKnown(t *testing.T) {
 		// Only approval_reminded_at of a pending entry (RFC-054 §12.2): a
 		// reminder never changes what authorizes probes.
 		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.MarkReminded": true,
+		// Only attestation_requested_at of an active t2 entry (RFC-054 §12.5):
+		// asking for a confirmation changes nothing that authorizes probes.
+		"internal/infra/postgres/scope_attestation_repository.go:ScopeTargetRepository.MarkAttestationRequested": true,
+		// The t2 -> t1 downgrade (a narrowing); called only inside commitEntry
+		// (scope.Service.downgradeUnattested).
+		"internal/infra/postgres/scope_attestation_repository.go:ScopeTargetRepository.DowngradeUnattested": true,
 	}
 	root := moduleRoot(t)
 	var unknown []string

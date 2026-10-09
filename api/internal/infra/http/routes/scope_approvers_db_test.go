@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 )
@@ -40,7 +41,7 @@ func approvalOf(t *testing.T, body string) map[string]any {
 // exists; reminders are rate-limited; another organization reaches nothing.
 func TestScopeApprovers_Routes_DB(t *testing.T) {
 	totp := &codeTOTP{used: map[string]bool{}}
-	h := newChangeAuditHarness(t, func(s *scopeapp.Service, db *postgres.DB) {
+	h := newChangeAuditHarness(t, func(s *scopeapp.Service, _ *handler.ScopeHandler, db *postgres.DB) {
 		s.SetApprovers(postgres.NewScopeActorRepository(db), totp, nil, nil, "")
 	})
 
