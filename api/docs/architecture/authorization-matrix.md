@@ -1694,9 +1694,13 @@ deliberately.
    (2026-10-04, reversing the 2026-09 AUTHZ-16 "won't build") and A2: `expires_at`
    plus a reason on direct grants, group memberships and engagements, and expiry
    on role assignments and guest memberships, checked at read time
-   (RFC-050 W22/W23). Until then there is no `expires_at` on any grant, and
-   revocation is immediate: disable or offboard the member (RFC-050 member
-   lifecycle), or remove the grant/role (`RevokeAllSessions` + version bump).
+   (RFC-050 W22/W23). Built so far: external members' memberships (RFC-058)
+   and **team memberships** (`group_members.expires_at`, migration 001431;
+   required on `external` teams; removed within a minute of the end date,
+   which recomputes the data scope). Role assignments and direct grants have
+   no `expires_at` yet; revocation is immediate: disable or offboard the
+   member (RFC-050 member lifecycle), or remove the grant/role
+   (`RevokeAllSessions` + version bump).
 5. **No time-limited grants.** There is no `expires_at` on role assignments;
    revocation is immediate via `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
 

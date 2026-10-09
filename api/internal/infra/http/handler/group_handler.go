@@ -77,10 +77,12 @@ type GroupResponse struct {
 
 // GroupMemberResponse represents a group member in API responses.
 type GroupMemberResponse struct {
-	UserID   string    `json:"user_id"`
-	Role     string    `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
-	AddedBy  string    `json:"added_by,omitempty"`
+	UserID       string     `json:"user_id"`
+	Role         string     `json:"role"`
+	JoinedAt     time.Time  `json:"joined_at"`
+	AddedBy      string     `json:"added_by,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	ExpiryReason string     `json:"expiry_reason,omitempty"`
 }
 
 // GroupMemberWithUserResponse represents a member with user details.
@@ -93,6 +95,9 @@ type GroupMemberWithUserResponse struct {
 	Email       string    `json:"email"`
 	Name        string    `json:"name"`
 	AvatarURL   string    `json:"avatar_url,omitempty"`
+	// ExpiresAt: when the membership ends (RFC-050 W22); absent means no end.
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	ExpiryReason string     `json:"expiry_reason,omitempty"`
 }
 
 // GroupWithRoleResponse represents a group with the user's role.
@@ -139,6 +144,17 @@ type UpdateGroupRequest struct {
 type AddGroupMemberRequest struct {
 	UserID string `json:"user_id" validate:"required,uuid"`
 	Role   string `json:"role" validate:"required,oneof=owner lead member"`
+	// ExpiresAt ends the membership; required on external teams, at most
+	// 365 days ahead.
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	ExpiryReason string     `json:"expiry_reason,omitempty" validate:"max=500"`
+}
+
+// SetGroupMemberAccessRequest sets, moves or clears (null) when a team
+// membership ends.
+type SetGroupMemberAccessRequest struct {
+	ExpiresAt *time.Time `json:"expires_at"`
+	Reason    string     `json:"reason,omitempty" validate:"max=500"`
 }
 
 // UpdateGroupMemberRoleRequest represents the request to update a member's role.
@@ -175,6 +191,7 @@ func toGroupMemberResponse(m *group.Member) GroupMemberResponse {
 	if m.AddedBy() != nil {
 		resp.AddedBy = m.AddedBy().String()
 	}
+	resp.ExpiresAt, resp.ExpiryReason = m.ExpiresAt(), m.ExpiryReason()
 	return resp
 }
 
@@ -191,6 +208,7 @@ func toGroupMemberWithUserResponse(m *group.MemberWithUser) GroupMemberWithUserR
 	if m.Member.AddedBy() != nil {
 		resp.AddedBy = m.Member.AddedBy().String()
 	}
+	resp.ExpiresAt, resp.ExpiryReason = m.Member.ExpiresAt(), m.Member.ExpiryReason()
 	return resp
 }
 
@@ -610,9 +628,11 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := accesscontrol.AddGroupMemberInput{
-		GroupID: groupID,
-		UserID:  memberUserID,
-		Role:    req.Role,
+		GroupID:      groupID,
+		UserID:       memberUserID,
+		Role:         req.Role,
+		ExpiresAt:    req.ExpiresAt,
+		ExpiryReason: req.ExpiryReason,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -626,6 +646,50 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(toGroupMemberResponse(member))
+}
+
+// SetMemberAccess handles PATCH /api/v1/groups/{groupId}/members/{userId}/access
+// @Summary Set when a team membership ends
+// @Description Sets, moves or clears (expires_at null) the end date of a team membership (RFC-050 W22). External teams always need an end date; at most 365 days ahead. The membership is removed within a minute of its end date.
+// @Tags groups
+// @Accept json
+// @Produce json
+// @Param groupId path string true "Group ID"
+// @Param userId path string true "User ID"
+// @Param request body SetGroupMemberAccessRequest true "End date"
+// @Success 200 {object} GroupMemberResponse
+// @Failure 400 {object} apierror.Error
+// @Failure 403 {object} apierror.Error
+// @Failure 404 {object} apierror.Error
+// @Router /groups/{groupId}/members/{userId}/access [patch]
+func (h *GroupHandler) SetMemberAccess(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req SetGroupMemberAccessRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	uid, err := shared.IDFromString(chi.URLParam(r, "userId"))
+	if err != nil {
+		apierror.BadRequest("Invalid user ID format").WriteJSON(w)
+		return
+	}
+	member, err := h.service.SetMemberAccess(ctx, accesscontrol.SetGroupMemberAccessInput{
+		GroupID:   chi.URLParam(r, "groupId"),
+		UserID:    uid,
+		ExpiresAt: req.ExpiresAt,
+		Reason:    req.Reason,
+	}, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toGroupMemberResponse(member))
 }
 
 // UpdateMemberRole handles PUT /api/v1/groups/{groupId}/members/{userId}
