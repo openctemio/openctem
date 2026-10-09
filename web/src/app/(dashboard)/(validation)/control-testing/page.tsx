@@ -27,6 +27,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -314,50 +316,52 @@ function RecordResultDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="ct-result">Result</Label>
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger id="ct-result" className="cursor-pointer">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CONTROL_TEST_RESULTS.map((r) => (
-                  <SelectItem key={r.value} value={r.value} className="cursor-pointer">
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {ct.expected_result ? (
-            <div className="grid gap-1">
-              <Label className="text-muted-foreground text-xs">Expected result</Label>
-              <p className="text-sm">{ct.expected_result}</p>
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="ct-result">Result</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger id="ct-result" className="cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONTROL_TEST_RESULTS.map((r) => (
+                    <SelectItem key={r.value} value={r.value} className="cursor-pointer">
+                      {r.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          ) : null}
 
-          <div className="grid gap-2">
-            <Label htmlFor="ct-evidence">Evidence</Label>
-            <Textarea
-              id="ct-evidence"
-              value={evidence}
-              onChange={(e) => setEvidence(e.target.value)}
-              placeholder="What was observed, and where it can be checked"
-              rows={3}
-            />
-          </div>
+            {ct.expected_result ? (
+              <div className="grid gap-1">
+                <Label className="text-muted-foreground text-xs">Expected result</Label>
+                <p className="text-sm">{ct.expected_result}</p>
+              </div>
+            ) : null}
 
-          <div className="grid gap-2">
-            <Label htmlFor="ct-notes">Notes</Label>
-            <Textarea
-              id="ct-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-            />
-          </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ct-evidence">Evidence</Label>
+              <Textarea
+                id="ct-evidence"
+                value={evidence}
+                onChange={(e) => setEvidence(e.target.value)}
+                placeholder="What was observed, and where it can be checked"
+                rows={3}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="ct-notes">Notes</Label>
+              <Textarea
+                id="ct-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button
@@ -372,7 +376,7 @@ function RecordResultDialog({
               {isMutating ? 'Recording…' : 'Record result'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )
@@ -472,7 +476,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add control test</DialogTitle>
           <DialogDescription>
@@ -480,109 +484,111 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="ct-name">Name *</Label>
-              <Input
-                id="ct-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. MFA Enforcement Test"
-                required
-              />
-            </div>
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 space-y-2">
+                <Label htmlFor="ct-name">Name *</Label>
+                <Input
+                  id="ct-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. MFA Enforcement Test"
+                  required
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="ct-framework">Framework *</Label>
-              <Select value={framework} onValueChange={setFramework} required>
-                <SelectTrigger id="ct-framework">
-                  <SelectValue placeholder="Select framework" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FRAMEWORKS.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="ct-framework">Framework *</Label>
+                <Select value={framework} onValueChange={setFramework} required>
+                  <SelectTrigger id="ct-framework">
+                    <SelectValue placeholder="Select framework" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FRAMEWORKS.map((f) => (
+                      <SelectItem key={f} value={f}>
+                        {f}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="ct-risk">Risk level</Label>
-              <Select value={riskLevel} onValueChange={setRiskLevel}>
-                <SelectTrigger id="ct-risk">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RISK_LEVELS.map((r) => (
-                    <SelectItem key={r} value={r} className="capitalize">
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="ct-risk">Risk level</Label>
+                <Select value={riskLevel} onValueChange={setRiskLevel}>
+                  <SelectTrigger id="ct-risk">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RISK_LEVELS.map((r) => (
+                      <SelectItem key={r} value={r} className="capitalize">
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="ct-control-id">Control ID</Label>
-              <Input
-                id="ct-control-id"
-                value={controlId}
-                onChange={(e) => setControlId(e.target.value)}
-                placeholder="e.g. AC-2, T1078"
-              />
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="ct-control-id">Control ID</Label>
+                <Input
+                  id="ct-control-id"
+                  value={controlId}
+                  onChange={(e) => setControlId(e.target.value)}
+                  placeholder="e.g. AC-2, T1078"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="ct-category">Category</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger id="ct-category">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="ct-category">Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger id="ct-category">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="ct-description">Description</Label>
-              <Textarea
-                id="ct-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="What does this control test validate?"
-                rows={2}
-              />
-            </div>
+              <div className="col-span-2 space-y-2">
+                <Label htmlFor="ct-description">Description</Label>
+                <Textarea
+                  id="ct-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What does this control test validate?"
+                  rows={2}
+                />
+              </div>
 
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="ct-procedure">Test procedure</Label>
-              <Textarea
-                id="ct-procedure"
-                value={testProcedure}
-                onChange={(e) => setTestProcedure(e.target.value)}
-                placeholder="Step-by-step test procedure..."
-                rows={2}
-              />
-            </div>
+              <div className="col-span-2 space-y-2">
+                <Label htmlFor="ct-procedure">Test procedure</Label>
+                <Textarea
+                  id="ct-procedure"
+                  value={testProcedure}
+                  onChange={(e) => setTestProcedure(e.target.value)}
+                  placeholder="Step-by-step test procedure..."
+                  rows={2}
+                />
+              </div>
 
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="ct-expected">Expected result</Label>
-              <Input
-                id="ct-expected"
-                value={expectedResult}
-                onChange={(e) => setExpectedResult(e.target.value)}
-                placeholder="e.g. Alert triggered within 60s"
-              />
+              <div className="col-span-2 space-y-2">
+                <Label htmlFor="ct-expected">Expected result</Label>
+                <Input
+                  id="ct-expected"
+                  value={expectedResult}
+                  onChange={(e) => setExpectedResult(e.target.value)}
+                  placeholder="e.g. Alert triggered within 60s"
+                />
+              </div>
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button
@@ -599,7 +605,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
               {isMutating ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )

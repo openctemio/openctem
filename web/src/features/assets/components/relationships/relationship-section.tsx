@@ -267,12 +267,7 @@ export function RelationshipSection({
               />
             </div>
           ) : (
-            // Radix renders the viewport's inner wrapper as display:table, which
-            // grows to its content and pushed the rows past the sheet edge.
-            <ScrollArea
-              style={{ maxHeight }}
-              className="py-3 [&_[data-slot=scroll-area-viewport]>div]:!block"
-            >
+            <ScrollArea style={{ maxHeight }} className="my-3">
               {viewMode === 'list' ? (
                 <div className="space-y-2">
                   {filteredRelationships.map((rel) => (

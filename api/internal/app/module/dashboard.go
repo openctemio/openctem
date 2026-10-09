@@ -385,8 +385,7 @@ type ProcessMetrics struct {
 //
 // Deliberately NOT here: time-to-break attack paths. Attack paths / exposure
 // chains are computed on demand from the current asset graph
-// (internal/app/attack/exposure_chains.go) and never persisted; the
-// attack_paths table is written only by the demo seeder, and neither asset
+// (internal/app/attack/exposure_chains.go) and never persisted, and neither asset
 // exposure nor asset relationships keep a change history. There is therefore
 // no record of when a path opened or when one of its links was broken, and any
 // "time to break" figure would be invented.

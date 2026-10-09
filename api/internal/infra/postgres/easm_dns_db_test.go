@@ -242,3 +242,88 @@ func TestEASMDNSRepository_EmailNameTargets(t *testing.T) {
 		t.Fatalf("tenant B email targets = %+v", theirs)
 	}
 }
+
+// A name still in review (what a sensor report creates) is looked up by the
+// platform resolver only while the tenant scope covers it; a name in the
+// inventory always is (research/84 F9). Requires DATABASE_URL.
+func TestEASMDNSRepository_UnconfirmedNamesOnlyInScope(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	db := &DB{DB: sqlDB}
+	r := NewEASMDNSRepository(db)
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	other := seedTestTenant(ctx, t, sqlDB)
+
+	attribute := func(id shared.ID, state string) {
+		t.Helper()
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence) VALUES ($1, $2, $3, 50)`,
+			id.String(), tenant.String(), state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope := func(tenantID shared.ID, kind, pattern, status string) {
+		t.Helper()
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1, $2, $3, $4)`,
+			tenantID.String(), kind, pattern, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	asset := func(name, state string) shared.ID {
+		t.Helper()
+		id := seedNamedAsset(ctx, t, r, tenant, name, "subdomain", "active")
+		if state != "" {
+			attribute(id, state)
+		}
+		return id
+	}
+
+	confirmed := asset("www.acme.example", "confirmed")
+	legacy := asset("legacy.acme.example", "") // no record: in the inventory
+	dependency := asset("cdn.vendor.example", "dependency")
+	inScope := asset("dev.acme.example", "needs_review")
+	apex := asset("acme.example", "candidate")
+	exact := asset("api.partner.example", "candidate")
+	outside := asset("victim.third-party.example", "candidate")
+	excluded := asset("lab.acme.example", "needs_review")
+	belowExact := asset("x.api.partner.example", "candidate")
+	inactiveScope := asset("old.gone.example", "needs_review")
+	expiredScope := asset("tmp.expired.example", "needs_review")
+	rejected := asset("no.acme.example", "rejected")
+	otherScoped := asset("a.theirs.example", "needs_review")
+
+	scope(tenant, "domain", "*.acme.example", "active")
+	scope(tenant, "subdomain", "api.partner.example", "active")
+	scope(tenant, "domain", "*.gone.example", "inactive")
+	scope(tenant, "domain", "*.expired.example", "active")
+	if _, err := sqlDB.ExecContext(ctx, `UPDATE scope_targets SET expires_at = now() - interval '1 hour' WHERE tenant_id = $1 AND pattern = '*.expired.example'`, tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	scope(other, "domain", "*.theirs.example", "active") // another tenant's scope covers nothing here
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason, status, approved_at)
+		VALUES ($1, 'subdomain', 'lab.acme.example', 'lab', 'active', now())`, tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+
+	due, err := r.DueTargets(ctx, tenant, easmdns.KindDangling, time.Now().UTC(), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[shared.ID]bool{}
+	for _, d := range due {
+		got[d.AssetID] = true
+	}
+	want := []shared.ID{confirmed, legacy, dependency, inScope, apex, exact}
+	for _, id := range want {
+		if !got[id] {
+			t.Errorf("asset %s must be checked; got %+v", id, due)
+		}
+	}
+	for _, id := range []shared.ID{outside, excluded, belowExact, inactiveScope, expiredScope, rejected, otherScoped} {
+		if got[id] {
+			t.Errorf("asset %s must not be checked; got %+v", id, due)
+		}
+	}
+	if len(due) != len(want) {
+		t.Fatalf("due = %+v, want exactly the %d eligible names", due, len(want))
+	}
+}

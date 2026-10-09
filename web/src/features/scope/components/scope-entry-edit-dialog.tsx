@@ -19,6 +19,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -140,7 +141,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit scope entry</DialogTitle>
           <DialogDescription>
@@ -148,102 +149,104 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
             pattern cannot change; remove the entry and add a new one instead.
           </DialogDescription>
         </DialogHeader>
-        <form id={formId} onSubmit={submit} className="space-y-4">
-          {error && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor={`${formId}-expiry`}>Expiry</Label>
-            <Select value={expiry} onValueChange={(v) => setExpiry(v as ExpiryChoice)}>
-              <SelectTrigger id={`${formId}-expiry`} className="w-full sm:w-64">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="keep">Keep ({expiryText(entry.expires_at)})</SelectItem>
-                <SelectItem value="days">Expire in a number of days</SelectItem>
-                {entry.expires_at && permanentAllowed && (
-                  <SelectItem value="permanent">Make permanent</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            {expiry === 'days' && (
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  max={maxDays}
-                  value={days}
-                  onChange={(e) => setDays(Number(e.target.value))}
-                  className="w-24"
-                  aria-label="Days from now"
-                />
-                <span className="text-sm text-muted-foreground">
-                  days from now (1 to {maxDays})
-                </span>
+        <DialogBody>
+          <form id={formId} onSubmit={submit} className="space-y-4">
+            {error && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
               </div>
             )}
-            {tier === 't2' && (
-              <p className="text-xs text-muted-foreground">
-                {permanentAllowed
-                  ? 'Intrusive (T2) entries may be permanent in your organization; they are confirmed again periodically.'
-                  : `Intrusive (T2) entries last at most ${maxDays} days in your organization (set by an owner).`}
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-expiry`}>Expiry</Label>
+              <Select value={expiry} onValueChange={(v) => setExpiry(v as ExpiryChoice)}>
+                <SelectTrigger id={`${formId}-expiry`} className="w-full sm:w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="keep">Keep ({expiryText(entry.expires_at)})</SelectItem>
+                  <SelectItem value="days">Expire in a number of days</SelectItem>
+                  {entry.expires_at && permanentAllowed && (
+                    <SelectItem value="permanent">Make permanent</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              {expiry === 'days' && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={maxDays}
+                    value={days}
+                    onChange={(e) => setDays(Number(e.target.value))}
+                    className="w-24"
+                    aria-label="Days from now"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    days from now (1 to {maxDays})
+                  </span>
+                </div>
+              )}
+              {tier === 't2' && (
+                <p className="text-xs text-muted-foreground">
+                  {permanentAllowed
+                    ? 'Intrusive (T2) entries may be permanent in your organization; they are confirmed again periodically.'
+                    : `Intrusive (T2) entries last at most ${maxDays} days in your organization (set by an owner).`}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-tier`}>Deepest probe allowed</Label>
+              <Select value={tier} onValueChange={(v) => setTier(v as ScopeTier)}>
+                <SelectTrigger id={`${formId}-tier`} className="w-full sm:w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {['t0', 't1', 't2'].map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {TIER_LABEL[k]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{TIER_HINT[tier]}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-reason`}>Reason</Label>
+              <Textarea
+                id={`${formId}-reason`}
+                rows={2}
+                maxLength={1000}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-desc`}>Description</Label>
+              <Input
+                id={`${formId}-desc`}
+                maxLength={1000}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+            {widening && (
+              <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+                This widens the entry.{' '}
+                {canApprove
+                  ? needsApprovals
+                    ? 'It goes back to pending and authorizes nothing until another approver approves it.'
+                    : policy === 'disabled'
+                      ? 'Approvals are disabled by your platform administrator: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                      : 'It takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                  : 'Only a scope approver can make this change.'}
               </p>
             )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${formId}-tier`}>Deepest probe allowed</Label>
-            <Select value={tier} onValueChange={(v) => setTier(v as ScopeTier)}>
-              <SelectTrigger id={`${formId}-tier`} className="w-full sm:w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {['t0', 't1', 't2'].map((k) => (
-                  <SelectItem key={k} value={k}>
-                    {TIER_LABEL[k]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">{TIER_HINT[tier]}</p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${formId}-reason`}>Reason</Label>
-            <Textarea
-              id={`${formId}-reason`}
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${formId}-desc`}>Description</Label>
-            <Input
-              id={`${formId}-desc`}
-              maxLength={1000}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          {widening && (
-            <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
-              This widens the entry.{' '}
-              {canApprove
-                ? needsApprovals
-                  ? 'It goes back to pending and authorizes nothing until another approver approves it.'
-                  : policy === 'disabled'
-                    ? 'Approvals are disabled by your platform administrator: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
-                    : 'It takes effect at once; every administrator is told. You may be asked to confirm your identity.'
-                : 'Only a scope approver can make this change.'}
-            </p>
-          )}
-        </form>
+          </form>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel

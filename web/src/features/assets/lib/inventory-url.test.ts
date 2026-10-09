@@ -31,6 +31,18 @@ describe('inventory URL codec', () => {
     expect(parseInventoryFilters(qs)).toEqual(filters)
   })
 
+  it('round-trips the expiry range and counts it once', () => {
+    const filters: InventoryFilters = {
+      expiresAfter: '2026-10-08T00:00:00.000Z',
+      expiresBefore: '2026-11-07T00:00:00.000Z',
+    }
+    const qs = serializeInventoryFilters(filters)
+    expect(qs.get('expires_after')).toBe('2026-10-08T00:00:00.000Z')
+    expect(parseInventoryFilters(qs)).toEqual(filters)
+    expect(countActiveFilters(filters)).toBe(1)
+    expect(isInventoryFilterEmpty(filters)).toBe(false)
+  })
+
   it('round-trips the lens and the minimum risk score', () => {
     const filters: InventoryFilters = { lens: 'code', minRiskScore: 70 }
     const qs = serializeInventoryFilters(filters)

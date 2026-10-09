@@ -24,6 +24,8 @@ import (
 //	------------------------  ----------------  --------------------------
 //	/admin/auth/validate      any admin         —
 //	/admin/overview           any admin         —
+//	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
+//	                                            code (audited high)
 //	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
 //	                          audited)          audited; platform admins refused
 //	/admin/users              super_admin       super_admin (+ audited)
@@ -318,6 +320,20 @@ func registerAdminRoutes(
 			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
 			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
 		}, adminMiddlewares...)
+	}
+
+	// Security > Sessions: every administrator's open console session, and
+	// ending one (reason + fresh authenticator code, audited high). Super
+	// admin only, like the roster.
+	if h.AdminSession != nil {
+		router.Group("/api/v1/admin/console-sessions", func(r Router) {
+			r.GET("/", h.AdminSession.List)
+			end := []Middleware{}
+			if h.AdminAuditMiddleware != nil {
+				end = append(end, h.AdminAuditMiddleware.AuditLog("console.session_ended", "admin_session", "console_session_id"))
+			}
+			r.DELETE("/{console_session_id}", h.AdminSession.End, end...)
+		}, superAdminOnly...)
 	}
 
 	// Admin user management — the platform admin roster (emails, last-used
