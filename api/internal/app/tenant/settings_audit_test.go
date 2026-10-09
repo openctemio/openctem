@@ -16,6 +16,7 @@ func TestSecurityChangeSeverity(t *testing.T) {
 		EmailVerificationMode: tenantdom.EmailVerificationAuto,
 		SessionTimeoutMin:     30,
 		RequireSensorLocalPolicyForPrivateTargets: true,
+		ForbidToolInsecureTLS:                     true,
 	}
 	with := func(f func(s *tenantdom.SecuritySettings)) tenantdom.SecuritySettings {
 		s := base
@@ -37,6 +38,7 @@ func TestSecurityChangeSeverity(t *testing.T) {
 		{"domains widened", with(func(s *tenantdom.SecuritySettings) { s.AllowedDomains = append(s.AllowedDomains, "gmail.com") }), audit.SeverityHigh},
 		{"verification never", with(func(s *tenantdom.SecuritySettings) { s.EmailVerificationMode = tenantdom.EmailVerificationNever }), audit.SeverityHigh},
 		{"local policy off", with(func(s *tenantdom.SecuritySettings) { s.RequireSensorLocalPolicyForPrivateTargets = false }), audit.SeverityHigh},
+		{"tool insecure tls allowed again", with(func(s *tenantdom.SecuritySettings) { s.ForbidToolInsecureTLS = false }), audit.SeverityHigh},
 		{"session longer", with(func(s *tenantdom.SecuritySettings) { s.SessionTimeoutMin = 240 }), audit.SeverityHigh},
 		{"allowlist narrowed", with(func(s *tenantdom.SecuritySettings) { s.IPWhitelist = []string{"10.1.0.0/16", "10.2.3.4"} }), audit.SeverityMedium},
 		{"tightened", with(func(s *tenantdom.SecuritySettings) { s.SessionTimeoutMin = 15 }), audit.SeverityMedium},
