@@ -465,4 +465,3 @@ func (c *TenantToolConfig) Disable() {
 	c.IsEnabled = false
 	c.UpdatedAt = time.Now()
 }
-

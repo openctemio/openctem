@@ -39,7 +39,8 @@ the RFC holds the design and phase plan.
 | Platform-side scope check before dispatch; scan targets limited to what the actor may act on | [active-probe-gate.md](active-probe-gate.md) |
 | Sensor-local, read-only policy set by the network owner (allowed ranges, ports, check types, kill switch); the platform stops dispatching jobs a sensor would refuse | [sensors.md](sensors.md#sensor-local-policy-rfc-040-57) |
 | Scan credentials held by the sensor, referenced by the platform | RFC-040 §5.9, RFC-032 |
-| Jobs signed by a separate signing service, with nonce and sequence against replay | **Platform side built, off by default** (`SIGNER_SOCKET`): [job-signing.md](job-signing.md). Sensor verification (sdk-go), the offline root key set and the signer's scope ledger are next |
+| Jobs signed by a separate signing service, with nonce and sequence against replay | **Platform side built, off by default** (`SIGNER_SOCKET`): [job-signing.md](job-signing.md). Sensor verification (sdk-go#226) and the offline root key set (P1.5) are built |
+| The signer signs only inside approved scope (RFC-040 P2) | **Built** with the signer: its own scope ledger (`ledger.log` in the signer's state, hash-chained), fed by the scope service on every change (widenings accepted by the signer before they are saved; narrowings never blocked; a sync that only narrows), widenings checked against the tenant's approval policy (not the requester, operator floor, t2 at least one), sign-time refusal `out_of_ledger` / `tier_exceeds_ledger` / `target_excluded` that fails the command (`SIGNER_REFUSED`), alert A10 `SignerOutOfLedger`. `enforce` for new installs, `audit` for upgraded ones until the export/import ceremony: [job-signing.md](job-signing.md#scope-ledger). Residual until P3: approvals are as the API recorded them; internal targets are left to zones and the sensor-local policy |
 | Two-person approval for scope widening | **Planned** (RFC-040 §5.6) |
 
 ### Both directions
