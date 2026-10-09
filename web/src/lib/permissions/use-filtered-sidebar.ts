@@ -92,17 +92,13 @@ function hasItemAccess(
       return false
     }
 
-    // Beta is shown and marked in the UI.
-    if (releaseStatus === 'beta') {
-      return true
-    }
-
     // If module is not active (admin disabled), hide it
     if (!isModuleActive(item.module)) {
       return false
     }
 
-    // If module is not in tenant's plan, hide it
+    // Switched off for the organization (or outside its products): hidden,
+    // beta or not. A beta module that is on is shown and marked in the UI.
     if (!hasModule(item.module)) {
       return false
     }
