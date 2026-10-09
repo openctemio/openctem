@@ -100,12 +100,10 @@ func (c *Client) SignJob(ctx context.Context, st jobsign.Statement) (json.RawMes
 		return nil, fmt.Errorf("job signer: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		var r jobsign.Refusal
-		_ = json.Unmarshal(raw, &r)
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			return nil, fmt.Errorf("%w: %d %s", command.ErrJobRefused, resp.StatusCode, r.Reason)
+		if rf := refusalOf(resp.StatusCode, raw); rf != nil {
+			return nil, fmt.Errorf("%w: %w", command.ErrJobRefused, rf)
 		}
-		return nil, fmt.Errorf("job signer: status %d %s", resp.StatusCode, r.Reason)
+		return nil, fmt.Errorf("job signer: status %d", resp.StatusCode)
 	}
 	if len(raw) > maxEnvelopeBytes {
 		return nil, errors.New("job signer: answer too large")

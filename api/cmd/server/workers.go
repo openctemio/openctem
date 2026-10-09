@@ -164,6 +164,24 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 	}
 }
 
+// signerLedgerSyncInterval is how often the job signer's ledger is narrowed
+// to the database (RFC-040 P2).
+const signerLedgerSyncInterval = 10 * time.Minute
+
+// registerSignerLedgerSync narrows the job signer's scope ledger to the
+// database on a schedule: a narrowing that did not reach the signer, or a
+// change written outside the scope service, is caught here. The signer
+// never widens from it. Only with a job signer (SIGNER_SOCKET).
+func registerSignerLedgerSync(m *controller.Manager, svc *Services, log *logger.Logger) {
+	if svc.JobSigner == nil || svc.Scope == nil {
+		return
+	}
+	scopeSvc := svc.Scope
+	m.Register(controller.NewPurgeController("signer-ledger-sync", signerLedgerSyncInterval,
+		func(ctx context.Context) (int64, error) { return 0, scopeSvc.SyncLedger(ctx) },
+		log.With("controller", "signer-ledger-sync")))
+}
+
 // NewWorkers initializes all background workers.
 func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	cfg := deps.Config
@@ -485,6 +503,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
+	registerSignerLedgerSync(w.ControllerManager, svc, log)
 
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
 		repos.FindingApproval,
