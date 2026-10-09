@@ -241,3 +241,45 @@ func TestScopeCheck_AssetIDs_DB(t *testing.T) {
 		t.Fatalf("a refused request reached the dry run: %d calls", len(dry.got))
 	}
 }
+
+// The preview of a single-scanner scan checks at the scanner's own tier (the
+// one its create refuses tier_exceeds at), unless the caller names a tier; an
+// unknown scanner is safe active, like the create path.
+func TestScopeCheck_ScannerNameSetsTier_DB(t *testing.T) {
+	db, ctx := openScopingTestDB(t)
+	tenantID := seedHandlerTenant(ctx, t, db)
+	pg := &postgres.DB{DB: db}
+	svc := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg), postgres.NewAssetRepository(pg), logger.NewNop())
+	h := NewScopeHandler(svc, validator.New(), logger.NewNop())
+	rec := &recordingDryRun{results: []scansvc.DryRunResult{{Target: "app.example.com", Code: scopedom.RefusalNoEntry}}}
+	h.SetDryRun(rec, fakeCoverage{})
+
+	tierFor := func(body string) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scope/check", strings.NewReader(body))
+		c := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+		c = context.WithValue(c, middleware.IsAdminKey, true)
+		w := httptest.NewRecorder()
+		h.CheckScope(w, req.WithContext(c))
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", body, w.Code, w.Body.String())
+		}
+		return rec.got[len(rec.got)-1].Tier
+	}
+	want := int(scansvc.ProbeTier("zap"))
+	if want != 2 {
+		t.Fatalf("catalog: zap probes at %d, this test expects the intrusive tier", want)
+	}
+	if got := tierFor(`{"targets":["app.example.com"],"scanner_name":"zap"}`); got != want {
+		t.Fatalf("scanner_name zap: tier %d, want %d", got, want)
+	}
+	if got := tierFor(`{"targets":["app.example.com"],"scanner_name":"zap","tier":0}`); got != 0 {
+		t.Fatalf("an explicit tier must win: got %d", got)
+	}
+	if got := tierFor(`{"targets":["app.example.com"],"scanner_name":"no-such-tool"}`); got != 1 {
+		t.Fatalf("unknown scanner: tier %d, want 1", got)
+	}
+	if got := tierFor(`{"targets":["app.example.com"]}`); got != 1 {
+		t.Fatalf("default: tier %d, want 1", got)
+	}
+}
