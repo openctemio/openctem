@@ -444,12 +444,6 @@ func stripAccess(ctx context.Context, tx *sql.Tx, tid, uid string, actorArg any,
 		*c.dst = n
 	}
 	for _, s := range []struct{ what, query string }{
-		{"remove campaign team entries", `
-			UPDATE pentest_campaigns
-			SET team_user_ids = array_remove(team_user_ids, $2::uuid),
-			    lead_user_id = CASE WHEN lead_user_id = $2::uuid THEN NULL ELSE lead_user_id END,
-			    updated_at = NOW()
-			WHERE tenant_id = $1 AND (lead_user_id = $2::uuid OR $2::uuid = ANY(team_user_ids))`},
 		{"remove roles", `DELETE FROM user_roles WHERE tenant_id = $1 AND user_id = $2`},
 		{"remove invitations", `
 			DELETE FROM tenant_invitations
