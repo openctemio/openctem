@@ -47,3 +47,19 @@ func registerMCPSettingsRoutes(router Router, h *handler.MCPSettingsHandler, aut
 		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }
+
+// registerMCPConnectionRoutes mounts the connected applications of RFC-062
+// §12: everyone sees and ends their own connections; owners and
+// administrators see and end every connection of the organization. API keys
+// are refused (APIKeyRouteDenied: /api/v1/mcp-access).
+func registerMCPConnectionRoutes(router Router, h *handler.MCPConnectionsHandler, authMiddleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/mcp-access/my-connections", func(r Router) {
+		r.GET("/", h.ListMine)
+		r.DELETE("/{id}", h.RevokeMine)
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/mcp-access/connections", func(r Router) {
+		r.GET("/", h.ListAll, middleware.RequireAdmin())
+		r.DELETE("/{id}", h.RevokeAny, middleware.RequireAdmin())
+	}, tenantMiddlewares...)
+}

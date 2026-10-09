@@ -128,6 +128,8 @@
   "settings.desc.my-notifications": "Which notifications you receive, and how.",
   "settings.item.activity": "Activity",
   "settings.desc.activity": "Your own recent sign-ins and actions.",
+  "settings.item.connected-apps": "Connected applications",
+  "settings.desc.connected-apps": "AI applications you allowed to read your data.",
   "settings.item.org-general": "General",
   "settings.desc.org-general": "Organization name, branding, localization and file storage.",
   "settings.item.modules": "Modules",
@@ -638,6 +640,7 @@
   "admin.attention.sensorsOffline.title": "Platform sensors offline",
   "admin.attention.test": "Record a test",
   "admin.attention.warning": "Warning",
+  "admin.nav.aiApplications": "AI applications",
   "admin.nav.activity": "Admin activity",
   "admin.nav.adminSignIn": "Admin sign-in",
   "admin.nav.administrators": "Administrators",
@@ -796,5 +799,8 @@
   "auth.requestAccess.confirming": "Confirming your request...",
   "auth.requestAccess.confirmed": "Your request is confirmed and waits for an administrator.",
   "auth.requestAccess.confirmFailed": "This link is invalid or has expired.",
+  "auth.verifyEmail.verifying": "Verifying your email address...",
+  "auth.verifyEmail.verified": "Your email address is verified. You can sign in.",
+  "auth.verifyEmail.failed": "This link is invalid or has expired.",
   "admin.nav.access-requests": "Access requests"
 }

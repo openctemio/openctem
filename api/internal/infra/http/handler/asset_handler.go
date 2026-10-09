@@ -584,6 +584,8 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
 // @Param        sub_type      query     string  false  "Filter by sub_type"
 // @Param        business_unit_ids     query string false "Filter by business unit membership (comma-separated UUIDs)"
+// @Param        under                 query string false "Names equal to or below these DNS names (comma-separated, at most 10)"
+// @Param        ids                   query string false "Only these assets (comma-separated UUIDs, at most 100): one batch read instead of one request per asset"
 // @Param        has_owner             query bool   false "Filter assets with (true) / without (false) an assigned owner"
 // @Param        data_classifications  query string false "Filter by data classification (comma-separated: public,internal,confidential,restricted,secret)"
 // @Param        is_control_plane      query bool   false "Filter assets that are a control-plane dependency"
@@ -631,6 +633,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
 		// CTEM inventory dimensions
 		BusinessUnitIDs:      parseQueryArray(query.Get("business_unit_ids")),
+		IDs:                  parseQueryArray(query.Get("ids")),
+		UnderDomains:         parseQueryArray(query.Get("under")),
 		HasOwner:             parseQueryBoolPtr(query.Get("has_owner")),
 		DataClassifications:  parseQueryArray(query.Get("data_classifications")),
 		IsControlPlane:       parseQueryBoolPtr(query.Get("is_control_plane")),

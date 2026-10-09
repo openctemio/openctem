@@ -606,6 +606,8 @@ func registerAssetStateHistoryRoutes(
 		// Stats and analytics endpoints (must be before /{id})
 		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
 		r.GET("/timeline", h.Timeline, middleware.Require(permission.AssetsRead))
+		// The totals of every change view in one response (the What changed strip).
+		r.GET("/counts", h.Counts, middleware.Require(permission.AssetsRead))
 
 		// Shadow IT detection
 		r.GET("/shadow-it", h.ShadowITCandidates, middleware.Require(permission.AssetsRead))

@@ -220,6 +220,8 @@ export type RunEvent = Schemas['internal_infra_http_handler.RunEvent']
 export type RunEventsResponse = Schemas['internal_infra_http_handler.RunEventsResponse']
 export type RunMap = Schemas['internal_infra_http_handler.RunMapResponse']
 export type RunMapNode = Schemas['internal_infra_http_handler.RunMapNode']
+export type RunStepOutputs = Schemas['internal_infra_http_handler.RunStepOutputsResponse']
+export type RunStepOutput = Schemas['internal_infra_http_handler.RunStepOutput']
 /** GET /api/v1/easm/candidates — the attribution review queue. */
 export type EASMReviewPage =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']

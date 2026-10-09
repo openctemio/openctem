@@ -1253,7 +1253,13 @@ type ListAssetsInput struct {
 	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
-	BusinessUnitIDs      []string `validate:"max=50,dive,uuid"`
+	BusinessUnitIDs []string `validate:"max=50,dive,uuid"`
+	// IDs narrows the list to these assets: one request instead of one
+	// GET /assets/{id} per row (research/81). At most a page of them.
+	IDs []string `validate:"max=100,dive,uuid"`
+	// UnderDomains keeps the names equal to or below these DNS names (the
+	// scan wizard's coverage expansion: one request for every typed domain).
+	UnderDomains         []string `validate:"max=10,dive,fqdn"`
 	HasOwner             *bool    // Assets with/without an assigned owner
 	DataClassifications  []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
 	IsControlPlane       *bool    // Asset is a control-plane dependency
@@ -1398,6 +1404,12 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	// CTEM inventory dimensions.
 	if len(input.BusinessUnitIDs) > 0 {
 		filter = filter.WithBusinessUnitIDs(input.BusinessUnitIDs...)
+	}
+	if len(input.IDs) > 0 {
+		filter = filter.WithIDs(input.IDs...)
+	}
+	if len(input.UnderDomains) > 0 {
+		filter = filter.WithUnderDomains(input.UnderDomains...)
 	}
 	if input.HasOwner != nil {
 		filter = filter.WithHasOwner(*input.HasOwner)

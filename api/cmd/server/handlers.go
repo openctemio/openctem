@@ -318,8 +318,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// endpoint also accepts its access tokens, and a refused call that
 	// another scope would allow gets a step-up challenge.
 	var mcpOAuthHandler *handler.MCPOAuthHandler
+	var mcpConnections *handler.MCPConnectionsHandler
 	if mcpOAuth := newMCPOAuthService(mcpDiscovery, deps, log); mcpOAuth != nil && mcpHandler != nil {
 		mcpOAuthHandler = handler.NewMCPOAuthHandler(mcpOAuth, log)
+		mcpConnections = handler.NewMCPConnectionsHandler(mcpOAuth, log)
 		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
 		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
 	}
@@ -329,14 +331,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	handlers := routes.Handlers{
-		ModuleGate:   moduleGate,
-		DataScope:    svc.DataScope,
-		MCP:          mcpHandler,
-		MCPAuth:      mcpAuth,
-		MCPDiscovery: mcpDiscovery,
-		MCPOAuth:     mcpOAuthHandler,
-		MCPSettings:  mcpSettings,
-		APIKeyAuth:   apiKeyAuth,
+		ModuleGate:     moduleGate,
+		DataScope:      svc.DataScope,
+		MCP:            mcpHandler,
+		MCPAuth:        mcpAuth,
+		MCPDiscovery:   mcpDiscovery,
+		MCPOAuth:       mcpOAuthHandler,
+		MCPSettings:    mcpSettings,
+		MCPConnections: mcpConnections,
+		APIKeyAuth:     apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
@@ -442,6 +445,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
 		ScannerTemplate: handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
 		TemplateSource:  handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
+		ContentPack:     handler.NewContentPackHandler(svc.ContentPacks, log),
 		SecretStore:     handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:            handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
