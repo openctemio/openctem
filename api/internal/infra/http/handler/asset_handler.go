@@ -780,6 +780,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Tags:        req.Tags,
 		OwnerRef:    req.OwnerRef,
 		Properties:  req.Properties,
+		ActorID:     middleware.GetUserID(r.Context()),
 	}
 
 	a, err := h.service.CreateAsset(r.Context(), input)
@@ -894,6 +895,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		ImpactConfidentiality: req.ImpactConfidentiality,
 		ImpactIntegrity:       req.ImpactIntegrity,
 		ImpactAvailability:    req.ImpactAvailability,
+		ActorID:               middleware.GetUserID(r.Context()),
 	}
 
 	// The version before the change, for the audit trail's changed-field list.

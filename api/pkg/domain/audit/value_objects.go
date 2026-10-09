@@ -24,7 +24,7 @@ const (
 	ActionTenantModulesUpdated         Action = "tenant.modules_updated"
 	ActionTenantRiskScoringUpdated     Action = "tenant.risk_scoring_updated"
 	ActionTenantRiskScoresRecalculated Action = "tenant.risk_scores_recalculated"
-	ActionTenantAssetSourceUpdated     Action = "tenant.asset_source_updated"
+	ActionTenantAssetSourceUpdated     Action = "tenant.asset_source_updated" // asset source precedence (RFC-069)
 	ActionTenantAssetLifecycleUpdated  Action = "tenant.asset_lifecycle_updated"
 	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
 	// settings (RFC-039).
