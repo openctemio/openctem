@@ -104,7 +104,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
 		FindingsFixApply, FindingsVerify,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
-		SuppressionsRead, SuppressionsWrite, SuppressionsDelete,
+		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
@@ -271,7 +271,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ToolsRead,
 		TenantToolsRead,
 		ScannerTemplatesRead,
-		SecretStoreRead,
 		CIRead,
 		// Sensors (read only)
 		SensorsRead,
