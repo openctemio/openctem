@@ -56,7 +56,7 @@ func TestOrganizationClientIsOnlyItsOrganizations(t *testing.T) {
 	tok, oerr := h.svc.Token(ctx, url.Values{
 		"grant_type": {"authorization_code"}, "code": {u.Query().Get("code")}, "code_verifier": {verifier},
 		"client_id": {c.ClientID}, "redirect_uri": {"http://127.0.0.1:41000/cb"}, "resource": {resource},
-	}, mcpoauth.Actor{})
+	}, "", mcpoauth.Actor{})
 	if oerr != nil {
 		t.Fatal(oerr)
 	}

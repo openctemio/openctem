@@ -9,7 +9,7 @@
  */
 
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useState, useMemo, useCallback } from 'react'
 import { Plus, Wrench, Search, Download } from 'lucide-react'
 import { toast } from 'sonner'

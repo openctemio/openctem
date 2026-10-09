@@ -8,7 +8,7 @@
  */
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 
 import { Label } from '@/components/ui/label'
 import {
