@@ -14,6 +14,7 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
+  SheetBody,
   SheetTitle,
   SheetFooter,
 } from '@/components/ui/sheet'
@@ -284,9 +285,9 @@ export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleShe
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent className="sm:max-w-4xl p-0 flex flex-col h-full max-h-screen">
+      <SheetContent className="sm:max-w-4xl">
         {/* Header */}
-        <SheetHeader className="px-6 py-4 border-b shrink-0">
+        <SheetHeader>
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-primary/10 p-2">
               <Plus className="h-5 w-5 text-primary" />
@@ -299,7 +300,7 @@ export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleShe
         </SheetHeader>
 
         {/* Content - Two columns */}
-        <div className="flex-1 flex min-h-0">
+        <SheetBody className="flex overflow-hidden p-0 sm:p-0">
           {/* Left Column - Form */}
           <div className="flex-1 flex flex-col min-h-0 border-r">
             <ScrollArea className="flex-1 h-full">
@@ -633,10 +634,10 @@ export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleShe
               </div>
             </ScrollArea>
           </div>
-        </div>
+        </SheetBody>
 
         {/* Footer */}
-        <SheetFooter className="px-6 py-4 border-t shrink-0">
+        <SheetFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>

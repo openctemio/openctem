@@ -12,6 +12,8 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/coalesce"
 	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
 )
 
@@ -19,12 +21,24 @@ import (
 // one new command does not run every stream's doorbell query at once.
 const wakeJitter = 250 * time.Millisecond
 
+// WakeCoalesce is the shortest gap between two deliveries of the same wake
+// (one tenant's streams, one sensor's streams, or every stream): wakes
+// inside it fold into one delivered when it ends (research/84 RE-12). One
+// command release wakes every stream of the tenant on every replica, each
+// re-authenticating and re-reading the doorbell; without the bound a tenant
+// releasing or refusing commands in a loop drives that work at its own pace.
+// A folded wake is delayed, never lost; the periodic re-check is the
+// backstop.
+const WakeCoalesce = 500 * time.Millisecond
+
 // Hub holds the control streams of this replica and wakes them.
 type Hub struct {
 	mu           sync.Mutex
 	byTenant     map[string]map[*stream]struct{}
 	perSensor    map[string]int
 	maxPerSensor int
+	// wakes coalesces deliveries per tenant, per sensor and for WakeAll.
+	wakes *coalesce.Throttle
 }
 
 type stream struct {
@@ -38,7 +52,8 @@ func NewHub(maxPerSensor int) *Hub {
 	if maxPerSensor <= 0 {
 		maxPerSensor = 4
 	}
-	return &Hub{byTenant: map[string]map[*stream]struct{}{}, perSensor: map[string]int{}, maxPerSensor: maxPerSensor}
+	return &Hub{byTenant: map[string]map[*stream]struct{}{}, perSensor: map[string]int{}, maxPerSensor: maxPerSensor,
+		wakes: coalesce.New(WakeCoalesce)}
 }
 
 var errTooManyStreams = errors.New("too many control streams for this sensor")
@@ -73,8 +88,24 @@ func (h *Hub) remove(st *stream) {
 }
 
 // Wake tells the streams of tenantID (only sensorID's when it is not "")
-// to re-evaluate the doorbell. It never blocks.
+// to re-evaluate the doorbell, at most once per WakeCoalesce for the same
+// tenant (or sensor). It never blocks. A tenant with no stream on this
+// replica costs nothing.
 func (h *Hub) Wake(tenantID, sensorID string) {
+	h.mu.Lock()
+	_, has := h.byTenant[tenantID]
+	h.mu.Unlock()
+	if !has {
+		return
+	}
+	key := "t:" + tenantID
+	if sensorID != "" {
+		key = "s:" + tenantID + "/" + sensorID
+	}
+	h.wakes.Do(key, func() { h.wakeNow(tenantID, sensorID) })
+}
+
+func (h *Hub) wakeNow(tenantID, sensorID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for st := range h.byTenant[tenantID] {
@@ -88,8 +119,12 @@ func (h *Hub) Wake(tenantID, sensorID string) {
 }
 
 // WakeAll wakes every stream (a change whose tenant is not known, e.g. a
-// bulk re-queue by the reaper).
+// bulk re-queue by the reaper), at most once per WakeCoalesce.
 func (h *Hub) WakeAll() {
+	h.wakes.Do("*", h.wakeAllNow)
+}
+
+func (h *Hub) wakeAllNow() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, m := range h.byTenant {
@@ -123,8 +158,14 @@ func (s *Server) Subscribe(ctx context.Context, _ *connect.Request[sensorv3.Subs
 	if !ok || hints == nil || auth == nil {
 		return connect.NewError(connect.CodeUnauthenticated, errNoIdentity)
 	}
+	// The open rate first: a refused open costs no database work.
+	if !s.opens.allow(id.Sensor.ID.String()) {
+		metrics.SensorStreamOpensRefusedTotal.WithLabelValues("rate").Inc()
+		return connect.NewError(connect.CodeResourceExhausted, errStreamOpenRate)
+	}
 	st, err := s.hub.add(id.Sensor.TenantID.String(), id.Sensor.ID.String())
 	if err != nil {
+		metrics.SensorStreamOpensRefusedTotal.WithLabelValues("concurrent").Inc()
 		return connect.NewError(connect.CodeResourceExhausted, err)
 	}
 	defer s.hub.remove(st)

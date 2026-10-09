@@ -12,15 +12,12 @@ asset_groups
 asset_identifiers
 asset_identity_backfill
 asset_merge_log
-asset_properties_pre_001185
 asset_relationships
 asset_services
 asset_state_history
-asset_type_reclassifications
 assets
 assignment_rules
 attachments
-attack_paths
 attack_simulation_runs
 attack_simulations
 attacker_profiles
@@ -90,6 +87,7 @@ ingest_reports
 integrations
 ioc_matches
 iocs
+mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
 mcp_oauth_requests
@@ -162,7 +160,6 @@ threat_actors
 threat_model_threats
 threat_models
 tool_categories
-tool_executions
 tools
 user_accessible_assets
 user_dashboards

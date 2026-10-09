@@ -16,6 +16,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -218,7 +220,7 @@ export function AddScannerTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileCode2 className="h-5 w-5" />
@@ -230,188 +232,190 @@ export function AddScannerTemplateDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
             {/* Template Type */}
-            <FormField
-              control={form.control}
-              name="template_type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Template Type</FormLabel>
-                  <Select
-                    onValueChange={(v) => handleTypeChange(v as TemplateType)}
-                    value={field.value}
-                  >
+            <DialogBody className="space-y-4">
+              <FormField
+                control={form.control}
+                name="template_type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Template Type</FormLabel>
+                    <Select
+                      onValueChange={(v) => handleTypeChange(v as TemplateType)}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a scanner type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {TEMPLATE_TYPES.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            <div className="flex flex-col">
+                              <span>{TEMPLATE_TYPE_DISPLAY_NAMES[type]}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {TEMPLATE_TYPE_DESCRIPTIONS[type]}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Name */}
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a scanner type" />
-                      </SelectTrigger>
+                      <Input placeholder="my-custom-template" {...field} />
                     </FormControl>
-                    <SelectContent>
-                      {TEMPLATE_TYPES.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          <div className="flex flex-col">
-                            <span>{TEMPLATE_TYPE_DISPLAY_NAMES[type]}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {TEMPLATE_TYPE_DESCRIPTIONS[type]}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Name */}
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="my-custom-template" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* Description */}
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="A brief description of what this template detects..."
+                        className="resize-none"
+                        rows={2}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Description */}
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="A brief description of what this template detects..."
-                      className="resize-none"
-                      rows={2}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* File Upload */}
-            <FormField
-              control={form.control}
-              name="content"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Template File</FormLabel>
-                  <FormControl>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="file"
-                          accept={
-                            selectedType
-                              ? TEMPLATE_TYPE_EXTENSIONS[selectedType]
-                              : '.yaml,.yml,.toml'
-                          }
-                          onChange={handleFileUpload}
-                          className="hidden"
-                          id="template-file"
-                          disabled={!selectedType}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={!selectedType}
-                          onClick={() => document.getElementById('template-file')?.click()}
-                        >
-                          <Upload className="me-2 h-4 w-4" />
-                          Choose File
-                        </Button>
-                        {fileName && (
-                          <span className="text-sm text-muted-foreground">{fileName}</span>
+              {/* File Upload */}
+              <FormField
+                control={form.control}
+                name="content"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Template File</FormLabel>
+                    <FormControl>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="file"
+                            accept={
+                              selectedType
+                                ? TEMPLATE_TYPE_EXTENSIONS[selectedType]
+                                : '.yaml,.yml,.toml'
+                            }
+                            onChange={handleFileUpload}
+                            className="hidden"
+                            id="template-file"
+                            disabled={!selectedType}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!selectedType}
+                            onClick={() => document.getElementById('template-file')?.click()}
+                          >
+                            <Upload className="me-2 h-4 w-4" />
+                            Choose File
+                          </Button>
+                          {fileName && (
+                            <span className="text-sm text-muted-foreground">{fileName}</span>
+                          )}
+                        </div>
+                        {selectedType && (
+                          <FormDescription>
+                            Accepted: {TEMPLATE_TYPE_EXTENSIONS[selectedType]} (max{' '}
+                            {formatTemplateSize(TEMPLATE_TYPE_MAX_SIZES[selectedType])})
+                          </FormDescription>
+                        )}
+                        {field.value && (
+                          <Textarea
+                            placeholder="Or paste template content here..."
+                            className="font-mono text-sm"
+                            rows={6}
+                            value={field.value}
+                            onChange={(e) => {
+                              field.onChange(e.target.value)
+                              setFileName(null)
+                              setValidationResult(null)
+                            }}
+                          />
                         )}
                       </div>
-                      {selectedType && (
-                        <FormDescription>
-                          Accepted: {TEMPLATE_TYPE_EXTENSIONS[selectedType]} (max{' '}
-                          {formatTemplateSize(TEMPLATE_TYPE_MAX_SIZES[selectedType])})
-                        </FormDescription>
-                      )}
-                      {field.value && (
-                        <Textarea
-                          placeholder="Or paste template content here..."
-                          className="font-mono text-sm"
-                          rows={6}
-                          value={field.value}
-                          onChange={(e) => {
-                            field.onChange(e.target.value)
-                            setFileName(null)
-                            setValidationResult(null)
-                          }}
-                        />
-                      )}
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Tags */}
-            <FormField
-              control={form.control}
-              name="tags"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tags (optional)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="sqli, owasp, web" {...field} />
-                  </FormControl>
-                  <FormDescription>Comma-separated tags for filtering</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* Tags */}
+              <FormField
+                control={form.control}
+                name="tags"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tags (optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="sqli, owasp, web" {...field} />
+                    </FormControl>
+                    <FormDescription>Comma-separated tags for filtering</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Validation Result */}
-            {isValidating && (
-              <Alert>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <AlertTitle>Validating...</AlertTitle>
-                <AlertDescription>Checking template syntax and structure</AlertDescription>
-              </Alert>
-            )}
-
-            {validationResult &&
-              !isValidating &&
-              (validationResult.valid ? (
-                <Alert className="border-green-500/30 bg-green-500/10">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <AlertTitle className="text-green-500">Valid Template</AlertTitle>
-                  <AlertDescription>
-                    Found {validationResult.rule_count}{' '}
-                    {validationResult.rule_count === 1 ? 'rule' : 'rules'}
-                  </AlertDescription>
+              {/* Validation Result */}
+              {isValidating && (
+                <Alert>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <AlertTitle>Validating...</AlertTitle>
+                  <AlertDescription>Checking template syntax and structure</AlertDescription>
                 </Alert>
-              ) : (
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Validation Errors</AlertTitle>
-                  <AlertDescription>
-                    <ul className="mt-2 list-inside list-disc">
-                      {validationResult.errors?.map((error, i) => (
-                        <li key={i}>
-                          {error.field}: {error.message}
-                        </li>
-                      ))}
-                    </ul>
-                  </AlertDescription>
-                </Alert>
-              ))}
+              )}
+
+              {validationResult &&
+                !isValidating &&
+                (validationResult.valid ? (
+                  <Alert className="border-success/30 bg-success/10">
+                    <CheckCircle className="h-4 w-4 text-success" />
+                    <AlertTitle className="text-success">Valid Template</AlertTitle>
+                    <AlertDescription>
+                      Found {validationResult.rule_count}{' '}
+                      {validationResult.rule_count === 1 ? 'rule' : 'rules'}
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Validation Errors</AlertTitle>
+                    <AlertDescription>
+                      <ul className="mt-2 list-inside list-disc">
+                        {validationResult.errors?.map((error, i) => (
+                          <li key={i}>
+                            {error.field}: {error.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </AlertDescription>
+                  </Alert>
+                ))}
+            </DialogBody>
 
             <DialogFooter>
               <Button
@@ -427,7 +431,7 @@ export function AddScannerTemplateDialog({
                 Upload Template
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>

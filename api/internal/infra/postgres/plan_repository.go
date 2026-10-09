@@ -157,8 +157,11 @@ func (r *PlanRepository) DeleteOverride(ctx context.Context, tenantID shared.ID,
 
 // Usage counts what the organization uses, one query, every count scoped
 // by tenant_id. A seat is every member who is not offboarded: a suspended
-// member, or a sign-up awaiting approval, still holds one.
-func (r *PlanRepository) Usage(ctx context.Context, tenantID shared.ID) (map[plan.Key]int, error) {
+// member, or a sign-up awaiting approval, still holds one. Findings are
+// counted (a second query) only when withFindings is set, that is while a
+// findings limit applies: the count runs over the largest table, so an
+// organization without that limit never pays for it.
+func (r *PlanRepository) Usage(ctx context.Context, tenantID shared.ID, withFindings bool) (map[plan.Key]int, error) {
 	var seats, assets, sensors, keys, trusts, invites int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
@@ -172,10 +175,18 @@ func (r *PlanRepository) Usage(ctx context.Context, tenantID shared.ID) (map[pla
 	if err != nil {
 		return nil, fmt.Errorf("count plan usage: %w", err)
 	}
-	return map[plan.Key]int{
+	usage := map[plan.Key]int{
 		plan.Seats: seats, plan.Assets: assets, plan.Sensors: sensors,
 		plan.APIKeys: keys, plan.CITrusts: trusts, plan.InvitesPerDay: invites,
-	}, nil
+	}
+	if withFindings {
+		var n int
+		if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM findings WHERE tenant_id = $1`, tenantID.String()).Scan(&n); err != nil {
+			return nil, fmt.Errorf("count findings: %w", err)
+		}
+		usage[plan.Findings] = n
+	}
+	return usage, nil
 }
 
 // CountOwnedFreeTenants counts the Free organizations the user owns.
