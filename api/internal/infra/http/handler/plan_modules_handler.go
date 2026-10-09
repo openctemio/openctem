@@ -18,7 +18,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-const stepUpPurposePlanModules = "plan modules change"
+const (
+	stepUpPurposePlanModules = "plan modules change"
+	stepUpPurposeModuleGrant = "organization module grant change"
+)
 
 // PlanModuleOption is one module an administrator can include in a plan.
 type PlanModuleOption struct {
@@ -156,12 +159,21 @@ type SetModuleGrantRequest struct {
 	Kind      string     `json:"kind"`
 	Reason    string     `json:"reason"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// TOTPCode is a fresh code from the administrator's authenticator.
+	TOTPCode string `json:"totp_code"`
+}
+
+// DeleteModuleGrantRequest removes one organization's grant or deny.
+type DeleteModuleGrantRequest struct {
+	Reason   string `json:"reason"`
+	TOTPCode string `json:"totp_code"`
 }
 
 // SetModuleGrant grants a module beyond the plan (a trial, an add-on) or
-// denies one the plan includes (ops_admin+, audited).
+// denies one the plan includes (ops_admin+ with a fresh authenticator code,
+// audited).
 // @Summary      Grant or deny a module to an organization (platform admin)
-// @Description  kind is grant or deny. A reason is required; an expiry is optional and must be in the future.
+// @Description  kind is grant or deny. A reason and a fresh authenticator code are required; an expiry is optional and must be in the future.
 // @Tags         Admin Organizations
 // @Accept       json
 // @Produce      json
@@ -181,9 +193,17 @@ func (h *PlanHandler) SetModuleGrant(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	err := h.svc.PutModuleGrant(r.Context(), actor, id, entitlement.ModuleGrantInput{
+	in := entitlement.ModuleGrantInput{
 		Module: r.PathValue("module_id"), Kind: plan.GrantKind(req.Kind), Reason: req.Reason, ExpiresAt: req.ExpiresAt,
-	}, middleware.ClientIP(r), r.UserAgent())
+	}
+	if in.Validate(time.Now()) != nil {
+		apierror.BadRequest("Give a non-core module, grant or deny, a reason (up to 500 characters) and, if any, a future expiry").WriteJSON(w)
+		return
+	}
+	if !h.confirmStepUp(w, r, actor, req.TOTPCode, stepUpPurposeModuleGrant) {
+		return
+	}
+	err := h.svc.PutModuleGrant(r.Context(), actor, id, in, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
 		if errors.Is(err, plan.ErrInvalid) {
 			apierror.BadRequest("Give a non-core module, grant or deny, a reason (up to 500 characters) and, if any, a future expiry").WriteJSON(w)
@@ -197,12 +217,15 @@ func (h *PlanHandler) SetModuleGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteModuleGrant removes an organization's grant or deny of a module: the
-// plan decides again (ops_admin+, audited).
+// plan decides again (ops_admin+ with a reason and a fresh authenticator
+// code, audited).
 // @Summary      Remove an organization's module grant (platform admin)
 // @Tags         Admin Organizations
+// @Accept       json
 // @Produce      json
 // @Param        tenantId  path  string  true  "Organization ID"
 // @Param        module_id  path  string  true  "Module ID"
+// @Param        request   body  DeleteModuleGrantRequest  true  "Reason and code"
 // @Success      200  {object}  AdminTenantModulesResponse
 // @Router       /admin/tenants/{tenantId}/modules/{module_id}/grant [delete]
 func (h *PlanHandler) DeleteModuleGrant(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +234,20 @@ func (h *PlanHandler) DeleteModuleGrant(w http.ResponseWriter, r *http.Request) 
 	if !ok || actor == nil {
 		return
 	}
-	if err := h.svc.DeleteModuleGrant(r.Context(), actor, id, r.PathValue("module_id"), middleware.ClientIP(r), r.UserAgent()); err != nil {
+	var req DeleteModuleGrantRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	moduleID := r.PathValue("module_id")
+	if _, known := moduledom.Lookup(moduleID); !known || !entitlement.ValidGrantReason(req.Reason) {
+		apierror.BadRequest("Give a known module and a reason (up to 500 characters)").WriteJSON(w)
+		return
+	}
+	if !h.confirmStepUp(w, r, actor, req.TOTPCode, stepUpPurposeModuleGrant) {
+		return
+	}
+	if err := h.svc.DeleteModuleGrant(r.Context(), actor, id, moduleID, req.Reason, middleware.ClientIP(r), r.UserAgent()); err != nil {
 		switch {
 		case errors.Is(err, plan.ErrInvalid):
 			apierror.BadRequest("unknown module").WriteJSON(w)

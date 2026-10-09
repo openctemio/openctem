@@ -71,8 +71,9 @@ entitled(org, module) = !deny(org, module)
   map (`platform_settings['plan_modules']`, every module for every plan until
   a super admin narrows it in Console > System > Plans) and the grants and
   denies of one organization (`tenant_module_grants`, Console >
-  Organizations > Plan, ops admin and up, with a reason and an optional
-  expiry). Changes are in the admin audit log and refresh the organization's
+  Organizations > Plan, ops admin and up, with a reason, a fresh
+  authenticator code and an optional expiry; removing one needs a reason and
+  a code too). Changes are in the admin audit log and refresh the organization's
   module state at once (a plan mapping change refreshes every organization).
   An organization cannot switch on a module it is not entitled to.
 - **Presets** write overrides once (Settings > Modules, or the starting set
