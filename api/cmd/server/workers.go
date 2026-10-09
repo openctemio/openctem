@@ -465,6 +465,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "member-access-expiry")))
 	}
 
+	// Team memberships with an end date (RFC-050 W22): removed within a minute.
+	if svc.Group != nil {
+		w.ControllerManager.Register(controller.NewTeamMembershipExpiryController(svc.Group, time.Minute, 200,
+			log.With("controller", "team-membership-expiry")))
+	}
+
 	// Idle Free workspaces: reminder, read-only, warnings, deletion due.
 	if svc.IdleWorkspaces != nil {
 		w.ControllerManager.Register(controller.NewIdleWorkspaceController(svc.IdleWorkspaces, 6*time.Hour,
