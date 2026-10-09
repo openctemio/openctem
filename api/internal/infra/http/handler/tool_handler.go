@@ -209,16 +209,6 @@ type CustomPatternResponse struct {
 	Pattern string `json:"pattern"`
 }
 
-// ToolStatsResponse represents tool statistics.
-type ToolStatsResponse struct {
-	ToolID         string `json:"tool_id"`
-	TotalRuns      int64  `json:"total_runs"`
-	SuccessfulRuns int64  `json:"successful_runs"`
-	FailedRuns     int64  `json:"failed_runs"`
-	TotalFindings  int64  `json:"total_findings"`
-	AvgDurationMs  int64  `json:"avg_duration_ms"`
-}
-
 // ToolSettingsResponse is the tenant's settings of one tool.
 type ToolSettingsResponse struct {
 	// IsEnabled is the tenant's switch (a tool never configured is on).
@@ -244,8 +234,6 @@ type ToolViewResponse struct {
 	Settings *ToolSettingsResponse `json:"settings,omitempty"`
 	// Availability: include=availability.
 	Availability *ToolAvailabilityInfo `json:"availability,omitempty"`
-	// Stats: include=stats.
-	Stats *ToolStatsResponse `json:"stats,omitempty"`
 	// Meta lists the includes left out (GET /tools/{id} only).
 	Meta *include.Meta `json:"meta,omitempty"`
 }
@@ -298,24 +286,20 @@ type BulkToolSettingsRequest struct {
 const (
 	includeSettings     = "settings"
 	includeAvailability = "availability"
-	includeStats        = "stats"
 )
 
 // ToolIncludes is the tool resource's include whitelist. Each include needs
 // the permission of its former standalone route: scans:tenant_tools:read.
-// The statistics are tenant-wide counts over every scan (not limited to a
-// caller's data scope), so they also need scans:read. The sensor names and
-// zones inside the availability additionally need sensors:read (otherwise
-// counts only). Availability and statistics are expensive: they cost 2 more
-// read-limiter tokens each and cap the page at 50.
+// The sensor names and zones inside the availability additionally need
+// sensors:read (otherwise counts only). Availability is expensive: it costs 2
+// more read-limiter tokens and caps the page at 50.
 var ToolIncludes = include.NewRegistry(
 	include.Spec{Name: includeSettings, Permissions: []permission.Permission{permission.TenantToolsRead}},
 	include.Spec{Name: includeAvailability, Permissions: []permission.Permission{permission.TenantToolsRead}, Cost: 2, Expensive: true},
-	include.Spec{Name: includeStats, Permissions: []permission.Permission{permission.TenantToolsRead, permission.ScansRead}, Cost: 2, Expensive: true},
 )
 
 // Bounds of the list: the filters, and the page size, lower when an include
-// that reads sensors or statistics is loaded.
+// that reads sensors is loaded.
 const (
 	maxToolSearchLen     = 255
 	maxToolCategoryLen   = 50
@@ -339,7 +323,7 @@ func optionalBool(r *http.Request, name string) (*bool, *apierror.Error) {
 
 // List handles GET /api/v1/tools
 // @Summary      List tools
-// @Description  The organization's view of the tool catalog: platform tools and its own custom tools. include= adds the organization's settings (credential-like config values masked), the availability from its sensors (sensor names and zones only with sensors:read) and run statistics; each needs scans:tenant_tools:read (stats, tenant-wide counts, also scans:read) and is otherwise left out and listed in meta.omitted_includes. A response that took include= is Cache-Control: private, no-store; availability and stats cost 2 more read-limit tokens each. The enabled/available filters need scans:tenant_tools:read. With include=availability the response also carries the availability summary and the tools the sensors report that the catalog does not list.
+// @Description  The organization's view of the tool catalog: platform tools and its own custom tools. include= adds the organization's settings (credential-like config values masked) and the availability from its sensors (sensor names and zones only with sensors:read); each needs scans:tenant_tools:read and is otherwise left out and listed in meta.omitted_includes. A response that took include= is Cache-Control: private, no-store; availability costs 2 more read-limit tokens. The enabled/available filters need scans:tenant_tools:read. With include=availability the response also carries the availability summary and the tools the sensors report that the catalog does not list.
 // @Tags         Tools
 // @Produce      json
 // @Param        source     query     string   false  "platform or custom"  Enums(platform, custom)
@@ -348,8 +332,7 @@ func optionalBool(r *http.Request, name string) (*bool, *apierror.Error) {
 // @Param        enabled    query     boolean  false  "Active in the catalog and switched on for the organization"
 // @Param        available  query     boolean  false  "A scan job can be dispatched now (an online sensor may run it)"
 // @Param        zone_id    query     string   false  "Availability from this scan zone's sensors only"
-// @Param        include    query     string   false  "Comma-separated, at most 3: settings, availability, stats (per_page is capped at 50 with availability or stats); one the caller may not read is left out and listed in meta.omitted_includes"
-// @Param        days       query     int      false  "Statistics window in days (1-365)" default(30)
+// @Param        include    query     string   false  "Comma-separated: settings, availability (per_page is capped at 50 with availability); one the caller may not read is left out and listed in meta.omitted_includes"
 // @Param        sort       query     string   false  "name, created_at or updated_at; '-' prefix for descending (default: category, then name)"
 // @Param        page       query     int      false  "Page number" default(1)
 // @Param        per_page   query     int      false  "Items per page (max 100)" default(20)
@@ -407,8 +390,6 @@ func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
 		ToolViewOptions: tool.ToolViewOptions{
 			Availability: inc.Has(includeAvailability),
 			ZoneID:       q.Get("zone_id"),
-			Stats:        inc.Has(includeStats),
-			StatsDays:    parseQueryIntBounded(q.Get("days"), 30, 1, 365),
 		},
 	})
 	if err != nil {
@@ -445,8 +426,7 @@ func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Param        id       path      string  true   "Tool ID"
 // @Param        zone_id  query     string  false  "Availability from this scan zone's sensors only"
-// @Param        include  query     string  false  "Comma-separated, at most 3: settings, availability, stats; one the caller may not read is left out and listed in meta.omitted_includes"
-// @Param        days     query     int     false  "Statistics window in days (1-365)" default(30)
+// @Param        include  query     string  false  "Comma-separated: settings, availability; one the caller may not read is left out and listed in meta.omitted_includes"
 // @Success      200  {object}  ToolViewResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error
@@ -467,8 +447,6 @@ func (h *ToolHandler) Get(w http.ResponseWriter, r *http.Request) {
 		tool.ToolViewOptions{
 			Availability: inc.Has(includeAvailability),
 			ZoneID:       r.URL.Query().Get("zone_id"),
-			Stats:        inc.Has(includeStats),
-			StatsDays:    parseQueryIntBounded(r.URL.Query().Get("days"), 30, 1, 365),
 		})
 	if err != nil {
 		h.handleViewError(w, err)
@@ -756,16 +734,6 @@ func toToolViewResponse(v *tool.ToolView, inc include.Set, withSensors bool, zon
 	if inc.Has(includeAvailability) && v.Availability != nil {
 		info := toToolAvailabilityInfo(*v.Availability, zones, withSensors)
 		resp.Availability = &info
-	}
-	if inc.Has(includeStats) && v.Stats != nil {
-		resp.Stats = &ToolStatsResponse{
-			ToolID:         v.Stats.ToolID.String(),
-			TotalRuns:      v.Stats.TotalRuns,
-			SuccessfulRuns: v.Stats.SuccessfulRuns,
-			FailedRuns:     v.Stats.FailedRuns,
-			TotalFindings:  v.Stats.TotalFindings,
-			AvgDurationMs:  v.Stats.AvgDurationMs,
-		}
 	}
 	return resp
 }

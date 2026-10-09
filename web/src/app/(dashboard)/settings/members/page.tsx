@@ -40,6 +40,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   AlertDialog,
@@ -451,25 +452,27 @@ function EditUserRolesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader className="pb-4 border-b">
+      <DialogContent>
+        <DialogHeader>
           <DialogTitle>Manage roles</DialogTitle>
           {member && <DialogDescription>{member.name}</DialogDescription>}
         </DialogHeader>
 
-        <div className="py-4">
-          <RoleChecklist
-            canGrantAdmin={canGrantAdmin}
-            roles={allRoles}
-            selected={selectedRoleIds}
-            onChange={setSelectedRoleIds}
-            loading={isLoading}
-            disabled={isSetting}
-            className="max-h-[400px]"
-          />
-        </div>
+        <DialogBody>
+          <div className="py-4">
+            <RoleChecklist
+              canGrantAdmin={canGrantAdmin}
+              roles={allRoles}
+              selected={selectedRoleIds}
+              onChange={setSelectedRoleIds}
+              loading={isLoading}
+              disabled={isSetting}
+              className="max-h-[400px]"
+            />
+          </div>
+        </DialogBody>
 
-        <DialogFooter className="border-t pt-4 gap-2">
+        <DialogFooter>
           <div className="flex-1 text-start">
             {selectedRoleIds.length > 0 && (
               <span className="text-xs text-muted-foreground">

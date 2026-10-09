@@ -13,6 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -120,7 +121,7 @@ export function LinkAssetsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="grid-cols-[minmax(0,1fr)] sm:max-w-lg">
+      <DialogContent className="grid-cols-[minmax(0,1fr)]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
@@ -129,107 +130,111 @@ export function LinkAssetsDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        <div className="min-w-0 space-y-4 py-2">
-          <div className="relative">
-            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search assets..."
-              aria-label="Search assets"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="ps-9"
-            />
-          </div>
-
-          {selected.size > 0 && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{selected.size} selected</span>
-              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
-                Clear
-              </Button>
+        <DialogBody>
+          <div className="min-w-0 space-y-4 py-2">
+            <div className="relative">
+              <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search assets..."
+                aria-label="Search assets"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="ps-9"
+              />
             </div>
-          )}
 
-          {/* A plain scroller, not ScrollArea: its viewport lays content out as a
-              table, so one long asset name widened the whole dialog past its
-              edge instead of truncating. */}
-          <div className="h-[300px] overflow-y-auto rounded-md border">
-            {isLoading ? (
-              <div className="space-y-1 p-2">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-3 p-2">
-                    <Skeleton className="h-4 w-4 rounded-[4px]" />
-                    <div className="flex-1 space-y-1.5">
-                      <Skeleton className="h-4 w-1/2" />
-                      <Skeleton className="h-3 w-1/4" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : assets.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
-                <Box className="mb-2 h-8 w-8 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">
-                  {debouncedSearch ? 'No assets match your search' : 'No active assets found'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1 p-2">
-                {assets.map((asset) => {
-                  const linked = linkedIds?.has(asset.id) ?? false
-                  const isSelected = selected.has(asset.id)
-                  return (
-                    <div
-                      key={asset.id}
-                      role="button"
-                      tabIndex={linked ? -1 : 0}
-                      aria-pressed={isSelected}
-                      aria-disabled={linked}
-                      onClick={() => !linked && toggle(asset.id)}
-                      onKeyDown={(e) => {
-                        if (!linked && (e.key === 'Enter' || e.key === ' ')) {
-                          e.preventDefault()
-                          toggle(asset.id)
-                        }
-                      }}
-                      className={cn(
-                        'flex w-full items-center gap-3 rounded-md border p-2 text-start transition-colors',
-                        'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        linked ? 'cursor-default border-transparent opacity-60' : 'cursor-pointer',
-                        !linked && isSelected
-                          ? 'border-primary/30 bg-primary/10'
-                          : !linked && 'border-transparent hover:bg-muted/50'
-                      )}
-                    >
-                      <Checkbox
-                        checked={linked || isSelected}
-                        disabled={linked}
-                        tabIndex={-1}
-                        aria-hidden
-                        className="pointer-events-none shrink-0"
-                      />
-                      <Box className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{asset.name}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span className="capitalize">{asset.type.replace(/_/g, ' ')}</span>
-                          {asset.criticality && (
-                            <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                              {asset.criticality}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      {linked && <span className="text-xs text-muted-foreground">Linked</span>}
-                    </div>
-                  )
-                })}
+            {selected.size > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">{selected.size} selected</span>
+                <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+                  Clear
+                </Button>
               </div>
             )}
-          </div>
 
-          {children}
-        </div>
+            {/* A plain scroller, not ScrollArea: its viewport lays content out as a
+              table, so one long asset name widened the whole dialog past its
+              edge instead of truncating. */}
+            <div className="h-[300px] overflow-y-auto rounded-md border">
+              {isLoading ? (
+                <div className="space-y-1 p-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2">
+                      <Skeleton className="h-4 w-4 rounded-[4px]" />
+                      <div className="flex-1 space-y-1.5">
+                        <Skeleton className="h-4 w-1/2" />
+                        <Skeleton className="h-3 w-1/4" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : assets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+                  <Box className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">
+                    {debouncedSearch ? 'No assets match your search' : 'No active assets found'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1 p-2">
+                  {assets.map((asset) => {
+                    const linked = linkedIds?.has(asset.id) ?? false
+                    const isSelected = selected.has(asset.id)
+                    return (
+                      <div
+                        key={asset.id}
+                        role="button"
+                        tabIndex={linked ? -1 : 0}
+                        aria-pressed={isSelected}
+                        aria-disabled={linked}
+                        onClick={() => !linked && toggle(asset.id)}
+                        onKeyDown={(e) => {
+                          if (!linked && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault()
+                            toggle(asset.id)
+                          }
+                        }}
+                        className={cn(
+                          'flex w-full items-center gap-3 rounded-md border p-2 text-start transition-colors',
+                          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                          linked
+                            ? 'cursor-default border-transparent opacity-60'
+                            : 'cursor-pointer',
+                          !linked && isSelected
+                            ? 'border-primary/30 bg-primary/10'
+                            : !linked && 'border-transparent hover:bg-muted/50'
+                        )}
+                      >
+                        <Checkbox
+                          checked={linked || isSelected}
+                          disabled={linked}
+                          tabIndex={-1}
+                          aria-hidden
+                          className="pointer-events-none shrink-0"
+                        />
+                        <Box className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{asset.name}</p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="capitalize">{asset.type.replace(/_/g, ' ')}</span>
+                            {asset.criticality && (
+                              <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                                {asset.criticality}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        {linked && <span className="text-xs text-muted-foreground">Linked</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {children}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
