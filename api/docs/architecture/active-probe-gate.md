@@ -84,7 +84,7 @@ Operator settings, never tenant settings:
   it at `DispatchTargetsInput.Tier` (T1 when unset; passive dispatches are
   not checked). `easm.ActiveGate.TierExceeded` answers, tenant-scoped.
 
-## Program entries (RFC-064)
+## Program entries (RFC-065)
 
 A scope entry records its authorization source. `program` entries come from a
 bug-bounty program the organization follows ([bounty-programs.md](bounty-programs.md)):
