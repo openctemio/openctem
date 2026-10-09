@@ -31,15 +31,6 @@ type TenantToolConfigFilter struct {
 	IsEnabled *bool
 }
 
-// ToolExecutionFilter defines filtering options for tool execution queries.
-type ToolExecutionFilter struct {
-	TenantID  shared.ID
-	ToolID    *shared.ID
-	SensorID  *shared.ID
-	ScanRunID *shared.ID
-	Status    *ExecutionStatus
-}
-
 // Repository defines the interface for tool persistence.
 type Repository interface {
 	// Tool operations (system-wide)
@@ -115,43 +106,6 @@ type TenantToolConfigRepository interface {
 	// Bulk enable/disable tools for tenant
 	BulkEnable(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID) error
 	BulkDisable(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID) error
-}
-
-// ToolExecutionRepository defines the interface for tool execution persistence.
-type ToolExecutionRepository interface {
-	Create(ctx context.Context, execution *ToolExecution) error
-
-	// GetByIDInTenant retrieves a tool execution restricted to one tenant.
-	// There is deliberately no tenantless GetByID (F-4, D-11): the row holds
-	// tenant-sensitive data (error_message, output_summary, targets).
-	GetByIDInTenant(ctx context.Context, tenantID, id shared.ID) (*ToolExecution, error)
-
-	List(ctx context.Context, filter ToolExecutionFilter, page pagination.Pagination) (pagination.Result[*ToolExecution], error)
-	Update(ctx context.Context, execution *ToolExecution) error
-
-	// Statistics
-	GetToolStats(ctx context.Context, tenantID, toolID shared.ID, days int) (*ToolStats, error)
-	GetTenantStats(ctx context.Context, tenantID shared.ID, days int) (*TenantToolStats, error)
-}
-
-// ToolStats holds statistics for a specific tool.
-type ToolStats struct {
-	ToolID         shared.ID
-	TotalRuns      int64
-	SuccessfulRuns int64
-	FailedRuns     int64
-	TotalFindings  int64
-	AvgDurationMs  int64
-}
-
-// TenantToolStats holds aggregated tool statistics for a tenant.
-type TenantToolStats struct {
-	TenantID       shared.ID
-	TotalRuns      int64
-	SuccessfulRuns int64
-	FailedRuns     int64
-	TotalFindings  int64
-	ToolBreakdown  []ToolStats
 }
 
 // EmbeddedCategory contains minimal category info for embedding in tool responses.
