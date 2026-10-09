@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/automation"
 	"github.com/openctemio/openctem/api/internal/app/capability"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -26,7 +28,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
-	"github.com/openctemio/openctem/api/internal/app/workflow"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
@@ -82,6 +83,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/bountysource"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	infrajira "github.com/openctemio/openctem/api/internal/infra/jira"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
@@ -428,7 +430,7 @@ func (r workflowPermissionReader) GetUserPermissions(ctx context.Context, tenant
 // the same auth keys a request carries, so the services the step calls
 // (data scope above all) treat it as that member and not as an
 // unrestricted internal call.
-func workflowPrincipalContext(ctx context.Context, p workflow.Principal) context.Context {
+func workflowPrincipalContext(ctx context.Context, p automation.Principal) context.Context {
 	perms := p.Permissions
 	if perms == nil {
 		perms = []string{}
@@ -445,14 +447,14 @@ func workflowPrincipalContext(ctx context.Context, p workflow.Principal) context
 // import app/jira — that would cycle through the app shim).
 type workflowJiraTicketAdapter struct{ svc *jira.SyncService }
 
-func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (workflow.TicketRef, error) {
+func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (automation.TicketRef, error) {
 	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
 		TenantID: tenantID, FindingID: findingID, ProjectKey: projectKey, IssueType: issueType,
 	})
 	if err != nil {
-		return workflow.TicketRef{}, err
+		return automation.TicketRef{}, err
 	}
-	return workflow.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+	return automation.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
 func (a workflowJiraTicketAdapter) SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error {
@@ -465,14 +467,14 @@ type workflowGitHubTicketAdapter struct {
 	svc *ticketing.GitHubTicketService
 }
 
-func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (workflow.TicketRef, error) {
+func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (automation.TicketRef, error) {
 	info, err := a.svc.CreateTicketFromFinding(ctx, ticketing.GitHubTicketInput{
 		TenantID: tenantID, FindingID: findingID, Owner: owner, Repo: repo,
 	})
 	if err != nil {
-		return workflow.TicketRef{}, err
+		return automation.TicketRef{}, err
 	}
-	return workflow.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+	return automation.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
 // wsChannelAccess adapts the RBAC and group services to
@@ -592,6 +594,8 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
+	// ScopeSnapshots stores the scope each scan run relied on (RFC-065 §9).
+	ScopeSnapshots *postgres.ScopeSnapshotRepository
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
@@ -688,8 +692,8 @@ type Services struct {
 	PlatformContentPacks *contentpackapp.PlatformService
 
 	// Workflows
-	Workflow           *workflow.WorkflowService
-	WorkflowDispatcher *workflow.WorkflowEventDispatcher
+	Workflow           *automation.WorkflowService
+	WorkflowDispatcher *automation.WorkflowEventDispatcher
 
 	// AssetDiscoveryNotifier turns newly discovered internet-facing assets into
 	// throttled tenant notifications (in-app + new_asset outbox event).
@@ -704,6 +708,7 @@ type Services struct {
 	// Access Control
 	Group          *accesscontrol.GroupService
 	Role           *accesscontrol.RoleService
+	ServiceAccount *accesscontrol.ServiceAccountService
 	AssignmentRule *assignment.RuleService
 	ScopeRule      *scope.RuleService
 
@@ -984,13 +989,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetProgramExclusions(programRepo)
+	s.Scope.SetProgramLister(programRepo)
+	s.ScopeSnapshots = postgres.NewScopeSnapshotRepository(&postgres.DB{DB: deps.DB})
 	letterRepo := postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetLetters(letterRepo)
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
+	// Program sync (RFC-065 §14): the outbound guard, the token encrypted
+	// with APP_ENCRYPTION_KEY, and every sync that narrows audited as the
+	// system or the person who ran it.
+	s.BountyProgram.SetSync(bountysource.New(), s.Encryptor,
+		func(err error) bool { return errors.Is(err, bountysource.ErrGone) },
+		programSyncAuditor(s.Audit))
 	s.BountyProgram.SetAssigner(programRepo)
 	s.ProgramAssigner = programRepo
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
+	// Program rules (RFC-065 §12) are matched against the scope entries.
+	s.BountyProgram.SetRuleScope(s.Scope)
 	// RFC-040 §11.5: program entries reach the job signer's ledger through
 	// the scope service's hook (a no-op without a signer).
 	s.BountyProgram.SetLedger(s.Scope)
@@ -1251,12 +1266,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize Pentest service
 	s.Pentest = compliance.NewPentestService(
-		repos.PentestCampaign, repos.PentestFinding,
+		repos.PentestCampaign, repos.Finding,
 		repos.PentestRetest, repos.PentestTemplate,
 		repos.PentestReport, log,
 	)
-	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
-	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
 	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
@@ -1677,6 +1690,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// claims it: scope can change while it waits in the queue. Until
 		// the scan service exists the gate refuses (fail closed).
 		command.WithScopeRecheck(probeGate)}
+	if s.BountyProgram != nil {
+		// RFC-065 §12: program testing windows, headers, User-Agent and
+		// rate caps travel with each job a program covers.
+		cmdOpts = append(cmdOpts, command.WithProgramRules(s.BountyProgram))
+	}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
@@ -1754,6 +1772,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)             // Web endpoints under their origin asset (RFC-056)
+	s.Ingest.SetSoftwareRepository(repos.Software)                   // Software inventory capture (RFC-066)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
@@ -1909,6 +1928,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope)),
+		scan.WithScopeSnapshots(scope.NewSnapshotRecorder(s.Scope, s.ScopeSnapshots)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
@@ -1933,6 +1953,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	if s.BountyProgram != nil {
+		s.Scan.SetProgramRules(s.BountyProgram) // RFC-065 §12
+	}
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	s.ScanFreeze = scanfreezeapp.NewService(repos.ScanFreezeWindow, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
@@ -2047,7 +2070,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Every automation run acts as one person (a manual run: who started
 	// it; an event run: the owner), checked live before each step.
-	workflowAuthorizer := workflow.NewPrincipalAuthorizer(
+	workflowAuthorizer := automation.NewPrincipalAuthorizer(
 		workflowMemberReader{tenants: repos.Tenant, access: repos.AccessControl},
 		workflowPermissionReader{roles: repos.Role},
 		s.DataScope,
@@ -2055,12 +2078,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 
 	// Initialize workflow executor
-	workflowExecutor := workflow.NewWorkflowExecutor(
+	workflowExecutor := automation.NewWorkflowExecutor(
 		repos.Workflow,
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
-		log, workflow.WithExecutorDB(deps.DB), workflow.WithExecutorOutboxService(s.Outbox), workflow.WithExecutorIntegrationService(s.Integration), workflow.WithExecutorAuditService(s.Audit),
-		workflow.WithExecutorStepAuthorizer(workflowAuthorizer),
+		log, automation.WithExecutorDB(deps.DB), automation.WithExecutorOutboxService(s.Outbox), automation.WithExecutorIntegrationService(s.Integration), automation.WithExecutorAuditService(s.Audit),
+		automation.WithExecutorStepAuthorizer(workflowAuthorizer),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -2069,15 +2092,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// so create_ticket/update_ticket file real issues instead of returning a
 	// false success. Adapters are built only when the underlying service exists
 	// so a nil service yields a nil interface (not a non-nil box over nil).
-	var wfJira workflow.JiraTicketService
+	var wfJira automation.JiraTicketService
 	if s.JiraSync != nil {
 		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync}
 	}
-	var wfGitHub workflow.GitHubTicketService
+	var wfGitHub automation.GitHubTicketService
 	if s.GitHubTicket != nil {
 		wfGitHub = workflowGitHubTicketAdapter{svc: s.GitHubTicket}
 	}
-	workflow.RegisterAllActionHandlersWithAI(
+	automation.RegisterAllActionHandlersWithAI(
 		workflowExecutor,
 		s.Vulnerability,
 		s.ScanRun,
@@ -2090,19 +2113,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 
 	// Initialize workflow service with executor
-	s.Workflow = workflow.NewWorkflowService(
+	s.Workflow = automation.NewWorkflowService(
 		repos.Workflow,
 		repos.WorkflowNode,
 		repos.WorkflowEdge,
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
-		log, workflow.WithWorkflowAuditService(s.Audit), workflow.WithWorkflowExecutor(workflowExecutor),
-		workflow.WithWorkflowStepAuthorizer(workflowAuthorizer),
-		workflow.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
+		log, automation.WithWorkflowAuditService(s.Audit), automation.WithWorkflowExecutor(workflowExecutor),
+		automation.WithWorkflowStepAuthorizer(workflowAuthorizer),
+		automation.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering
-	s.WorkflowDispatcher = workflow.NewWorkflowEventDispatcher(
+	s.WorkflowDispatcher = automation.NewWorkflowEventDispatcher(
 		repos.Workflow,
 		repos.WorkflowNode,
 		s.Workflow,
@@ -2257,6 +2280,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Group != nil {
 		s.Group.SetRoleBindings(repos.GroupRoleBinding, s.Role)
 	}
+	// Service accounts: organization-owned identities that act only through
+	// API keys, held to the external-member role ceiling.
+	s.ServiceAccount = accesscontrol.NewServiceAccountService(repos.ServiceAccount, s.Audit, log)
+	s.Role.SetServiceAccountReader(repos.ServiceAccount)
 
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {

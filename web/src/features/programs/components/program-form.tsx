@@ -28,6 +28,7 @@ import { previewProgram } from '../api/use-programs'
 import {
   FORBIDDEN_TECHNIQUES,
   parseHeaderLines,
+  parseWindowLines,
   rulesFromForm,
   shortHash,
 } from '../lib/program-form'
@@ -44,6 +45,8 @@ export interface ProgramFormValues {
   userAgent: string
   forbidden: ForbiddenTechnique[]
   notes: string
+  /** Testing windows, one "mon-fri 09:00-17:00 Europe/Paris" per line. */
+  windows: string
 }
 
 export const EMPTY_PROGRAM_FORM: ProgramFormValues = {
@@ -57,6 +60,7 @@ export const EMPTY_PROGRAM_FORM: ProgramFormValues = {
   userAgent: '',
   forbidden: [],
   notes: '',
+  windows: '',
 }
 
 interface ProgramFormProps {
@@ -89,6 +93,7 @@ export function ProgramForm({
   const [error, setError] = useState<string | null>(null)
 
   const badHeaders = useMemo(() => parseHeaderLines(v.headers).invalid, [v.headers])
+  const badWindows = useMemo(() => parseWindowLines(v.windows).invalid, [v.windows])
 
   const input = (accept?: string): ProgramInput => ({
     name: v.name.trim(),
@@ -249,6 +254,35 @@ export function ProgramForm({
             </p>
           )}
         </div>
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor={`${id}-windows`}>
+            {t('programs.form.windows', 'Testing windows (optional)')}
+          </Label>
+          <p className="text-muted-foreground text-xs">
+            {t(
+              'programs.form.windowsHint',
+              'One window per line: days, start-end and the time zone, for example "mon-fri 09:00-17:00 Europe/Paris". Outside every window, scans of this program wait. None: any time.'
+            )}
+          </p>
+          <Textarea
+            id={`${id}-windows`}
+            value={v.windows}
+            rows={2}
+            className="font-mono text-xs"
+            onChange={(e) => set('windows', e.target.value)}
+          />
+          {badWindows.length > 0 && (
+            <p className="text-destructive text-xs">
+              {t(
+                'programs.form.badWindows',
+                'Lines {lines} are not "days HH:MM-HH:MM time zone".',
+                {
+                  lines: badWindows.join(', '),
+                }
+              )}
+            </p>
+          )}
+        </div>
         <fieldset className="space-y-2 sm:col-span-2">
           <legend className="text-sm font-medium">
             {t('programs.form.forbidden', 'The program forbids')}
@@ -278,7 +312,11 @@ export function ProgramForm({
       </section>
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={runPreview} disabled={busy || badHeaders.length > 0}>
+        <Button
+          variant="outline"
+          onClick={runPreview}
+          disabled={busy || badHeaders.length > 0 || badWindows.length > 0}
+        >
           {busy && !preview && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('programs.form.preview', 'Preview')}
         </Button>
