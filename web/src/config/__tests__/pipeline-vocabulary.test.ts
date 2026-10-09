@@ -32,6 +32,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
   { path: /^src\/app\/\(dashboard\)\/\(discovery\)\/ci-cd\//, why: 'CI pipelines page' },
   { path: /^src\/lib\/api\/generated\//, why: 'generated from the API spec (CI routes)' },
   { path: /^src\/config\/api-route-permissions\.json$/, why: 'generated route map (CI routes)' },
+  {
+    path: /^src\/config\/authz-matrix\.json$/,
+    why: 'generated authorization reference (CI routes)',
+  },
   { path: /^src\/features\/sensors\//, why: 'runner-mode sensors run inside a CI pipeline' },
   { path: /^src\/features\/shared\/components\/tone-pill\.tsx$/, why: 'a CI pipeline status' },
   {
