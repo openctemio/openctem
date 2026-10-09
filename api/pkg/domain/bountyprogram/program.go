@@ -186,6 +186,11 @@ type Program struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	Authoritative bool
+	// Sync is the scope source settings and state (program_api,
+	// program_file; RFC-065 §14).
+	Sync Sync
+	// Pending is a widening a sync found, waiting for a member.
+	Pending *PendingTerms
 }
 
 // Program errors.
@@ -211,7 +216,7 @@ func ValidateDetails(name, platform, handle, programURL string) error {
 		return fmt.Errorf("%w: program_url must be at most %d characters", shared.ErrValidation, MaxURLLength)
 	}
 	u, err := url.Parse(strings.TrimSpace(programURL))
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+	if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.User != nil {
 		return fmt.Errorf("%w: program_url must be an https:// link to the program's policy", shared.ErrValidation)
 	}
 	return nil

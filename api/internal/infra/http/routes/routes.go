@@ -81,6 +81,8 @@ type Handlers struct {
 	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
 	// BountyProgram serves bug-bounty programs (RFC-065); nil without a database.
 	BountyProgram *handler.BountyProgramHandler
+	// ScopeLetter serves authorization letters (RFC-065 §13).
+	ScopeLetter   *handler.ScopeLetterHandler
 	AssetType     *handler.AssetTypeHandler     // nil if not initialized (no database)
 	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
 	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
@@ -764,6 +766,9 @@ func Register(
 	}
 	if h.BountyProgram != nil {
 		registerProgramRoutes(router, h.BountyProgram, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
+	}
+	if h.ScopeLetter != nil {
+		registerScopeLetterRoutes(router, h.ScopeLetter, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
 	}
 
 	// Asset Type routes (tenant from JWT token)

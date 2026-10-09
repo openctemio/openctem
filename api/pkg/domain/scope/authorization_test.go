@@ -49,7 +49,30 @@ func TestParseGeneralSource(t *testing.T) {
 	if _, err := ParseGeneralSource("program"); !errors.Is(err, ErrProgramEntryViaPrograms) {
 		t.Errorf("program entries come only from the programs service: %v", err)
 	}
-	if _, err := ParseGeneralSource("authorization_letter"); !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("letters are not open yet: %v", err)
+	if got, err := ParseGeneralSource("authorization_letter"); err != nil || got != AuthLetter {
+		t.Errorf("letters: %v %v", got, err)
+	}
+	if _, err := ParseGeneralSource("invoice"); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("unknown source: %v", err)
+	}
+}
+
+func TestTarget_LetterAuthorization(t *testing.T) {
+	tgt, err := NewTarget(shared.NewID(), TargetTypeDomain, "client.example", "", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tgt.SetAuthorization(AuthLetter, nil); err == nil {
+		t.Fatal("a letter entry needs its letter")
+	}
+	lid := shared.NewID()
+	if err := tgt.SetAuthorization(AuthLetter, &lid); err != nil {
+		t.Fatal(err)
+	}
+	if tgt.LetterID() == nil || !tgt.LetterID().Equals(lid) || tgt.ProgramID() != nil || tgt.IsProgramEntry() {
+		t.Fatalf("letter entry: %v %v", tgt.LetterID(), tgt.ProgramID())
+	}
+	if err := tgt.SetAuthorization(AuthOwnership, nil); err != nil || tgt.LetterID() != nil {
+		t.Fatal("switching away clears the letter")
 	}
 }

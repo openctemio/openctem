@@ -42,7 +42,12 @@ type Joiner interface {
 // Service imports and manages programs.
 type Service struct {
 	// ruleScope matches the rules a job carries (rules.go).
-	ruleScope  scopeauth.Targets
+	ruleScope scopeauth.Targets
+	// Sync (sync.go, RFC-065 §14).
+	fetcher    ScopeFetcher
+	cipher     TokenCipher
+	isGone     func(error) bool
+	syncAudit  SyncAuditor
 	repo       bp.Repository
 	fullData   FullData
 	guardrails scopedom.Guardrails
@@ -151,6 +156,11 @@ func (s *Service) Preview(ctx context.Context, tenantID shared.ID, in Input, pro
 	if err != nil {
 		return nil, err
 	}
+	return s.previewItems(ctx, tenantID, in.ProgramURL, rules, items, program)
+}
+
+// previewItems is Preview for items already read (a paste, or a sync).
+func (s *Service) previewItems(ctx context.Context, tenantID shared.ID, programURL string, rules bp.Rules, items []bp.Item, program *bp.Program) (*Preview, error) {
 	plan := bp.PlanScope(items)
 	existing, err := s.repo.TenantEntries(ctx, tenantID)
 	if err != nil {
@@ -161,7 +171,7 @@ func (s *Service) Preview(ctx context.Context, tenantID shared.ID, in Input, pro
 		byKey[entryKey(t.TargetType(), t.Pattern())] = t
 	}
 	out := &Preview{Items: items, NotScannable: plan.NotScannable, MaxTier: rules.MaxTier().String(),
-		TermsSHA256: bp.NewTerms(in.ProgramURL, rules, items).SHA256(), rules: rules,
+		TermsSHA256: bp.NewTerms(programURL, rules, items).SHA256(), rules: rules,
 		Entries: make([]PlannedEntry, 0, len(plan.Entries)), Exclusions: make([]PlannedExclusion, 0, len(plan.Exclusions))}
 	for _, e := range plan.Entries {
 		pe := PlannedEntry{TargetType: e.TargetType, Pattern: e.Pattern, Status: PlanCreate}
@@ -410,9 +420,28 @@ func (s *Service) Reimport(ctx context.Context, tenantID, actor, id shared.ID, i
 	if err := checkTerms(in.AcceptTermsSHA256, pv.TermsSHA256); err != nil {
 		return nil, nil, err
 	}
+	p.ProgramURL = strings.TrimSpace(in.ProgramURL)
+	if strings.TrimSpace(in.Platform) != "" {
+		p.Platform = strings.TrimSpace(in.Platform)
+	}
+	if strings.TrimSpace(in.Handle) != "" {
+		p.Handle = strings.TrimSpace(in.Handle)
+	}
+	if err := s.applyScope(ctx, p, pv, actor); err != nil {
+		return nil, nil, err
+	}
+	return p, pv, nil
+}
+
+// applyScope replaces a program's scope with an accepted preview: entries
+// of items no longer listed are deleted at once, new ones created (active
+// when the program is active), program exclusions replaced, pending terms
+// cleared, the attestation recorded.
+func (s *Service) applyScope(ctx context.Context, p *bp.Program, pv *Preview, actor shared.ID) error {
+	tenantID, id := p.TenantID, p.ID
 	current, err := s.repo.Entries(ctx, tenantID, id)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	keep := map[string]bool{}
 	for _, e := range pv.Entries {
@@ -427,25 +456,19 @@ func (s *Service) Reimport(ctx context.Context, tenantID, actor, id shared.ID, i
 		}
 	}
 	now := s.now()
-	p.ProgramURL, p.Rules, p.ScopeItems, p.TermsSHA256 = strings.TrimSpace(in.ProgramURL), pv.rules, pv.Items, pv.TermsSHA256
-	p.AcceptedBy, p.AcceptedAt, p.UpdatedAt = &actor, &now, now
-	if strings.TrimSpace(in.Platform) != "" {
-		p.Platform = strings.TrimSpace(in.Platform)
-	}
-	if strings.TrimSpace(in.Handle) != "" {
-		p.Handle = strings.TrimSpace(in.Handle)
-	}
+	p.Rules, p.ScopeItems, p.TermsSHA256 = pv.rules, pv.Items, pv.TermsSHA256
+	p.AcceptedBy, p.AcceptedAt, p.UpdatedAt, p.Pending = &actor, &now, now, nil
 	create, err := s.newEntries(p, pv, actor, p.Status == bp.StatusActive)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	if err := s.repo.ReplaceScope(ctx, bp.ScopeWrite{Program: p, CreateEntries: create, DeleteEntryIDs: drop,
 		Exclusions: s.exclusions(p, pv)}); err != nil {
-		return nil, nil, err
+		return err
 	}
-	s.widened(ctx, p, fmt.Sprintf("Program %s re-imported: %d entries added, %d removed (attested)", p.Name, len(create), len(drop)),
+	s.widened(ctx, p, fmt.Sprintf("Program %s scope accepted: %d entries added, %d removed (attested)", p.Name, len(create), len(drop)),
 		len(create) > 0 && p.Status == bp.StatusActive)
-	return p, pv, nil
+	return nil
 }
 
 // Pause stops every entry of the program (narrowing).
