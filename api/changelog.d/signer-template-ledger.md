@@ -15,7 +15,7 @@
   sensor that verifies signed jobs trusts the templates through the job
   (sdk-go); the per-tenant template key is only the fallback for sensors
   without signed jobs.
-- Migration `001558` adds `ledger_sha256`, `sensor_approvals` and
+- Migration `001572` adds `ledger_sha256`, `sensor_approvals` and
   `content_author_id` to `scanner_templates`.
 - **Upgrade note:** the current version of every active template counts as
   approved (it ran before). With a job signer, include them in the ledger
