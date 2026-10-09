@@ -46,9 +46,10 @@ vi.mock('@/features/scoping/api', () => ({
   useScopingSummary: () => ({ data: undefined, isLoading: false }),
 }))
 
-// Maturity module disabled so the gated section is absent.
+// Maturity (ctem_cycles) disabled so its gated section is absent; the other
+// modules on.
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
-  useModuleEnabled: () => false,
+  useModuleEnabled: (id: string) => id !== 'ctem_cycles',
 }))
 
 const emptyStats = {
