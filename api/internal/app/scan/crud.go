@@ -20,12 +20,15 @@ import (
 // CreateScanInput represents the input for creating a scan.
 // Either AssetGroupID/AssetGroupIDs OR Targets must be provided (can have all).
 type CreateScanInput struct {
-	TenantID       string         `json:"tenant_id" validate:"required,uuid"`
-	Name           string         `json:"name" validate:"required,min=1,max=200"`
-	Description    string         `json:"description" validate:"max=1000"`
-	AssetGroupID   string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Primary asset group (legacy)
-	AssetGroupIDs  []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets        []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	TenantID      string   `json:"tenant_id" validate:"required,uuid"`
+	Name          string   `json:"name" validate:"required,min=1,max=200"`
+	Description   string   `json:"description" validate:"max=1000"`
+	AssetGroupID  string   `json:"asset_group_id" validate:"omitempty,uuid"`       // Primary asset group (legacy)
+	AssetGroupIDs []string `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets       []string `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	// AssetIDs are inventory assets to scan; each is scanned by its name,
+	// resolved on the server (tenant and creator scope checked).
+	AssetIDs       []string       `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
 	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
 	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
@@ -68,6 +71,16 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
+	// Assets by id become direct targets named by the server; from here
+	// they are checked exactly like typed targets.
+	assetTargets, err := s.resolveAssetTargets(ctx, tenantID, userIDPtr(input.CreatedBy), input.AssetIDs)
+	if err != nil {
+		return nil, err
+	}
+	if input.Targets, err = mergeDirectTargets(input.Targets, assetTargets); err != nil {
+		return nil, err
+	}
+
 	// Security validations
 	if err := s.validateScanSecurityInputs(ctx, tenantID, input); err != nil {
 		return nil, err
@@ -77,7 +90,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	hasAssetGroup := input.AssetGroupID != "" || len(input.AssetGroupIDs) > 0
 	hasTargets := len(input.Targets) > 0
 	if !hasAssetGroup && !hasTargets {
-		return nil, fmt.Errorf("%w: either asset_group_id/asset_group_ids or targets must be provided", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: either asset_group_id/asset_group_ids, targets or asset_ids must be provided", shared.ErrValidation)
 	}
 
 	// Validate and sanitize targets if provided (SECURITY: SSRF protection)

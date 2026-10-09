@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useSWRConfig } from 'swr'
 import { toast } from 'sonner'
 import { Loader2, RefreshCw } from 'lucide-react'
