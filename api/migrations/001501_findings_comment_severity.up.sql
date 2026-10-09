@@ -11,14 +11,9 @@ INSERT INTO permissions (id, module_id, name, description, is_active) VALUES
     ('findings:severity', 'findings', 'Change Finding Severity', 'Change the severity and classification of findings', true)
 ON CONFLICT (id) DO NOTHING;
 
-WITH granted AS (
-    INSERT INTO role_permissions (role_id, permission_id)
-    SELECT rp.role_id, p.id
-    FROM role_permissions rp
-    CROSS JOIN (VALUES ('findings:comment'), ('findings:severity')) AS p(id)
-    WHERE rp.permission_id = 'findings:write'
-    ON CONFLICT (role_id, permission_id) DO NOTHING
-    RETURNING role_id, permission_id
-)
-INSERT INTO granular_permission_backfill (role_id, permission_id)
-SELECT role_id, permission_id FROM granted;
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT rp.role_id, p.id
+FROM role_permissions rp
+CROSS JOIN (VALUES ('findings:comment'), ('findings:severity')) AS p(id)
+WHERE rp.permission_id = 'findings:write'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
