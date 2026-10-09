@@ -45,9 +45,11 @@ import { cn } from '@/lib/utils'
 import { createScopeTarget, invalidateScopeCache, useScopeSettingsApi } from '../api/use-scope-api'
 import type { ApiScopeTarget, ScopeTier } from '../api/scope-api.types'
 import { extractRootDomain } from '@/features/assets/lib/domain-hierarchy'
+import { useLetters } from '@/features/scope-letters'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import {
   coversText,
+  expiryBoundFor,
   patternForCoverage,
   TIER_HINT,
   TIER_LABEL,
@@ -119,9 +121,7 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const { data: settings, isLoading: settingsLoading } = useScopeSettingsApi(open)
 
   const oneOffPolicy = settings?.one_off_targets ?? 'admins_and_requests'
-  const maxDays = settings?.one_off_max_days ?? DEFAULT_MAX_DAYS
   const requestsAllowed = oneOffPolicy === 'admins_and_requests'
-  const oneOffAllowed = canApprove ? oneOffPolicy !== 'disabled' : requestsAllowed
 
   // The kind is detected from what was typed; an override only when asked.
   const [override, setOverride] = useState<ScopeKind | null>(null)
@@ -133,6 +133,13 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const [tier, setTier] = useState<ScopeTier>('t1')
   const [reason, setReason] = useState('')
   const [description, setDescription] = useState('')
+  // '' : the organization owns it; otherwise the letter that authorizes it.
+  const [letterId, setLetterId] = useState('')
+  const { data: letters } = useLetters()
+  const usableLetters = useMemo(
+    () => (letters ?? []).filter((l) => l.in_effect && !l.revoked_at),
+    [letters]
+  )
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -167,7 +174,11 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const effectiveDuration: ScopeEntryDuration = isRequest ? 'one_off' : duration
   // A request keeps what was typed, so a wildcard is refused, not narrowed.
   const pattern = isDomain && !isRequest ? patternForCoverage(name, effectiveCoverage) : name.trim()
-  const dayCap = Math.max(1, maxDays)
+  // Intrusive (T2) entries follow the owner's limit, not the one-off one
+  // (RFC-054 §12.4): their expiry is never blocked by the one-off policy.
+  const { maxDays: dayCap, permanent: permanentAllowed } = expiryBoundFor(tier, settings)
+  const oneOffAllowed =
+    tier === 't2' ? canApprove : canApprove ? oneOffPolicy !== 'disabled' : requestsAllowed
   const clampedDays = Math.min(Math.max(1, Math.round(days) || 1), dayCap)
   const needsReason = effectiveDuration === 'one_off' || isRequest || tier === 't2'
   const approvals = approvalsForNew({
@@ -196,7 +207,7 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     if (isRequest && !requestsAllowed) return t('scope.error.REQUEST_NOT_ALLOWED')
     if (isRequest && !isSingleTarget(type, pattern)) return t('scope.error.REQUEST_MUST_BE_SINGLE')
     if (effectiveDuration === 'one_off' && !oneOffAllowed) return t('scope.error.ONE_OFF_DISABLED')
-    if (tier === 't2' && effectiveDuration !== 'one_off')
+    if (tier === 't2' && effectiveDuration !== 'one_off' && !permanentAllowed)
       return t('scope.error.INTRUSIVE_NEEDS_EXPIRY')
     if (needsReason && !reason.trim()) return t('scope.error.REASON_REQUIRED')
     return null
@@ -219,6 +230,9 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
         reason: reason.trim() || undefined,
         max_tier: tier,
         ...(effectiveDuration === 'one_off' ? { expires_in_days: clampedDays } : {}),
+        ...(letterId
+          ? { authorization_source: 'authorization_letter' as const, letter_id: letterId }
+          : {}),
       })
       await invalidateScopeCache()
       if (entry?.status === 'active') {
@@ -404,7 +418,8 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                     className="w-28"
                   />
                   <p className="text-xs text-muted-foreground">
-                    1 to {dayCap} days (your organization&apos;s limit).
+                    1 to {dayCap} days (your organization&apos;s limit
+                    {tier === 't2' ? ' for intrusive entries' : ''}).
                   </p>
                 </div>
               )}
@@ -425,6 +440,34 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                 </Select>
                 <p className="text-xs text-muted-foreground">{TIER_HINT[tier]}</p>
               </div>
+
+              {usableLetters.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor={`${formId}-authority`}>Authorized by</Label>
+                  <Select
+                    value={letterId || 'ownership'}
+                    onValueChange={(v) => setLetterId(v === 'ownership' ? '' : v)}
+                  >
+                    <SelectTrigger id={`${formId}-authority`} className="w-full sm:w-80">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ownership">Our organization owns it</SelectItem>
+                      {usableLetters.map((l) => (
+                        <SelectItem key={l.id} value={l.id}>
+                          Letter: {l.title} (until {new Date(l.valid_until).toLocaleDateString()})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {letterId && (
+                    <p className="text-xs text-muted-foreground">
+                      The entry authorizes probes only while the letter is valid, and stops when it
+                      expires or is revoked.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor={`${formId}-reason`}>Reason{needsReason ? '' : ' (optional)'}</Label>

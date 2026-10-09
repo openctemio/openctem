@@ -35,7 +35,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
 | Attack Surface | 4 | `scope:read/write/delete`, `scope:exclusions:approve` |
 | Validation (legacy) | 4 | `validation:read/write`, `pentest:read/write` |
-| Pentest (granular) | 11 | `pentest_campaigns:*`, `pentest_findings:*`, `pentest_retests:*`, `pentest_templates:*`, `pentest_reports:write` |
+| Pentest (granular) | 11 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write` |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
 | Reports | 2 | `reports:read/write` |
 | Threat Intel | 2 | `threat_intel:read/write` |
@@ -1968,6 +1968,31 @@ report all read it.
 
 Team roles, the administrator bypass and the owner invariants are unchanged:
 they read the built-in roles only, and those never bind.
+
+## Service accounts
+
+An integration acts as a **service account**: a user of kind `service`
+(migration `service_accounts`) that belongs to one organization, has a person
+accountable for it (`service_owner_id`, the creator), and never signs in.
+
+| Rule | Enforcement |
+|---|---|
+| Never signs in | no password and no federated identity (CHECK on `users`); its address is on the unroutable `service-accounts.invalid` domain; no set-password link is issued for it |
+| One organization | trigger on `tenant_members`: a service account is a member of its own organization only |
+| Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member |
+| Starts with nothing | created with no role: roles come from the role APIs (grant ceiling) and teams; data scope from teams |
+| Acts through keys | keys are minted for it with `POST /api/v1/service-accounts/{id}/api-keys` (`user_id` = the account); each scope must be held by the person minting it, and at request time a key carries only the scopes the account still holds, within its data scope; keys are read-only on the REST API, and no key reaches `/api/v1/service-accounts` |
+| Removal | `DELETE /api/v1/service-accounts/{id}` removes the account with its roles, team memberships and keys at once |
+
+Routes: `GET /api/v1/service-accounts` (`team:members:read`), `POST` and
+`DELETE /{id}` (`team:members:write`). Its keys:
+`GET /{id}/api-keys` (`team:members:read` and `integrations:api_keys:read`),
+`POST /{id}/api-keys` (`team:members:write` and `integrations:api_keys:write`, recent
+sign-in) and `DELETE /{id}/api-keys/{key_id}` (`team:members:write` and
+`integrations:api_keys:delete`, recent sign-in). Another organization's account, a person,
+or a key that is not the account's reads as not found. Creation and deletion
+are audited (`user.created` / `user.deleted`, metadata `kind=service`;
+`api_key.created` / `api_key.deleted` for keys).
 
 ## CI invariants that keep this from drifting
 

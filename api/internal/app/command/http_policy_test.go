@@ -33,7 +33,7 @@ func TestDeliverSetsTheOrganizationHTTPPolicy(t *testing.T) {
 	stored := string(scan.Payload)
 
 	s := &Service{httpPolicy: fakeHTTPPolicy{pol: sensordom.ToolHTTPPolicy{UserAgent: "corp-scan", AllowInsecureTLS: &no}}}
-	out, err := s.deliver(context.Background(), "sensor-1", []*commanddom.Command{scan, other})
+	out, err := s.deliver(context.Background(), "sensor-1", []*commanddom.Command{scan, other}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestDeliverSetsTheOrganizationHTTPPolicy(t *testing.T) {
 
 	// No organization policy: a creator's http_policy is removed.
 	s.httpPolicy = fakeHTTPPolicy{}
-	out, err = s.deliver(context.Background(), "sensor-1", []*commanddom.Command{scan})
+	out, err = s.deliver(context.Background(), "sensor-1", []*commanddom.Command{scan}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestDeliverSetsTheOrganizationHTTPPolicy(t *testing.T) {
 	// SECURITY: a policy that cannot be read fails the delivery (fail
 	// closed) rather than sending the job without it.
 	s.httpPolicy = fakeHTTPPolicy{err: errors.New("db down")}
-	if _, err := s.deliver(context.Background(), "sensor-1", []*commanddom.Command{scan}); err == nil {
+	if _, err := s.deliver(context.Background(), "sensor-1", []*commanddom.Command{scan}, nil); err == nil {
 		t.Fatal("delivered without the organization policy")
 	}
 }

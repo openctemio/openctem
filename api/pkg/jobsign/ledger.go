@@ -32,6 +32,7 @@ const (
 	// ledger (and one snapshot of it).
 	MaxLedgerEntries    = 10000
 	MaxLedgerExclusions = 10000
+	MaxLedgerTemplates  = 10000
 	// MaxLedgerApprovals caps the approvals of one change.
 	MaxLedgerApprovals = 16
 	// MaxLedgerPatternBytes caps a pattern (the API's own cap).
@@ -89,7 +90,17 @@ const (
 	OpRemoveEntry     = "remove_entry"
 	OpPutExclusion    = "put_exclusion"
 	OpRemoveExclusion = "remove_exclusion"
+	OpPutTemplate     = "put_template"
+	OpRemoveTemplate  = "remove_template"
 )
+
+// LedgerTemplate is a custom template version people approved for sensors:
+// the template's id and the digest of its content ("sha256:" + hex of the
+// decoded bytes, as Statement.Templates lists it).
+type LedgerTemplate struct {
+	ID     string `json:"id"`
+	SHA256 string `json:"sha256"`
+}
 
 // LedgerOp is one operation of a change: put_entry and put_exclusion carry
 // the item, the remove operations its id.
@@ -97,6 +108,7 @@ type LedgerOp struct {
 	Op        string           `json:"op"`
 	Entry     *LedgerEntry     `json:"entry,omitempty"`
 	Exclusion *LedgerExclusion `json:"exclusion,omitempty"`
+	Template  *LedgerTemplate  `json:"template,omitempty"`
 	ID        string           `json:"id,omitempty"`
 }
 
@@ -146,6 +158,8 @@ type LedgerSnapshot struct {
 	TenantID   string            `json:"tenant_id"`
 	Entries    []LedgerEntry     `json:"entries"`
 	Exclusions []LedgerExclusion `json:"exclusions"`
+	// Templates are the approved custom template versions in effect.
+	Templates []LedgerTemplate `json:"templates,omitempty"`
 }
 
 // LedgerSyncResult answers a sync: what it narrowed, and how many items the
@@ -205,6 +219,12 @@ func ExclusionPutWidens(old *LedgerExclusion, next LedgerExclusion, now time.Tim
 	return old.Type != next.Type || old.Pattern != next.Pattern || laterEnd(next.ExpiresAt, old.ExpiresAt)
 }
 
+// TemplateWidens reports whether putting next where old is (nil: none)
+// widens: a template, or a template version, not approved before.
+func TemplateWidens(old *LedgerTemplate, next LedgerTemplate) bool {
+	return old == nil || old.SHA256 != next.SHA256
+}
+
 // ExclusionRemoveWidens reports whether removing old widens: it does while
 // old is still in effect.
 func ExclusionRemoveWidens(old *LedgerExclusion, now time.Time) bool {
@@ -219,6 +239,9 @@ const (
 	ReasonLedgerMalformed   = "ledger_malformed"
 	ReasonLedgerTooLarge    = "ledger_too_large"
 	ReasonLedgerNotApproved = "ledger_not_approved"
+	// ReasonTemplateNotInLedger: a custom template of the job is not a
+	// version people approved (its digest is not in the ledger).
+	ReasonTemplateNotInLedger = "template_not_in_ledger"
 )
 
 // RefusalError is a refusal (4xx) the signer answered.

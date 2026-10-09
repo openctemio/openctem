@@ -46,7 +46,7 @@ func TestAuditChain_TwoReplicasDoNotFork(t *testing.T) {
 
 	tenantID := shared.NewID()
 	if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, 'chain replicas', $2)`,
-		tenantID.String(), "chainrep-"+tenantID.String()[:8]); err != nil {
+		tenantID.String(), "chainrep-"+tenantID.String()[28:]); err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
 	t.Cleanup(func() {

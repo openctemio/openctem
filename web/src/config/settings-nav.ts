@@ -45,6 +45,7 @@ import {
   MessageSquare,
   Puzzle,
   Scale,
+  ServerCog,
   Settings2,
   Shield,
   ShieldCheck,
@@ -499,6 +500,25 @@ export const settingsNav: SettingsNavGroup[] = [
         module: 'integrations',
         subModuleKey: 'siem',
         keywords: ['splunk', 'hec', 'events'],
+      },
+      {
+        // An organization-owned identity for an integration, with its own
+        // roles, teams and API keys. Not module gated: the API gates none of
+        // its routes on the integrations module.
+        id: 'service-accounts',
+        title: 'Service accounts',
+        description: 'Identities for integrations, with their own roles and API keys.',
+        url: '/settings/service-accounts',
+        icon: ServerCog,
+        permission: Permission.MembersRead,
+        keywords: [
+          'service account',
+          'machine',
+          'bot',
+          'integration identity',
+          'api key',
+          'non-human',
+        ],
       },
     ],
   },

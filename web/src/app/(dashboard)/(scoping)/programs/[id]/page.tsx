@@ -32,7 +32,10 @@ import {
   PROGRAM_STATUS_LABEL,
   ProgramExclusionsTable,
   ProgramForm,
+  ProgramPendingTerms,
+  ProgramSource,
   endProgram,
+  formatWindow,
   invalidatePrograms,
   reactivateProgram,
   reimportProgram,
@@ -62,6 +65,7 @@ function formFromProgram(p: ProgramDetail): ProgramFormValues {
     userAgent: p.rules.user_agent ?? '',
     forbidden: p.rules.forbidden ?? [],
     notes: p.rules.notes ?? '',
+    windows: (p.rules.testing_windows ?? []).map(formatWindow).join('\n'),
   }
 }
 
@@ -100,6 +104,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
   }
 
   const forbidden = new Set(p.rules.forbidden ?? [])
+  const refresh = () => Promise.all([mutate(), invalidatePrograms()])
 
   return (
     <Main>
@@ -219,6 +224,18 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
           </div>
           <div className="sm:col-span-2">
             <span className="text-muted-foreground">
+              {t('programs.windows', 'Testing windows')}:{' '}
+            </span>
+            {p.rules.testing_windows?.length ? (
+              <span className="font-mono text-xs">
+                {p.rules.testing_windows.map(formatWindow).join('; ')}
+              </span>
+            ) : (
+              t('programs.windowsAny', 'Any time')
+            )}
+          </div>
+          <div className="sm:col-span-2">
+            <span className="text-muted-foreground">
               {t('programs.form.forbidden', 'The program forbids')}:{' '}
             </span>
             {FORBIDDEN_TECHNIQUES.filter((f) => forbidden.has(f.value))
@@ -226,6 +243,10 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
               .join(', ') || '-'}
           </div>
         </section>
+
+        <ProgramPendingTerms program={p} canWrite={canWrite} onChanged={refresh} />
+
+        <ProgramSource program={p} canWrite={canWrite} onChanged={refresh} />
 
         <section className="space-y-2">
           <h3 className="text-base font-semibold">{t('programs.entries', 'Scope entries')}</h3>

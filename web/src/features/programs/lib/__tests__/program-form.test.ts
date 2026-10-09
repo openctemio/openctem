@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseHeaderLines, rulesFromForm, shortHash, summarizePreview } from '../program-form'
+import {
+  formatWindow,
+  parseHeaderLines,
+  parseWindowLines,
+  rulesFromForm,
+  shortHash,
+  summarizePreview,
+} from '../program-form'
 import type { ProgramPreview } from '../../api/programs-api.types'
 
 describe('parseHeaderLines', () => {
@@ -32,6 +39,7 @@ describe('rulesFromForm', () => {
       user_agent: 'ua',
       forbidden: ['dos', 'physical'],
       notes: 'n',
+      testing_windows: [],
     })
   })
 
@@ -90,5 +98,65 @@ describe('shortHash', () => {
   it('shortens a hash', () => {
     expect(shortHash('abcdef0123456789abcdef')).toBe('abcdef012345…')
     expect(shortHash(undefined)).toBe('')
+  })
+})
+
+describe('parseWindowLines', () => {
+  it('reads days, a span and a zone per line', () => {
+    const { windows, invalid } = parseWindowLines(
+      'mon-fri 09:00-17:00 Europe/Paris\n\nSAT,sun 10:00-12:30 UTC\nfri-mon 08:00-09:00 Asia/Ho_Chi_Minh\n'
+    )
+    expect(invalid).toEqual([])
+    expect(windows).toEqual([
+      {
+        days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+        start: '09:00',
+        end: '17:00',
+        timezone: 'Europe/Paris',
+      },
+      { days: ['sun', 'sat'], start: '10:00', end: '12:30', timezone: 'UTC' },
+      {
+        days: ['sun', 'mon', 'fri', 'sat'],
+        start: '08:00',
+        end: '09:00',
+        timezone: 'Asia/Ho_Chi_Minh',
+      },
+    ])
+  })
+
+  it('reports malformed lines by number', () => {
+    const { windows, invalid } = parseWindowLines(
+      [
+        'mon 09:00-17:00', // no zone
+        'funday 09:00-17:00 UTC',
+        'mon 17:00-09:00 UTC', // overnight
+        'mon 9:00-17:00 UTC',
+        'mon 09:00-24:00 UTC',
+        'mon 09:00-17:00 UTC extra',
+        'mon 09:00-17:00 UTC',
+      ].join('\n')
+    )
+    expect(invalid).toEqual([1, 2, 3, 4, 5, 6])
+    expect(windows).toHaveLength(1)
+  })
+
+  it('round-trips through formatWindow', () => {
+    const w = { days: ['mon', 'wed'] as const, start: '09:00', end: '17:00', timezone: 'UTC' }
+    const line = formatWindow({ ...w, days: [...w.days] })
+    expect(line).toBe('mon,wed 09:00-17:00 UTC')
+    expect(parseWindowLines(line).windows[0]).toEqual({ ...w, days: ['mon', 'wed'] })
+  })
+
+  it('goes into the rules', () => {
+    expect(
+      rulesFromForm({
+        rateLimit: '',
+        headers: '',
+        userAgent: '',
+        forbidden: [],
+        notes: '',
+        windows: 'tue 01:00-02:00 UTC',
+      }).testing_windows
+    ).toEqual([{ days: ['tue'], start: '01:00', end: '02:00', timezone: 'UTC' }])
   })
 })

@@ -26,10 +26,21 @@ type Service struct {
 	admins   AdminDirectory
 	inApp    InAppNotifier
 	stepUp   shared.RecentAuthGate
+	// Approvers (approvers.go): who may approve, the authenticator check
+	// for an owner's own approval, approval emails and channels.
+	approvers  ApproverDirectory
+	totp       TOTPVerifier
+	mail       ApprovalMailer
+	channels   ChannelNotifier
+	webBaseURL string
+	// auditor records the system decisions (attestation.go).
+	auditor SystemAuditor
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
 	// programExcl lists program exclusions for the authority check (RFC-065).
 	programExcl ProgramExclusionReader
+	// programs names the programs of a scope snapshot (snapshot.go).
+	programs ProgramLister
 	// letters are the authorization letters letter entries name (letters.go).
 	letters scopedom.LetterRepository
 	// Coverage of the inventory (GetStats): counted in SQL over the
@@ -41,6 +52,8 @@ type Service struct {
 	visible VisibleAssetCounter
 	// ledger is the job signer's scope ledger (ledger.go); nil: none.
 	ledger LedgerFeed
+	// ledgerTemplates lists the approved template versions for snapshots.
+	ledgerTemplates LedgerTemplateSource
 }
 
 // NewService creates a new Service.
@@ -136,7 +149,8 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		return nil, err
 	}
 	target, err := scopedom.NewEntry(tenantID, targetType, input.Pattern, input.Description, input.CreatedBy, scopedom.EntryOptions{
-		Reason: input.Reason, ExpiresAt: d.expiresAt, MaxTier: d.tier, ApprovalsRequired: d.approvals, Now: now,
+		Reason: input.Reason, ExpiresAt: d.expiresAt, MaxTier: d.tier, ApprovalsRequired: d.approvals,
+		IntrusivePermanent: d.intrusivePermanent, Now: now,
 	})
 	if err != nil {
 		return nil, err
@@ -329,20 +343,33 @@ func (s *Service) applyEntryUpdate(ctx context.Context, t *scopedom.Target, in U
 	}
 	expiryChange := in.ClearExpiry || in.ExpiresAt != nil || in.ExpiresInDays != nil
 	next := t.ExpiresAt()
+	var pol *policy
+	if expiryChange || tier == scopedom.TierIntrusive {
+		p, err := s.loadPolicy(ctx, t.TenantID())
+		if err != nil {
+			return false, err
+		}
+		pol = &p
+	}
 	if expiryChange {
 		next = nil
 		if !in.ClearExpiry {
-			p, err := s.loadPolicy(ctx, t.TenantID())
-			if err != nil {
-				return false, err
-			}
-			if next, err = resolveExpiry(p, now, in.ExpiresAt, in.ExpiresInDays); err != nil {
+			var err error
+			if next, err = resolveExpiry(*pol, tier, now, in.ExpiresAt, in.ExpiresInDays); err != nil {
 				return false, err
 			}
 		}
 	}
-	if tier == scopedom.TierIntrusive && next == nil {
-		return false, scopedom.ErrIntrusiveNeeds
+	if tier == scopedom.TierIntrusive {
+		// The organization's t2 bound (RFC-054 §12.4) applies to the
+		// expiry the entry will have, also when only the tier is raised.
+		if next == nil && !pol.intrusivePermanent() {
+			return false, scopedom.ErrIntrusiveNeeds
+		}
+		if maxDays, _ := pol.settings.T2Max(); next != nil && !pol.intrusivePermanent() &&
+			tier > t.MaxTier() && next.After(now.Add(time.Duration(maxDays)*24*time.Hour+time.Minute)) {
+			return false, fmt.Errorf("%w: at most %d days", scopedom.ErrIntrusiveTooLong, maxDays)
+		}
 	}
 	// A higher tier, a later or removed expiry, or renewing an expired entry
 	// widens.

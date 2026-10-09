@@ -66,6 +66,7 @@ describe('Scoping rows', () => {
     expect(SCOPE_SECTION_TABS.map((t) => [t.label, t.href, t.permission])).toEqual([
       ['Scope', '/scope', 'attack_surface:scope:read'],
       ['Programs', '/programs', 'attack_surface:programs:read'],
+      ['Letters', '/scope/letters', 'attack_surface:scope:read'],
     ])
   })
 
