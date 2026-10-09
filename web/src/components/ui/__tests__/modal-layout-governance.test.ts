@@ -290,7 +290,8 @@ function problems(src: string): string[] {
   return out
 }
 
-describe('modal surfaces', () => {
+// Parsing every .tsx file takes a few seconds on a busy runner.
+describe('modal surfaces', { timeout: 60_000 }, () => {
   const files = [...tsxFiles(SRC)].map((f) => ({
     rel: relative(SRC, f),
     src: readFileSync(f, 'utf8'),
