@@ -75,6 +75,11 @@ var stepUpRoutes = []string{
 	"POST /api/v1/scope/exclusions/{id}/deactivate",
 	"POST /api/v1/scope/exclusions/bulk/delete",
 	"DELETE /api/v1/scope/exclusions/{id}",
+	// Bug-bounty programs (RFC-065): the attestation that puts a
+	// program's entries into effect.
+	"POST /api/v1/programs",
+	"PUT /api/v1/programs/{id}/scope",
+	"POST /api/v1/programs/{id}/resume",
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
@@ -138,6 +143,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
+			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()

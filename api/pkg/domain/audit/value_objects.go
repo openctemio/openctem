@@ -63,6 +63,14 @@ const (
 	// scope entry (RFC-054 §6.1).
 	ActionScopeTargetApproved Action = "scope_target.approved"
 	ActionScopeTargetRejected Action = "scope_target.rejected"
+	// Bug-bounty programs (RFC-065). TermsAccepted is the attestation that
+	// puts a program's entries into effect instead of approvals.
+	ActionBountyProgramImported      Action = "bounty_program.imported"
+	ActionBountyProgramTermsAccepted Action = "bounty_program.terms_accepted"
+	ActionBountyProgramScopeReplaced Action = "bounty_program.scope_replaced"
+	ActionBountyProgramPaused        Action = "bounty_program.paused"
+	ActionBountyProgramResumed       Action = "bounty_program.resumed"
+	ActionBountyProgramEnded         Action = "bounty_program.ended"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -576,6 +584,8 @@ func (a Action) IsValid() bool {
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionScopeSettingsUpdated,
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
+		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
+		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
@@ -860,6 +870,8 @@ const (
 	ResourceTypeTemplateSource ResourceType = "template_source"
 	ResourceTypeScopeTarget    ResourceType = "scope_target"
 	ResourceTypeScopeExclusion ResourceType = "scope_exclusion"
+	// ResourceTypeBountyProgram is a bug-bounty program (RFC-065).
+	ResourceTypeBountyProgram ResourceType = "bounty_program"
 	// ResourceTypeSuppressionRule is a finding suppression rule.
 	ResourceTypeSuppressionRule ResourceType = "suppression_rule"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
@@ -890,7 +902,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
-		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
@@ -976,6 +988,8 @@ func SeverityForAction(a Action) Severity {
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
 		ActionScopeTargetApproved, ActionScopeSettingsUpdated,
+		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
+		ActionBountyProgramResumed,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		// Deleting an asset also deletes its findings.

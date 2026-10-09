@@ -372,6 +372,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
+		BountyProgram: handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
 		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
