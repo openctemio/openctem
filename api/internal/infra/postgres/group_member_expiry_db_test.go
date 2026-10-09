@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Team membership expiry (RFC-050 W22, migration 001459): the end date round
+// Team membership expiry (RFC-050 W22, migration 001502): the end date round
 // trips, only memberships past it are listed, and removing one takes the
 // team's assets out of that member's data scope while the other member keeps
 // them. Requires DATABASE_URL.
