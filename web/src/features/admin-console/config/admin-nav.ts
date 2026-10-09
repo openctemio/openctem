@@ -6,6 +6,7 @@ import {
   Inbox,
   KeyRound,
   LayoutDashboard,
+  Package,
   UserCog,
   UserPlus,
   UserSearch,
@@ -138,6 +139,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/plans',
         icon: Gauge,
         keywords: ['limits', 'free', 'pro', 'enterprise', 'quotas'],
+      },
+      {
+        title: 'Content packs',
+        i18nKey: 'admin.nav.contentPacks',
+        url: '/admin/system/content-packs',
+        icon: Package,
+        keywords: ['templates', 'nuclei', 'semgrep', 'wordlists', 'channels', 'signing'],
       },
       {
         title: 'AI applications',
