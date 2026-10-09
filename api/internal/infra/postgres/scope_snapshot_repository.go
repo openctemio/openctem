@@ -21,7 +21,9 @@ var ErrScopeSnapshotNotFound = fmt.Errorf("%w: scope snapshot not found", shared
 type ScopeSnapshotRepository struct{ db *DB }
 
 // NewScopeSnapshotRepository creates the repository.
-func NewScopeSnapshotRepository(db *DB) *ScopeSnapshotRepository { return &ScopeSnapshotRepository{db: db} }
+func NewScopeSnapshotRepository(db *DB) *ScopeSnapshotRepository {
+	return &ScopeSnapshotRepository{db: db}
+}
 
 // Record stores the body once per (tenant, hash) and links the run to it.
 func (r *ScopeSnapshotRepository) Record(ctx context.Context, tenantID, runID shared.ID, sha256 string, body []byte, takenAt time.Time) error {
