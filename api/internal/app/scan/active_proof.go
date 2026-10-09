@@ -101,3 +101,43 @@ func proofError(why string, missing []string) error {
 	}
 	return shared.NewDomainError(codeProofRequired, msg, shared.ErrValidation)
 }
+
+// ProgramTargetChecker lists the targets only program entries cover
+// (*easm.ActiveGate, RFC-065 §8).
+type ProgramTargetChecker interface {
+	ProgramOnlyTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error)
+}
+
+// codePlatformRefused refuses a job for platform sensors.
+const codePlatformRefused = "PLATFORM_SENSOR_REFUSED"
+
+// programOnly lists the targets that only program entries cover. The
+// production gate (*easm.ActiveGate) is a checker (asserted in cmd/server);
+// with no gate at all nothing dispatches anyway (the dispatch gate fails
+// closed), and a gate without the check has no program entries to judge.
+func (s *Service) programOnly(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	pc, ok := s.attributionGate.(ProgramTargetChecker)
+	if !ok || pc == nil {
+		return nil, nil
+	}
+	return pc.ProgramOnlyTargets(ctx, tenantID, targets)
+}
+
+// programRefusal refuses platform sensors for program-only targets (bounded
+// list); nil for none.
+func programRefusal(targets []string) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	sort.Strings(targets)
+	listed := targets[:min(len(targets), maxListedRefusals)]
+	msg := fmt.Sprintf("platform sensors never probe bug-bounty program targets; run the scan on your own sensors (sensor_preference 'tenant' or 'auto'): %s",
+		strings.Join(listed, ", "))
+	if len(targets) > len(listed) {
+		msg += fmt.Sprintf(" and %d more", len(targets)-len(listed))
+	}
+	return shared.NewDomainError(codePlatformRefused, msg, shared.ErrValidation)
+}

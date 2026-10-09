@@ -190,6 +190,33 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 	return ScopeStatusOutOfScope, nil, nil
 }
 
+// ProgramOnlyTargets returns the targets that only program entries cover
+// (RFC-065 §8): a bug-bounty program's scope is not the organization's, and
+// such a target is never probed from platform sensors. Implements
+// scan.ProgramTargetChecker.
+func (g *ActiveGate) ProgramOnlyTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	var auth *scopeauth.Authority
+	var out []string
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		if auth.ProgramOnly(t) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 // UnverifiedTargets returns the targets naming an internet host or public
 // address that are not at or under a verified domain of the tenant (an
 // address never is: there is no address proof yet). Implements
