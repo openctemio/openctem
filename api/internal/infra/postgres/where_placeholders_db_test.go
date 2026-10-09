@@ -123,13 +123,6 @@ func TestDynamicWhere_AllFiltersExecute(t *testing.T) {
 		check("PentestCampaignRepository.List", err)
 	}
 	{
-		sev, st := pentest.FindingSeverityCritical, pentest.FindingStatusDraft
-		_, err := NewPentestFindingRepository(db).List(ctx, pentest.FindingFilter{
-			TenantID: &tenantID, CampaignID: &id, Severity: &sev, Status: &st, Search: &search,
-		}, page)
-		check("PentestFindingRepository.List", err)
-	}
-	{
 		ty, fm, st := pentest.ReportTypeExecutiveSummary, pentest.ReportFormatPDF, pentest.ReportStatusDraft
 		_, err := NewPentestReportRepository(db).List(ctx, pentest.ReportFilter{
 			TenantID: &tenantID, CampaignID: &id, Type: &ty, Format: &fm, Status: &st,

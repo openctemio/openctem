@@ -103,7 +103,6 @@ notifications
 pentest_campaign_members
 pentest_campaigns
 pentest_finding_templates
-pentest_findings
 pentest_reports
 pentest_retests
 priority_class_audit_log

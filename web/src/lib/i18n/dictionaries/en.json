@@ -1018,5 +1018,8 @@
   "announcements.region": "Announcements",
   "admin.ann.state.active": "Shown",
   "admin.ann.state.scheduled": "Scheduled",
-  "admin.ann.state.ended": "Ended"
+  "admin.ann.state.ended": "Ended",
+  "admin.attention.accessRequests.detail": "{count} request(s) for an organization; the oldest has waited {days} day(s).",
+  "admin.attention.accessRequests.title": "Access requests waiting",
+  "admin.nav.group.requests": "Requests"
 }
