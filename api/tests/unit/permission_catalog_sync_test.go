@@ -33,6 +33,7 @@ var permSeedMigrations = []string{
 	"001198_scope_entries.up.sql", // attack_surface:scope:approve (RFC-054)
 	"001223_finding_evidence.up.sql",
 	"001384_content_packs.up.sql",             // scans:content:* (RFC-061)
+	"001495_bounty_programs.up.sql",           // attack_surface:programs:* (RFC-065)
 	"001501_findings_comment_severity.up.sql", // findings:comment, findings:severity
 }
 

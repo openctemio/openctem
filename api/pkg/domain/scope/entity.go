@@ -40,6 +40,10 @@ type Target struct {
 	// discoveryOff: discovery switched off (discovery.go); the zero value
 	// is on.
 	discoveryOff bool
+
+	// Authorization source (authorization.go, RFC-065).
+	authSource AuthorizationSource
+	programID  *shared.ID
 }
 
 // NewTarget creates a new scope target: active, permanent, t1.
