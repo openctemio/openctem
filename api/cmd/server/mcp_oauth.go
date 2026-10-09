@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
@@ -9,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -49,15 +51,27 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 	if svc.Tenant != nil {
 		policies = mcpPolicyReader{tenants: svc.Tenant}
 	}
+	var replay mcpoauthapp.ReplayCache
+	if deps.RedisClient != nil {
+		replay = redisReplayCache{client: deps.RedisClient}
+	}
 	var audit mcpoauthapp.AuditLogger
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	repo := postgres.NewMCPOAuthRepository(deps.DB)
+	repo := repos.MCPOAuth
+	if repo == nil {
+		repo = postgres.NewMCPOAuthRepository(deps.DB)
+	}
 	s, err := mcpoauthapp.NewService(mcpoauthapp.Config{
 		Repository:  repo,
 		Connections: repo,
-		Endpoints:   d.Endpoints,
+		Clients:     repo,
+		// Deprecated by MCP; off unless the operator turns it on.
+		DynamicRegistration: cfg.MCP.DynamicRegistration,
+		// DPoP proof ids are remembered in Redis (one use per proof).
+		Replay:    replay,
+		Endpoints: d.Endpoints,
 		// Codes and tokens are stored as HMAC-SHA256 with the application
 		// key; tokens hashed under a previous key keep working during a
 		// rotation.
@@ -95,4 +109,14 @@ func (r mcpPolicyReader) MCPPolicy(ctx context.Context, tenantID shared.ID) (ten
 		return tenantdom.MCPSettings{}, err
 	}
 	return *p, nil
+}
+
+// redisReplayCache remembers DPoP proof ids (RFC 9449 §11.1) with SETNX, so a
+// proof is accepted once across every replica.
+type redisReplayCache struct {
+	client *redis.Client
+}
+
+func (c redisReplayCache) FirstUse(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	return c.client.SetNX(ctx, key, "1", ttl)
 }
