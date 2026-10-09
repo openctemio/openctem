@@ -118,6 +118,8 @@ export const Permission = {
   FindingsApprove: 'findings:approve',
   FindingsFixApply: 'findings:fix_apply',
   FindingsVerify: 'findings:verify',
+  FindingsComment: 'findings:comment',
+  FindingsSeverity: 'findings:severity',
 
   // Exposures (findings:exposures:*)
   ExposuresRead: 'findings:exposures:read',
@@ -304,6 +306,9 @@ export const Permission = {
   // Create effective scope entries and approve or reject scope requests and
   // widenings (RFC-054). Without it, scope:write only requests a one-off.
   ScopeApprove: 'attack_surface:scope:approve',
+  // Bug-bounty programs (RFC-065): view; import, re-import, pause, resume, end and attest.
+  ProgramsRead: 'attack_surface:programs:read',
+  ProgramsWrite: 'attack_surface:programs:write',
 
   // ===========================================
   // VALIDATION MODULE (CTEM)
@@ -774,6 +779,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   // Note: Legacy aliases (MembersManage, etc.) map to
   // the same permission IDs as their canonical counterparts, so their
   // labels are inherited automatically.
+  [Permission.FindingsComment]: 'Comment on Findings',
+  [Permission.FindingsSeverity]: 'Change Finding Severity',
 }
 
 /**

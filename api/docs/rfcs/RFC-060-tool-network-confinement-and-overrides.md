@@ -94,6 +94,16 @@ policy may narrow it:
 - cap the rate;
 - deny extra arguments.
 
+The User-Agent and skip-verify narrowing is built in two layers:
+
+- **Sensor-local policy** (schema v3 `http`). The network owner decides first.
+- **Organization** (Settings > Security: `tool_http_user_agent`, `forbid_tool_insecure_tls`).
+  - The platform puts it in every scan job as `http_policy` when the job is delivered, so a queued job gets the policy in force when it leaves.
+  - The platform replaces any value a command's creator set.
+  - The organization's User-Agent applies unless the local policy forces one.
+  - Forbidding skip-verify refuses the tool even where the local policy allows it, but can never allow what the local policy forbids.
+  - Turning the refusal off again is audited at high severity.
+
 ### 4.2 Per-task network confinement (process backend)
 
 ```

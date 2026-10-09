@@ -15,20 +15,23 @@ import (
 
 // Refusal codes.
 const (
-	RefusalInvalidTarget      = "invalid_target"
-	RefusalDenyList           = "deny_list"
-	RefusalExcluded           = "excluded"
-	RefusalRejected           = "rejected"
-	RefusalNeedsReview        = "needs_review"
-	RefusalCandidate          = "candidate"
-	RefusalDependency         = "dependency"
-	RefusalMonitorOnly        = "monitor_only"
-	RefusalNoEntry            = "no_entry"
-	RefusalEntryPending       = "entry_pending"
-	RefusalEntryExpired       = "entry_expired"
-	RefusalEntryInactive      = "entry_inactive"
-	RefusalTierExceeds        = "tier_exceeds"
-	RefusalProofRequired      = "proof_required"
+	RefusalInvalidTarget = "invalid_target"
+	RefusalDenyList      = "deny_list"
+	RefusalExcluded      = "excluded"
+	RefusalRejected      = "rejected"
+	RefusalNeedsReview   = "needs_review"
+	RefusalCandidate     = "candidate"
+	RefusalDependency    = "dependency"
+	RefusalMonitorOnly   = "monitor_only"
+	RefusalNoEntry       = "no_entry"
+	RefusalEntryPending  = "entry_pending"
+	RefusalEntryExpired  = "entry_expired"
+	RefusalEntryInactive = "entry_inactive"
+	RefusalTierExceeds   = "tier_exceeds"
+	RefusalProofRequired = "proof_required"
+	// RefusalProgramPlatform: only bug-bounty program entries cover the
+	// target, and platform sensors never probe those (RFC-065 §8).
+	RefusalProgramPlatform    = "program_platform"
 	RefusalOutOfDataScope     = "out_of_data_scope"
 	RefusalNotAnAsset         = "not_an_asset"
 	RefusalZoneNone           = "zone_none"
@@ -110,6 +113,7 @@ var RefusalMessages = map[string]string{
 	RefusalEntryInactive:      "The scope entry that covers this target is deactivated.",
 	RefusalTierExceeds:        "The scope entries covering this target do not allow this probe's tier.",
 	RefusalProofRequired:      "This probe needs a verified domain of your organization.",
+	RefusalProgramPlatform:    "Platform sensors never probe bug-bounty program targets; use your own sensors.",
 	RefusalOutOfDataScope:     "This asset is outside your data scope.",
 	RefusalNotAnAsset:         "You may scan only assets in your data scope.",
 	RefusalZoneNone:           "No scan zone covers this private target.",
@@ -201,6 +205,8 @@ func FixesFor(code, target string, rule *RuleRef, oneOffDays int) []Fix {
 			}
 		}
 		return out
+	case RefusalProgramPlatform:
+		return []Fix{{Action: FixUseTenantSensor}}
 	case RefusalZoneNone, RefusalZoneNoSensor, RefusalZoneSensorMismatch:
 		return []Fix{{Action: FixAddZone, Requires: permScanZonesWrite}}
 	case RefusalDenyList:

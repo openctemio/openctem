@@ -38,9 +38,10 @@ func (r *ScannerTemplateRepository) Create(ctx context.Context, t *scannertempla
 			content, content_url, content_hash, signature_hash,
 			rule_count, description, tags, metadata,
 			status, validation_error, sync_source, source_path, source_commit,
-			created_by, created_at, updated_at
+			created_by, created_at, updated_at,
+			ledger_sha256, sensor_approvals, content_author_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 	`
 
 	var sourceID, contentURL, validationError, sourcePath, sourceCommit, createdBy sql.NullString
@@ -62,6 +63,10 @@ func (r *ScannerTemplateRepository) Create(ctx context.Context, t *scannertempla
 	}
 	if t.CreatedBy != nil {
 		createdBy = sql.NullString{String: t.CreatedBy.String(), Valid: true}
+	}
+	ledgerSHA, approvals, contentAuthor, err := sensorApprovalColumns(t)
+	if err != nil {
+		return err
 	}
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -87,6 +92,9 @@ func (r *ScannerTemplateRepository) Create(ctx context.Context, t *scannertempla
 		createdBy,
 		t.CreatedAt,
 		t.UpdatedAt,
+		ledgerSHA,
+		approvals,
+		contentAuthor,
 	)
 
 	if err != nil {
@@ -203,7 +211,8 @@ func (r *ScannerTemplateRepository) Update(ctx context.Context, t *scannertempla
 		    content_hash = $6, signature_hash = $7, rule_count = $8,
 		    description = $9, tags = $10, metadata = $11,
 		    status = $12, validation_error = $13, sync_source = $14,
-		    source_path = $15, source_commit = $16, updated_at = $17
+		    source_path = $15, source_commit = $16, updated_at = $17,
+		    ledger_sha256 = $18, sensor_approvals = $19, content_author_id = $20
 		WHERE id = $1
 	`
 
@@ -220,6 +229,10 @@ func (r *ScannerTemplateRepository) Update(ctx context.Context, t *scannertempla
 	}
 	if t.SourceCommit != nil {
 		sourceCommit = sql.NullString{String: *t.SourceCommit, Valid: true}
+	}
+	ledgerSHA, approvals, contentAuthor, err := sensorApprovalColumns(t)
+	if err != nil {
+		return err
 	}
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -240,6 +253,9 @@ func (r *ScannerTemplateRepository) Update(ctx context.Context, t *scannertempla
 		sourcePath,
 		sourceCommit,
 		t.UpdatedAt,
+		ledgerSHA,
+		approvals,
+		contentAuthor,
 	)
 
 	if err != nil {
@@ -332,7 +348,8 @@ func (r *ScannerTemplateRepository) selectQuery() string {
 		       content, content_url, content_hash, signature_hash,
 		       rule_count, description, tags, metadata,
 		       status, validation_error, sync_source, source_path, source_commit,
-		       created_by, created_at, updated_at
+		       created_by, created_at, updated_at,
+		       ledger_sha256, sensor_approvals, content_author_id
 		FROM scanner_templates
 	`
 }
@@ -402,6 +419,9 @@ func (r *ScannerTemplateRepository) scanTemplate(row *sql.Row) (*scannertemplate
 		createdBy       sql.NullString
 		tags            pq.StringArray
 		metadata        []byte
+		ledgerSHA       sql.NullString
+		approvals       []byte
+		contentAuthor   sql.NullString
 	)
 
 	err := row.Scan(
@@ -427,6 +447,9 @@ func (r *ScannerTemplateRepository) scanTemplate(row *sql.Row) (*scannertemplate
 		&createdBy,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&ledgerSHA,
+		&approvals,
+		&contentAuthor,
 	)
 
 	if err != nil {
@@ -469,6 +492,7 @@ func (r *ScannerTemplateRepository) scanTemplate(row *sql.Row) (*scannertemplate
 	} else {
 		t.Metadata = make(map[string]any)
 	}
+	restoreSensorApproval(t, ledgerSHA, approvals, contentAuthor)
 
 	return t, nil
 }
@@ -490,6 +514,9 @@ func (r *ScannerTemplateRepository) scanTemplateFromRows(rows *sql.Rows) (*scann
 		createdBy       sql.NullString
 		tags            pq.StringArray
 		metadata        []byte
+		ledgerSHA       sql.NullString
+		approvals       []byte
+		contentAuthor   sql.NullString
 	)
 
 	err := rows.Scan(
@@ -515,6 +542,9 @@ func (r *ScannerTemplateRepository) scanTemplateFromRows(rows *sql.Rows) (*scann
 		&createdBy,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&ledgerSHA,
+		&approvals,
+		&contentAuthor,
 	)
 
 	if err != nil {
@@ -554,6 +584,41 @@ func (r *ScannerTemplateRepository) scanTemplateFromRows(rows *sql.Rows) (*scann
 	} else {
 		t.Metadata = make(map[string]any)
 	}
+	restoreSensorApproval(t, ledgerSHA, approvals, contentAuthor)
 
 	return t, nil
+}
+
+// sensorApprovalColumns are the approval-for-sensors columns of t
+// (RFC-040 §11.5).
+func sensorApprovalColumns(t *scannertemplate.ScannerTemplate) (ledgerSHA sql.NullString, approvals []byte, author sql.NullString, err error) {
+	if t.LedgerSHA256 != "" {
+		ledgerSHA = sql.NullString{String: t.LedgerSHA256, Valid: true}
+	}
+	list := t.SensorApprovals
+	if list == nil {
+		list = []scannertemplate.SensorApproval{}
+	}
+	if approvals, err = json.Marshal(list); err != nil {
+		return ledgerSHA, nil, author, fmt.Errorf("failed to marshal template approvals: %w", err)
+	}
+	if t.ContentAuthorID != nil {
+		author = sql.NullString{String: t.ContentAuthorID.String(), Valid: true}
+	}
+	return ledgerSHA, approvals, author, nil
+}
+
+// restoreSensorApproval sets the approval-for-sensors fields read back.
+func restoreSensorApproval(t *scannertemplate.ScannerTemplate, ledgerSHA sql.NullString, approvals []byte, author sql.NullString) {
+	if ledgerSHA.Valid {
+		t.LedgerSHA256 = ledgerSHA.String
+	}
+	if len(approvals) > 0 {
+		_ = json.Unmarshal(approvals, &t.SensorApprovals)
+	}
+	if author.Valid {
+		if id, err := shared.IDFromString(author.String); err == nil {
+			t.ContentAuthorID = &id
+		}
+	}
 }

@@ -46,6 +46,26 @@ var systemRoles = []SystemRole{
 		Description: "Read-only access inside their data scope. Every new member starts here.",
 		Permissions: RolePermissions[tenant.RoleViewer],
 	},
+	{
+		// RFC-065: tests the programs the organization follows. Sees only the
+		// assets of the programs whose group has them; never changes the
+		// organization's own scope or approves anything.
+		ID: "00000000-0000-0000-0000-000000000005", Slug: "researcher", Name: "Researcher",
+		Description: "Tests programs the organization follows: programs, scans and findings of the programs they belong to; cannot change the organization's own scope or approve anything",
+		Permissions: ResearcherPermissions,
+	},
+}
+
+// ResearcherPermissions are the grants of the built-in Researcher role
+// (migration bounty_programs, RFC-065 §7).
+var ResearcherPermissions = []Permission{
+	DashboardRead, AssetsRead,
+	// No FindingsSeverity: researchers report and discuss, triage owns severity.
+	FindingsRead, FindingsWrite, FindingsComment, FindingsStatus, FindingsTriage, FindingsExport,
+	ScansRead, ScansWrite, ScansExecute,
+	ScanProfilesRead, ScannerTemplatesRead, ScanWorkflowsRead,
+	SensorsRead,
+	ProgramsRead, ProgramsWrite,
 }
 
 // SystemRoles returns the built-in roles (a fresh copy).

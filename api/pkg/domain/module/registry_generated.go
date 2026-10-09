@@ -140,7 +140,8 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "scope rules select assets"},
 		},
-		Routes: []string{"/api/v1/scope"},
+		Routes: []string{"/api/v1/scope", "/api/v1/programs"},
+		Jobs:   []string{"ProgramAssignmentController"},
 	},
 	{
 		ID: ModuleBusinessServices, Slug: "business-services", Name: "Business Services",
@@ -210,7 +211,7 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleScans, Type: DependencyHard, Reason: "templates are consumed by scans"},
 		},
-		Routes: []string{"/api/v1/scanner-templates", "/api/v1/content-packs"},
+		Routes: []string{"/api/v1/scanner-templates", "/api/v1/content-packs", "/api/v1/platform-content-packs"},
 	},
 	{
 		ID: ModuleBusinessUnits, Slug: "business-units", Name: "Business Units",
@@ -675,7 +676,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "team:read",
-		Jobs:       []string{"MemberAccessExpiryController", "AccessRequestRetentionController", "RoleSyncController", "IdleWorkspaceController"},
+		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "AccessRequestRetentionController", "RoleSyncController", "IdleWorkspaceController"},
 	},
 	{
 		ID: ModuleGroups, Slug: "groups", Name: "Groups",
