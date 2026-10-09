@@ -15,7 +15,7 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
                                    │
                     RFC-054 guardrails (PSL, deny list, CIDR caps)
                                    │
-       preview ──► terms_sha256 ◄── import / re-import / resume (step-up + attestation)
+       preview ──► terms_sha256 ◄── import / re-import / reactivate (step-up + attestation)
                                    │
           scope_targets (program)  +  bounty_program_exclusions  +  bounty_programs
                                    │
@@ -28,7 +28,7 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
 ## Rules of the model
 
 - **The authority check does not change.** A program entry is an ordinary
-  entry: it covers a target while it is active. Pause and end deactivate the
+  entry: it covers a target while it is active. Suspend and end deactivate the
   program's entries; re-import deletes the entries of items no longer listed.
 - **No second approver for program entries.** The importer's attestation of
   the program's terms (program URL, rules, in and out of scope, hashed)
@@ -65,10 +65,12 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
 
 ## Evidence
 
-Every scan run links to a scope snapshot: the in-effect entries (with source,
-program and tier), in-effect exclusions and active programs with their
-attestation. Identical scope gives the same hash and one stored body.
-`GET /api/v1/scans/runs/{id}/scope-snapshot` returns it.
+Every scan run links to a scope snapshot: the entry that covered each of its
+targets (with source, program and tier), those programs with their
+attestation and program exclusions, and the count of uncovered targets.
+Identical authority gives the same hash and one stored body.
+`GET /api/v1/scan-runs/{id}/scope-snapshot` returns it to callers who may see
+the run and hold `scope:read` or `programs:read`.
 
 ## Files
 
@@ -76,7 +78,8 @@ attestation. Identical scope gives the same hash and one stored body.
 |---|---|
 | `pkg/domain/bountyprogram/` | program entity, rules, scope parser, terms hash |
 | `internal/app/bountyprogram/` | import, re-import, lifecycle, attestation, assignment pass |
-| `internal/app/scopeauth/` | `OwnedCover`: whether a non-program entry covers a target |
+| `internal/app/scopeauth/` | program exclusions bind program entries; `ProgramOnly`, `CoveredByPrograms` |
 | `internal/app/scan/active_proof.go` | platform-sensor refusal for program-only targets |
-| `internal/app/scan/scope_snapshot.go` | snapshot per run |
+| `internal/app/scan/scope_snapshot.go`, `internal/app/scope/snapshot.go` | snapshot per run |
+| `internal/infra/postgres/bounty_program_assign.go` | program assignment pass (data scope) |
 | `migrations/001454_bounty_programs.*` | tables, columns, permissions, Researcher role |
