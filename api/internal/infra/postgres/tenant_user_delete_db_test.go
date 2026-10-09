@@ -313,6 +313,24 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"sensor_config_reports": func(*schemaSeeder) map[string]any {
 		return map[string]any{"digest": "sha256:" + strings.Repeat("cd", 32), "health": "ok", "report": "{}"}
 	},
+	// Bug-bounty programs (RFC-065): hex hashes, an https URL, typed JSON.
+	"bounty_programs": func(*schemaSeeder) map[string]any {
+		return map[string]any{"terms_sha256": strings.Repeat("ab", 32), "program_url": "https://p.example/policy",
+			"status": "active", "scope_source": "paste", "rules": "{}", "scope_items": "[]", "group_id": nil}
+	},
+	"bounty_program_exclusions": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"target_type": "domain", "pattern": s.uniq() + ".example"}
+	},
+	// A program entry needs its program; an ownership entry has none.
+	"scope_targets": func(*schemaSeeder) map[string]any {
+		return map[string]any{"authorization_source": "program"}
+	},
+	"scope_snapshots": func(*schemaSeeder) map[string]any {
+		return map[string]any{"sha256": strings.Repeat("ab", 32), "body": "{}"}
+	},
+	"scan_run_scope_snapshots": func(*schemaSeeder) map[string]any {
+		return map[string]any{"sha256": strings.Repeat("ab", 32)}
+	},
 	"sensor_manifests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "manifest": "{}", "ignored": "[]"}
 	},
