@@ -97,11 +97,11 @@ const (
 	FindingsVerify     Permission = "findings:verify"    // fix_applied → resolved (security/scanner action)
 	// FindingsComment: comment on a finding and react to comments. Split
 	// from findings:write so a person can discuss a finding without the
-	// other writes (migration 001455).
+	// other writes (migration 001486).
 	FindingsComment Permission = "findings:comment"
 	// FindingsSeverity: change a finding's severity or classification. Split
 	// from findings:write so whoever fixes a finding need not be able to
-	// re-score it (migration 001455).
+	// re-score it (migration 001486).
 	FindingsSeverity Permission = "findings:severity"
 
 	// Exposure permissions (findings:exposures:*)
