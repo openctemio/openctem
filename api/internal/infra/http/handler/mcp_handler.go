@@ -124,6 +124,11 @@ type mcpTool struct {
 	// call runs the tool for a single tenant. args is the raw JSON `arguments`
 	// object; the return value is JSON-marshaled into the tool's text result.
 	call func(ctx context.Context, tenantID string, args json.RawMessage) (any, error)
+	// Write marks a tool that changes data: it runs only after the person
+	// confirmed the exact action (mcp_write_tools.go).
+	Write bool
+	// prepare checks a write action and describes it for the person.
+	prepare func(ctx context.Context, tenantID string, args json.RawMessage) (string, error)
 }
 
 // MCPHandler serves a read-only Model Context Protocol endpoint over JSON-RPC,
@@ -149,6 +154,9 @@ type MCPHandler struct {
 	// resourceMetadata is the Protected Resource Metadata URL named in
 	// insufficient_scope challenges (empty: no challenges).
 	resourceMetadata string
+	// confirmer and comments back the write tools (SetWriteTools).
+	confirmer mcpConfirmer
+	comments  mcpFindingCommenter
 	// modules answers whether a module is on for the organization (the
 	// route module gate). nil: every module counts as on (tests, stub builds).
 	modules mcpModuleChecker
@@ -282,11 +290,18 @@ func (h *MCPHandler) toolsListResult(ctx context.Context) map[string]any {
 		if !h.moduleEnabled(ctx, tenantID, t.Module) {
 			continue
 		}
-		list = append(list, map[string]any{
+		if t.Write && !h.writeToolsUsable(ctx) {
+			continue
+		}
+		entry := map[string]any{
 			"name":        t.Name,
 			"description": t.Description,
 			"inputSchema": t.InputSchema,
-		})
+		}
+		if t.Write {
+			entry["annotations"] = map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+		}
+		list = append(list, entry)
 	}
 	return map[string]any{"tools": list}
 }
@@ -332,6 +347,19 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 		}
 		h.writeResult(w, req.ID, toolResult("permission denied: this credential lacks the permission this tool needs ("+tool.RequiredPerm+")", true))
 		return
+	}
+
+	if tool.Write {
+		if res, done := h.runWriteTool(r, tool, tenantID, p.Arguments); done {
+			isErr, _ := res["isError"].(bool)
+			outcome := auditdom.ResultSuccess
+			if isErr {
+				outcome = auditdom.ResultFailure
+			}
+			h.auditToolCall(r, tenantID, tool.Name, p.Arguments, outcome, isErr, 0)
+			h.writeResult(w, req.ID, res)
+			return
+		}
 	}
 
 	result, err := tool.call(ctx, tenantID, p.Arguments)
@@ -441,6 +469,8 @@ var mcpAuditSafeArgs = map[string]bool{
 	"min_epss": true, "limit": true,
 	// pentest report-writing tools/prompts: ids + enum-like filters only.
 	"campaign_id": true, "finding_id": true, "section": true, "category": true,
+	// write tools: the confirmation the call presents.
+	"confirmation_id": true,
 }
 
 // sanitizeMCPArgs reduces raw tool arguments to an audit-safe summary: every

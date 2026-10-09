@@ -45,6 +45,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -558,8 +559,8 @@ export default function ScanWorkflowsPage() {
 
       {/* Create/Edit Workflow Sheet */}
       <Sheet open={isFormOpen} onOpenChange={handleCloseForm}>
-        <SheetContent className="w-full sm:max-w-xl lg:max-w-3xl flex flex-col p-0">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+        <SheetContent className="w-full sm:max-w-xl lg:max-w-3xl">
+          <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <Workflow className="h-5 w-5" />
               {editingWorkflow ? `Edit: ${editingWorkflow.name}` : 'Create workflow'}
@@ -570,15 +571,13 @@ export default function ScanWorkflowsPage() {
                 : 'Name the workflow and choose what each step does'}
             </SheetDescription>
           </SheetHeader>
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            <ScanWorkflowForm
-              workflow={editingWorkflow}
-              hasDraft={!!editingWorkflow && editingDraft}
-              onSubmit={editingWorkflow ? handleUpdateWorkflow : handleCreateWorkflow}
-              onCancel={handleCloseForm}
-              isSubmitting={creatingWorkflow || updatingWorkflow}
-            />
-          </div>
+          <ScanWorkflowForm
+            workflow={editingWorkflow}
+            hasDraft={!!editingWorkflow && editingDraft}
+            onSubmit={editingWorkflow ? handleUpdateWorkflow : handleCreateWorkflow}
+            onCancel={handleCloseForm}
+            isSubmitting={creatingWorkflow || updatingWorkflow}
+          />
         </SheetContent>
       </Sheet>
 
@@ -746,7 +745,7 @@ export default function ScanWorkflowsPage() {
 
       {/* Clone Template Dialog */}
       <Dialog open={cloneDialogOpen} onOpenChange={handleCloseCloneDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {cloningWorkflow?.is_system_template ? (
@@ -767,32 +766,34 @@ export default function ScanWorkflowsPage() {
                 : `Create a copy of "${cloningWorkflow?.name}". The cloned workflow will appear in My Workflows.`}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="clone-name">Workflow name</Label>
-              <Input
-                id="clone-name"
-                value={cloneName}
-                onChange={(e) => setCloneName(e.target.value)}
-                placeholder="Enter a name for the new workflow"
-                autoFocus
-              />
-              <p className="text-xs text-muted-foreground">
-                You can change this name later in the workflow settings.
-              </p>
+          <DialogBody>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="clone-name">Workflow name</Label>
+                <Input
+                  id="clone-name"
+                  value={cloneName}
+                  onChange={(e) => setCloneName(e.target.value)}
+                  placeholder="Enter a name for the new workflow"
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  You can change this name later in the workflow settings.
+                </p>
+              </div>
+              {cloningWorkflow?.is_system_template && (
+                <Alert>
+                  <Cloud className="h-4 w-4" />
+                  <AlertTitle>System template</AlertTitle>
+                  <AlertDescription>
+                    This is a pre-built template. Your copy will be fully editable and independent
+                    from the original.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
-            {cloningWorkflow?.is_system_template && (
-              <Alert>
-                <Cloud className="h-4 w-4" />
-                <AlertTitle>System template</AlertTitle>
-                <AlertDescription>
-                  This is a pre-built template. Your copy will be fully editable and independent
-                  from the original.
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
-          <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          </DialogBody>
+          <DialogFooter>
             <Button variant="outline" onClick={handleCloseCloneDialog} disabled={isCloning}>
               Cancel
             </Button>
