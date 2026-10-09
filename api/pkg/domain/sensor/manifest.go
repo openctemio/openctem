@@ -93,6 +93,10 @@ type Manifest struct {
 	// LocalPolicy is the sensor-local policy report (RFC-040 §5.7), sent
 	// by SDKs that see "local_policy" on hello; sanitized when stored.
 	LocalPolicy *LocalPolicyReport `json:"local_policy,omitempty"`
+	// Posture is the sensor's platform TLS pin and tool sandbox (posture.go),
+	// sent by SDKs that see "posture" on hello; sanitized when stored.
+	// Display and alert data only: it never relaxes a platform check.
+	Posture *ManifestPosture `json:"posture,omitempty"`
 }
 
 // ManifestBuild is the sensor binary.
@@ -206,7 +210,7 @@ func ManifestDigest(raw []byte) (string, error) {
 // manifestMembers are the top-level members of schema 1.
 var manifestMembers = map[string]bool{
 	"schema": true, "sensor": true, "sdk": true, "platform": true, "resources": true,
-	"concurrency": true, "capabilities": true, "tools": true, "local_policy": true,
+	"concurrency": true, "capabilities": true, "tools": true, "local_policy": true, "posture": true,
 }
 
 // ParseManifest decodes a manifest leniently: unknown top-level members are
@@ -299,6 +303,7 @@ func (m Manifest) Sanitized(rep CapabilityReport, now time.Time) (Manifest, []Ma
 		lp.KillSwitch = false // live state: the heartbeat's, never the manifest's
 		out.LocalPolicy = lp
 	}
+	out.Posture = SanitizeManifestPosture(m.Posture)
 	var ignored []ManifestIgnored
 	ignore := func(path, value, reason string) {
 		if len(ignored) < MaxManifestIgnored {
