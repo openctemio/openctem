@@ -742,6 +742,11 @@ type MCPConfig struct {
 	// organization treats as verified (MCP_OAUTH_TRUSTED_CLIENT_HOSTS,
 	// comma-separated). Organizations add their own on top.
 	TrustedClientHosts []string
+	// DynamicRegistration turns POST /oauth/register (RFC 7591) on
+	// (MCP_OAUTH_DCR_ENABLED, default off). MCP 2026-07-28 deprecates it in
+	// favor of Client ID Metadata Documents; such clients are always shown
+	// as unverified.
+	DynamicRegistration bool
 }
 
 // CORSConfig holds CORS configuration.
@@ -1264,7 +1269,8 @@ func Load() (*Config, error) {
 			HTTPTimeout:         getEnvDuration("KEYCLOAK_HTTP_TIMEOUT", 10*time.Second),
 		},
 		MCP: MCPConfig{
-			TrustedClientHosts: getEnvSlice("MCP_OAUTH_TRUSTED_CLIENT_HOSTS", nil),
+			TrustedClientHosts:  getEnvSlice("MCP_OAUTH_TRUSTED_CLIENT_HOSTS", nil),
+			DynamicRegistration: getEnvBool("MCP_OAUTH_DCR_ENABLED", false),
 		},
 		CORS: CORSConfig{
 			// F-12: Default to localhost dev origin instead of wildcard. Production

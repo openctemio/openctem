@@ -400,9 +400,11 @@ func registerAITriageRoutes(
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	rateLimiter *middleware.AITriageRateLimiter,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token; the ai_triage module gate
+	// runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Add rate limiter to POST endpoints if available
 	var postMiddlewares []Middleware
