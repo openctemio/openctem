@@ -121,6 +121,7 @@ type Doorbell struct {
 	logger *logger.Logger
 	now    func() time.Time
 	grants GrantSource
+	keyset func() string
 }
 
 // GrantSource reads a sensor's grant: the doorbell rings a gated action
@@ -133,6 +134,11 @@ type GrantSource interface {
 // SetGrants makes the doorbell drop gated actions the sensor's grant does
 // not list. A grant that cannot be read drops them too (fail closed).
 func (d *Doorbell) SetGrants(g GrantSource) { d.grants = g }
+
+// SetKeySetVersion makes config_version change when the job signer's key
+// set changes (RFC-040 §5.6), so a sensor re-reads hello and picks up a
+// rotated or revoked signer key. v must not block.
+func (d *Doorbell) SetKeySetVersion(v func() string) { d.keyset = v }
 
 // mayRing reports whether action may go to the sensor.
 func (d *Doorbell) mayRing(ctx context.Context, a *sensordom.Sensor, action sensordom.Action) bool {
@@ -215,7 +221,11 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 	// there is no pending count for them; the rest still applies.
 
 	if req.Aware {
-		h.ConfigVersion = ConfigVersion(a, req.Identity.KeyExpiresAt, zones)
+		keyset := ""
+		if d.keyset != nil {
+			keyset = d.keyset()
+		}
+		h.ConfigVersion = ConfigVersion(a, req.Identity.KeyExpiresAt, zones, keyset)
 		h.NextHeartbeatSeconds = interval
 	} else if interval != idle {
 		h.NextHeartbeatSeconds = interval
@@ -236,10 +246,11 @@ func (d *Doorbell) seconds(v time.Duration) int {
 
 // ConfigVersion is an opaque, stable digest of what the platform governs
 // about a sensor: capabilities, concurrency, execution mode, the
-// operator-set config, the presented key's expiry and the assigned zones
-// (each with its last change). It changes when any of those changes and only
-// then; heartbeat metrics and last-seen times are not part of it.
-func ConfigVersion(a *sensordom.Sensor, keyExpiresAt *time.Time, zoneFingerprint string) string {
+// operator-set config, the presented key's expiry, the assigned zones
+// (each with its last change) and the job signer's key set (when one is
+// served). It changes when any of those changes and only then; heartbeat
+// metrics and last-seen times are not part of it.
+func ConfigVersion(a *sensordom.Sensor, keyExpiresAt *time.Time, zoneFingerprint, keySetVersion string) string {
 	caps := append([]string(nil), a.Capabilities...)
 	sort.Strings(caps)
 	cfg, _ := json.Marshal(a.Config) // map keys are emitted sorted
@@ -258,6 +269,10 @@ func ConfigVersion(a *sensordom.Sensor, keyExpiresAt *time.Time, zoneFingerprint
 	} {
 		b.WriteString(part)
 		b.WriteByte('\n')
+	}
+	// Only present with a key set, so the value is unchanged without one.
+	if keySetVersion != "" {
+		b.WriteString("keyset=" + keySetVersion + "\n")
 	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:8])
