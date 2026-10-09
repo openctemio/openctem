@@ -321,9 +321,10 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate: must have either asset_group_ids or targets
-	if len(assetGroupIDs) == 0 && len(req.Targets) == 0 {
-		apierror.BadRequest("Either asset_group_id/asset_group_ids or targets must be provided").WriteJSON(w)
+	// Validate: must have asset groups, targets or assets (asset_ids alone is
+	// a scan of picked inventory assets; the service names them).
+	if len(assetGroupIDs) == 0 && len(req.Targets) == 0 && len(req.AssetIDs) == 0 {
+		apierror.BadRequest("Either asset_group_id/asset_group_ids, targets or asset_ids must be provided").WriteJSON(w)
 		return
 	}
 
