@@ -305,6 +305,32 @@ export const QUICK_PRESETS: QuickPreset[] = [
   },
 ]
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The expiry views (properties of format expiry: a certificate's not_after, a
+ * domain's expires_at). The instants are taken when the views are built, so
+ * build them when the menu renders. "Expired" also clears a lower bound left
+ * by the other view, so switching between them never yields an empty range.
+ */
+export function expiryPresets(now = Date.now()): QuickPreset[] {
+  const nowISO = new Date(now).toISOString()
+  return [
+    {
+      id: 'expired',
+      label: 'Expired',
+      apply: { expiresBefore: nowISO, expiresAfter: undefined },
+      isActive: (f) => !!f.expiresBefore && !f.expiresAfter,
+    },
+    {
+      id: 'expiring-30d',
+      label: 'Expiring in 30 days',
+      apply: { expiresAfter: nowISO, expiresBefore: new Date(now + 30 * DAY_MS).toISOString() },
+      isActive: (f) => !!f.expiresBefore && !!f.expiresAfter,
+    },
+  ]
+}
+
 /**
  * Compute the filters after toggling a preset OFF, removing only the values the
  * preset itself contributed and preserving anything the user selected manually.

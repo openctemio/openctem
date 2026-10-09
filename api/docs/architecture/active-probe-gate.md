@@ -104,6 +104,17 @@ Operator settings, never tenant settings:
   it at `DispatchTargetsInput.Tier` (T1 when unset; passive dispatches are
   not checked). `easm.ActiveGate.TierExceeded` answers, tenant-scoped.
 
+## Program entries (RFC-065)
+
+A scope entry records its authorization source. `program` entries come from a
+bug-bounty program the organization follows ([bounty-programs.md](bounty-programs.md)):
+they authorize like any entry while active, but take effect on the importer's
+attestation instead of approvals, allow at most T1, and a target that only
+program entries cover is never routed to platform sensors (an explicit
+`platform` preference answers `PLATFORM_SENSOR_REFUSED`, `auto` stays on the
+tenant's sensors). Each scan run links to a hashed snapshot of the scope in
+force when it started.
+
 ## What the gate checks
 
 For each target, in order:
