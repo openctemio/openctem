@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { PageHeader, EmptyState, StatsCard } from '@/features/shared'
 import { Button } from '@/components/ui/button'
