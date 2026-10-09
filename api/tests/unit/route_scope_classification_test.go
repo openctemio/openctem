@@ -66,7 +66,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/oauth/requests/{id}/approve": {classSeparate, "the caller's own MCP consent decision (RFC-062)"},
 	"/api/v1/oauth/requests/{id}/deny":    {classSeparate, "the caller's own MCP consent decision (RFC-062)"},
 	"/api/v1/version":                     {classSystem, "build identity"},
-	"/api/v1/announcements":            {classSystem, "platform operator notices (plain text); no tenant data"},
+	"/api/v1/announcements":               {classSystem, "platform operator notices (plain text); no tenant data"},
 	"/api/v1/client-errors":               {classSystem, "web error kind for operator metrics; reads and stores nothing"},
 	"/api/v1/auth":                        {classSystem, "authentication flows"},
 	"/api/v1/users":                       {classSystem, "the caller's own account"},
