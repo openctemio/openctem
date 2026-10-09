@@ -10,6 +10,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogBody,
 } from '@/components/ui/alert-dialog'
 import { Loader2, Users } from 'lucide-react'
 import { toast } from 'sonner'
@@ -76,28 +77,30 @@ export function AutoAssignDialog({ open, onOpenChange, onSuccess }: AutoAssignDi
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {result && (
-          <div className="rounded-lg border bg-muted/50 p-3 my-2 space-y-2">
-            <p className="text-sm font-medium">{result.assigned} findings assigned</p>
-            {Object.entries(result.by_owner).length > 0 && (
-              <div className="text-xs text-muted-foreground space-y-0.5">
-                {Object.entries(result.by_owner)
-                  .sort(([, a], [, b]) => b - a)
-                  .slice(0, 10)
-                  .map(([owner, count]) => (
-                    <div key={owner}>
-                      {owner}: {count} findings
-                    </div>
-                  ))}
-              </div>
-            )}
-            {result.unassigned > 0 && (
-              <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                {result.unassigned} findings skipped (no asset owner)
-              </p>
-            )}
-          </div>
-        )}
+        <AlertDialogBody>
+          {result && (
+            <div className="rounded-lg border bg-muted/50 p-3 my-2 space-y-2">
+              <p className="text-sm font-medium">{result.assigned} findings assigned</p>
+              {Object.entries(result.by_owner).length > 0 && (
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  {Object.entries(result.by_owner)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 10)
+                    .map(([owner, count]) => (
+                      <div key={owner}>
+                        {owner}: {count} findings
+                      </div>
+                    ))}
+                </div>
+              )}
+              {result.unassigned > 0 && (
+                <p className="text-xs text-warning">
+                  {result.unassigned} findings skipped (no asset owner)
+                </p>
+              )}
+            </div>
+          )}
+        </AlertDialogBody>
 
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isSubmitting}>Cancel</AlertDialogCancel>

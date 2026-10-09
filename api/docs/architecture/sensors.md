@@ -59,7 +59,9 @@ identifiers.
 ## Suppression rules for the sensor-side gate
 
 `GET /api/v2/sensor/suppressions` (RFC-023 §9.2b) returns
-the sensor's tenant's approved, unexpired suppression rules as
+the sensor's tenant's approved, unexpired suppression rules that are tied to
+no asset or to an asset the sensor reaches (see
+[Lookup reach](#lookup-reach-fingerprints-baseline-diff-suppressions)) as
 `{"count": n, "rules": [{rule_id, tool_name, path_pattern, asset_id, expires_at}]}`.
 The sensor's security gate (`-fail-on`) uses them to stop failing a CI job on a
 finding the platform has suppressed. Tenant from the sensor identity; platform
@@ -67,6 +69,45 @@ sensors get 403; an empty list when the suppressions module is disabled.
 Ingest applies the same rules server-side whatever the sensor does. Before this
 route the SDK called the user route `/api/v1/suppressions/active` with its
 sensor key and always got 401.
+
+## Lookup reach (fingerprints, baseline diff, suppressions)
+
+A sensor's lookups answer only about the assets it may reach, so a sensor in
+one scan zone does not learn which findings, repositories or suppressed paths
+exist in another (research/84 F-BOLA-2, F-BOLA-3). Code:
+`internal/app/ingest/sensor_reach.go`, `internal/infra/postgres/sensor_reach_repository.go`.
+
+**Reach.** A sensor reaches the assets covered (the result-binding coverage:
+the same host or a subdomain of a domain target, the repository path or below
+it, an address in a range; an asset's IP addresses count) by
+
+- the targets of the commands assigned to it that are open (pending,
+  acknowledged, running) or ended in the last 24 hours (a retry queue re-checks
+  fingerprints of a report it could not send at once), at most the newest 1,000;
+- the address ranges of the scan zones it serves (`scan_zone_sensors`). The
+  default zone has no ranges and adds nothing.
+
+A collector (sensor type `collector`) and a sensor whose grant profile is
+`collector` (or `collector:<name>`) or `ci-runner` push results nobody asked
+for, anywhere in the tenant: their lookups stay tenant-wide. Every other
+sensor, `legacy-broad` included, is limited to its reach; a sensor with no
+zone and no command reaches nothing.
+
+**Answers outside the reach** are the answers for something that does not
+exist, so the lookups are no existence oracle, and each is safe for the
+caller:
+
+| Lookup | Outside the reach |
+|---|---|
+| `POST /fingerprints/check` | the fingerprint is `missing` (the caller re-sends; ingest deduplicates) |
+| `POST /fingerprints/baseline-diff` | a `repository` the sensor does not reach answers as an unknown repository: every fingerprint new, `base_branch_scanned: false` |
+| `GET /suppressions` | a rule on an asset the sensor does not reach is left out (ingest still applies it server-side) |
+
+A CI pipeline that needs baseline diffs for any repository uses a CI run token
+(`POST /api/v1/ci/runs/{id}/baseline-diff`, RFC-051) or a `ci-runner` sensor.
+The lookups are batched: one query for the commands and one for the zone
+ranges, one for the assets of the known fingerprints and one for those
+assets' names and addresses.
 
 ## Heartbeat doorbell
 
@@ -802,8 +843,8 @@ fingerprint queries); errors are RFC 9457 problems; every response carries
 | `POST …/commands/{id}/complete` | `POST /api/v2/sensor/commands/{id}/complete` | `{"result": …}` |
 | `POST …/commands/{id}/fail` | `POST /api/v2/sensor/commands/{id}/fail` | `{"error_message": "…"}` |
 | `GET /api/v1/agent/suppressions` | `GET /api/v2/sensor/suppressions` | Strong `ETag`; `If-None-Match` → `304`. |
-| `POST /api/v1/agent/ingest/check` | `POST /api/v2/sensor/fingerprints/check` | ≤ 50,000 fingerprints (`422 too-many-items`). |
-| `POST /api/v1/agent/ingest/baseline-diff` | `POST /api/v2/sensor/fingerprints/baseline-diff` | ≤ 50,000 fingerprints. |
+| `POST /api/v1/agent/ingest/check` | `POST /api/v2/sensor/fingerprints/check` | ≤ 50,000 fingerprints (`422 too-many-items`). Answers within the sensor's [lookup reach](#lookup-reach-fingerprints-baseline-diff-suppressions). |
+| `POST /api/v1/agent/ingest/baseline-diff` | `POST /api/v2/sensor/fingerprints/baseline-diff` | ≤ 50,000 fingerprints. A repository outside the sensor's lookup reach answers as unknown. |
 | `POST /api/v1/agent/renew` | `POST /api/v2/sensor/keys` | `201`, `Cache-Control: no-store`; per-sensor renewal budget (burst 5, then one every 2 minutes). |
 | `POST /api/v1/agent/ingest`, `/ingest/ctis`, `/ingest/chunk`, `GET /ingest/jobs/{id}` | `/api/v2/sensor/results/…` | RFC-026. |
 
