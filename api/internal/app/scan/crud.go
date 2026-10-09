@@ -31,12 +31,14 @@ type CreateScanInput struct {
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
 	ScannerConfig  map[string]any `json:"scanner_config"`
 	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
-	ScheduleRRule    string     `json:"schedule_rrule" validate:"max=500"`
-	ScheduleDay      *int       `json:"schedule_day"`
-	ScheduleTime     *time.Time `json:"schedule_time"`
+	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay   *int       `json:"schedule_day"`
+	ScheduleTime  *time.Time `json:"schedule_time"`
+	// RunAt is the one run of a once schedule.
+	RunAt            *time.Time `json:"run_at"`
 	Timezone         string     `json:"timezone" validate:"max=50"`
 	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner     bool       `json:"run_on_tenant_runner"`
@@ -463,6 +465,12 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 	return sc.SetSingleScanner(scannerName, scannerConfig, tpj)
 }
 
+// sameOnceRun reports whether sc already holds exactly this one-off run.
+func sameOnceRun(sc *scan.Scan, runAt *time.Time, timezone string) bool {
+	return sc.ScheduleType == scan.ScheduleOnce && sc.ScheduleRunAt != nil && runAt != nil &&
+		sc.ScheduleRunAt.Equal(runAt.UTC().Truncate(time.Second)) && sc.ScheduleTimezone == timezone
+}
+
 // configureScanSchedule validates and sets the scan schedule.
 func configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
 	scheduleType := scan.ScheduleType(input.ScheduleType)
@@ -486,6 +494,9 @@ func configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
 
 	if scheduleType == scan.ScheduleRRule {
 		return sc.SetRRuleSchedule(input.ScheduleRRule, timezone)
+	}
+	if scheduleType == scan.ScheduleOnce {
+		return sc.SetOnceSchedule(input.RunAt, timezone, time.Now())
 	}
 	return sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone)
 }
@@ -579,7 +590,7 @@ type ListScansInput struct {
 	AssetGroupID   string   `json:"asset_group_id" validate:"omitempty,uuid"`
 	ScanWorkflowID string   `json:"scan_workflow_id" validate:"omitempty,uuid"`
 	ScanType       string   `json:"scan_type" validate:"omitempty,oneof=workflow single"`
-	ScheduleType   string   `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleType   string   `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	Status         string   `json:"status" validate:"omitempty,oneof=active paused disabled"`
 	Tags           []string `json:"tags"`
 	Search         string   `json:"search" validate:"max=255"`
@@ -670,12 +681,14 @@ type UpdateScanInput struct {
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
 	ScannerConfig  map[string]any `json:"scanner_config"`
 	TargetsPerJob  *int           `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
-	ScheduleRRule    string     `json:"schedule_rrule" validate:"max=500"`
-	ScheduleDay      *int       `json:"schedule_day"`
-	ScheduleTime     *time.Time `json:"schedule_time"`
+	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay   *int       `json:"schedule_day"`
+	ScheduleTime  *time.Time `json:"schedule_time"`
+	// RunAt is the one run of a once schedule.
+	RunAt            *time.Time `json:"run_at"`
 	Timezone         string     `json:"timezone" validate:"max=50"`
 	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner     *bool      `json:"run_on_tenant_runner"`
@@ -778,9 +791,15 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			timezone = sc.ScheduleTimezone
 		}
 		var err error
-		if scheduleType == scan.ScheduleRRule {
+		switch {
+		case scheduleType == scan.ScheduleRRule:
 			err = sc.SetRRuleSchedule(input.ScheduleRRule, timezone)
-		} else {
+		case scheduleType == scan.ScheduleOnce && sameOnceRun(sc, input.RunAt, timezone):
+			// The stored one-off run, sent back unchanged with other edits:
+			// kept as is, even once it has run (its time is then past).
+		case scheduleType == scan.ScheduleOnce:
+			err = sc.SetOnceSchedule(input.RunAt, timezone, time.Now())
+		default:
 			err = sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone)
 		}
 		if err != nil {

@@ -28,7 +28,12 @@ import { TargetsStep } from './new-scan/targets-step'
 import { OptionsStep } from './new-scan/options-step'
 import { ScheduleStep } from './new-scan/schedule-step'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../types'
-import { basicInfoError, formDataToUpdateRequest, scanConfigToFormData } from '../lib/scan-form'
+import {
+  basicInfoError,
+  formDataToUpdateRequest,
+  scanConfigToFormData,
+  scheduleError,
+} from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
 import { useUpdateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
@@ -113,6 +118,14 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         }
         return true
       }
+      case 'schedule': {
+        const problem = scheduleError(formData, { requireFuture: false })
+        if (problem) {
+          toast.error(problem)
+          return false
+        }
+        return true
+      }
       default:
         return true
     }
@@ -192,7 +205,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       case 'schedule':
         return (
           <>
-            <ScheduleStep data={formData} onChange={handleDataChange} />
+            <ScheduleStep data={formData} onChange={handleDataChange} requireFutureRun={false} />
             {canReadZones && zones.length > 0 && (
               <ScanRoutingSection
                 zones={zones}
