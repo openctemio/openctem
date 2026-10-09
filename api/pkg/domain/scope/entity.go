@@ -46,6 +46,7 @@ type Target struct {
 	// Authorization source (authorization.go, RFC-065).
 	authSource AuthorizationSource
 	programID  *shared.ID
+	letterID   *shared.ID
 }
 
 // NewTarget creates a new scope target: active, permanent, t1.
