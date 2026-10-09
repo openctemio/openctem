@@ -112,7 +112,7 @@ func (s *ScannerTemplateService) ApproveTemplateForSensors(ctx context.Context, 
 	if err := s.repo.Update(ctx, t); err != nil {
 		return nil, err
 	}
-	s.logger.Info("scanner template version approved for sensors", "template_id", templateID,
+	s.logger.Info("scanner template version approved for sensors", "template_id", t.ID.String(),
 		"approvals", len(t.CurrentApprovals()), "required", required, "approved", t.ApprovedForSensors())
 	return t, nil
 }
