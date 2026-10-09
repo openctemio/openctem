@@ -99,7 +99,7 @@ func accessReport(ctx context.Context, q lifecycleQueryer, m *tenant.Membership)
 			ORDER BY name`},
 		{&rep.OwnedWorkflows, `
 			SELECT id::text, name, CASE WHEN is_active THEN 'active' ELSE 'paused' END, ''
-			FROM workflows
+			FROM automations
 			WHERE tenant_id = $1 AND created_by = $2
 			ORDER BY name`},
 	}
@@ -191,7 +191,7 @@ func (r *MemberLifecycleRepository) Disable(ctx context.Context, m *tenant.Membe
 		return nil, fmt.Errorf("pause report schedules: %w", err)
 	}
 	if out.PausedWorkflow, err = execReturningRefs(ctx, tx, `
-		UPDATE workflows SET is_active = FALSE, updated_at = NOW()
+		UPDATE automations SET is_active = FALSE, updated_at = NOW()
 		WHERE tenant_id = $1 AND created_by = $2 AND is_active
 		RETURNING id::text, name, 'paused', ''`, tid, uid); err != nil {
 		return nil, fmt.Errorf("pause workflows: %w", err)
@@ -366,7 +366,7 @@ func reassignOwnedWork(ctx context.Context, tx *sql.Tx, tid, uid string, plan te
 		for _, q := range []string{
 			`UPDATE scans SET created_by = $3, updated_at = NOW() WHERE tenant_id = $1 AND created_by = $2`,
 			`UPDATE report_schedules SET created_by = $3, updated_at = NOW() WHERE tenant_id = $1 AND created_by = $2`,
-			`UPDATE workflows SET created_by = $3, updated_at = NOW() WHERE tenant_id = $1 AND created_by = $2`,
+			`UPDATE automations SET created_by = $3, updated_at = NOW() WHERE tenant_id = $1 AND created_by = $2`,
 		} {
 			n, err := execCount(ctx, tx, q, tid, uid, to)
 			if err != nil {

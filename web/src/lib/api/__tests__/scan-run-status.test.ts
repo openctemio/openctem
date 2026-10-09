@@ -8,7 +8,7 @@ import {
 import { RUN_STATUS_FILTERS } from '@/features/scans/components/scan-runs-tab'
 
 // Run and step statuses are spelled as the API stores them
-// (pkg/domain/workflow: RunStatusCanceled = "canceled"). The web used to spell
+// (pkg/domain/scanrun: RunStatusCanceled = "canceled"). The web used to spell
 // it "cancelled", so a typed comparison with a canceled run could never match.
 describe('workflow run statuses', () => {
   it('use the API spelling of canceled', () => {
@@ -28,7 +28,7 @@ describe('workflow run statuses', () => {
         'failed',
         'canceled',
         'timeout',
-        // workflow.RunStatusBlocked: a trigger refused before dispatch.
+        // scanrun.RunStatusBlocked: a trigger refused before dispatch.
         'blocked',
       ].sort()
     )
