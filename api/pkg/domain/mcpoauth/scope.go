@@ -24,11 +24,12 @@ const (
 	ScopeAssetsRead     Scope = "mcp:assets.read"
 	ScopeComplianceRead Scope = "mcp:compliance.read"
 	ScopePentestRead    Scope = "mcp:pentest.read"
-	// ScopeFindingsWrite lets write tools change findings (today: add a
-	// comment). Every such call still needs the person's confirmation in
-	// the web UI (RFC-062 §10). Never offered up front: only through an
-	// insufficient_scope challenge, and only when the organization allows it.
-	ScopeFindingsWrite Scope = "mcp:findings.write"
+	// ScopeFindingsComment lets a write tool add comments to findings
+	// (findings:comment, never findings:severity or findings:write). Every
+	// call still needs the person's confirmation in the web UI (RFC-062 §10).
+	// Never offered up front: only through an insufficient_scope challenge,
+	// and only when the organization allows it.
+	ScopeFindingsComment Scope = "mcp:findings.comment"
 )
 
 // scopeInfo describes one scope.
@@ -54,8 +55,8 @@ var catalog = map[Scope]scopeInfo{ //nolint:gochecknoglobals // fixed scope tabl
 		perms: []permission.Permission{permission.ComplianceFrameworksRead},
 		title: "Read compliance posture",
 	},
-	ScopeFindingsWrite: {
-		perms: []permission.Permission{permission.FindingsWrite},
+	ScopeFindingsComment: {
+		perms: []permission.Permission{permission.FindingsComment},
 		title: "Add comments to findings, each one confirmed by you in OpenCTEM",
 		write: true,
 	},
