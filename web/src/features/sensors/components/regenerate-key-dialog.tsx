@@ -13,6 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { OneTimeSecretField } from '@/features/shared'
 
@@ -78,7 +79,7 @@ export function RegenerateKeyDialog({
   if (apiKey) {
     return (
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>New API key for {sensor.name}</DialogTitle>
             <DialogDescription>
@@ -86,13 +87,15 @@ export function RegenerateKeyDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-w-0 space-y-4">
-            <OneTimeSecretField label="New API key" noun="API key" value={apiKey} />
-            <div>
-              <p className="mb-2 text-sm font-medium">Restart the sensor with it</p>
-              <SensorInstallSnippets sensorId={sensor.id} apiKey={apiKey} />
+          <DialogBody>
+            <div className="min-w-0 space-y-4">
+              <OneTimeSecretField label="New API key" noun="API key" value={apiKey} />
+              <div>
+                <p className="mb-2 text-sm font-medium">Restart the sensor with it</p>
+                <SensorInstallSnippets sensorId={sensor.id} apiKey={apiKey} />
+              </div>
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button onClick={handleClose}>Done</Button>
@@ -104,7 +107,7 @@ export function RegenerateKeyDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="h-5 w-5" />
@@ -115,19 +118,21 @@ export function RegenerateKeyDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3">
-          <AlertTriangle className="h-5 w-5 shrink-0 text-warning" aria-hidden />
-          <div className="space-y-1 text-sm">
-            <p className="font-medium">The current key stops working at once</p>
-            <p className="text-muted-foreground">
-              The sensor disconnects until it is restarted with the new key.
-            </p>
+        <DialogBody className="grid gap-4">
+          <div className="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-warning" aria-hidden />
+            <div className="space-y-1 text-sm">
+              <p className="font-medium">The current key stops working at once</p>
+              <p className="text-muted-foreground">
+                The sensor disconnects until it is restarted with the new key.
+              </p>
+            </div>
           </div>
-        </div>
 
-        <p className="text-sm text-muted-foreground">
-          Current key <span className="font-mono">{sensor.api_key_prefix}…</span>
-        </p>
+          <p className="text-sm text-muted-foreground">
+            Current key <span className="font-mono">{sensor.api_key_prefix}…</span>
+          </p>
+        </DialogBody>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={handleClose} disabled={isMutating}>

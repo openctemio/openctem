@@ -101,7 +101,7 @@ history entry.
 |---|---|
 | `pkg/domain/asset/registry_generated.go` | the registry data, `Class`/`Lens`/`Category` constants, `TypeAliases`, the stored types and the input map |
 | `web/src/features/asset-types/registry.generated.ts` | the closed sets and labels, `STORED_ASSET_TYPES`, `ASSET_SUB_TYPES`, `ASSET_TYPE_ALIASES` |
-| `make asset-types-sql` (printed) | the `asset_types` seed (with `sub_types` and `is_storable`), the `asset_type_input_map` rows and the `assets` re-backfill, for a migration |
+| `make asset-types-sql` (printed) | the `asset_types` seed (with `sub_types` and `is_storable`), and the `assets` re-backfill, for a migration |
 
 `GET /api/v1/asset-types` serves `asset.RegistryDocument()` with a strong
 ETag. Its `data`/`total`/`page` fields are the legacy `asset_types` rows and
@@ -167,9 +167,8 @@ rules. A registry PR that breaks one needs an RFC amendment first.
 Since migration 000684, `chk_assets_core_type` refuses any `assets.asset_type`
 that is not a core type. The registry block emits it `NOT VALID`, so a registry
 change updates the list in the same migration; the migration then moves the rows
-the change leaves outside the list (`asset_type_normalise_batch`) and runs
-`ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;` after the block.
-`gen-asset-types -check` fails when that statement is missing. Rows written before
-were moved by the normalisation (ledger `asset_type_reclassifications`; legacy
-codes kept in `properties.x_native_type`, values that did not fit in
-`properties.x_native_sub_type`).
+the change leaves outside the list (an explicit `UPDATE` written for that change)
+and runs `ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;` after the
+block. `gen-asset-types -check` fails when that statement is missing. Rows written
+before 000684 were moved then (legacy codes kept in `properties.x_native_type`,
+values that did not fit in `properties.x_native_sub_type`).
