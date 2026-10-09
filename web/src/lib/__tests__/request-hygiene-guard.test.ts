@@ -51,6 +51,8 @@ const TUPLE_KEY_BASELINE: Record<string, number> = {
   'features/scan-zones/components/zone-coverage-card.tsx': 1,
   // A POST preview of the form being edited, keyed by its content.
   'features/scans/components/new-scan/workflow-preview.tsx': 1,
+  // POST evaluations and the draft-policy preview, keyed by their bodies.
+  'features/scan-windows/api/use-scan-windows.ts': 2,
   // The web's own build (not an API call) and the API's, per shell.
   'hooks/use-build-versions.ts': 2,
 }
@@ -67,7 +69,8 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/findings/api/use-finding-retests.ts': 1,
   'features/findings/api/use-findings-api.ts': 1,
   'features/notifications/api/use-notification-api.ts': 1,
-  'features/scan-freeze/api/use-freeze-windows.ts': 1,
+  // Whether each policy is open is computed at read time.
+  'features/scan-windows/api/use-scan-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
   // The run list and its counts poll on their own clocks: fast only while a
   // listed run is live (research/81); it was one shared 30 s poll before.
