@@ -16,6 +16,9 @@
   least one for t2, and the operator floor `SIGNER_LEDGER_MIN_APPROVALS`. A
   sync every 10 minutes narrows the ledger to the database; it never widens
   it.
+- Authorization-letter entries expire in the ledger with their letter, and
+  revoking a letter takes its entries out of the ledger at once. A build test
+  fails when a new path writes scope entries or exclusions around the hook.
 - New metrics `openctem_signer_refusals_total{reason}` and
   `openctem_signer_ledger_feed_total{kind,outcome}`; new alerts
   `SignerOutOfLedger` (critical, detection A10), `SignerRefusals` and

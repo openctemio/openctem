@@ -81,6 +81,14 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 	if targets == nil {
 		targets = []string{}
 	}
+	// The custom templates are listed by digest: the signer signs only
+	// versions in its ledger, and a sensor trusts exactly these bytes.
+	templates, err := commanddom.PayloadTemplateDigests(payload)
+	if err != nil {
+		s.logger.Warn("command with an undecodable custom template; not handed to the sensor",
+			"command_id", c.ID.String(), "sensor_id", sensorID)
+		return nil, fmt.Errorf("%w: %w", ErrJobNotSigned, err)
+	}
 	st := jobsign.Statement{
 		Kind:          jobsign.Kind,
 		TenantID:      c.TenantID.String(),
@@ -90,6 +98,7 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 		Tool:          commanddom.PayloadTool(payload),
 		PayloadSHA256: jobsign.PayloadDigest(payload),
 		Targets:       targets,
+		Templates:     templates,
 		LeaseEpoch:    c.LeaseEpoch,
 		IssuedAt:      now,
 		ExpiresAt:     expires,
@@ -142,10 +151,14 @@ func (s *Service) signClaimed(ctx context.Context, tenantID shared.ID, sensorID 
 		if err != nil {
 			down = !errors.Is(err, ErrJobRefused)
 			s.unclaim(ctx, tenantID, c.ID, sensorID, pinned[c.ID])
-			if rf := permanentRefusal(err); rf != nil {
+			switch rf := permanentRefusal(err); {
+			case rf != nil:
 				// The signer's ledger does not authorize this job: it would
 				// refuse it on every claim. Fail it with the reason.
 				s.failAtClaim(ctx, c, signerRefusedMessage(rf), FailureSignerRefused)
+			case errors.Is(err, commanddom.ErrTemplateContent):
+				down = false
+				s.failAtClaim(ctx, c, truncateUTF8(FailureSignerRefused+": "+err.Error(), MaxFailErrorMessageBytes), FailureSignerRefused)
 			}
 			continue
 		}

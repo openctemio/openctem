@@ -9,6 +9,8 @@ package routes
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -18,11 +20,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -177,5 +181,74 @@ func TestSignerLedger_WideningFailsWhenTheSignerDoesNotAccept(t *testing.T) {
 	if err := h.db.QueryRowContext(ctx, `SELECT count(*) FROM scope_targets WHERE tenant_id = $1 AND pattern = '*.example.net'`,
 		h.tenantID).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("the entry was saved without the signer: %d %v", n, err)
+	}
+}
+
+type zeroApprovals struct{}
+
+func (zeroApprovals) EffectiveApprovals(context.Context, string) (int, int, error) { return 0, 1, nil }
+
+// Custom templates reach a sensor only in a version the signer recorded:
+// the statement lists their digests, and another version, or a template
+// written straight into a command row, is refused.
+func TestSignerLedger_CustomTemplatesOnlyInApprovedVersions(t *testing.T) {
+	client, pub := realSigner(t)
+	h := newCtlHarness(t, command.WithJobSigner(client))
+	s := h.newVerifiedSensor(h.tenantID, "templates", []string{"nuclei", "semgrep"}, nil, 10)
+	ctx := context.Background()
+	db := &postgres.DB{DB: h.db}
+	tmplSvc := app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "secret", logger.NewNop())
+	tmplSvc.SetLedger(client, zeroApprovals{})
+
+	approved := "rules:\n  - id: ledger-rule\n    pattern: eval($X)\n    message: eval\n    languages: [python]\n    severity: WARNING\n"
+	tpl, err := tmplSvc.CreateTemplate(ctx, app.CreateScannerTemplateInput{TenantID: h.tenantID,
+		Name: "ledger-rule", TemplateType: "semgrep", Content: base64.StdEncoding.EncodeToString([]byte(approved))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tpl.ApprovedForSensors() {
+		t.Fatal("policy 0: the version was not approved through the signer")
+	}
+
+	payload := func(content string) string {
+		return `{"scanner":"semgrep","target":".","custom_templates":[{"id":"` + tpl.ID.String() +
+			`","name":"ledger-rule","template_type":"semgrep","content":"` + content + `"}]}`
+	}
+	good := h.newScanCommand(h.tenantID, payload(base64.StdEncoding.EncodeToString([]byte(approved))))
+	other := h.newScanCommand(h.tenantID, payload(base64.StdEncoding.EncodeToString([]byte(approved+"# changed\n"))))
+	broken := h.newScanCommand(h.tenantID, payload("not base64!"))
+
+	resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/commands?limit=10", nil, capacityHeader...)
+	h.want(resp, raw, 200, "")
+	list := decodeAs[wireCommandList](t, raw)
+	if len(list.Commands) != 1 || list.Commands[0].ID != good {
+		t.Fatalf("claimed %s, want only %s", raw, good)
+	}
+	st, err := jobsign.Verify(list.Commands[0].SignedJob, []ed25519.PublicKey{pub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Templates) != 1 || st.Templates[0] != tpl.ContentDigest() {
+		t.Fatalf("statement templates %v, want [%s]", st.Templates, tpl.ContentDigest())
+	}
+	if !strings.Contains(h.commandError(other), "template_not_in_ledger") {
+		t.Fatalf("another version: %q", h.commandError(other))
+	}
+	if st, _, _ := h.commandState(broken); st != "failed" || !strings.HasPrefix(h.commandError(broken), command.FailureSignerRefused) {
+		t.Fatalf("undecodable template: %s %q", st, h.commandError(broken))
+	}
+
+	// Deprecating the template takes it out of the ledger at once.
+	if _, err := tmplSvc.DeprecateTemplate(ctx, h.tenantID, tpl.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	again := h.newScanCommand(h.tenantID, payload(base64.StdEncoding.EncodeToString([]byte(approved))))
+	resp, raw = h.call(s.key, http.MethodGet, "/api/v2/sensor/commands?limit=10", nil, capacityHeader...)
+	h.want(resp, raw, 200, "")
+	if l := decodeAs[wireCommandList](t, raw); len(l.Commands) != 0 {
+		t.Fatalf("a deprecated template version was signed: %s", raw)
+	}
+	if !strings.Contains(h.commandError(again), "template_not_in_ledger") {
+		t.Fatalf("after deprecation: %q", h.commandError(again))
 	}
 }
