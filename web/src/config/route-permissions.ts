@@ -87,7 +87,6 @@ export const Module = {
   BusinessImpact: 'business_impact',
   CompensatingControls: 'compensating_controls',
   Workflows: 'workflows',
-  RemediationTasks: 'remediation_tasks',
   ExecutiveSummary: 'executive_summary',
   CTEMMaturity: 'ctem_maturity',
   MITRECoverage: 'mitre_coverage',
@@ -166,6 +165,19 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/scope': {
     permission: Permission.ScopeRead,
+    module: Module.ScopeConfig,
+  },
+  // Bug-bounty programs (RFC-065); the API filters what each caller sees.
+  '/programs': {
+    permission: Permission.ProgramsRead,
+    module: Module.ScopeConfig,
+  },
+  '/programs/new': {
+    permission: Permission.ProgramsWrite,
+    module: Module.ScopeConfig,
+  },
+  '/programs/**': {
+    permission: Permission.ProgramsRead,
     module: Module.ScopeConfig,
   },
   '/business-services': {
@@ -405,19 +417,19 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   '/remediation': {
     permission: Permission.RemediationRead,
-    module: Module.RemediationTasks,
+    module: Module.Remediation,
   },
   '/remediation/**': {
     permission: Permission.RemediationRead,
-    module: Module.RemediationTasks,
+    module: Module.Remediation,
   },
   '/remediations': {
     permission: Permission.RemediationRead,
-    module: Module.RemediationTasks,
+    module: Module.Remediation,
   },
   '/remediations/**': {
     permission: Permission.RemediationRead,
-    module: Module.RemediationTasks,
+    module: Module.Remediation,
   },
   '/automations': {
     permission: Permission.WorkflowsRead,

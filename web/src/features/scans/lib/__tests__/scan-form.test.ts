@@ -4,6 +4,9 @@ import type { ScanConfig } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
 import {
   basicInfoError,
+  directTargets,
+  MAX_DIRECT_TARGETS,
+  targetsError,
   formDataToCreateRequest,
   formDataToUpdateRequest,
   frequencyToScheduleType,
@@ -84,7 +87,7 @@ describe('formDataToCreateRequest', () => {
     expect(req.scanner_name).toBeUndefined()
   })
 
-  it('combines asset groups, resolved assets and custom targets', () => {
+  it('sends asset groups, picked assets by id and typed targets', () => {
     const req = formDataToCreateRequest(
       form({
         targets: {
@@ -92,13 +95,26 @@ describe('formDataToCreateRequest', () => {
           assetGroupIds: ['g1', 'g2'],
           assetIds: ['a1', 'a2'],
           assetNames: { a1: 'api.example.com' },
-          customTargets: ['10.0.0.1'],
+          customTargets: ['10.0.0.1', 'Example.COM', 'example.com', 'not a target'],
         },
       })
     )
     expect(req.asset_group_ids).toEqual(['g1', 'g2'])
     expect(req.asset_group_id).toBe('g1')
-    expect(req.targets).toEqual(['api.example.com', '10.0.0.1'])
+    // The API names the assets (an asset without a known name is still sent).
+    expect(req.asset_ids).toEqual(['a1', 'a2'])
+    // Typed lines: valid ones, normalized, once each.
+    expect(req.targets).toEqual(['10.0.0.1', 'example.com'])
+  })
+
+  it('stops on typed lines that are not targets', () => {
+    expect(
+      targetsError(
+        form({
+          targets: { ...DEFAULT_NEW_SCAN.targets, customTargets: ['ok.example.com', 'nope'] },
+        })
+      )
+    ).toMatch(/1 typed line is not a target/)
   })
 
   it('carries the schedule only when not run immediately', () => {
@@ -225,5 +241,45 @@ describe('a Tenable.sc scan (scanner tenable_sc)', () => {
       repository_id: 5,
       max_scan_seconds: 3600,
     })
+  })
+})
+
+describe('direct target limit', () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => `h${i}.example.com`)
+
+  it('needs a target, and refuses more than the API takes instead of cutting silently', () => {
+    expect(
+      targetsError(form({ targets: { ...DEFAULT_NEW_SCAN.targets, customTargets: [] } }))
+    ).toMatch(/at least one/)
+    const at = form({
+      targets: { ...DEFAULT_NEW_SCAN.targets, customTargets: many(MAX_DIRECT_TARGETS) },
+    })
+    expect(targetsError(at)).toBeNull()
+    const over = form({
+      targets: { ...DEFAULT_NEW_SCAN.targets, customTargets: many(MAX_DIRECT_TARGETS + 5) },
+    })
+    expect(targetsError(over)).toMatch(/at most 1,000 direct targets; 1,005 are selected/)
+    // The request carries every target; the API refuses over the limit.
+    expect(formDataToCreateRequest(over).targets).toHaveLength(MAX_DIRECT_TARGETS + 5)
+  })
+
+  it('counts picked assets and typed targets once each', () => {
+    const f = form({
+      targets: {
+        ...DEFAULT_NEW_SCAN.targets,
+        assetIds: ['a1'],
+        assetNames: { a1: 'Example.com' },
+        customTargets: ['example.com', 'api.example.com'],
+      },
+    })
+    expect(directTargets(f)).toEqual(['example.com', 'api.example.com'])
+  })
+
+  it('an asset group alone is enough', () => {
+    expect(
+      targetsError(
+        form({ targets: { ...DEFAULT_NEW_SCAN.targets, assetGroupIds: ['g1'], customTargets: [] } })
+      )
+    ).toBeNull()
   })
 })
