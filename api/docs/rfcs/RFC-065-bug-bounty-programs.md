@@ -189,8 +189,8 @@ replaces the second approver for program entries (B2).
 - **Re-import / sync** (`PUT /programs/{id}/scope`): the new paste replaces
   the old; entries and program exclusions of items no longer listed are deleted at
   once; new ones are created; a new attestation is required.
-- **Pause** (`POST /programs/{id}/pause`): every entry of the program becomes
-  `inactive` (narrowing, no step-up). **Resume** re-activates them with a new
+- **Suspend** (`POST /programs/{id}/suspend`): every entry of the program becomes
+  `inactive` (narrowing, no step-up). **Reactivate** (`POST /programs/{id}/reactivate`) re-activates them with a new
   attestation. **End** deactivates them for good; the program stays for its
   history.
 
@@ -203,9 +203,9 @@ replaces the second approver for program entries (B2).
 | `POST /` | `attack_surface:programs:write` + step-up | `{name, platform, handle, program_url, scope_text, rules, accept_terms_sha256}` |
 | `GET /{id}` | `programs:read` + member or full data | program, items, entries, program exclusions with their ownership overlaps, attestation |
 | `PUT /{id}/scope` | `programs:write` + member or full data + step-up | re-import |
-| `POST /{id}/pause`, `/end` | `programs:write` + member or full data | narrowing |
-| `POST /{id}/resume` | `programs:write` + member or full data + step-up | `{accept_terms_sha256}` |
-| `GET /scans/runs/{id}/scope-snapshot` | `scans:read` + run in data scope | §9 |
+| `POST /{id}/suspend`, `/end` | `programs:write` + member or full data | narrowing |
+| `POST /{id}/reactivate` | `programs:write` + member or full data + step-up | `{accept_terms_sha256}` |
+| `GET /api/v1/scan-runs/{id}/scope-snapshot` | `scans:read` + (`scope:read` or `programs:read`), run visible to the caller | §9 |
 
 A program the caller may not see answers 404. Errors: `PROGRAM_SCOPE_EMPTY`,
 `PROGRAM_SCOPE_TOO_LARGE`, `PROGRAM_TERMS_CHANGED`, `PROGRAM_NAME_TAKEN`,
@@ -228,9 +228,11 @@ program). Program members are the group's members, added like any group
 member (users directly; a team by adding its people). A program assignment
 pass keeps `asset_owners` rows (`assignment_source = 'program'`) for every
 tenant asset the program's active entries cover and removes the others; the
-existing trigger maintains `user_accessible_assets`. The pass runs after
-import, re-import, pause, resume and end, after each scope join (every scope
-change and every 6 h), and after scan results land.
+existing trigger maintains `user_accessible_assets`. Manual assignments of
+the group are never touched. The pass runs after import, re-import,
+suspend, reactivate and end, after scan results land, and every 30 minutes
+(controller `program-assignment`), so assets that arrive by discovery are
+covered too.
 
 **Act scope.** A restricted member may also scan typed targets that an
 active entry of a program they belong to covers (RFC-054 §4.2 still runs in
@@ -248,14 +250,18 @@ program and target, and researcher terms of use.
 
 ## 9. Scope snapshot per run
 
-When a scan run is created, the scope in force (in-effect entries with their
-source, program and tier; in-effect exclusions; program exclusions; active programs with
-`terms_sha256`, `accepted_by`, `accepted_at`) is serialized canonically and
-hashed. `scope_snapshots (tenant_id, sha256, body)` stores each distinct
-body once; `scan_run_scope_snapshots (tenant_id, run_id, sha256, taken_at)`
-links the run. `GET /api/v1/scans/runs/{id}/scope-snapshot` returns
-`{sha256, taken_at, body}`. A failed snapshot write is logged and noted on
-the run; it does not stop the run.
+When a scan run is created, the authority its targets relied on is
+serialized canonically and hashed: for each target, the entry that covered
+it (id, type, pattern, authorization source, program, tier, expiry, approval
+time), the programs those entries belong to with `terms_sha256`,
+`accepted_by`, `accepted_at` and their program exclusions, and the number of
+targets nothing covered. Identical authority gives the same hash.
+`scope_snapshots (tenant_id, sha256, body)` stores each distinct body once;
+`scan_run_scope_snapshots (tenant_id, run_id, sha256, taken_at)` links the
+run (tenant-composite keys). `GET /api/v1/scan-runs/{id}/scope-snapshot`
+(`scans:read` and `scope:read` or `programs:read`; a run the caller may not
+see answers 404) returns `{sha256, taken_at, body}`. A failed snapshot is
+logged and noted in the run's warnings; it does not stop the run.
 
 ## 10. Plan
 
