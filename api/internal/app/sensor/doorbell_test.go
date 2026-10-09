@@ -192,7 +192,7 @@ func TestDoorbell_PlatformSensorSkipsTheQuery(t *testing.T) {
 func TestConfigVersion_StableAndSensitive(t *testing.T) {
 	a := testSensor()
 	exp := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
-	base := ConfigVersion(a, &exp, "z1@1")
+	base := ConfigVersion(a, &exp, "z1@1", "")
 	if len(base) != 16 {
 		t.Fatalf("config_version %q, want 16 hex chars", base)
 	}
@@ -202,7 +202,7 @@ func TestConfigVersion_StableAndSensitive(t *testing.T) {
 	same.CPUPercent, same.MemoryPercent, same.CurrentJobs = 99, 99, 4 // metrics are not config
 	now := time.Now()
 	same.LastSeenAt, same.UpdatedAt = &now, now
-	if got := ConfigVersion(&same, &exp, "z1@1"); got != base {
+	if got := ConfigVersion(&same, &exp, "z1@1", ""); got != base {
 		t.Errorf("config_version changed on reorder/metrics: %s -> %s", base, got)
 	}
 
@@ -210,22 +210,26 @@ func TestConfigVersion_StableAndSensitive(t *testing.T) {
 		"capabilities": func() string {
 			b := *a
 			b.Capabilities = []string{"sast"}
-			return ConfigVersion(&b, &exp, "z1@1")
+			return ConfigVersion(&b, &exp, "z1@1", "")
 		},
 		"max jobs": func() string {
 			b := *a
 			b.MaxConcurrentJobs = 6
-			return ConfigVersion(&b, &exp, "z1@1")
+			return ConfigVersion(&b, &exp, "z1@1", "")
 		},
 		"config": func() string {
 			b := *a
 			b.Config = map[string]any{"a": "y", "b": 1}
-			return ConfigVersion(&b, &exp, "z1@1")
+			return ConfigVersion(&b, &exp, "z1@1", "")
 		},
-		"key expiry":    func() string { e := exp.Add(time.Hour); return ConfigVersion(a, &e, "z1@1") },
-		"no key expiry": func() string { return ConfigVersion(a, nil, "z1@1") },
-		"zones":         func() string { return ConfigVersion(a, &exp, "z1@1,z2@1") },
-		"zone changed":  func() string { return ConfigVersion(a, &exp, "z1@2") },
+		"key expiry":    func() string { e := exp.Add(time.Hour); return ConfigVersion(a, &e, "z1@1", "") },
+		"no key expiry": func() string { return ConfigVersion(a, nil, "z1@1", "") },
+		"zones":         func() string { return ConfigVersion(a, &exp, "z1@1,z2@1", "") },
+		"zone changed":  func() string { return ConfigVersion(a, &exp, "z1@2", "") },
+		"key set":       func() string { return ConfigVersion(a, &exp, "z1@1", "0011223344556677") },
+	}
+	if ConfigVersion(a, &exp, "z1@1", "0011223344556677") == ConfigVersion(a, &exp, "z1@1", "8899aabbccddeeff") {
+		t.Error("config_version did not change when the key set changed")
 	}
 	for name, f := range changes {
 		if f() == base {

@@ -207,6 +207,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Gated actions (rotate_key) ring only when the sensor's grant lists
 	// them (RFC-052 §5.3).
 	doorbell.SetGrants(repos.SensorGrant)
+	// A new job-signing key set changes config_version, so sensors re-read
+	// hello and pick it up (RFC-040 §5.6).
+	if svc.JobSigner != nil {
+		doorbell.SetKeySetVersion(svc.JobSigner.KeySetVersion)
+	}
 	ingestHandler.SetDoorbell(doorbell)
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
