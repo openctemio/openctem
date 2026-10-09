@@ -456,6 +456,23 @@ export function approveScopeTarget(id: string) {
   return post<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}/approve`, {})
 }
 
+/**
+ * POST /scope/targets/{id}/self-approve (scope:approve): an owner approves
+ * their own pending entry when no other approver exists, with a reason and a
+ * fresh authenticator code (RFC-054 §7).
+ */
+export function selfApproveScopeTarget(id: string, input: { reason: string; totp_code: string }) {
+  return post<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}/self-approve`, input)
+}
+
+/** POST /scope/targets/{id}/remind (scope:write): at most once an hour. */
+export function remindScopeApprovers(id: string) {
+  return post<{ reminded: number; reminded_at?: string; can_remind_at: string }>(
+    `${BASE_URL}/targets/${encodeURIComponent(id)}/remind`,
+    {}
+  )
+}
+
 /** POST /scope/targets/{id}/reject (scope:approve). */
 export function rejectScopeTarget(id: string) {
   return post<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}/reject`, {})

@@ -242,6 +242,12 @@ func registerScopeRoutes(
 		// update and activate ask for step-up in the service when they widen.
 		r.POST("/{id}/approve", h.ApproveTarget, middleware.Require(permission.ScopeApprove), requireStepUp())
 		r.POST("/{id}/reject", h.RejectTarget, middleware.Require(permission.ScopeApprove))
+		// An owner approves their own pending entry only when no other
+		// approver exists: a fresh authenticator code in the body and a
+		// reason (checked in the service), audited at high severity.
+		r.POST("/{id}/self-approve", h.SelfApproveTarget, middleware.Require(permission.ScopeApprove))
+		// Remind the approvers of a pending entry (once per hour per entry).
+		r.POST("/{id}/remind", h.RemindApprovers, middleware.Require(permission.ScopeWrite))
 
 		// Bulk operations
 		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))

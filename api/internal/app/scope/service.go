@@ -26,6 +26,13 @@ type Service struct {
 	admins   AdminDirectory
 	inApp    InAppNotifier
 	stepUp   shared.RecentAuthGate
+	// Approvers (approvers.go): who may approve, the authenticator check
+	// for an owner's own approval, approval emails and channels.
+	approvers  ApproverDirectory
+	totp       TOTPVerifier
+	mail       ApprovalMailer
+	channels   ChannelNotifier
+	webBaseURL string
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
 	// Coverage of the inventory (GetStats): counted in SQL over the
