@@ -74,6 +74,10 @@ var assetMergeRefs = []mergeRef{
 	// already has is dropped with its parameters.
 	{table: "web_endpoints", column: "origin_asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"template_hash"}}}},
+	// Software links (RFC-066): a version the kept asset already runs at the
+	// same location is dropped.
+	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
 	{table: "asset_components", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{
 			{cols: []string{"component_id", "path"}},
