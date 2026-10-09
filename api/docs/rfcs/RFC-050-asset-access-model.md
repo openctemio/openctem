@@ -124,7 +124,7 @@ Migration `001044_member_lifecycle`.
 | W5, W9 | Small authz fixes and residual LOW items | planned |
 | W10 | Docs drift (expiring grants are now planned, D4/A2) | planned |
 
-**W22, team slice: implemented** (migration `001459`). A team membership may carry an end date
+**W22, team slice: implemented** (migration `001502`). A team membership may carry an end date
 (`expires_at`, `expiry_reason`; at most 365 days ahead). Teams of type `external` (engagements,
 audits) require one. `PATCH /api/v1/groups/{groupId}/members/{userId}`
 (`team:groups:members`, same delegation cap as adding a member) sets, moves or clears it. The
