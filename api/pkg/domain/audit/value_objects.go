@@ -71,6 +71,10 @@ const (
 	ActionBountyProgramPaused        Action = "bounty_program.paused"
 	ActionBountyProgramResumed       Action = "bounty_program.resumed"
 	ActionBountyProgramEnded         Action = "bounty_program.ended"
+	// ActionBountyProgramSourceSet / Synced: where a program's scope comes
+	// from, and a sync that narrowed it or suspended it (RFC-065 §14).
+	ActionBountyProgramSourceSet Action = "bounty_program.source_set"
+	ActionBountyProgramSynced    Action = "bounty_program.synced"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -586,6 +590,7 @@ func (a Action) IsValid() bool {
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
+		ActionBountyProgramSourceSet, ActionBountyProgramSynced,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
