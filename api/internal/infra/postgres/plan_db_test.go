@@ -140,14 +140,14 @@ func TestPlanRepository(t *testing.T) {
 			t.Fatalf("insert %s member: %v", status, err)
 		}
 	}
-	ua, err := r.Usage(ctx, a)
+	ua, err := r.Usage(ctx, a, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ua[plan.Seats] != 3 || ua[plan.Assets] != 0 || ua[plan.APIKeys] != 0 {
 		t.Fatalf("usage a: %v", ua)
 	}
-	if ub, _ := r.Usage(ctx, b); ub[plan.Seats] != 1 {
+	if ub, _ := r.Usage(ctx, b, false); ub[plan.Seats] != 1 {
 		t.Fatalf("usage b: %v", ub)
 	}
 

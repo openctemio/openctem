@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "2532dc2f6acb4051"
+const RegistryVersion = "ecb9aa51a9146fc3"
 
 // Lenses.
 const (
@@ -1594,7 +1594,7 @@ var registryProperties = []PropertyDefinition{
 	{Key: "endpoint", Label: "Endpoint", LabelVI: "Endpoint"},
 	{Key: "endpoints_count", Label: "Endpoints", LabelVI: "Số endpoint"},
 	{Key: "engine", Label: "Engine", LabelVI: "Engine"},
-	{Key: "expires_at", Label: "Expires", LabelVI: "Ngày hết hạn"},
+	{Key: "expires_at", Label: "Expires", LabelVI: "Ngày hết hạn", Format: "expiry"},
 	{Key: "fingerprint_sha256", Label: "SHA-256 fingerprint", LabelVI: "Dấu vân tay SHA-256", Format: "code"},
 	{Key: "firewall_id", Label: "Firewall ID", LabelVI: "ID tường lửa", Format: "code"},
 	{Key: "firmware_version", Label: "Firmware version", LabelVI: "Phiên bản firmware"},
@@ -1674,7 +1674,7 @@ var registryProperties = []PropertyDefinition{
 	{Key: "network_plugin", Label: "Network plugin", LabelVI: "Plugin mạng"},
 	{Key: "networks", Label: "Networks", LabelVI: "Mạng", List: true},
 	{Key: "node_count", Label: "Nodes", LabelVI: "Số node"},
-	{Key: "not_after", Label: "Valid until", LabelVI: "Hiệu lực đến"},
+	{Key: "not_after", Label: "Valid until", LabelVI: "Hiệu lực đến", Format: "expiry"},
 	{Key: "not_before", Label: "Valid from", LabelVI: "Hiệu lực từ"},
 	{Key: "organization_id", Label: "Organization ID", LabelVI: "ID tổ chức", Format: "code"},
 	{Key: "os_family", Label: "OS family", LabelVI: "Họ hệ điều hành"},
