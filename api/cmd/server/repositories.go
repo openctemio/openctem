@@ -23,6 +23,7 @@ type Repositories struct {
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
 	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
 	Software               *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
+	AssetAttributeSources  *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
 	APISpec                *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
@@ -301,6 +302,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
 		WebEndpoint:            postgres.NewWebEndpointRepository(db),
 		Software:               postgres.NewSoftwareRepository(db),
+		AssetAttributeSources:  postgres.NewAssetAttributeSourceRepository(db),
 		APISpec:                postgres.NewAPISpecRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph

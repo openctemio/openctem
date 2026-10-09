@@ -645,6 +645,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
+	handlers.AssetOwner.SetAttributeLocker(svc.Asset)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {
