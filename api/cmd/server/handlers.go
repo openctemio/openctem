@@ -457,7 +457,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScannerTemplate:     handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
 		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
-		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, log),
+		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
 		SecretStore:         handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:                handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory:        handler.NewToolCategoryHandler(svc.ToolCategory, v, log),

@@ -2,19 +2,25 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -22,16 +28,86 @@ import (
 // /api/v1/admin/content-packs for platform administrators (ingest, revoke,
 // channels) and /api/v1/platform-content-packs, read-only, for every
 // organization.
+//
+// Every write changes what the platform's sensors of every organization may
+// run, so each needs a reason and a fresh console authenticator code
+// (confirmAdminStepUp), and writes its own admin audit row with the reason.
 type PlatformContentPackHandler struct {
-	service *contentpackapp.PlatformService
-	packs   *ContentPackHandler // shared error mapping
-	logger  *logger.Logger
+	service    *contentpackapp.PlatformService
+	stepUp     StepUpVerifier
+	adminAudit admin.AuditLogRepository
+	packs      *ContentPackHandler // shared error mapping
+	logger     *logger.Logger
 }
 
-// NewPlatformContentPackHandler creates a PlatformContentPackHandler.
-func NewPlatformContentPackHandler(svc *contentpackapp.PlatformService, log *logger.Logger) *PlatformContentPackHandler {
+// Admin audit actions and step-up purposes of the platform pack writes.
+const (
+	AdminActionContentPackUpload     = "platform_content_pack.upload"
+	AdminActionContentPackImport     = "platform_content_pack.import"
+	AdminActionContentPackRevoke     = "platform_content_pack.revoke"
+	AdminActionContentPackSetChannel = "platform_content_pack.set_channel"
+
+	stepUpPurposeContentPack = "platform content pack change"
+	maxContentPackReason     = 500
+)
+
+// NewPlatformContentPackHandler creates a PlatformContentPackHandler. stepUp
+// nil refuses every write (confirmAdminStepUp).
+func NewPlatformContentPackHandler(svc *contentpackapp.PlatformService, stepUp StepUpVerifier, adminAudit admin.AuditLogRepository, log *logger.Logger) *PlatformContentPackHandler {
 	l := log.With("handler", "platform_content_pack")
-	return &PlatformContentPackHandler{service: svc, packs: &ContentPackHandler{logger: l}, logger: l}
+	return &PlatformContentPackHandler{service: svc, stepUp: stepUp, adminAudit: adminAudit, packs: &ContentPackHandler{logger: l}, logger: l}
+}
+
+// validReason trims a write's reason and refuses an empty or long one.
+func validReason(w http.ResponseWriter, reason string) (string, bool) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || len(reason) > maxContentPackReason {
+		apierror.BadRequest(fmt.Sprintf("a reason of 1 to %d characters is required", maxContentPackReason)).WriteJSON(w)
+		return "", false
+	}
+	return reason, true
+}
+
+// confirm checks the console step-up for one write and returns the function
+// that writes its admin audit row (high severity, the reason in the body).
+// false: the refusal is written and nothing may change.
+func (h *PlatformContentPackHandler) confirm(w http.ResponseWriter, r *http.Request, action, code string) (func(status int, id *shared.ID, name string, body map[string]any, failure string), bool) {
+	if !confirmAdminStepUp(w, r, h.stepUp, code, stepUpPurposeContentPack, h.logger) {
+		return nil, false
+	}
+	actor := middleware.GetAdminUser(r.Context())
+	return func(status int, id *shared.ID, name string, body map[string]any, failure string) {
+		entry := admin.NewAuditLogBuilder(actor, action).
+			Resource("platform_content_pack", id, name).
+			Context(middleware.ClientIP(r), r.UserAgent()).
+			Request(r.Method, r.URL.Path, body).
+			Response(status).
+			High()
+		if failure != "" {
+			entry.Error(failure)
+		}
+		if h.adminAudit == nil {
+			return
+		}
+		// Detached: the row must survive a client that disconnects.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+		defer cancel()
+		if err := h.adminAudit.Create(ctx, entry.Build()); err != nil {
+			h.logger.Error("write admin audit for a platform content pack change", "action", action, "error", err)
+		}
+	}, true
+}
+
+// failed records a write the service refused and writes the error.
+func (h *PlatformContentPackHandler) failed(w http.ResponseWriter, record func(int, *shared.ID, string, map[string]any, string), body map[string]any, err error) {
+	rec := httptest.NewRecorder()
+	h.packs.handleError(rec, err)
+	record(rec.Code, nil, "", body, sanitizeLogField(err.Error()))
+	for k, v := range rec.Header() {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(rec.Code)
+	_, _ = w.Write(rec.Body.Bytes())
 }
 
 // PlatformContentPackResponse is a platform content pack.
@@ -90,11 +166,22 @@ type ImportPlatformContentPackRequest struct {
 	URL                string `json:"url"`
 	Digest             string `json:"digest"`
 	AcknowledgeSecrets bool   `json:"acknowledge_secrets"`
+	// Reason and TOTPCode confirm the change (audited with the reason).
+	Reason   string `json:"reason"`
+	TOTPCode string `json:"totp_code"`
+}
+
+// ConfirmedRevokeContentPackRequest revokes a platform pack.
+type ConfirmedRevokeContentPackRequest struct {
+	Reason   string `json:"reason"`
+	TOTPCode string `json:"totp_code"`
 }
 
 // SetContentChannelRequest points a channel at a pack.
 type SetContentChannelRequest struct {
-	PackID string `json:"pack_id"`
+	PackID   string `json:"pack_id"`
+	Reason   string `json:"reason"`
+	TOTPCode string `json:"totp_code"`
 }
 
 func toPlatformContentPackResponse(p *contentpack.PlatformPack) PlatformContentPackResponse {
@@ -216,7 +303,7 @@ func (h *PlatformContentPackHandler) SigningKey(w http.ResponseWriter, _ *http.R
 
 // Upload handles POST /api/v1/admin/content-packs
 // @Summary      Upload platform content pack
-// @Description  multipart/form-data with name, version, kind, acknowledge_secrets and archive (tar or tar.gz). Files that fail lint (refused template protocols, YAML that is not a template) are left out of the pack and listed as warnings; the rest is canonicalised, classified and signed with the platform content key. Super admin.
+// @Description  multipart/form-data with name, version, kind, acknowledge_secrets, reason, totp_code (a fresh console authenticator code) and archive (tar or tar.gz). Files that fail lint (refused template protocols, YAML that is not a template) are left out of the pack and listed as warnings; the rest is canonicalised, classified and signed with the platform content key. Super admin.
 // @Tags         Content Packs
 // @Accept       mpfd
 // @Produce      json
@@ -224,6 +311,8 @@ func (h *PlatformContentPackHandler) SigningKey(w http.ResponseWriter, _ *http.R
 // @Param        version              formData  string  true   "Version"
 // @Param        kind                 formData  string  true   "Kind"
 // @Param        acknowledge_secrets  formData  bool    false  "Store despite suspected credentials"
+// @Param        reason               formData  string  true   "Why (audited)"
+// @Param        totp_code            formData  string  true   "Console authenticator code"
 // @Param        archive              formData  file    true   "tar or tar.gz"
 // @Success      201  {object}  PlatformContentPackResponse
 // @Failure      400  {object}  apierror.Error
@@ -243,8 +332,9 @@ func (h *PlatformContentPackHandler) Upload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var (
-		in      contentpackapp.UploadInput
-		archive []byte
+		in               contentpackapp.UploadInput
+		archive          []byte
+		reason, totpCode string
 	)
 	for {
 		part, err := mr.NextPart()
@@ -255,6 +345,21 @@ func (h *PlatformContentPackHandler) Upload(w http.ResponseWriter, r *http.Reque
 			h.writeReadError(w, err)
 			return
 		}
+		switch part.FormName() {
+		case "reason", "totp_code":
+			v, rerr := io.ReadAll(io.LimitReader(part, maxContentPackReason+1))
+			_ = part.Close()
+			if rerr != nil {
+				h.writeReadError(w, rerr)
+				return
+			}
+			if part.FormName() == "reason" {
+				reason = string(v)
+			} else {
+				totpCode = string(v)
+			}
+			continue
+		}
 		if archive, err = h.packs.readPart(part, &in, archive, maxUpload); err != nil {
 			h.writeReadError(w, err)
 			return
@@ -264,13 +369,24 @@ func (h *PlatformContentPackHandler) Upload(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("archive is required").WriteJSON(w)
 		return
 	}
+	reason, ok := validReason(w, reason)
+	if !ok {
+		return
+	}
+	record, ok := h.confirm(w, r, AdminActionContentPackUpload, totpCode)
+	if !ok {
+		return
+	}
+	body := map[string]any{"reason": reason, "name": in.Name, "version": in.Version, "kind": in.Kind, "acknowledge_secrets": in.AcknowledgeSecrets}
 	p, err := h.service.Upload(r.Context(), contentpackapp.PlatformInput{
 		Name: in.Name, Version: in.Version, Kind: in.Kind, AcknowledgeSecrets: in.AcknowledgeSecrets,
 	}, bytes.NewReader(archive))
 	if err != nil {
-		h.packs.handleError(w, err)
+		h.failed(w, record, body, err)
 		return
 	}
+	body["digest"], body["tier"], body["excluded"] = p.Digest, string(p.Tier), p.Lint.Excluded
+	record(http.StatusCreated, &p.ID, p.Name+"@"+p.Version, body, "")
 	writeScanZoneJSON(w, http.StatusCreated, toPlatformContentPackResponse(p))
 }
 
@@ -286,7 +402,7 @@ func (h *PlatformContentPackHandler) writeReadError(w http.ResponseWriter, err e
 
 // Import handles POST /api/v1/admin/content-packs/import
 // @Summary      Import platform content pack from an upstream release
-// @Description  Fetches url (https, public addresses only) and refuses it unless its sha256 equals digest, then ingests it like an upload (tar or tar.gz). Super admin.
+// @Description  Fetches url (https, public addresses only) and refuses it unless its sha256 equals digest, then ingests it like an upload (tar or tar.gz). Super admin, with a reason and a fresh console authenticator code (totp_code); audited.
 // @Tags         Content Packs
 // @Accept       json
 // @Produce      json
@@ -305,24 +421,36 @@ func (h *PlatformContentPackHandler) Import(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
+	reason, ok := validReason(w, req.Reason)
+	if !ok {
+		return
+	}
+	record, ok := h.confirm(w, r, AdminActionContentPackImport, req.TOTPCode)
+	if !ok {
+		return
+	}
+	body := map[string]any{"reason": reason, "name": req.Name, "version": req.Version, "kind": req.Kind,
+		"url": req.URL, "source_digest": req.Digest, "acknowledge_secrets": req.AcknowledgeSecrets}
 	p, err := h.service.Import(r.Context(), contentpackapp.PlatformInput{
 		Name: req.Name, Version: req.Version, Kind: req.Kind, AcknowledgeSecrets: req.AcknowledgeSecrets,
 	}, req.URL, req.Digest)
 	if err != nil {
-		h.packs.handleError(w, err)
+		h.failed(w, record, body, err)
 		return
 	}
+	body["digest"], body["tier"], body["excluded"] = p.Digest, string(p.Tier), p.Lint.Excluded
+	record(http.StatusCreated, &p.ID, p.Name+"@"+p.Version, body, "")
 	writeScanZoneJSON(w, http.StatusCreated, toPlatformContentPackResponse(p))
 }
 
 // Revoke handles POST /api/v1/admin/content-packs/{id}/revoke
 // @Summary      Revoke platform content pack
-// @Description  Every channel naming the pack moves to the newest older active pack of its name (removed when there is none). Super admin.
+// @Description  Every channel naming the pack moves to the newest older active pack of its name (removed when there is none). Super admin, with a reason and a fresh console authenticator code (totp_code); audited.
 // @Tags         Content Packs
 // @Accept       json
 // @Produce      json
 // @Param        id    path      string                    true  "Platform content pack ID"
-// @Param        body  body      RevokeContentPackRequest  true  "Reason"
+// @Param        body  body      ConfirmedRevokeContentPackRequest  true  "Reason and code"
 // @Success      200   {object}  RevokePlatformContentPackResponse
 // @Failure      400   {object}  apierror.Error
 // @Failure      401   {object}  apierror.Error
@@ -332,22 +460,33 @@ func (h *PlatformContentPackHandler) Import(w http.ResponseWriter, r *http.Reque
 // @Security     BearerAuth
 // @Router       /admin/content-packs/{id}/revoke [post]
 func (h *PlatformContentPackHandler) Revoke(w http.ResponseWriter, r *http.Request) {
-	var req RevokeContentPackRequest
+	var req ConfirmedRevokeContentPackRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<12)).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	p, cs, err := h.service.Revoke(r.Context(), chi.URLParam(r, "id"), req.Reason)
-	if err != nil {
-		h.packs.handleError(w, err)
+	reason, ok := validReason(w, req.Reason)
+	if !ok {
 		return
 	}
+	record, ok := h.confirm(w, r, AdminActionContentPackRevoke, req.TOTPCode)
+	if !ok {
+		return
+	}
+	body := map[string]any{"reason": reason, "pack_id": chi.URLParam(r, "id")}
+	p, cs, err := h.service.Revoke(r.Context(), chi.URLParam(r, "id"), reason)
+	if err != nil {
+		h.failed(w, record, body, err)
+		return
+	}
+	body["digest"], body["channels"] = p.Digest, len(cs)
+	record(http.StatusOK, &p.ID, p.Name+"@"+p.Version, body, "")
 	writeScanZoneJSON(w, http.StatusOK, RevokePlatformContentPackResponse{Pack: toPlatformContentPackResponse(p), Channels: toContentChannels(cs)})
 }
 
 // SetChannel handles PUT /api/v1/admin/content-packs/channels/{channel}
 // @Summary      Point a content channel at a pack
-// @Description  Sets channel (stable or canary) of the pack's name to the pack, which must be active. Super admin.
+// @Description  Sets channel (stable or canary) of the pack's name to the pack, which must be active. Super admin, with a reason and a fresh console authenticator code (totp_code); audited.
 // @Tags         Content Packs
 // @Accept       json
 // @Produce      json
@@ -367,11 +506,22 @@ func (h *PlatformContentPackHandler) SetChannel(w http.ResponseWriter, r *http.R
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	c, err := h.service.MoveChannel(r.Context(), req.PackID, contentpack.Channel(chi.URLParam(r, "channel")))
-	if err != nil {
-		h.packs.handleError(w, err)
+	reason, ok := validReason(w, req.Reason)
+	if !ok {
 		return
 	}
+	record, ok := h.confirm(w, r, AdminActionContentPackSetChannel, req.TOTPCode)
+	if !ok {
+		return
+	}
+	body := map[string]any{"reason": reason, "pack_id": req.PackID, "channel": chi.URLParam(r, "channel")}
+	c, err := h.service.MoveChannel(r.Context(), req.PackID, contentpack.Channel(chi.URLParam(r, "channel")))
+	if err != nil {
+		h.failed(w, record, body, err)
+		return
+	}
+	body["name"], body["version"], body["digest"] = c.Name, c.Version, c.Digest
+	record(http.StatusOK, &c.PackID, c.Name+":"+string(c.Channel), body, "")
 	writeScanZoneJSON(w, http.StatusOK, toContentChannels([]contentpack.ChannelPointer{*c})[0])
 }
 
