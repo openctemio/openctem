@@ -4,7 +4,9 @@
 --   findings:comment   comments and reactions on a finding
 --   findings:severity  severity and classification changes
 -- Every role (built-in or custom) that holds findings:write gets both, so no
--- one loses an ability today. Administrators can then remove
+-- one loses an ability today, except that the built-in Researcher role gets
+-- findings:comment only: researchers report and discuss findings, and
+-- triage owns severity. Administrators can then remove
 -- findings:severity from a custom role (for example a remediation owner).
 INSERT INTO permissions (id, module_id, name, description, is_active) VALUES
     ('findings:comment', 'findings', 'Comment on Findings', 'Add, edit and delete comments on findings and react to comments', true),
@@ -16,4 +18,5 @@ SELECT rp.role_id, p.id
 FROM role_permissions rp
 CROSS JOIN (VALUES ('findings:comment'), ('findings:severity')) AS p(id)
 WHERE rp.permission_id = 'findings:write'
+  AND NOT (rp.role_id = '00000000-0000-0000-0000-000000000005'::uuid AND p.id = 'findings:severity')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
