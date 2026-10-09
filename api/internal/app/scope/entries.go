@@ -377,13 +377,6 @@ func (s *Service) notifyWidened(ctx context.Context, t *scopedom.Target, title s
 	s.NotifyAdmins(ctx, t.TenantID(), title, body)
 }
 
-// notifyRequested tells the administrators that an entry waits for approval.
-func (s *Service) notifyRequested(ctx context.Context, t *scopedom.Target) {
-	body := fmt.Sprintf("%s %s (%s) needs %d approval(s). Reason: %s",
-		t.TargetType(), t.Pattern(), describeExpiry(t), t.ApprovalsRequired(), t.Reason())
-	s.NotifyAdmins(ctx, t.TenantID(), "Scope entry awaiting approval", body)
-}
-
 func describeExpiry(t *scopedom.Target) string {
 	if t.ExpiresAt() == nil {
 		return "permanent"
