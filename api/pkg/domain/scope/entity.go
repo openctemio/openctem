@@ -35,6 +35,8 @@ type Target struct {
 	approvedAt        *time.Time
 	rejectedBy        string
 	rejectedAt        *time.Time
+	// remindedAt: when the approvers were last reminded (approvers.go).
+	remindedAt *time.Time
 
 	origin Origin
 	// discoveryOff: discovery switched off (discovery.go); the zero value

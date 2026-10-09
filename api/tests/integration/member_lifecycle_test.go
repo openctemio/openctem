@@ -74,7 +74,7 @@ func newLifecycleFixture(t *testing.T) *lifecycleFixture {
 				`DELETE FROM api_keys WHERE tenant_id = $1`,
 				`DELETE FROM scans WHERE tenant_id = $1`,
 				`DELETE FROM report_schedules WHERE tenant_id = $1`,
-				`DELETE FROM workflows WHERE tenant_id = $1`,
+				`DELETE FROM automations WHERE tenant_id = $1`,
 				`DELETE FROM asset_access_grants WHERE tenant_id = $1`,
 				`DELETE FROM user_accessible_assets WHERE tenant_id = $1`,
 				`DELETE FROM asset_owners WHERE asset_id IN (SELECT id FROM assets WHERE tenant_id = $1)`,
@@ -123,7 +123,7 @@ func newLifecycleFixture(t *testing.T) *lifecycleFixture {
 		  VALUES ($1, $2, 'LC nightly', 'single', 'nuclei', 'daily', 'active', ARRAY['lc.example.com'], $3)`, []any{f.scanID.String(), tid, uid}},
 		{`INSERT INTO report_schedules (id, tenant_id, name, report_type, cron_expression, is_active, created_by, created_at, updated_at)
 		  VALUES ($1, $2, 'LC weekly', 'executive_summary', '0 8 * * 1', TRUE, $3, NOW(), NOW())`, []any{f.reportID.String(), tid, uid}},
-		{`INSERT INTO workflows (id, tenant_id, name, is_active, created_by) VALUES ($1, $2, 'LC flow', TRUE, $3)`, []any{f.workflow.String(), tid, uid}},
+		{`INSERT INTO automations (id, tenant_id, name, is_active, created_by) VALUES ($1, $2, 'LC flow', TRUE, $3)`, []any{f.workflow.String(), tid, uid}},
 		{`INSERT INTO pentest_campaigns (id, tenant_id, name) VALUES ($1, $2, 'LC campaign')`, []any{f.campaign.String(), tid}},
 		{`INSERT INTO pentest_campaign_members (tenant_id, campaign_id, user_id, role) VALUES ($1, $2, $3, 'tester')`, []any{tid, f.campaign.String(), uid}},
 	} {
@@ -198,7 +198,7 @@ func TestMemberLifecycle_DisableFreezesAndReenableRestores(t *testing.T) {
 	if got := f.count(t, `SELECT COUNT(*) FROM report_schedules WHERE id = $1 AND tenant_id = $2 AND is_active`, f.reportID.String(), tid); got != 0 {
 		t.Error("owned report schedule still active after disable")
 	}
-	if got := f.count(t, `SELECT COUNT(*) FROM workflows WHERE id = $1 AND tenant_id = $2 AND is_active`, f.workflow.String(), tid); got != 0 {
+	if got := f.count(t, `SELECT COUNT(*) FROM automations WHERE id = $1 AND tenant_id = $2 AND is_active`, f.workflow.String(), tid); got != 0 {
 		t.Error("owned workflow still active after disable")
 	}
 	// Frozen, not stripped.
@@ -321,7 +321,7 @@ func TestMemberLifecycle_OffboardReassignsStripsAndTombstones(t *testing.T) {
 		{"membership row kept as tombstone", `SELECT COUNT(*) FROM tenant_members WHERE id = $1 AND tenant_id = $2 AND status = 'offboarded' AND offboarded_at IS NOT NULL AND offboarded_by = $3`, []any{f.mshipID.String(), tid, f.ownerID.String()}, 1},
 		{"scan owned by peer", `SELECT COUNT(*) FROM scans WHERE id = $1 AND tenant_id = $2 AND created_by = $3`, []any{f.scanID.String(), tid, peer}, 1},
 		{"report schedule owned by peer", `SELECT COUNT(*) FROM report_schedules WHERE id = $1 AND tenant_id = $2 AND created_by = $3`, []any{f.reportID.String(), tid, peer}, 1},
-		{"workflow owned by peer", `SELECT COUNT(*) FROM workflows WHERE id = $1 AND tenant_id = $2 AND created_by = $3`, []any{f.workflow.String(), tid, peer}, 1},
+		{"workflow owned by peer", `SELECT COUNT(*) FROM automations WHERE id = $1 AND tenant_id = $2 AND created_by = $3`, []any{f.workflow.String(), tid, peer}, 1},
 		{"finding assigned to peer", `SELECT COUNT(*) FROM findings WHERE id = $1 AND tenant_id = $2 AND assigned_to = $3`, []any{f.findingID.String(), tid, peer}, 1},
 		{"asset owned by peer", `SELECT COUNT(*) FROM asset_owners WHERE asset_id = $1 AND user_id = $2`, []any{f.assetB.String(), peer}, 1},
 		{"api key revoked", `SELECT COUNT(*) FROM api_keys WHERE id = $1 AND tenant_id = $2 AND status = 'revoked' AND revoked_by = $3`, []any{f.keyID.String(), tid, f.ownerID.String()}, 1},

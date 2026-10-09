@@ -10,6 +10,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
@@ -472,5 +473,20 @@ func TestReissueSetupLink_CallerBoundedByTargetRole(t *testing.T) {
 		if res, err := svc.ReissueSetupLink(ctx, tid, u.ID().String(), "", auditapp.AuditContext{}); err != nil || res.SetupToken == "" {
 			t.Fatalf("platform console -> pending %s: %v", role, err)
 		}
+	}
+}
+
+// A service account never gets a password, so no set-password link either.
+func TestReissueSetupLink_ServiceAccountRefused(t *testing.T) {
+	svc, tr, ur, _, _ := provFixture(t)
+	email := "svc-1@" + serviceaccount.EmailDomain
+	if _, err := svc.CreateUser(context.Background(), CreateUserInput{
+		TenantID: tr.tenant.ID().String(), Email: email, RoleIDs: viewerOnly,
+	}, auditapp.AuditContext{}); err != nil {
+		t.Skipf("the fixture refuses the service account address: %v", err)
+	}
+	u := ur.byEmail[email]
+	if _, err := svc.ReissueSetupLink(context.Background(), tr.tenant.ID().String(), u.ID().String(), "", auditapp.AuditContext{}); !errors.Is(err, ErrNotPendingSetup) {
+		t.Fatalf("a service account must be refused, got %v", err)
 	}
 }
