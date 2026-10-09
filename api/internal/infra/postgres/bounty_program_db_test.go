@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Programs (migration 001446): import in one transaction, membership-filtered
+// Programs (migration 001454): import in one transaction, membership-filtered
 // lists, re-import, status changes reaching the entries, the authorization
 // source round trip, and tenant isolation. Requires DATABASE_URL.
 func TestBountyProgramRepository(t *testing.T) {
