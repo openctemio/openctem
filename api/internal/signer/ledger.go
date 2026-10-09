@@ -327,7 +327,7 @@ func (l *Ledger) Apply(ch jobsign.LedgerChange, now time.Time) (jobsign.LedgerAp
 		return jobsign.LedgerApplyResult{}, refuse(http.StatusInternalServerError, ReasonInternal, "ledger log unavailable")
 	}
 	l.tenants[ch.TenantID] = next
-	l.logger.Info("ledger change applied", "kind", kind, "tenant_id", ch.TenantID, "change_id", ch.ChangeID,
+	l.logger.Info("ledger change applied", "kind", kind, "tenant_id", canonicalID(ch.TenantID), "change_id", canonicalID(ch.ChangeID),
 		"ops", len(ch.Ops), "approvals", counted)
 	return jobsign.LedgerApplyResult{Kind: kind, Mode: mode}, nil
 }
@@ -467,7 +467,7 @@ func (l *Ledger) Sync(snap jobsign.LedgerSnapshot, now time.Time) (jobsign.Ledge
 	cur = cur.clone()
 	cur.apply(ops, now)
 	l.tenants[snap.TenantID] = cur
-	l.logger.Info("ledger narrowed by sync", "tenant_id", snap.TenantID, "ops", len(ops), "diverged", diverged)
+	l.logger.Info("ledger narrowed by sync", "tenant_id", canonicalID(snap.TenantID), "ops", len(ops), "diverged", diverged)
 	return res, nil
 }
 
