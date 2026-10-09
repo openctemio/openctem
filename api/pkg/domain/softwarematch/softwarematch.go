@@ -164,6 +164,8 @@ type Store interface {
 	// TenantMatches returns the tenant's current links (seen since
 	// currentSince, not superseded) joined with their versions' matches.
 	TenantMatches(ctx context.Context, tenantID shared.ID, currentSince time.Time, limit int) ([]Match, error)
+	// AssetMatches is TenantMatches for one asset, whatever the link's age.
+	AssetMatches(ctx context.Context, tenantID, assetID shared.ID) ([]Match, error)
 	// MatcherFindings returns the tenant's matcher-owned findings.
 	MatcherFindings(ctx context.Context, tenantID shared.ID) ([]MatcherFinding, error)
 	// OpenCVEsOnAssets returns, per asset, the CVEs of its open findings
