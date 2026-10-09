@@ -56,6 +56,15 @@ var hardBlockedIPRanges = []string{
 	"ff00::/8",           // IPv6 multicast
 	"fd00:ec2::254/128",  // AWS IMDS over IPv6 (inside fc00::/7)
 	"fd20:ce::254/128",   // GCP metadata server over IPv6 (inside fc00::/7)
+	// Ranges that embed an IPv4 address the network may translate to: on a
+	// NAT64/DNS64 or 6to4 network 64:ff9b::a9fe:a9fe reaches 169.254.169.254.
+	"64:ff9b::/96",   // NAT64 well-known prefix
+	"64:ff9b:1::/48", // NAT64 local-use prefix
+	"2002::/16",      // 6to4
+	"2001::/32",      // Teredo
+	// IPv4 special-purpose ranges that are never a tenant service.
+	"192.0.0.0/24",  // IETF protocol assignments (DS-Lite, NAT64 discovery)
+	"198.18.0.0/15", // Benchmarking
 }
 
 // privateIPRanges lists the RFC 1918 / ULA CIDRs. They are blocked by
