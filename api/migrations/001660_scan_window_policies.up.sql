@@ -10,7 +10,7 @@
 --   * commands.freeze_override and scan_runs.freeze_override are dropped: an
 --     override is now a time-boxed state of the organization
 --     (scan_window_overrides), not a flag on one run;
---   * scans:windows:manage is granted to owner and admin (migration 001631
+--   * scans:windows:manage is granted to owner and admin (migration 001661
 --     renames scans:freeze:override to scans:windows:override).
 --
 -- Safe on populated tables: two new tables, three nullable columns on

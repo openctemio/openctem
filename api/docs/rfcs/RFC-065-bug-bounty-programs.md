@@ -301,7 +301,7 @@ answer as `scopeauth`). Targets no program covers add no rule. Then:
 | `required_headers` | added to `http_policy.headers` (sdk-go `core.OrgHTTPPolicy.Headers`); the tool host sends them on every request and they replace a `tool.yaml` header of the same name |
 | `user_agent` | `http_policy.user_agent` (the program's wins over the organization's; a User-Agent forced by the sensor-local policy still wins) |
 | `rate_limit_rps` | the command's `config.rate_limit` becomes the smallest of its own value and the programs' (the scanner reads it through `ScanOptions.RateLimit` and caps it at the sensor ceiling) |
-| `testing_windows` | outside every window of a program, the command is not delivered; it stays queued and leaves when a window opens |
+| `testing_windows` | outside every window of a program, the command is not delivered; it waits and leaves when a window opens (since RFC-067 evaluated as a non-overridable scan window source) |
 
 **Conflicts.** Two programs covering one command with different values for
 the same header name, or different User-Agents, cannot both be honoured: the
@@ -313,8 +313,11 @@ backstop for paths that do not go through the trigger.
 **Testing windows** (`rules.testing_windows`): `[{"days": ["mon", …],
 "start": "09:00", "end": "17:00", "timezone": "Europe/Paris"}]`, at most 14,
 `end` after `start` (no overnight window; add two), IANA time zones only. No
-window means any time. The trigger refuses a manual run outside the windows
-(`PROGRAM_OUTSIDE_WINDOW`) and a scheduled run is skipped with that reason.
+window means any time. Since RFC-067 the windows are a source of the scan
+window evaluator: a manual run outside them waits, a scheduled run is
+deferred to the next opening (no longer skipped), a target whose windows
+never open refuses the run (`SCAN_WINDOW_NEVER_OPENS`), and no override ever
+lifts them.
 
 Headers and User-Agent need sdk-go `core.OrgHTTPPolicy.Headers` (sdk-go
 #227, #228); a sensor without it ignores the field, so a command that carries

@@ -27,28 +27,59 @@ var (
 const expiryAfterWait = `CASE WHEN %[1]s AND expires_at IS NOT NULL
 		THEN expires_at + GREATEST(interval '0', %[2]s::timestamptz - NOW()) ELSE expires_at END`
 
-// moveRunDeadline moves the deadline of the run a command belongs to so it
-// ends no earlier than opensAt plus the run's timeout.
-func moveRunDeadline(ctx context.Context, tx *sql.Tx, tenantID shared.ID, payload json.RawMessage, opensAt *time.Time) error {
-	if opensAt == nil {
-		return nil
-	}
+// Window hold statements, built once from fixed SQL (no input).
+var (
+	moveRunDeadlineSQL = `
+		UPDATE scan_runs r
+		SET deadline_at = GREATEST(r.deadline_at, ` + runDeadlineSQL("$3::timestamptz", "r.scan_id", "r.scan_workflow_id") + `)
+		WHERE r.tenant_id = $1 AND r.id = $2::uuid AND r.status IN ('pending', 'running')
+		  AND r.deadline_at IS NOT NULL`
+	deferPendingSQL = `
+		UPDATE commands
+		SET scheduled_at = $3, window_hold = $4,
+		    expires_at = ` + fmt.Sprintf(expiryAfterWait, "$5", "$3") + `
+		WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND payload = $6::jsonb`
+	splitSiblingSQL = `
+		INSERT INTO commands (id, tenant_id, sensor_id, type, priority, payload, status, error_message,
+			created_at, expires_at, scheduled_at, schedule_id, scan_run_step_id, is_platform_job,
+			queue_priority, queued_at, dispatch_attempts, scan_zone_id, host_keys, dispatch_gate, window_hold)
+		SELECT $3, tenant_id, sensor_id, type, priority, $4, 'pending', '',
+			NOW(), ` + fmt.Sprintf(expiryAfterWait, "$6", "$5") + `, $5, schedule_id, scan_run_step_id, FALSE,
+			queue_priority, queued_at, 0, scan_zone_id, host_keys, dispatch_gate, $7
+		FROM commands WHERE id = $1 AND tenant_id = $2`
+	requeueForWindowSQL = `
+		UPDATE commands
+		SET status = 'pending', sensor_id = NULL, acknowledged_at = NULL, started_at = NULL,
+		    lease_expires_at = NULL, window_closed_at = NULL, window_policy_ids = NULL,
+		    scheduled_at = $5, window_hold = $6,
+		    expires_at = ` + fmt.Sprintf(expiryAfterWait, "$7", "$5") + `,
+		    error_message = $8
+		WHERE id = $1 AND tenant_id = $2 AND status IN ('acknowledged', 'running')
+		  AND sensor_id IS NOT DISTINCT FROM $3::uuid AND lease_epoch = $4`
+)
+
+// payloadRunID is the scan run a command payload names ("" when none).
+func payloadRunID(payload json.RawMessage) string {
 	var p struct {
 		RunID string `json:"scan_run_id"`
 	}
-	if json.Unmarshal(payload, &p) != nil || p.RunID == "" {
-		return nil
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
 	}
 	if _, err := shared.IDFromString(p.RunID); err != nil {
+		return ""
+	}
+	return p.RunID
+}
+
+// moveRunDeadline moves the deadline of the run a command belongs to so it
+// ends no earlier than opensAt plus the run's timeout.
+func moveRunDeadline(ctx context.Context, tx *sql.Tx, tenantID shared.ID, payload json.RawMessage, opensAt *time.Time) error {
+	runID := payloadRunID(payload)
+	if opensAt == nil || runID == "" {
 		return nil
 	}
-	_, err := tx.ExecContext(ctx, `
-		UPDATE scan_runs r
-		SET deadline_at = GREATEST(r.deadline_at, `+runDeadlineSQL("$3::timestamptz", "r.scan_id", "r.scan_workflow_id")+`)
-		WHERE r.tenant_id = $1 AND r.id = $2::uuid AND r.status IN ('pending', 'running')
-		  AND r.deadline_at IS NOT NULL`,
-		tenantID.String(), p.RunID, opensAt.UTC())
-	if err != nil {
+	if _, err := tx.ExecContext(ctx, moveRunDeadlineSQL, tenantID.String(), runID, opensAt.UTC()); err != nil {
 		return fmt.Errorf("move run deadline: %w", err)
 	}
 	return nil
@@ -61,11 +92,7 @@ func (r *CommandRepository) DeferPending(ctx context.Context, cmd *command.Comma
 		return false, fmt.Errorf("defer command: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx, `
-		UPDATE commands
-		SET scheduled_at = $3, window_hold = $4,
-		    expires_at = `+fmt.Sprintf(expiryAfterWait, "$5", "$3")+`
-		WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND payload = $6::jsonb`,
+	res, err := tx.ExecContext(ctx, deferPendingSQL,
 		cmd.ID.String(), cmd.TenantID.String(), d.Until.UTC(), []byte(d.Hold), d.ExtendExpiry, []byte(cmd.Payload))
 	if err != nil {
 		return false, fmt.Errorf("defer command: %w", err)
@@ -102,14 +129,7 @@ func (r *CommandRepository) SplitPending(ctx context.Context, cmd *command.Comma
 	if n, _ := res.RowsAffected(); n != 1 {
 		return sibling, false, nil
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO commands (id, tenant_id, sensor_id, type, priority, payload, status, error_message,
-			created_at, expires_at, scheduled_at, schedule_id, scan_run_step_id, is_platform_job,
-			queue_priority, queued_at, dispatch_attempts, scan_zone_id, host_keys, dispatch_gate, window_hold)
-		SELECT $3, tenant_id, sensor_id, type, priority, $4, 'pending', '',
-			NOW(), `+fmt.Sprintf(expiryAfterWait, "$6", "$5")+`, $5, schedule_id, scan_run_step_id, FALSE,
-			queue_priority, queued_at, 0, scan_zone_id, host_keys, dispatch_gate, $7
-		FROM commands WHERE id = $1 AND tenant_id = $2`,
+	if _, err := tx.ExecContext(ctx, splitSiblingSQL,
 		cmd.ID.String(), cmd.TenantID.String(), sibling.String(), []byte(wait), d.Until.UTC(), d.ExtendExpiry,
 		[]byte(d.Hold)); err != nil {
 		return sibling, false, fmt.Errorf("split command: %w", err)
@@ -198,24 +218,8 @@ func (r *CommandRepository) RunningProbing(ctx context.Context, tenantID shared.
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
-	rows, err := r.db.QueryContext(ctx, r.selectQuery()+`
-		WHERE tenant_id = $1 AND status IN ('acknowledged', 'running') AND type = ANY($2::text[])
-		ORDER BY acknowledged_at NULLS LAST, id
-		LIMIT $3`, tenantID.String(), probingTypes, limit)
+	cmds, err := r.runningProbingCommands(ctx, tenantID, limit)
 	if err != nil {
-		return nil, fmt.Errorf("list running commands: %w", err)
-	}
-	var cmds []*command.Command
-	for rows.Next() {
-		c, err := r.scanCommandFromRows(rows)
-		if err != nil {
-			rows.Close()
-			return nil, err
-		}
-		cmds = append(cmds, c)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	if len(cmds) == 0 {
@@ -256,6 +260,30 @@ func (r *CommandRepository) RunningProbing(ctx context.Context, tenantID shared.
 	}
 	return out, nil
 }
+
+func (r *CommandRepository) runningProbingCommands(ctx context.Context, tenantID shared.ID, limit int) ([]*command.Command, error) {
+	rows, err := r.db.QueryContext(ctx, r.selectQuery()+runningProbingWhere, tenantID.String(), probingTypes, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list running commands: %w", err)
+	}
+	defer rows.Close()
+	var cmds []*command.Command
+	for rows.Next() {
+		c, err := r.scanCommandFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		cmds = append(cmds, c)
+	}
+	return cmds, rows.Err()
+}
+
+// runningProbingWhere selects the tenant's acknowledged and running probing
+// commands ($1 tenant, $2 types, $3 limit).
+const runningProbingWhere = `
+		WHERE tenant_id = $1 AND status IN ('acknowledged', 'running') AND type = ANY($2::text[])
+		ORDER BY acknowledged_at NULLS LAST, id
+		LIMIT $3`
 
 // MarkWindowClosed records the first time running commands were seen outside
 // their windows.
@@ -298,15 +326,7 @@ func (r *CommandRepository) RequeueForWindow(ctx context.Context, rc *command.Ru
 		return false, fmt.Errorf("requeue command: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx, `
-		UPDATE commands
-		SET status = 'pending', sensor_id = NULL, acknowledged_at = NULL, started_at = NULL,
-		    lease_expires_at = NULL, window_closed_at = NULL, window_policy_ids = NULL,
-		    scheduled_at = $5, window_hold = $6,
-		    expires_at = `+fmt.Sprintf(expiryAfterWait, "$7", "$5")+`,
-		    error_message = $8
-		WHERE id = $1 AND tenant_id = $2 AND status IN ('acknowledged', 'running')
-		  AND sensor_id IS NOT DISTINCT FROM $3::uuid AND lease_epoch = $4`,
+	res, err := tx.ExecContext(ctx, requeueForWindowSQL,
 		cmd.ID.String(), cmd.TenantID.String(), nullIDString(rc.SensorID), rc.LeaseEpoch,
 		d.Until.UTC(), []byte(d.Hold), d.ExtendExpiry, command.WindowClosedMessage)
 	if err != nil {

@@ -98,7 +98,7 @@ func (r *ScanWindowAssetRepository) MatchingAssets(ctx context.Context, tenantID
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
-	var tags []string
+	tags := make([]string, 0, len(sel.Tags))
 	for _, t := range sel.Tags {
 		tags = append(tags, strings.ToLower(t))
 	}

@@ -11,7 +11,7 @@
 
 Several records decide whether a target may be probed today: scope targets,
 root-domain seeds, verified domains, attribution states and inventory
-membership, with exclusions, scan zones and freeze windows on top. They
+membership, with exclusions, scan zones and scan windows (RFC-067) on top. They
 disagreed with each other, widening scope was one unaudited click, and a
 refusal said nothing about how to fix it.
 

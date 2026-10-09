@@ -345,29 +345,12 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 			return nil, err
 		}
 	}
-	if len(targets) > 0 {
-		runContext["targets"] = targets
-	}
-
-	var zoneIDs []shared.ID
-	if zid := scanrun.ScanZoneFromContext(runContext); zid != nil {
-		zoneIDs = []shared.ID{*zid}
-	} else {
-		// The scan's sensor preference decides, with the checks a single
-		// scan gets; the workflow's own preference does not (research/62
-		// SG-11). Every step of the run follows this decision.
-		routing, err := s.decideWorkflowRouting(ctx, sc, targets)
-		if err != nil {
-			return nil, err
-		}
-		routing.record(runContext)
+	runZone, err := s.workflowRunZone(ctx, sc, targets, runContext)
+	if err != nil {
+		return nil, err
 	}
 	// Scan windows (windows.go): never-opening targets refuse the run, a
 	// scheduled run with nothing open is deferred.
-	var runZone *shared.ID
-	if len(zoneIDs) == 1 {
-		runZone = &zoneIDs[0]
-	}
 	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, targets, oneZone(runZone), workflowTier(steps), runContext); err != nil {
 		return nil, err
 	}
@@ -421,6 +404,26 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 
 	return run, nil
+}
+
+// workflowRunZone records the targets of the run and returns the zone it
+// was routed to, or nil when it
+// was not: then the scan's sensor preference decides, with the checks a
+// single scan gets; the workflow's own preference does not (research/62
+// SG-11). Every step of the run follows this decision.
+func (s *Service) workflowRunZone(ctx context.Context, sc *scan.Scan, targets []string, runContext map[string]any) (*shared.ID, error) {
+	if len(targets) > 0 {
+		runContext["targets"] = targets
+	}
+	if zid := scanrun.ScanZoneFromContext(runContext); zid != nil {
+		return zid, nil
+	}
+	routing, err := s.decideWorkflowRouting(ctx, sc, targets)
+	if err != nil {
+		return nil, err
+	}
+	routing.record(runContext)
+	return nil, nil
 }
 
 // QuickScanTemplateID is the system template ID for quick/single scans.
