@@ -32,6 +32,8 @@ const table: CapabilityTable = {
   capabilities: [
     cap('resolve.dns', 'DNS resolution', ['dnsx']),
     cap('scan.ports', 'Port scan', ['naabu']),
+    cap('discover.subdomains', 'Subdomain discovery', ['subfinder']),
+    cap('probe.http', 'HTTP probe', ['httpx']),
   ],
   adapters: [],
   portLabels: {},
@@ -55,6 +57,7 @@ vi.mock('@/lib/api/platform-hooks', () => ({
 }))
 vi.mock('../../lib/use-capability-table', () => ({
   useCapabilityTable: () => ({ table, isLoading: false }),
+  validateScanWorkflowSteps: () => Promise.resolve({ valid: true, errors: [], warnings: [] }),
 }))
 
 globalThis.ResizeObserver ??= class {
@@ -209,7 +212,9 @@ describe('ScanWorkflowForm: edit', () => {
     expect(within(screen.getByRole('radiogroup')).getByLabelText('Preferred tools')).toBeChecked()
 
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(screen.getByRole('button', { name: /update workflow/i }))
+    // Steps changed: they save to the draft, not into the version runs use.
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+    expect(onSubmit.mock.calls[0][1]).toEqual({ publish: false })
     expect(onSubmit.mock.calls[0][0].steps).toEqual([
       {
         id: '0192f0b4-0000-7000-8000-000000000001',
@@ -228,5 +233,127 @@ describe('ScanWorkflowForm: edit', () => {
         config: { top_n: 100 },
       },
     ])
+  })
+})
+
+const st = (
+  id: string,
+  key: string,
+  name: string,
+  extra: Partial<ScanWorkflow['steps'][number]> = {}
+): ScanWorkflow['steps'][number] => ({
+  id,
+  step_key: key,
+  name,
+  order: 1,
+  ui_position: { x: 0, y: 0 },
+  tool: '',
+  capabilities: [],
+  prefer_tools: [],
+  depends_on: [],
+  max_retries: 0,
+  retry_delay_seconds: 0,
+  ...extra,
+})
+
+// The owner's Full Reconnaissance copy: a legacy subfinder step, then HTTP
+// probing and port scanning in parallel.
+const recon: ScanWorkflow = {
+  ...workflow,
+  id: 'w2',
+  name: 'Full Reconnaissance',
+  steps: [
+    st('0192f0b4-0000-7000-8000-00000000000a', 'subdomain_enum', 'Subdomain Enumeration', {
+      tool: 'subfinder',
+      capabilities: ['recon', 'subdomain'],
+    }),
+    st('0192f0b4-0000-7000-8000-00000000000b', 'http_probe', 'HTTP Probing', {
+      capabilities: ['probe.http'],
+      depends_on: ['subdomain_enum'],
+    }),
+    st('0192f0b4-0000-7000-8000-00000000000c', 'port_scan', 'Port Scanning', {
+      capabilities: ['scan.ports'],
+      depends_on: ['subdomain_enum'],
+    }),
+  ],
+}
+
+describe('ScanWorkflowForm: stages', () => {
+  it('groups steps by stage from what they run after; parallel steps are 2a and 2b', async () => {
+    render(<ScanWorkflowForm workflow={recon} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    const headings = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)
+    expect(headings).toEqual(['Stage 1', 'Stage 2 · 2 steps run in parallel · waits for Stage 1'])
+    expect(screen.getByLabelText('Step 1')).toBeInTheDocument()
+    expect(screen.getByLabelText('Step 2a')).toBeInTheDocument()
+    expect(screen.getByLabelText('Step 2b')).toBeInTheDocument()
+  })
+
+  it('runs-after refuses a loop and a change moves the step to another stage', async () => {
+    const onSubmit = vi.fn()
+    render(<ScanWorkflowForm workflow={recon} onSubmit={onSubmit} onCancel={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    // The first step cannot run after a step that waits for it.
+    await userEvent.click(
+      screen.getByRole('button', { name: 'What Subdomain Enumeration runs after' })
+    )
+    expect(await screen.findByRole('menuitemcheckbox', { name: /HTTP Probing/ })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+    await userEvent.keyboard('{Escape}')
+    // Port scanning after HTTP probing: three stages, one step each.
+    await userEvent.click(screen.getByRole('button', { name: 'What Port Scanning runs after' }))
+    await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: /HTTP Probing/ }))
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(3)
+
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+    const ports = onSubmit.mock.calls[0][0].steps.find(
+      (x: { step_key: string }) => x.step_key === 'port_scan'
+    )
+    expect(ports.depends_on).toEqual(['subdomain_enum', 'http_probe'])
+  })
+
+  it('a step in the old format is fixed in one click, and saved to the draft', async () => {
+    const onSubmit = vi.fn()
+    render(<ScanWorkflowForm workflow={recon} onSubmit={onSubmit} onCancel={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(screen.getByText(/1 step uses the old format/)).toBeInTheDocument()
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Use capability discover.subdomains (subfinder implements it)',
+      })
+    )
+    expect(screen.queryByText(/uses the old format/)).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save and publish' }))
+    expect(onSubmit.mock.calls[0][1]).toEqual({ publish: true })
+    expect(onSubmit.mock.calls[0][0].steps[0]).toMatchObject({
+      step_key: 'subdomain_enum',
+      tool: 'subfinder',
+      capabilities: ['discover.subdomains'],
+    })
+  })
+
+  it('Fix all fixes every step whose tool has one capability', async () => {
+    const two: ScanWorkflow = {
+      ...recon,
+      steps: [
+        ...recon.steps,
+        st('0192f0b4-0000-7000-8000-00000000000d', 'dns', 'DNS', {
+          tool: 'dnsx',
+          capabilities: ['recon', 'dns'],
+          depends_on: ['subdomain_enum'],
+        }),
+      ],
+    }
+    render(<ScanWorkflowForm workflow={two} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(screen.getByText(/2 steps use the old format/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Fix all' }))
+    expect(screen.queryByText(/old format/)).toBeNull()
   })
 })

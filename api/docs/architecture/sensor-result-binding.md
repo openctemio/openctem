@@ -43,6 +43,11 @@ creates and updates findings but changes no existing asset.
 
 Also part of group (C):
 
+- Scan coverage auto-resolve (`INGEST_COVERAGE_AUTO_RESOLVE`) considers only
+  the assets the command covers. A report still "touches" every existing
+  asset it names (an uncovered one only gets its last-seen time), but the
+  absence of a finding proves something only where the command was sent to
+  scan.
 - A sensor with no declared and no reported tools no longer auto-resolves
   (it could close any tool's findings with a "full" report).
 - Validation evidence without the validate command assigned to the sensor
@@ -77,8 +82,8 @@ quarantine at the bearer-key sunset.
 
 `sensor_result_quarantine` stores the CTIS report (one row per v1 request or
 v2 segment) as JSON, with the sensor, route, report id, tool and counts. At
-most 1000 pending items per tenant, 200 per sensor, 16 MiB per item; beyond
-that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
+most 1000 pending items per tenant, 200 per sensor, 16 MiB per item and 512 MiB
+of pending payload per tenant; beyond that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
 `quarantine_full`), so a stolen key cannot fill the database.
 
 | Endpoint | Permission | |

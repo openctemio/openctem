@@ -116,7 +116,9 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 		return nil
 	}
 
-	verificationURL := fmt.Sprintf("%s/auth/verify-email?token=%s", s.config.BaseURL, token)
+	// The token goes in the URL fragment (as for invitations): the browser
+	// never sends it to a server. The web app's /verify-email page reads it.
+	verificationURL := fmt.Sprintf("%s/verify-email#token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), url.QueryEscape(token))
 
 	data := emaildom.VerifyEmailData{
 		UserName:        userName,
@@ -184,15 +186,12 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 		return nil
 	}
 
-	supportURL := fmt.Sprintf("%s/support", s.config.BaseURL)
-
 	data := emaildom.PasswordChangedData{
-		UserName:   userName,
-		Email:      userEmail,
-		ChangedAt:  time.Now().Format("January 2, 2006 at 3:04 PM MST"),
-		IPAddress:  ipAddress,
-		AppName:    s.appName,
-		SupportURL: supportURL,
+		UserName:  userName,
+		Email:     userEmail,
+		ChangedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
+		IPAddress: ipAddress,
+		AppName:   s.appName,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordChanged, data); err != nil {
@@ -218,15 +217,13 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 		return nil
 	}
 
-	loginURL := fmt.Sprintf("%s/auth/login", s.config.BaseURL)
-	supportURL := fmt.Sprintf("%s/support", s.config.BaseURL)
+	loginURL := fmt.Sprintf("%s/login", strings.TrimSuffix(s.config.BaseURL, "/"))
 
 	data := emaildom.WelcomeData{
-		UserName:   userName,
-		Email:      userEmail,
-		LoginURL:   loginURL,
-		AppName:    s.appName,
-		SupportURL: supportURL,
+		UserName: userName,
+		Email:    userEmail,
+		LoginURL: loginURL,
+		AppName:  s.appName,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateWelcome, data); err != nil {
@@ -475,7 +472,6 @@ func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userNa
 		OccurredAt: time.Now().UTC().Format("January 2, 2006 at 3:04 PM MST"),
 		IPAddress:  ipAddress,
 		AppName:    s.appName,
-		SupportURL: fmt.Sprintf("%s/support", s.config.BaseURL),
 	}
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	go func() {

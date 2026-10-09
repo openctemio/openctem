@@ -184,6 +184,10 @@ export const Permission = {
   ScannerTemplatesWrite: 'scans:templates:write',
   ScannerTemplatesDelete: 'scans:templates:delete',
 
+  // Content packs (scans:content:*, RFC-061)
+  ContentPacksRead: 'scans:content:read',
+  ContentPacksWrite: 'scans:content:write',
+
   // Template Sources (scans:sources:* - shared with Sources)
   TemplateSourcesRead: 'scans:sources:read',
   TemplateSourcesWrite: 'scans:sources:write',
@@ -437,6 +441,7 @@ export const PermissionGroups = {
     Permission.ToolsRead,
     Permission.TenantToolsRead,
     Permission.ScannerTemplatesRead,
+    Permission.ContentPacksRead,
     Permission.TemplateSourcesRead,
     Permission.SecretStoreRead,
     Permission.CIRead,
@@ -486,6 +491,7 @@ export const PermissionGroups = {
     Permission.ToolsWrite,
     Permission.TenantToolsWrite,
     Permission.ScannerTemplatesWrite,
+    Permission.ContentPacksWrite,
     Permission.TemplateSourcesWrite,
     Permission.SecretStoreWrite,
     Permission.CIWrite,
@@ -653,6 +659,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ScannerTemplatesRead]: 'View Scanner Templates',
   [Permission.ScannerTemplatesWrite]: 'Manage Scanner Templates',
   [Permission.ScannerTemplatesDelete]: 'Delete Scanner Templates',
+  [Permission.ContentPacksRead]: 'View Content Packs',
+  [Permission.ContentPacksWrite]: 'Manage Content Packs',
   // Note: TemplateSourcesRead/Write/Delete use the same permission strings as SourcesRead/Write/Delete
   // so they share the same labels
   [Permission.SecretStoreRead]: 'View Secret Store',
@@ -852,6 +860,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScannerTemplatesRead,
     Permission.ScannerTemplatesWrite,
     Permission.ScannerTemplatesDelete,
+    Permission.ContentPacksRead,
+    Permission.ContentPacksWrite,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,
@@ -1012,6 +1022,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScannerTemplatesRead,
     Permission.ScannerTemplatesWrite,
     Permission.ScannerTemplatesDelete,
+    Permission.ContentPacksRead,
+    Permission.ContentPacksWrite,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,

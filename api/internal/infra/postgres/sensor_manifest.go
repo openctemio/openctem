@@ -87,17 +87,19 @@ func (r *SensorRepository) SaveManifest(ctx context.Context, v sensor.ManifestVe
 	}
 
 	// Prune: versions beyond the newest kept ones that were last seen before
-	// the retention age. The current version is the newest, never pruned.
+	// the retention age, and every version beyond the hard cap whatever its
+	// age. The current version is the newest, never pruned.
 	if _, err := tx.ExecContext(ctx, `
+		WITH ranked AS (
+		    SELECT id, last_seen_at, row_number() OVER (ORDER BY current_since DESC, id DESC) AS n
+		    FROM sensor_manifests
+		    WHERE sensor_id = $1)
 		DELETE FROM sensor_manifests
-		WHERE sensor_id = $1
-		  AND last_seen_at < $2
-		  AND id NOT IN (
-		      SELECT id FROM sensor_manifests
-		      WHERE sensor_id = $1
-		      ORDER BY current_since DESC
-		      LIMIT $3)
-	`, v.SensorID.String(), at.Add(-sensor.ManifestVersionsMaxAge), sensor.ManifestVersionsKept); err != nil {
+		WHERE id IN (
+		    SELECT id FROM ranked
+		    WHERE n > $4 OR (n > $3 AND last_seen_at < $2))
+	`, v.SensorID.String(), at.Add(-sensor.ManifestVersionsMaxAge), sensor.ManifestVersionsKept,
+		sensor.ManifestVersionsHardCap); err != nil {
 		return false, fmt.Errorf("failed to prune sensor manifests: %w", err)
 	}
 

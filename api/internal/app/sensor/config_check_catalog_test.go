@@ -80,7 +80,7 @@ func TestConfigCheckCatalog_EveryEntryRenders(t *testing.T) {
 		id := strings.ReplaceAll(e.ID, "*", "semgrep")
 		ex := ExplainCheck(sensordom.ConfigCheck{ID: id, Code: e.Code, Params: fullParams()})
 		if !ex.Known || ex.Title == "" || ex.Why == "" || !slices.Contains(ConfigCheckGroups, ex.Group) ||
-			!strings.HasPrefix(ex.DocsURL, configCheckDocsBase) || e.Docs == "" {
+			!strings.HasPrefix(ex.DocsURL, configCheckDocsBase+"#") || e.Docs == "" {
 			t.Errorf("%s %s: %+v", e.ID, e.Code, ex)
 		}
 		if strings.Contains(ex.Title+ex.Why, "{") || strings.Contains(ex.Why, "(not reported)") {

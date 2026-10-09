@@ -8,7 +8,7 @@ one function holds every target decision, the scan trigger included.
 ## Scope patterns
 
 A domain scope target or exclusion `x` covers exactly `x`; `*.x` (and `**.x`)
-covers `x` **and** every name below it (RFC-054 §4.1, owner decision S1). For
+covers `x` **and** every name below it (RFC-054 §4.1, decision S1). For
 the subdomains without the apex, add the wildcard plus an exclusion of exactly
 `x`. Verified domains (proof) and the ownership gate use the same "this domain
 and everything under it" meaning, so `example.co.uk` is in scope under
@@ -42,7 +42,7 @@ controller then marks it `expired`.
   notifies all active owners and administrators in-app, and is audited.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
   click.
-- **One authority: scope entries** (research/53 SC1, SC2; migration
+- **One authority: scope entries** (RFC-054; migration
   `001262`). Root-domain seeds were folded into permanent `*.<domain>`
   entries and `/api/v1/easm/seeds` is gone; a verified domain, of any
   purpose, is proof only (§8.1 of RFC-054). `scopeauth.Load` reads the
@@ -77,7 +77,8 @@ Operator settings, never tenant settings:
   entry authorizes probes up to its `max_tier` (verified domains authorize
   nothing). The probe's tier is the tool's highest stage tier (`stage.ProbeTier`,
   unknown tools T1). A target covered only below it is refused `tier_exceeds`
-  (fix `raise_tier`): scan create and quick scan refuse the request, a run
+  (fix `raise_tier`): scan create, quick scan and a `POST /commands` scan
+  command (at the tier of the scanner it names) refuse the request, a run
   skips the target with a warning (`TIER_EXCEEDS` when nothing is left), a
   workflow step skips it for that step, and `ResolveDispatchTargets` refuses
   it at `DispatchTargetsInput.Tier` (T1 when unset; passive dispatches are
@@ -102,7 +103,7 @@ For each target, in order:
      target that names an asset as typed, lower-cased, or by the host of a
      URL or `host:port`) has an attribution record other than `confirmed`
      (`needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`).
-     **Takeover exception** (research/22 E13, `internal/app/easm/takeover_gate.go`):
+     **Takeover exception** (`internal/app/easm/takeover_gate.go`):
      a `dependency` asset is admitted to a scan that runs only the nuclei
      `takeover` templates (scanner nuclei, `tags` exactly `takeover`, no
      other template selection; `scan.IsTakeoverOnlyProbe`) while the DNS
@@ -196,7 +197,7 @@ differs; each defaults to the strict behaviour every other path gets:
 |---|---|
 | `AllowNonNetworkTargets` | Group members can be repositories or container images, which the target validator refuses as not network targets. Only the private-range rule stays: an internal address is refused while the tenant has no scan zone (`zone_none`, counted as `internal_outside_zones_target_count`). |
 | `SkipZoneRouting` | The trigger routes, batches and pins per zone itself (`planZoneDispatch`) and refuses what no zone covers there. |
-| `TakeoverOnly` | A nuclei scan of exactly the `takeover` tag may probe a dependency with an open dangling_cname (research/22 E13, `IsTakeoverOnlyProbe`). |
+| `TakeoverOnly` | A nuclei scan of exactly the `takeover` tag may probe a dependency with an open dangling_cname (`IsTakeoverOnlyProbe`). |
 | `ActScopeAssetsByID` | A group member is the asset: its act scope is decided by asset id, not also by its name as free text. |
 | `MaxTargets` | Exclusions only remove: the trigger passes twice the per-run cap and caps what is left itself. |
 | `Path` | Refusal logs name `scan_run`. |
@@ -219,7 +220,7 @@ A refusal wraps `validation.ErrTargetRefused` (an `ErrValidation`, HTTP 400
 with the reason). It never wraps `retest.ErrNotEligible`. Proof-of-fix falls
 back to a plain validation re-check only when a finding has no deterministic
 retest. A refused retest therefore stops and is reported; it does not fall
-back to another probe of the same target (finding L-08 of research/15). The
+back to another probe of the same target. The
 auto-retest scheduler logs the refusal and moves on.
 
 ## Re-check at claim
@@ -252,7 +253,7 @@ dispatch did not route over zones:
 |---|---|
 | Workflow step (`scanrun` `QueueRunStep`, seeds and chained hops) | the stage's tier and passive flag (the tool's tier outside the stage catalog); act scope of the run actor (`runActor`) |
 | Single-scanner run (`scan/trigger.go`, `scan/zones.go`) | the scanner's tier (`ProbeTier`); passive for a passive or takeover-only probe; act scope of the person who triggered it, else the scan owner |
-| `POST /commands` | act scope of the caller; no tier ceiling (as `GateCommandPayload` checks) |
+| `POST /commands` | the tier of the scanner it names (`ProbeTier`, T1 for an unknown one), as `GateCommandPayload` checks it; act scope of the caller |
 | Validate and retest commands (`validation.CommandDispatcher`, `CheckTarget`) | the full gate at t1, no act scope (`ProbeDispatchGate`); the zone routing that stamped `scan_zone_id` |
 | `connector_scan` (`tenablesc.NewScanCommand`: scan runs and coverage batches) | the full gate at t1 outside every zone (`no_zone_routing`); a scan run adds the act scope of who triggered it, else the scan owner (`connectorDispatchGate`) |
 | A scan command without a record (queued before the upgrade) | the baseline: passive, no tier, no act scope (exclusions, rejected names, the private-address and zone rules) |
@@ -296,7 +297,7 @@ logged (`SECURITY: ... at claim`) with the refusal codes.
 
 ## Act scope: who may scan what
 
-Owner decision D9 (research/15 L-06) limits scan targets to what the actor may
+Decision D9 limits scan targets to what the actor may
 act on. The rule lives in `internal/app/actscope` and uses one helper,
 `datascope.Enforcer.CanActOnAssets`. That helper resolves through
 `ResolveFor`, so an administrator and any holder of a `has_full_data_access`
