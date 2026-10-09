@@ -14,9 +14,10 @@ each job against its own rules and signs it. A sensor that verifies the
 signature runs only what the signer signed.
 
 This page describes what is built: the signer process, the statement and
-envelope format, and claim-time signing in the API. Sensor-side
-verification is the next sdk-go change; until a sensor verifies, the
-envelope protects nothing on that sensor.
+envelope format, claim-time signing in the API, and the key set signed by
+an offline root through which sensors accept signer keys. Sensors verify
+with sdk-go (`pkg/jobsig`); until a sensor verifies, the envelope protects
+nothing on that sensor.
 
 ## Process boundary
 
@@ -62,6 +63,7 @@ Signer (`openctem-signer serve`):
 | `SIGNER_KEY_FILE` | the private key | required |
 | `SIGNER_SOCKET` | Unix socket path | required |
 | `SIGNER_STATE_DIR` | `seq/` and `signing.log` | required |
+| `SIGNER_KEYSET_FILE` | the key set signed by the offline root, served at `GET /v1/keyset`; read at start and on `SIGHUP` (see "Key sets and the offline root") | unset: no key set |
 | `SIGNER_TENANT_RATE` / `SIGNER_TENANT_BURST` | signing ceiling per organization (token bucket) | 50/s, 500 |
 | `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
 
@@ -74,6 +76,99 @@ API:
 
 Compose: `deploy/docker-compose.job-signer.yml` (an opt-in overlay with
 setup steps). Helm is not covered yet.
+
+## Key sets and the offline root (K3)
+
+A sensor that pins one online key must be paired again to change it. With
+a key set it pins the installation's **root** key instead, and accepts job
+signatures from the online keys the current key set lists. Rotating or
+revoking an online key is then a new key set, and a stolen online key is
+useful only until it is dropped from the key set or the key set expires.
+
+**The root key never lives on the platform host.** It is an Ed25519 key
+created and kept offline (an air-gapped machine, a hardware token holding
+the file, a safe); it signs only key sets. The signer, the API and the
+database never see it. The signer checks the key set it is given, but it is
+not the trust anchor: the sensor's pin is.
+
+### Format
+
+A DSSE envelope, payload type `application/vnd.openctem.keyset.v1+json`,
+Ed25519 over the PAE of the exact payload bytes (as for jobs), with one
+signature whose `keyid` is the root's. The payload (one line on the wire):
+
+```json
+{"kind":"openctem.keyset/v1","version":3,"issued_at":"2026-10-09T10:00:00Z","not_after":"2026-11-08T10:00:00Z",
+ "keys":[{"keyid":"SHA256:…","algorithm":"ed25519","public_key":"<std base64 of 32 bytes>"}],
+ "root_keyid":"SHA256:…","root_public_key":"<std base64 of 32 bytes>"}
+```
+
+| Field | Rule |
+|---|---|
+| `kind` | `openctem.keyset/v1` |
+| `version` | integer ≥ 1, strictly increasing across the key sets of one root |
+| `issued_at`, `not_after` | RFC 3339 UTC; `not_after` after `issued_at` and at most 30 days later |
+| `keys` | 1 to 16 online keys, as `GET /v1/keys` lists them; each `keyid` is its key's own; no duplicates; never the root |
+| `root_keyid` | the id of the root key (what a sensor pins) |
+| `root_public_key` | the root's raw key, whose recomputed id must be `root_keyid`, so a sensor that pinned only the id can check the signature |
+
+A verifier (`jobsign.VerifyKeySet` is the reference, and sdk-go's
+`jobsig` follows the same rules) checks, in order: the envelope is at most
+64 KiB and its payload type is the key set's; the payload decodes with no
+unknown field and no trailing data; the fields above; a signature by
+`root_public_key` verifies; `root_keyid` is the **pinned** root;
+`issued_at` is at most 2 minutes ahead of its clock; `not_after` is later
+than its clock minus 2 minutes. A sensor then keeps the highest version it
+accepted (on disk): a lower version is refused (rollback), and the same
+version is accepted only with the same bytes. A job is accepted only from
+a key the current key set lists (or a key pinned explicitly on the
+sensor).
+
+Test vectors: `pkg/jobsign/testdata/keyset_vector.json` (root seed, keys
+`A` and `B`, key sets 1 `[A]`, 2 `[A, B]`, 3 `[B]`, and one signed by
+another root). Key `A` is the key of `testdata/vector.json`, so that
+signed job verifies under key sets 1 and 2 and is refused under 3.
+
+### Ceremony
+
+On the offline machine, with the `openctem-signer` binary (the API image
+carries it as `/app/openctem-signer`):
+
+1. **Root, once:** `openctem-signer root keygen -out root.key` writes the
+   key (0400) and prints `root keyid: SHA256:…`. Back the file up offline.
+   Give the keyid to whoever installs sensors: they pin it with
+   `SENSOR_JOB_SIGNING_ROOT=SHA256:…` (strongest), or a sensor pins the
+   root of the first key set it sees when it pairs.
+2. **First key set:** on the platform host, `openctem-signer pubkey`
+   prints the online key's `public_key`. Offline:
+   `openctem-signer keyset sign -root root.key -version 1 -days 30 -key <public_key> -out keyset-1.json`.
+   `-key` takes the base64 key or a PEM key file and repeats for each key.
+3. **Deploy:** copy the key set (it is public) to the signer's
+   `SIGNER_KEYSET_FILE` and restart the signer or send it `SIGHUP`. The
+   signer refuses a key set that is not signed by its root, has expired,
+   does not list the signer's own key, or is a lower version (or the same
+   version with other bytes) than the one it serves; on `SIGHUP` it then
+   keeps the current one and logs the error. `openctem-signer keyset show
+   -root SHA256:… keyset-1.json` checks a file as a sensor would.
+4. **Renew** before `not_after` (the signer warns from 7 days before, and
+   logs an error once it has expired): sign the same keys with the next
+   version. An expired key set makes sensors that pin the root refuse every
+   job until a new one is deployed (fail closed).
+5. **Rotate an online key:** create the new key
+   (`openctem-signer keygen -out signer-2.pem`); sign version N+1 listing
+   the old and the new key; deploy it to the running signer; switch the
+   signer to the new key (`SIGNER_KEY_FILE`) with the N+1 key set and
+   restart it; once every sensor has seen N+1, sign N+2 without the old
+   key. No sensor is paired again.
+6. **Revoke a key** (stolen or retired): sign the next version without it
+   and deploy it. Sensors refuse jobs signed by it from the moment they
+   accept that version; a sensor that does not see it still refuses at the
+   old version's `not_after`.
+
+The API fetches the key set from the signer (`GET /v1/keyset`, cached 5
+minutes, passed on only when it is signed by the root it names) and
+carries it in hello as `signed_jobs.keyset`. A change of key set changes
+the doorbell's `config_version`, so sensors re-read hello.
 
 ## Signer API
 
@@ -91,6 +186,9 @@ with the envelope, or a refusal:
 | 413 | `body_too_large` |
 | 429 | `tenant_rate_limited`, `sensor_rate_limited` |
 | 500 | `internal` (the sequence number or the signing log could not be written: nothing is signed) |
+
+`GET /v1/keyset`: the key set envelope exactly as deployed, or `404`
+`{"error": "no_keyset"}` when `SIGNER_KEYSET_FILE` is not set.
 
 `GET /v1/keys`:
 
@@ -184,20 +282,23 @@ byte changes.
 - **Hello**: the `signed_jobs` feature, and
   `"signed_jobs": {"payload_type": "…", "keys": [{"keyid", "algorithm", "public_key"}]}`
   from the signer's `GET /v1/keys` (cached 5 minutes). `keys` is empty while
-  the signer has not answered.
+  the signer has not answered. `"keyset"` carries the key set envelope (a
+  JSON object) when the signer serves one; a new key set changes the
+  doorbell's `config_version`.
 - **The payload digest**: the API writes each signed command's `payload` in
   compact form (what `encoding/json` writes for a raw JSON value, `null`
   when empty) and hashes those bytes. A JSON decoder that keeps the raw
   value (Go `json.RawMessage`) gives the sensor the same bytes; hash them,
   never a re-encoding.
 
-## What a sensor must check (sdk-go, next)
+## What a sensor must check (sdk-go `pkg/jobsig`)
 
 Before it parses anything else of the command:
 
 1. the envelope's `payloadType` is `application/vnd.openctem.job.v1+json`;
-2. a signature whose `keyid` is a pinned key verifies over the PAE of the
-   payload bytes;
+2. a signature whose `keyid` is a pinned key, or a key of the current
+   verified key set when the sensor pins a root, verifies over the PAE of
+   the payload bytes;
 3. `kind` is `openctem.job/v1`;
 4. `tenant_id` and `sensor_id` are its own; `command_id` is the command's id;
 5. `issued_at` within its clock skew; `expires_at` in the future;
@@ -242,11 +343,12 @@ Any failure: refuse the command (fail it with a refusal), never run it.
 
 ## Not yet (next steps)
 
-- **sdk-go verification** (the list above) and `require_signed_jobs` for
-  sensors with a pinned key, then for new enrollments.
-- **K3**: the offline root key and the expiring, versioned key set
-  (`signers.json`) through which sensors accept online keys, and key
-  rotation without re-pinning. Today a sensor pins the online key itself.
+- **Root pin in the sensor's local policy** (RFC-040 §5.7): local policy
+  v1 is frozen, so today the root is pinned by `SENSOR_JOB_SIGNING_ROOT`
+  or at pairing; a later policy version can carry it.
+- **`keyset_version` in the statement** (`signer.keyset_version`, RFC-040
+  §5.6 point 3), once sensors that reject unknown statement fields are
+  gone.
 - **The signer's ledger and the scope document**: targets checked against
   the organization's approved scope and the zone's ranges, tiers, time
   windows, per-hour distinct-target ceilings; the signed scope document the

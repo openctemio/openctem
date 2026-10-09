@@ -27,7 +27,7 @@ var contractChecks = map[string][]string{
 	"config.alias_deprecated":    {"legacy_name"},
 	"config.env_unknown":         {"unknown"},
 	"platform.tls":               {"ok", "ca_file_unreadable", "ca_dir_unreadable"},
-	"policy.local":               {"enforced", "absent"},
+	"policy.local":               {"enforced", "absent", "required_absent"},
 	"policy.template_keys":       {"ok", "not_needed", "missing"},
 	"runtime.command_poller":     {"running", "stopped"},
 	// openctemio/sensor

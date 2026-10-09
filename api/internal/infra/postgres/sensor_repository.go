@@ -875,7 +875,8 @@ func (r *SensorRepository) selectQuery() string {
 		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at,
 		       reported_local_policy, local_policy_reported_at,
 		       config_report_digest, config_health, config_heartbeat_digest,
-		       ` + sensorActiveKeySQL("sensors") + ` AS active_key, auth_kind
+		       ` + sensorActiveKeySQL("sensors") + ` AS active_key, auth_kind,
+		       ` + sensorManifestPostureSQL("sensors") + ` AS manifest_posture
 		FROM sensors
 	`
 }
@@ -1044,6 +1045,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		configHealth     sql.NullString
 		configHBDigest   sql.NullString
 		activeKey        []byte
+		manifestPosture  []byte
 	)
 
 	err := row.Scan(
@@ -1129,6 +1131,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&configHBDigest,
 		&activeKey,
 		&authKind,
+		&manifestPosture,
 	)
 
 	if err != nil {
@@ -1261,6 +1264,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	}
 	a.Control = scanControl(a.ID, control, controlAt)
 	a.LocalPolicy, a.LocalPolicyReportedAt = scanLocalPolicy(a.ID, localPolicy, localPolicyAt)
+	a.Posture = scanManifestPosture(a.ID, manifestPosture)
 	a.AuthKind = sensor.AuthKindBearer
 	if authKind.String == string(sensor.AuthKindKeyBound) {
 		a.AuthKind = sensor.AuthKindKeyBound
