@@ -298,6 +298,12 @@ type SensorResponse struct {
 	// "unknown" when the sensor never reported one.
 	LocalPolicy SensorLocalPolicyResponse `json:"local_policy"`
 
+	// Posture is the sensor's security posture: its local policy, the
+	// platform TLS pin and the tool sandbox's network confinement as the
+	// sensor reports them, and the reasons it is unhardened. Always present.
+	// Self-reported: shown and alerted on, never trusted to relax a check.
+	Posture SensorPostureResponse `json:"posture"`
+
 	// ConfigHealth is the platform's rollup of the sensor's latest config
 	// report (research/26): ok, attention, impaired or blocked; null when
 	// it sent none. While the report is stale it is still the last rollup;
@@ -306,11 +312,38 @@ type SensorResponse struct {
 	ConfigHealth *string `json:"config_health" enums:"ok,attention,impaired,blocked"`
 }
 
+// SensorPostureResponse is a sensor's security posture as the console shows
+// it (sensor.SensorPosture).
+type SensorPostureResponse struct {
+	// LocalPolicy: enforced; absent_required (the sensor refuses jobs with
+	// network targets until a policy is installed); absent_legacy (no
+	// policy, jobs admitted); unknown (never reported).
+	LocalPolicy string `json:"local_policy" enums:"enforced,absent_required,absent_legacy,unknown"`
+	// PlatformPin is how the sensor's HTTPS client trusts the platform: the
+	// CA pinned by fingerprint, a private CA file, the system trust store
+	// only (none); unknown when the sensor reported no posture.
+	PlatformPin string `json:"platform_pin" enums:"fingerprint,ca_file,none,unknown"`
+	// NetworkEnforced is whether tool runs are network-confined; null when
+	// the sensor did not report its sandbox.
+	NetworkEnforced *bool `json:"network_enforced"`
+	// Unhardened lists why the sensor is flagged (never null): policy_none,
+	// pin_none, network_unenforced, bearer_key.
+	Unhardened []string `json:"unhardened" enums:"policy_none,pin_none,network_unenforced,bearer_key"`
+}
+
+func postureResponse(a *sensor.Sensor) SensorPostureResponse {
+	p := a.PostureOf()
+	return SensorPostureResponse{LocalPolicy: p.LocalPolicy, PlatformPin: p.PlatformPin, NetworkEnforced: p.NetworkEnforced, Unhardened: p.Unhardened}
+}
+
 // SensorLocalPolicyResponse is a sensor's local policy as the console shows
 // it. State is the display state: paused while the kill switch is engaged,
 // unknown for a sensor that never reported (an SDK before RFC-040).
 type SensorLocalPolicyResponse struct {
-	State      string                     `json:"state" enums:"enforced,absent,paused,unknown"`
+	State string `json:"state" enums:"enforced,absent,paused,unknown"`
+	// Required: the sensor requires a local policy; absent and required, it
+	// refuses every job with a network target.
+	Required   bool                       `json:"required"`
 	Source     string                     `json:"source,omitempty" enums:",file,env"`
 	Digest     string                     `json:"digest,omitempty"`
 	KillSwitch bool                       `json:"kill_switch"`
@@ -327,6 +360,7 @@ func localPolicyResponse(a *sensor.Sensor) SensorLocalPolicyResponse {
 		return out
 	}
 	out.Source, out.Digest, out.KillSwitch, out.Summary, out.Warnings = r.Source, r.Digest, r.KillSwitch, r.Summary, r.Warnings
+	out.Required = r.Required
 	return out
 }
 
@@ -1137,6 +1171,7 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 	resp.ManifestDigest, resp.ManifestSource = a.ManifestDigest, a.ManifestSource
 	resp.ManifestAt = rfc3339Ptr(a.ManifestAt)
 	resp.LocalPolicy = localPolicyResponse(a)
+	resp.Posture = postureResponse(a)
 	if a.ConfigHealth != "" {
 		h := a.ConfigHealth
 		resp.ConfigHealth = &h
