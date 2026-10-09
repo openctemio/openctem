@@ -1435,7 +1435,7 @@ internal writers (ingest, EASM, CT monitor). A new table that references
 assets must add one; `TestAssetRefTenantFKs_Schema` fails otherwise. Tables
 without a `tenant_id` (`asset_owners`, which has its own same-tenant trigger,
 `asset_repositories`, `asset_group_members`, `asset_sources`,
-`attack_path_nodes`, `compensating_control_assets`) are not covered; their
+`compensating_control_assets`) are not covered; their
 writers join the asset in the caller's tenant.
 
 Pre-delete counts are tenant-scoped: `DELETE /assets/{id}` counts only the
