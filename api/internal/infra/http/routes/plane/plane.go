@@ -87,6 +87,7 @@ var Rules = []Rule{
 	{Plane: Self, Prefix: "/api/v1/me"},
 	{Plane: Self, Prefix: "/api/v1/users/me", Closed: true, Successor: "/api/v1/me"},
 	{Plane: Self, Prefix: "/api/v1/version"},
+	{Plane: Self, Prefix: "/api/v1/announcements"},
 	{Plane: Self, Prefix: "/api/v1/ws"},
 
 	{Plane: User, Prefix: "/api/v1/agents", Closed: true, Successor: "/api/v1/sensors"},
