@@ -65,6 +65,7 @@ type Service struct {
 	vulnRepo     vulnerability.VulnerabilityRepository
 	compRepo     component.Repository
 	webEndpoints webendpoint.Repository
+	software     *softwareRecorder
 	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
@@ -513,6 +514,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 1c: the web endpoints, under their persisted origin assets.
 	s.recordEndpoints(ctx, agt, tenantID, binding, scope, endpoints, assetMap, report, output)
+
+	// Step 1d: the software the assets run (RFC-066). Best-effort.
+	s.recordSoftware(ctx, tenantID, scope, report, assetMap)
 
 	// Step 2: Process dependencies/components (SBOM)
 	if s.compRepo != nil && s.componentProcessor != nil && len(report.Dependencies) > 0 {
