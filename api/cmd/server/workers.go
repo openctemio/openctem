@@ -588,6 +588,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			w.ControllerManager.Register(controller.NewProgramAssignmentController(svc.ProgramAssigner, 0))
 		}
 	}
+	// Long intrusive (t2) scope entries are re-attested or fall back to t1
+	// (RFC-054 §12.5).
+	if svc.Scope != nil {
+		w.ControllerManager.Register(controller.NewScopeAttestationController(svc.Scope, 0))
+	}
 
 	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
 		w.ControllerManager.Register(controller.NewCertMonitorController(

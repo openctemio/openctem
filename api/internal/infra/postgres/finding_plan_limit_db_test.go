@@ -25,7 +25,7 @@ func TestFindingsPlanLimit_DB(t *testing.T) {
 	assetID := seedTestAsset(ctx, t, sqlDB, tid)
 	plans := NewPlanRepository(db)
 	repo := NewFindingRepository(db)
-	run := shared.NewID().String()[:8]
+	run := shared.NewID().String()[28:]
 
 	mk := func(t *testing.T, fp string) *vulnerability.Finding {
 		t.Helper()
