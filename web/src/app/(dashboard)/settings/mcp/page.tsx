@@ -35,6 +35,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { revokeOrgConnection, useOrgConnections } from '@/features/mcp-oauth/api/connections'
 import { ConnectionsList } from '@/features/mcp-oauth/components/connections-list'
 import { McpPolicyCard } from '@/features/mcp-oauth/components/mcp-policy-card'
+import { OrgClientsCard } from '@/features/mcp-oauth/components/org-clients-card'
 
 // A minted MCP key carries exactly the read scopes below — nothing more. The
 // user picks the key's purpose so it maps to what the server's MCP tools/prompts
@@ -235,6 +236,8 @@ export default function MCPConnectPage() {
         </Card>
 
         {canReadPolicy && <McpPolicyCard canEdit={canWritePolicy} />}
+
+        {canReadPolicy && <OrgClientsCard canEdit={canWritePolicy} />}
 
         {isOrgAdmin && (
           <Card>
