@@ -40,7 +40,8 @@ type Repository interface {
 	ExistsByName(ctx context.Context, tenantID shared.ID, name string) (bool, error)
 
 	// GetStats returns aggregated statistics for asset groups.
-	GetStats(ctx context.Context, tenantID shared.ID) (*Stats, error)
+	// A non-nil scope counts only members in that data scope.
+	GetStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*Stats, error)
 
 	// AddAssets adds assets to a group. Only assets of the group's own
 	// tenant are written; it returns how many of assetIDs are such assets.
@@ -102,6 +103,14 @@ type Filter struct {
 	HasFindings    *bool
 	MinRiskScore   *int
 	MaxRiskScore   *int
+	// IDs keeps only these groups.
+	IDs []shared.ID
+	// DataScope, when set, computes every count and score of a group
+	// (asset_count, the per-kind counts, risk_score, finding_count) over the
+	// members in that data scope only, and filters and sorts on those values,
+	// so a restricted reader learns nothing about assets outside their scope.
+	// nil = every member.
+	DataScope *shared.DataScope
 }
 
 // ListOptions contains options for listing asset groups.
