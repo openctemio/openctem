@@ -35,7 +35,7 @@ func TestParseScopes(t *testing.T) {
 	if got, err := ParseScopes(""); err != nil || len(got) != 0 {
 		t.Fatalf("empty scope = %v, %v; want empty, nil", got, err)
 	}
-	for _, bad := range []string{"mcp:findings.write", "findings:read", "*", "mcp:findings.read offline_access", "MCP:FINDINGS.READ"} {
+	for _, bad := range []string{"mcp:assets.write", "findings:read", "*", "mcp:findings.read offline_access", "MCP:FINDINGS.READ"} {
 		if _, err := ParseScopes(bad); !errors.Is(err, shared.ErrValidation) {
 			t.Errorf("ParseScopes(%q) err = %v, want validation error", bad, err)
 		}
@@ -87,8 +87,8 @@ func TestScopesFor(t *testing.T) {
 	if got := ScopesFor(string(permission.PentestRetestsRead)); !reflect.DeepEqual(got, []Scope{ScopePentestRead}) {
 		t.Fatalf("ScopesFor(pentest retests) = %v", got)
 	}
-	if got := ScopesFor(string(permission.FindingsWrite)); len(got) != 0 {
-		t.Fatalf("ScopesFor(findings:write) = %v, want none", got)
+	if got := ScopesFor(string(permission.FindingsWrite)); len(got) != 1 || got[0] != ScopeFindingsWrite {
+		t.Fatalf("ScopesFor(findings:write) = %v, want the write scope only", got)
 	}
 }
 

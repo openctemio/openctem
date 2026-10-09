@@ -62,6 +62,8 @@ interface AdminActivityTableProps {
     onPageChange: (page: number) => void
   }
   toolbarStart?: React.ReactNode
+  /** Opens one entry (the detail sheet). */
+  onRowClick?: (entry: AdminAuditEntry) => void
 }
 
 /** Platform admin audit trail (admin_audit_logs). */
@@ -70,6 +72,7 @@ export function AdminActivityTable({
   isLoading,
   paging,
   toolbarStart,
+  onRowClick,
 }: AdminActivityTableProps) {
   return (
     <DataTable
@@ -84,6 +87,7 @@ export function AdminActivityTable({
       toolbarStart={toolbarStart}
       emptyMessage="No administrator activity yet"
       mobileCards
+      onRowClick={onRowClick}
       {...(paging && {
         manualPagination: true,
         pageCount: paging.pageCount,

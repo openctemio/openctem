@@ -401,12 +401,14 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                   </button>
                 </div>
                 {/* Code content */}
-                <ScrollArea className="p-3 max-h-[400px]">
-                  <CodeHighlighter
-                    code={fixCode.trim()}
-                    className="bg-transparent"
-                    showLineNumbers={true}
-                  />
+                <ScrollArea className="max-h-[400px]">
+                  <div className="p-3">
+                    <CodeHighlighter
+                      code={fixCode.trim()}
+                      className="bg-transparent"
+                      showLineNumbers={true}
+                    />
+                  </div>
                 </ScrollArea>
               </div>
               <p className="text-muted-foreground text-xs mt-2">

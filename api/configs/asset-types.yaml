@@ -226,7 +226,7 @@ properties:
   certificate: { label: Certificate details, label_vi: Chi tiết chứng chỉ }
   registrar: { label: Registrar, label_vi: Nhà đăng ký }
   registered_at: { label: Registered, label_vi: Ngày đăng ký }
-  expires_at: { label: Expires, label_vi: Ngày hết hạn }
+  expires_at: { label: Expires, label_vi: Ngày hết hạn, format: expiry }
   nameservers: { label: Name servers, label_vi: Máy chủ tên miền, synonyms: [nameserver] }
   dns_records: { label: DNS records, label_vi: Bản ghi DNS }
   dns_record_types: { label: DNS record types, label_vi: Loại bản ghi DNS }
@@ -253,7 +253,7 @@ properties:
   issuer_cn: { label: Issuer CN, label_vi: CN bên cấp }
   issuer_org: { label: Issuer organization, label_vi: Tổ chức cấp }
   not_before: { label: Valid from, label_vi: Hiệu lực từ }
-  not_after: { label: Valid until, label_vi: Hiệu lực đến }
+  not_after: { label: Valid until, label_vi: Hiệu lực đến, format: expiry }
   signature_algorithm: { label: Signature algorithm, label_vi: Thuật toán chữ ký }
   key_algorithm: { label: Key algorithm, label_vi: Thuật toán khóa }
   key_size: { label: Key size, label_vi: Độ dài khóa }
