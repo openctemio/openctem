@@ -315,6 +315,12 @@ const (
 	// scope requests and widenings (RFC-054). Without it, scope:write only
 	// requests a one-off entry; owners and admins hold it by default.
 	ScopeApprove Permission = "attack_surface:scope:approve"
+
+	// ProgramsRead views bug-bounty programs; ProgramsWrite imports,
+	// re-imports, pauses, resumes and ends them and attests to their terms
+	// (RFC-065). Neither widens the organization's own scope.
+	ProgramsRead  Permission = "attack_surface:programs:read"
+	ProgramsWrite Permission = "attack_surface:programs:write"
 )
 
 // =============================================================================
@@ -476,6 +482,7 @@ func AllPermissions() []Permission {
 
 		// Attack Surface module
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
+		ProgramsRead, ProgramsWrite,
 
 		// Validation module (legacy)
 		PentestRead, PentestWrite,

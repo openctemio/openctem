@@ -304,6 +304,9 @@ export const Permission = {
   // Create effective scope entries and approve or reject scope requests and
   // widenings (RFC-054). Without it, scope:write only requests a one-off.
   ScopeApprove: 'attack_surface:scope:approve',
+  // Bug-bounty programs (RFC-065): view; import, re-import, pause, resume, end and attest.
+  ProgramsRead: 'attack_surface:programs:read',
+  ProgramsWrite: 'attack_surface:programs:write',
 
   // ===========================================
   // VALIDATION MODULE (CTEM)
