@@ -20,6 +20,7 @@
  * move (each move ships with a 308 in src/config/legacy-routes.ts).
  */
 import {
+  GitMerge,
   Handshake,
   Activity,
   Bell,
@@ -323,6 +324,15 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Clock,
         permission: Permission.TeamUpdate,
         keywords: ['stale', 'retire', 'archive'],
+      },
+      {
+        id: 'asset-sources',
+        title: 'Asset sources',
+        description: 'Which source decides asset criticality, owner and exposure.',
+        url: '/settings/asset-sources',
+        icon: GitMerge,
+        permission: Permission.TeamUpdate,
+        keywords: ['source', 'precedence', 'integration', 'import', 'scan', 'lock', 'conflict'],
       },
       {
         id: 'scope-policy',
