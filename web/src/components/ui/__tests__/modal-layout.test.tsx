@@ -325,3 +325,23 @@ describe('a field that focuses itself', () => {
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Search' })).toHaveFocus())
   })
 })
+
+describe('size presets', () => {
+  it('screen fills the viewport edge to edge at every size', () => {
+    render(
+      <Dialog open>
+        <DialogContent size="screen">
+          <DialogHeader>
+            <DialogTitle>Builder</DialogTitle>
+          </DialogHeader>
+          <DialogBody />
+        </DialogContent>
+      </Dialog>
+    )
+    const cls = screen.getByRole('dialog').className
+    expect(cls).toContain('h-dvh')
+    expect(cls).toContain('sm:w-screen')
+    expect(cls).toContain('sm:max-w-none')
+    expect(cls).not.toContain('rounded-t-2xl')
+  })
+})

@@ -300,7 +300,8 @@ load.
     `DialogContent` / `AlertDialogContent` / `SheetContent`, and never a
     `max-w-*` on a dialog: width is `size` — `sm` (28rem), `md` (32rem, the
     default; create / edit forms), `lg` (42rem; long forms), `xl` (56rem;
-    editors, tables), `full` (a workspace, 90% of the screen). Large editors:
+    editors, tables), `full` (a workspace, 90% of the screen), `screen` (a
+    full-screen canvas editor, e.g. the workflow builder). Large editors:
     a full page. `modal-layout-governance.test.ts` fails on these.
   - The body scrolls between header and footer (`overscroll-contain`, so the
     page behind never moves). A divider shows under the header only while

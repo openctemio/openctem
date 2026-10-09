@@ -62,9 +62,10 @@ function useModalLayout() {
 /**
  * Width from `sm` up; phones always get the full width (a bottom sheet).
  * `md` is the default, `lg` for long forms, `xl` for editors and tables,
- * `full` for a workspace that needs the whole screen (a fixed 90% height).
+ * `full` for a workspace that needs the whole screen (a fixed 90% height),
+ * `screen` for a full-screen editor (a canvas: edge to edge, every size).
  */
-type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full'
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full' | 'screen'
 
 const MODAL_SIZE: Record<ModalSize, string> = {
   sm: 'sm:max-w-md',
@@ -72,6 +73,8 @@ const MODAL_SIZE: Record<ModalSize, string> = {
   lg: 'sm:max-w-2xl',
   xl: 'sm:max-w-4xl',
   full: 'sm:max-w-[min(calc(100vw-4rem),80rem)] sm:h-[90dvh]',
+  screen:
+    'top-0 h-dvh max-h-dvh rounded-none border-0 sm:top-0 sm:left-0 sm:h-dvh sm:max-h-dvh sm:w-screen sm:max-w-none sm:translate-x-0 sm:translate-y-0 sm:rounded-none sm:border-0',
 }
 
 /**
