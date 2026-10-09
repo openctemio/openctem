@@ -18,12 +18,14 @@ package scopeauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"net/url"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -32,6 +34,14 @@ import (
 // Targets lists the tenant's active scope targets (*scope.Service).
 type Targets interface {
 	ListActiveTargets(ctx context.Context, tenantID string) ([]*scopedom.Target, error)
+}
+
+// ProgramExclusions lists the program exclusions of every program of the
+// tenant (RFC-065 B7). *scope.Service implements it once the programs
+// repository is wired; a Targets without it, or without the wiring, makes
+// every program entry cover nothing (fail closed).
+type ProgramExclusions interface {
+	ListProgramExclusions(ctx context.Context, tenantID shared.ID) ([]bountyprogram.Exclusion, error)
 }
 
 // Roots lists the tenant's verified domains, the proof of control
@@ -65,6 +75,12 @@ type Authority struct {
 	targets []*scopedom.Target
 	// verified: every verified domain, the proof of control.
 	verified []string
+	// programExcl: the program exclusions of the tenant. They stop program
+	// entries (any program) from covering a name; other entries ignore them.
+	programExcl []bountyprogram.Exclusion
+	// programsOff: program entries cover nothing (the exclusions could not
+	// be read, so fail closed).
+	programsOff bool
 }
 
 // Load reads the tenant's authority. Both sources are required; a nil one
@@ -85,12 +101,78 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 		return nil, fmt.Errorf("list verified domains: %w", err)
 	}
 	a := &Authority{targets: ts}
+	if hasProgramEntry(ts) {
+		pe, ok := targets.(ProgramExclusions)
+		if !ok {
+			a.programsOff = true
+		} else if a.programExcl, err = pe.ListProgramExclusions(ctx, tenantID); err != nil {
+			if errors.Is(err, ErrProgramsNotWired) {
+				a.programsOff = true
+			} else {
+				return nil, fmt.Errorf("list program exclusions: %w", err)
+			}
+		}
+	}
 	for _, r := range verified {
 		if r = normalizeRoot(r); r != "" {
 			a.verified = append(a.verified, r)
 		}
 	}
 	return a, nil
+}
+
+// ErrProgramsNotWired: the program exclusions are not available, so
+// program entries cover nothing.
+var ErrProgramsNotWired = errors.New("program exclusions are not wired")
+
+func hasProgramEntry(ts []*scopedom.Target) bool {
+	for _, t := range ts {
+		if t != nil && t.IsProgramEntry() {
+			return true
+		}
+	}
+	return false
+}
+
+// coversForm reports whether target t covers one match form f: a program
+// entry covers nothing a program exclusion matches (RFC-065 B7).
+func (a *Authority) coversForm(t *scopedom.Target, f string) bool {
+	if t == nil || !t.Matches(f) {
+		return false
+	}
+	if !t.IsProgramEntry() {
+		return true
+	}
+	if a.programsOff {
+		return false
+	}
+	for _, x := range a.programExcl {
+		if x.Matches(f) {
+			return false
+		}
+	}
+	return true
+}
+
+// ProgramOnly reports whether name is covered, but only by program entries:
+// such a target never goes to platform sensors (RFC-065 §8).
+func (a *Authority) ProgramOnly(name string) bool {
+	if a == nil {
+		return false
+	}
+	program := false
+	for _, f := range MatchForms(name) {
+		for _, t := range a.targets {
+			if !a.coversForm(t, f) {
+				continue
+			}
+			if !t.IsProgramEntry() {
+				return false
+			}
+			program = true
+		}
+	}
+	return program
 }
 
 // Covers reports whether the tenant authorized active probes of name (an
@@ -110,7 +192,7 @@ func (a *Authority) Covers(name string) (Via, bool) {
 	}
 	for _, f := range MatchForms(name) {
 		for _, t := range a.targets {
-			if t != nil && t.Matches(f) {
+			if a.coversForm(t, f) {
 				return Via{Kind: KindScopeTarget, ID: t.ID().String(), Pattern: t.Pattern(), Proof: proof}, true
 			}
 		}
@@ -134,7 +216,7 @@ func (a *Authority) CoversAt(name string, tier scopedom.Tier) (Via, bool) {
 	}
 	for _, f := range MatchForms(name) {
 		for _, t := range a.targets {
-			if t != nil && t.MaxTier() >= tier && t.Matches(f) {
+			if t != nil && t.MaxTier() >= tier && a.coversForm(t, f) {
 				return Via{Kind: KindScopeTarget, ID: t.ID().String(), Pattern: t.Pattern(), Proof: proof}, true
 			}
 		}
@@ -151,7 +233,7 @@ func (a *Authority) Ceiling(name string) *scopedom.Target {
 	var best *scopedom.Target
 	for _, f := range MatchForms(name) {
 		for _, t := range a.targets {
-			if t != nil && t.Matches(f) && (best == nil || t.MaxTier() > best.MaxTier()) {
+			if a.coversForm(t, f) && (best == nil || t.MaxTier() > best.MaxTier()) {
 				best = t
 			}
 		}
