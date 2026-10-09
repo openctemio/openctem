@@ -102,7 +102,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
 			"registerScanRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanFreezeWindowRoutes",
-			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes",
+			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
@@ -181,7 +181,7 @@ var Features = []Feature{
 		ID: "mcp", Title: "MCP and AI clients",
 		Description: "The MCP endpoint for AI clients, its OAuth authorization server, connections and organization policy.",
 		Registers: []string{
-			"registerMCPRoutes", "registerMCPOAuthRoutes", "registerMCPConnectionRoutes", "registerMCPSettingsRoutes",
+			"registerMCPRoutes", "registerMCPOAuthRoutes", "registerMCPConnectionRoutes", "registerMCPSettingsRoutes", "registerMCPClientRoutes",
 		},
 	},
 	{
