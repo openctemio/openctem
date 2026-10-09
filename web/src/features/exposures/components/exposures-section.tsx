@@ -5,7 +5,7 @@
  * type page (a stats dashboard) to the Findings list it summarises.
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SectionTabs } from '@/features/shared'

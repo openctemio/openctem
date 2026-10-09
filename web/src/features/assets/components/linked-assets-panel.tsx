@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, type ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { toast } from 'sonner'
 import { Box, Link2, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
