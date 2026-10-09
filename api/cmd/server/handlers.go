@@ -334,6 +334,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpClients = handler.NewMCPClientsHandler(mcpOAuth, log)
 		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
 		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
+		// Write tools run only after the person confirms the action in the
+		// web UI (RFC-062 §10).
+		mcpHandler.SetWriteTools(mcpOAuth, svc.Vulnerability)
 	}
 	if mcpAuth != nil && mcpPolicies != nil {
 		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)

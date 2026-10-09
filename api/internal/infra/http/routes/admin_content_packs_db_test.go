@@ -18,7 +18,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
-	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -31,17 +30,11 @@ import (
 func contentPackHarness(t *testing.T) (*chainHarness, *contentpackapp.PlatformService, *contentpack.PlatformPack) {
 	t.Helper()
 	var svc *contentpackapp.PlatformService
-	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, _ *adminconsole.Service) {
-		cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
-		if err != nil {
-			t.Fatal(err)
-		}
+	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, console *adminconsole.Service) {
 		log := logger.NewNop()
-		adminAudit := postgres.NewAuditLogRepository(db)
-		console := adminconsole.NewService(postgres.NewAdminRepository(db), postgres.NewAdminConsoleRepository(db), adminAudit, cipher, chainSignIns{}, log)
 		signer, _ := contentpack.NewSigner(bytes.Repeat([]byte{6}, 32))
 		svc = contentpackapp.NewPlatformService(postgres.NewPlatformContentPackRepository(db), storage.NewLocalStorage(t.TempDir()), signer, log)
-		hs.PlatformContentPack = handler.NewPlatformContentPackHandler(svc, console, adminAudit, log)
+		hs.PlatformContentPack = handler.NewPlatformContentPackHandler(svc, console, postgres.NewAuditLogRepository(db), log)
 	})
 
 	// A pack to act on, ingested directly.
