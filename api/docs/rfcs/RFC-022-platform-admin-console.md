@@ -595,6 +595,16 @@ again, without touching what an organization holds:
   super admin out) and for an erased account.
 - Ctrl/Cmd+K also finds accounts.
 
+## Revision 19: Requests inbox
+
+Requests is its own console section. Access requests moved from
+`/admin/organizations/access-requests` to `/admin/requests` (no redirect).
+`GET /api/v1/admin/overview` now also returns `requests.access_pending`
+(confirmed, undecided requests) and the oldest one's age; the attention queue
+lists them, as information for the first two days and as a warning after
+that, with a link to the inbox. Future request kinds (domain-claim conflicts,
+JIT approvals) join this section when they have an administrator API.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
