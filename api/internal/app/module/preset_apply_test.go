@@ -136,16 +136,20 @@ func TestApplyPreset_EveryPresetToEveryPreset(t *testing.T) {
 	}
 }
 
-// The minimal preset disables at least as many modules as one API request may
-// toggle; applying it is not subject to that cap.
-func TestApplyPreset_MinimalReachesRequestCap(t *testing.T) {
+// Applying a preset is not subject to the per-request toggle cap. The cap is
+// lowered below the minimal preset's diff so the test does not depend on the
+// size of the catalog.
+func TestApplyPreset_NotSubjectToRequestCap(t *testing.T) {
+	saved := maxModuleUpdatesPerRequest
+	maxModuleUpdatesPerRequest = 10
+	t.Cleanup(func() { maxModuleUpdatesPerRequest = saved })
 	s, _ := newPresetService()
 	diff, err := s.PreviewPreset(context.Background(), tid, "minimal")
 	if err != nil {
 		t.Fatalf("PreviewPreset: %v", err)
 	}
-	if n := len(diff.ToEnable) + len(diff.ToDisable); n < maxModuleUpdatesPerRequest {
-		t.Fatalf("minimal diff has %d updates; expected at least the cap %d", n, maxModuleUpdatesPerRequest)
+	if n := len(diff.ToEnable) + len(diff.ToDisable); n <= maxModuleUpdatesPerRequest {
+		t.Fatalf("minimal diff has %d updates; expected more than the cap %d", n, maxModuleUpdatesPerRequest)
 	}
 	if _, err := s.ApplyPreset(context.Background(), tid, "minimal", auditapp.AuditContext{}); err != nil {
 		t.Fatalf("ApplyPreset(minimal): %v", err)
