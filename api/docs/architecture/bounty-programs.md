@@ -129,4 +129,4 @@ the run and hold `scope:read` or `programs:read`.
 | `internal/app/command/program_rules.go`, `internal/app/scan/program_rules.go` | rules at delivery and at trigger |
 | `pkg/domain/scope/letter.go`, `internal/app/scope/letters.go` | letters of authorization |
 | `pkg/domain/bountyprogram/sync.go`, `internal/app/bountyprogram/sync.go`, `internal/infra/bountysource/` | scope sync |
-| `migrations/001496_authorization_letters.*`, `migrations/001497_bounty_program_sync.*` | letters, sync state |
+| `migrations/001533_authorization_letters.*`, `migrations/001545_bounty_program_sync.*` | letters, sync state |
