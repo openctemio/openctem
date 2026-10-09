@@ -1264,12 +1264,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize Pentest service
 	s.Pentest = compliance.NewPentestService(
-		repos.PentestCampaign, repos.PentestFinding,
+		repos.PentestCampaign, repos.Finding,
 		repos.PentestRetest, repos.PentestTemplate,
 		repos.PentestReport, log,
 	)
-	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
-	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
 	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
