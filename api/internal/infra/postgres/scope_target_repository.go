@@ -30,7 +30,7 @@ const scopeTargetSelectQuery = `
 	       created_by, created_at, updated_at,
 	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at, origin, discovery,
 	       authorization_source, program_id, letter_id,
-	       approval_reminded_at
+	       approval_reminded_at, attested_at, attested_by, attestation_requested_at
 	FROM scope_targets
 `
 
@@ -60,6 +60,9 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		programID   sql.NullString
 		letterID    sql.NullString
 		remindedAt  sql.NullTime
+		attestedAt  sql.NullTime
+		attestedBy  sql.NullString
+		attestReqAt sql.NullTime
 	)
 
 	err := row.Scan(
@@ -67,7 +70,7 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		&createdBy, &createdAt, &updatedAt,
 		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt, &origin, &discovery,
 		&authSource, &programID, &letterID,
-		&remindedAt,
+		&remindedAt, &attestedAt, &attestedBy, &attestReqAt,
 	)
 	if err != nil {
 		return nil, err
@@ -110,6 +113,9 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		return nil, fmt.Errorf("scope target %s: %w", id, err)
 	}
 	t.RestoreRemindedAt(scopeTimePtr(remindedAt))
+	t.RestoreAttestation(scope.AttestationState{
+		AttestedAt: scopeTimePtr(attestedAt), AttestedBy: attestedBy.String, RequestedAt: scopeTimePtr(attestReqAt),
+	})
 	return t, nil
 }
 
@@ -275,7 +281,10 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 			approved_at = $13,
 			rejected_by = $14,
 			rejected_at = $15,
-			discovery = $16
+			discovery = $16,
+			attested_at = $17,
+			attested_by = $18,
+			attestation_requested_at = $19
 		WHERE id = $1 AND tenant_id = $7
 	`
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -301,6 +310,9 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		nullString(target.RejectedBy()),
 		target.RejectedAt(),
 		target.DiscoverySetting(),
+		target.AttestedAt(),
+		nullString(target.AttestedBy()),
+		target.AttestationRequestedAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope target: %w", err)

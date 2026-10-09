@@ -511,6 +511,7 @@
   "scope.error.REQUEST_MUST_BE_ONE_OFF": "Yêu cầu phải có thời hạn. Hãy chọn số ngày.",
   "scope.error.REQUEST_MUST_BE_SINGLE": "Mỗi yêu cầu chỉ cho một tên hoặc một địa chỉ. Wildcard và dải địa chỉ cần người phê duyệt.",
   "scope.error.REQUEST_TIER": "Yêu cầu không thể xin quét xâm nhập (T2).",
+  "scope.error.INTRUSIVE_TOO_LONG": "Mục xâm nhập (T2) không thể kéo dài hơn giới hạn của tổ chức. Chủ sở hữu đặt giới hạn trong Cài đặt phạm vi.",
   "scope.error.INTRUSIVE_NEEDS_EXPIRY": "Mục cho phép quét xâm nhập (T2) phải có thời hạn và cần được phê duyệt.",
   "scope.error.WIDENING_NEEDS_APPROVER": "Chỉ người phê duyệt phạm vi mới được mở rộng những gì được phép quét.",
   "scope.error.ENTRY_SELF_APPROVAL": "Bạn là người yêu cầu thay đổi này, nên một người phê duyệt khác phải phê duyệt.",

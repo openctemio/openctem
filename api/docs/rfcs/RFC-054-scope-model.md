@@ -927,7 +927,17 @@ the second factor.
 S6 bounded every expiring entry by `one_off_max_days` (1–30, default 7), and
 T2 entries had to expire. Revised: T2 entries have their own bound, the
 owner-only setting `t2_max_duration`: `7d`, `30d` (default), `90d`, `365d` or
-`permanent`. A T2 entry still needs a verified domain for its probes (§8.1)
+`permanent`. **`PUT /scope/settings/intrusive`** (`scope:approve`, owner
+role, step-up) `{"t2_max_duration": "90d", "reason": "…"}` changes it:
+high-severity `scope.settings_updated` with the reason, every administrator
+told. `PUT /scope/settings` never changes it. `GET /scope/settings` adds
+`t2_max_duration`, `t2_max_days` (the most `expires_in_days` a t2 entry may
+ask for; 365 when permanent is allowed) and `t2_permanent_allowed`. The
+bound is enforced on create, on update and when only the tier is raised
+(`400 INTRUSIVE_TOO_LONG`; `INTRUSIVE_NEEDS_EXPIRY` for a permanent t2 entry
+when not allowed). The one-off policy (`one_off_targets: disabled`) does
+not apply to t2 expiries. Lowering the bound does not shorten existing
+entries; attestation (§12.5) covers the long ones. A T2 entry still needs a verified domain for its probes (§8.1)
 and one approval at creation and on every widening. T0/T1 one-off entries
 keep `one_off_max_days`; T0/T1 entries may still be permanent.
 
@@ -947,6 +957,20 @@ expiring after it) is attested every `t2_attestation_days` (30–180, default
    `scope_target.t2_downgraded`, every administrator and the channels told.
    The job is idempotent (it only changes T2 entries that are overdue).
    Raising the entry back to T2 is an ordinary widening (step-up, approval).
+
+Implementation: migration `001620` adds `attested_at`, `attested_by` and
+`attestation_requested_at` to `scope_targets`. The `scope-attestation`
+controller runs hourly (`scope.Service.ReconcileAttestations`); every write
+is tenant-scoped and conditional (a request opens only when none is open; the
+downgrade happens only while the request it saw is still open), so a rerun,
+a second replica or a concurrent confirmation never downgrades a confirmed
+entry. A request is audited as `scope_target.attestation_requested`, a
+confirmation as `scope_target.attested`. An active T2 entry's response
+carries `attestation: {due_at, requested_at, downgrade_at, attested_at,
+attested_by}`; the web lists due entries on the Approvals tab with "Keep T2".
+`t2_attestation_days` is part of the owner-only `PUT
+/scope/settings/intrusive`. An existing T2 entry's first period starts at its
+approval.
 
 ### 12.6 A5: platform policy for widening approvals
 
