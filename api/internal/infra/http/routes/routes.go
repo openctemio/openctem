@@ -628,7 +628,7 @@ func Register(
 
 	// SLA Policy routes (tenant from JWT token)
 	if h.SLA != nil {
-		registerSLARoutes(router, h.SLA, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleSLA))
+		registerSLARoutes(router, h.SLA, authMiddleware, userSync)
 	}
 
 	// Pentest Campaign Management routes (tenant from JWT token)
