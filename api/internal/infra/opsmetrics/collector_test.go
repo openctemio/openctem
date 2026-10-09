@@ -20,7 +20,8 @@ func snapshot() postgres.OpsSnapshot {
 			{Platform: false, Health: "offline", ConfigHealth: "impaired", SDKVersion: "v0.8.0", Count: 2},
 			{Platform: true, Health: "something-new", ConfigHealth: "weird", SDKVersion: "", Count: 1},
 		},
-		CommandsPending: 4, CommandsRunning: 1, CommandOldestPendingSecs: 1800,
+		SensorsUnhardened: map[string]int64{"policy_none": 2, "bearer_key": 5, "tenant-1234": 9},
+		CommandsPending:   4, CommandsRunning: 1, CommandOldestPendingSecs: 1800,
 		ScanRunsOpen: 2, ScanRunsPastDeadline: 1,
 		OutboxPending: 5, OutboxFailed: 1, OutboxDead: 7, OutboxOldestPendingSec: 90,
 		SchemaVersion: 1299, SchemaKnown: true,
@@ -139,4 +140,21 @@ func gather(t *testing.T, c prometheus.Collector, name string) map[string]float6
 		}
 	}
 	return out
+}
+
+// openctem_sensors_unhardened reports every closed-set kind (0 when none) and
+// never a label value outside it, whatever the snapshot holds.
+func TestCollectorReportsUnhardenedSensors(t *testing.T) {
+	c := New(func(context.Context) (postgres.OpsSnapshot, error) { return snapshot(), nil }, Config{}, nil)
+	want := `
+# HELP openctem_sensors_unhardened Active tenant sensors by unhardened reason: no local policy (policy_none), platform CA not pinned (pin_none), tools without network confinement (network_unenforced), bearer key instead of a key-bound identity (bearer_key)
+# TYPE openctem_sensors_unhardened gauge
+openctem_sensors_unhardened{kind="bearer_key"} 5
+openctem_sensors_unhardened{kind="network_unenforced"} 0
+openctem_sensors_unhardened{kind="pin_none"} 0
+openctem_sensors_unhardened{kind="policy_none"} 2
+`
+	if err := testutil.CollectAndCompare(c, strings.NewReader(want), "openctem_sensors_unhardened"); err != nil {
+		t.Fatal(err)
+	}
 }
