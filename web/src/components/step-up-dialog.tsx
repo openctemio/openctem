@@ -25,6 +25,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/password-input'
@@ -126,7 +128,7 @@ export function StepUpDialogHost() {
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && finish(false)}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5" aria-hidden />
@@ -139,28 +141,30 @@ export function StepUpDialogHost() {
         </DialogHeader>
 
         {loadFailed && (
-          <div className="space-y-3">
+          <DialogBody className="space-y-3">
             <p className="text-destructive text-sm" role="alert">
               Could not load how to confirm your identity.
             </p>
             <Button type="button" variant="outline" onClick={loadState}>
               Retry
             </Button>
-          </div>
+          </DialogBody>
         )}
 
         {!loadFailed && !method && (
-          <div className="flex justify-center py-4" aria-busy="true">
+          <DialogBody className="flex justify-center py-4" aria-busy="true">
             <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" aria-hidden />
-          </div>
+          </DialogBody>
         )}
 
         {method === 'fresh_sign_in' && (
-          <div className="space-y-4">
-            <p className="text-muted-foreground text-sm">
-              Your account signs in through your identity provider. Sign in again to confirm it is
-              you, then repeat the action.
-            </p>
+          <>
+            <DialogBody>
+              <p className="text-muted-foreground text-sm">
+                Your account signs in through your identity provider. Sign in again to confirm it is
+                you, then repeat the action.
+              </p>
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => finish(false)}>
                 Cancel
@@ -176,12 +180,12 @@ export function StepUpDialogHost() {
                 Sign in again
               </Button>
             </DialogFooter>
-          </div>
+          </>
         )}
 
         {(method === 'totp' || method === 'password') && (
-          <form onSubmit={submit} className="space-y-4">
-            <div className="space-y-2">
+          <DialogForm onSubmit={submit}>
+            <DialogBody className="space-y-2">
               <Label htmlFor="step-up-proof">
                 {method === 'totp' ? 'Authenticator code' : 'Password'}
               </Label>
@@ -212,7 +216,7 @@ export function StepUpDialogHost() {
                   {error}
                 </p>
               )}
-            </div>
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => finish(false)}>
                 Cancel
@@ -222,7 +226,7 @@ export function StepUpDialogHost() {
                 Confirm
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>

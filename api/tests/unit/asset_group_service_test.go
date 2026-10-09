@@ -177,7 +177,7 @@ func (m *mockAssetGroupServiceRepo) ExistsByName(_ context.Context, tenantID sha
 	return false, nil
 }
 
-func (m *mockAssetGroupServiceRepo) GetStats(_ context.Context, _ shared.ID) (*assetgroup.Stats, error) {
+func (m *mockAssetGroupServiceRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.DataScope) (*assetgroup.Stats, error) {
 	m.getStatsCalls++
 	if m.getStatsErr != nil {
 		return nil, m.getStatsErr
