@@ -210,7 +210,7 @@ func (s *PlatformService) ingestLocked(ctx context.Context, in PlatformInput, r 
 	if err := s.repo.Create(ctx, p); err != nil {
 		return nil, err
 	}
-	s.logger.Info("platform content pack ingested", "pack_id", p.ID.String(), "name", p.Name, "version", p.Version,
+	s.logger.Info("platform content pack ingested", "pack_id", p.ID.String(),
 		"digest", p.Digest, "tier", string(p.Tier), "files", p.FileCount, "excluded", rep.Excluded)
 	return p, nil
 }
@@ -284,7 +284,7 @@ func (s *PlatformService) Revoke(ctx context.Context, id, reason string) (*dom.P
 	if err != nil {
 		return nil, nil, err
 	}
-	s.logger.Warn("platform content pack revoked", "pack_id", p.ID.String(), "name", p.Name, "version", p.Version, "digest", p.Digest)
+	s.logger.Warn("platform content pack revoked", "pack_id", p.ID.String(), "digest", p.Digest)
 	return p, channels, nil
 }
 
