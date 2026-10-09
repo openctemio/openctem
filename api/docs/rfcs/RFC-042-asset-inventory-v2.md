@@ -919,6 +919,11 @@ first; T1 touches the same `POST /assets` path.
 
 ###### 6.3.8.1 The normalisation migration (T3, reused by T4a)
 
+> Historical. The normalisation ran (000684, 000685); the baseline (001146)
+> replaced those migrations, and migration 001481 dropped the ledger, the
+> input map, the legacy-code table and `asset_type_normalise_batch`.
+> `chk_assets_core_type` keeps every stored type a core type.
+
 1. **Ledger.** `asset_type_reclassifications` records, per moved asset
    and migration, the old (type, sub_type, provider) and the exact
    properties it added. It is written in the same transaction as each

@@ -1668,9 +1668,7 @@ deliberately.
    inherit them. The `/api/v1/permission-sets` and
    `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
    writes their tables, and `team:permission_sets:*` left the catalog
-   (migration 000670 archives those catalog rows and role grants in
-   `access_control_removed_archive`). The tables themselves are dropped by a
-   later contract migration, after a release (expand-contract).
+   (migration 000670). The tables are dropped.
    `GET /api/v1/me/permissions` now returns the caller's role-derived
    permissions (it used to return the group-derived set).
 
@@ -1881,9 +1879,8 @@ route checked them. Each is now either enforced or removed.
 
 **Enforced on top of the route's existing gate** (`RequireAll(old, new)`, so no
 role gains anything). Migration 000771 grants the new permission to every role,
-system or custom, that held the old gate, recording each grant in
-`granular_permission_backfill` (its down removes exactly those), so every
-role keeps its abilities. An administrator can now remove the new permission
+system or custom, that held the old gate, so every role keeps its
+abilities. An administrator can now remove the new permission
 from a custom role to deny that one action.
 
 | Permission | Routes | Old gate |
@@ -1919,8 +1916,7 @@ role. A custom role created later needs them explicitly for those reads.
 
 `findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
 
-**Removed** (000772; catalog rows and grants archived in
-`access_control_removed_archive`, restored by its down):
+**Removed** (000772):
 
 | Permission | Why it is meaningless |
 |---|---|
