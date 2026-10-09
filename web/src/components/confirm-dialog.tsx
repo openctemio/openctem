@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   AlertDialog,
+  AlertDialogBody,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -68,21 +69,25 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             <div>{desc}</div>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {children}
-        {typeToConfirm && (
-          <div className="space-y-2">
-            <Label htmlFor={inputId} className="font-normal">
-              Type <span className="font-semibold">{typeToConfirm}</span> to confirm
-            </Label>
-            <Input
-              id={inputId}
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-        )}
+        {children || typeToConfirm ? (
+          <AlertDialogBody className="space-y-4">
+            {children}
+            {typeToConfirm && (
+              <div className="space-y-2">
+                <Label htmlFor={inputId} className="font-normal">
+                  Type <span className="font-semibold">{typeToConfirm}</span> to confirm
+                </Label>
+                <Input
+                  id={inputId}
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+            )}
+          </AlertDialogBody>
+        ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isLoading}>{cancelBtnText ?? 'Cancel'}</AlertDialogCancel>
           <Button

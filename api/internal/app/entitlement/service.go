@@ -124,23 +124,19 @@ type Summary struct {
 	OverLimit bool             `json:"over_limit"`
 }
 
-// Effective returns the organization's limits with their usage.
-func (s *Service) Effective(ctx context.Context, tenantID shared.ID) (*Summary, error) {
+// limits returns the organization's plan and effective limits, without usage.
+func (s *Service) limits(ctx context.Context, tenantID shared.ID) (plan.Plan, []plan.Effective, error) {
 	p, err := s.PlanOf(ctx, tenantID)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	defaults, _, err := s.Defaults(ctx)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	overrides, err := s.repo.ListOverrides(ctx, tenantID)
 	if err != nil {
-		return nil, err
-	}
-	usage, err := s.repo.Usage(ctx, tenantID)
-	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	now := s.now()
 	byKey := map[plan.Key]plan.Override{}
@@ -149,43 +145,114 @@ func (s *Service) Effective(ctx context.Context, tenantID shared.ID) (*Summary, 
 			byKey[o.Key] = o
 		}
 	}
-	sum := &Summary{Plan: p, Limits: make([]plan.Effective, 0, len(plan.Keys))}
+	out := make([]plan.Effective, 0, len(plan.Keys))
 	base := defaults.For(p)
 	for _, k := range plan.Keys {
-		e := plan.Effective{Key: k, Limit: base.Get(k), Source: plan.SourcePlan, Used: usage[k]}
+		e := plan.Effective{Key: k, Limit: base.Get(k), Source: plan.SourcePlan}
 		if o, ok := byKey[k]; ok {
 			e.Limit, e.Source, e.ExpiresAt, e.Reason = o.Value, plan.SourceOverride, o.ExpiresAt, o.Reason
 		}
+		out = append(out, e)
+	}
+	return p, out, nil
+}
+
+// Effective returns the organization's limits with their usage. Findings
+// are counted (a count over the largest table) only while a findings limit
+// applies; otherwise that row is Uncounted.
+func (s *Service) Effective(ctx context.Context, tenantID shared.ID) (*Summary, error) {
+	p, limits, err := s.limits(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	countFindings := false
+	for _, e := range limits {
+		if e.Key == plan.Findings {
+			countFindings = e.Limit != plan.Unlimited
+		}
+	}
+	usage, err := s.repo.Usage(ctx, tenantID, countFindings)
+	if err != nil {
+		return nil, err
+	}
+	sum := &Summary{Plan: p, Limits: limits}
+	for i := range sum.Limits {
+		e := &sum.Limits[i]
+		e.Used = usage[e.Key]
+		e.Uncounted = e.Key == plan.Findings && !countFindings
 		e.OverLimit = e.Limit != plan.Unlimited && e.Used > e.Limit
 		sum.OverLimit = sum.OverLimit || e.OverLimit
-		sum.Limits = append(sum.Limits, e)
 	}
 	return sum, nil
 }
 
+// limitAndUsage returns the organization's limit of key and, when it is not
+// Unlimited, its usage. An unlimited key costs no usage query.
+func (s *Service) limitAndUsage(ctx context.Context, tenantID shared.ID, key plan.Key) (limit, used int, err error) {
+	_, limits, err := s.limits(ctx, tenantID)
+	if err != nil {
+		return 0, 0, err
+	}
+	limit = plan.Unlimited
+	for _, e := range limits {
+		if e.Key == key {
+			limit = e.Limit
+		}
+	}
+	if limit == plan.Unlimited {
+		return limit, 0, nil
+	}
+	usage, err := s.repo.Usage(ctx, tenantID, key == plan.Findings)
+	if err != nil {
+		return 0, 0, err
+	}
+	return limit, usage[key], nil
+}
+
 // Check refuses an addition of delta to key when it would exceed the
 // organization's limit: *plan.ErrLimitReached. Any read error refuses too
-// (fail-closed). Unlimited never refuses.
+// (fail-closed). Unlimited never refuses and counts no usage.
 func (s *Service) Check(ctx context.Context, tenantID shared.ID, key plan.Key, delta int) error {
 	if !key.IsValid() {
 		return plan.ErrInvalid
 	}
-	sum, err := s.Effective(ctx, tenantID)
+	limit, used, err := s.limitAndUsage(ctx, tenantID, key)
 	if err != nil {
 		s.log.Warn("plan limit check failed; refusing (fail-closed)", "key", string(key), "error", err)
 		return &plan.ErrLimitReached{Key: key, Unavailable: true}
 	}
-	for _, e := range sum.Limits {
-		if e.Key != key {
-			continue
-		}
-		if e.Limit == plan.Unlimited || e.Used+delta <= e.Limit {
-			return nil
-		}
-		refusals.WithLabelValues(string(key)).Inc()
-		return &plan.ErrLimitReached{Key: key, Limit: e.Limit, Used: e.Used}
+	if limit == plan.Unlimited || used+delta <= limit {
+		return nil
 	}
-	return nil
+	refusals.WithLabelValues(string(key)).Inc()
+	return &plan.ErrLimitReached{Key: key, Limit: limit, Used: used}
+}
+
+// Headroom returns how many more of key the organization may add: Unlimited
+// when no limit applies (no usage is counted), 0 at or over the limit. When
+// the limit or usage cannot be read it returns *plan.ErrLimitReached with
+// Unavailable (callers refuse: fail-closed).
+func (s *Service) Headroom(ctx context.Context, tenantID shared.ID, key plan.Key) (int, error) {
+	if !key.IsValid() {
+		return 0, plan.ErrInvalid
+	}
+	limit, used, err := s.limitAndUsage(ctx, tenantID, key)
+	if err != nil {
+		s.log.Warn("plan limit headroom failed; refusing (fail-closed)", "key", string(key), "error", err)
+		return 0, &plan.ErrLimitReached{Key: key, Unavailable: true}
+	}
+	if limit == plan.Unlimited {
+		return plan.Unlimited, nil
+	}
+	return max(0, limit-used), nil
+}
+
+// RecordRefusals counts n additions of key refused by its limit (a caller
+// that refused part of a batch after Headroom).
+func (s *Service) RecordRefusals(key plan.Key, n int) {
+	if n > 0 {
+		refusals.WithLabelValues(string(key)).Add(float64(n))
+	}
 }
 
 // CheckFreeTeam refuses a new Free organization for a user who already owns

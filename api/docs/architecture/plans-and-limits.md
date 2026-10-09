@@ -20,9 +20,29 @@ Decided 2026-10-08.
 | `platform_scans_per_day` | platform scans started a day | 10 |
 | `platform_scans_concurrent` | platform scans running at once | 1 |
 | `free_teams_per_user` | Free organizations one person owns (checked when an organization is created) | 1 |
+| `findings` | the organization's findings (a new fingerprint; a re-sighting of an existing finding counts nothing) | unlimited |
 
 `-1` means unlimited. Pro and Enterprise start unlimited; a platform
 administrator sets the Pro limits in the console before selling it.
+
+`findings` is unlimited on every plan by default (decided 2026-10-09). It
+exists so an operator can stop one organization's sensors from growing the
+shared database without bound: set it per plan (Console > System > Plans) or
+for one organization (an override).
+
+### Counting usage
+
+Usage is read in one query over the cheap counts (members, assets, sensors,
+API keys, CI trusts, invitations). Findings are the largest table, so they
+are counted (a second query, `count(*) FROM findings WHERE tenant_id = $1`)
+**only while a findings limit applies** to the organization:
+
+- `Effective` (the console and Settings > Plan & usage) resolves the limits
+  first and asks the repository to count findings only when that limit is
+  set. Otherwise the `findings` row comes back with `uncounted: true` and
+  `used: 0`; the page shows a dash ("Counted while a limit is set").
+- `Check` and `Headroom` of a key that is unlimited for the organization
+  count no usage at all (no usage query for any key).
 
 Platform scanning stays off for Free organizations until the platform
 scanning redesign lands; the two scan quotas are stored now so
@@ -66,6 +86,10 @@ Your plan allows 5 seats; you use 7. Remove some, or ask your administrator for 
 is refused ("This could not be checked against your plan right now"). Every
 refusal increments `openctem_plan_limit_refusals_total{key}`.
 
+`Headroom(ctx, tenantID, key)` answers how many more may be added
+(unlimited, or the limit minus usage, never below 0) for a batch that
+admits part of its rows; it is fail-closed the same way.
+
 The check sits at the **insert** (`internal/infra/postgres/plan_limits.go`),
 so every path that adds a row passes it, whatever the caller:
 
@@ -79,6 +103,8 @@ so every path that adds a row passes it, whatever the caller:
 | `SensorPairingRepository.Approve` (new sensor, not a re-pair) | `sensors` | sensor pairing |
 | `APIKeyRepository.Create` | `api_keys` | API key create |
 | `CIRunRepository.CreateTrustConfig` | `ci_trusts` | CI trust create |
+| `FindingRepository.Create`, `CreateInTx` | `findings` | manual finding create, finding import, pentest findings |
+| `FindingRepository.CreateBatchWithResult` | `findings` (only the batch's fingerprints the organization does not have yet) | ingest: new findings are admitted in report order up to the headroom; **each one over it is refused on its own** (a per-item error: v1 `errors`, v2 `finding_not_stored` item error), while the report's assets, the other findings and every re-sighting of an existing finding are still stored. The report is not failed or retried. When the limit cannot be read, every new finding of the batch is refused the same way (fail-closed). |
 | `POST /api/v1/tenants` | `free_teams_per_user` | another self-service organization |
 
 Not checked: the first owner of an organization (its creation, and the
@@ -121,7 +147,7 @@ administrator saves them the built-in defaults above apply.
 ## Code map
 
 - `pkg/domain/plan`: plans, keys, defaults, overrides, `ErrLimitReached`.
-- `internal/app/entitlement`: effective limits, `Check`, `CheckFreeTeam`,
+- `internal/app/entitlement`: effective limits, `Check`, `Headroom`, `CheckFreeTeam`,
   console changes (audit, notification).
 - `internal/infra/postgres/plan_repository.go`: storage and usage counts,
   every query scoped by `tenant_id`.
