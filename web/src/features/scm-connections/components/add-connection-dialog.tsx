@@ -15,6 +15,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -188,7 +190,7 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
@@ -200,183 +202,185 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
             {/* Provider Selection */}
-            <FormField
-              control={form.control}
-              name="provider"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Provider</FormLabel>
-                  <Select onValueChange={handleProviderChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a provider" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {SCM_PROVIDER_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <div className="flex items-center gap-2">
-                            <ProviderIcon provider={option.value} className="h-4 w-4" />
-                            <span>{option.label}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    {SCM_PROVIDER_OPTIONS.find((o) => o.value === selectedProvider)?.description}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Connection Name */}
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Connection Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., My GitHub Enterprise" {...field} />
-                  </FormControl>
-                  <FormDescription>A friendly name to identify this connection</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Base URL (optional for cloud services) */}
-            <FormField
-              control={form.control}
-              name="baseUrl"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Base URL</FormLabel>
-                  <FormControl>
-                    <Input placeholder={DEFAULT_BASE_URLS[selectedProvider]} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Leave default for cloud services, or enter your self-hosted URL
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Organization (optional) */}
-            <FormField
-              control={form.control}
-              name="scmOrganization"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Organization / Group (Optional)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., my-org" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Limit repositories to a specific organization or group
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Access Token */}
-            <FormField
-              control={form.control}
-              name="accessToken"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Personal Access Token</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Input
-                        type={showToken ? 'text' : 'password'}
-                        placeholder="Enter your access token"
-                        className="pe-10"
-                        {...field}
-                        onChange={(e) => {
-                          field.onChange(e)
-                          // Reset test status when token changes
-                          if (testStatus !== 'idle') {
-                            setTestStatus('idle')
-                            setTestError('')
-                            setTestResult(null)
-                          }
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                        onClick={() => setShowToken(!showToken)}
-                      >
-                        {showToken ? (
-                          <EyeOff className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    </div>
-                  </FormControl>
-                  <FormDescription>Token requires read access to repositories</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Test Connection Status */}
-            {testStatus !== 'idle' && (
-              <div
-                className={cn(
-                  'rounded-lg border p-3',
-                  testStatus === 'success' && 'border-green-500/50 bg-green-500/10',
-                  testStatus === 'error' && 'border-red-500/50 bg-red-500/10',
-                  testStatus === 'testing' && 'border-blue-500/50 bg-blue-500/10'
+            <DialogBody className="space-y-4">
+              <FormField
+                control={form.control}
+                name="provider"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Provider</FormLabel>
+                    <Select onValueChange={handleProviderChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a provider" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {SCM_PROVIDER_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <div className="flex items-center gap-2">
+                              <ProviderIcon provider={option.value} className="h-4 w-4" />
+                              <span>{option.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {SCM_PROVIDER_OPTIONS.find((o) => o.value === selectedProvider)?.description}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
                 )}
-              >
-                <div className="flex items-center gap-2">
-                  {testStatus === 'testing' && (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                      <span className="text-sm text-blue-500">Testing connection...</span>
-                    </>
-                  )}
-                  {testStatus === 'success' && (
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                        <span className="text-sm text-green-500">Connection successful!</span>
-                      </div>
-                      {testResult && (
-                        <div className="text-xs text-muted-foreground ms-6">
-                          {testResult.username && <span>User: {testResult.username}</span>}
-                          {testResult.organization && (
-                            <span> | Org: {testResult.organization}</span>
-                          )}
-                          <span> | {testResult.repositoryCount} repositories found</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {testStatus === 'error' && (
-                    <>
-                      <XCircle className="h-4 w-4 text-red-500" />
-                      <span className="text-sm text-red-500">
-                        {testError || 'Connection failed'}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
+              />
 
-            <DialogFooter className="gap-2">
+              {/* Connection Name */}
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Connection Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., My GitHub Enterprise" {...field} />
+                    </FormControl>
+                    <FormDescription>A friendly name to identify this connection</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Base URL (optional for cloud services) */}
+              <FormField
+                control={form.control}
+                name="baseUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Base URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder={DEFAULT_BASE_URLS[selectedProvider]} {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Leave default for cloud services, or enter your self-hosted URL
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Organization (optional) */}
+              <FormField
+                control={form.control}
+                name="scmOrganization"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Organization / Group (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., my-org" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Limit repositories to a specific organization or group
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Access Token */}
+              <FormField
+                control={form.control}
+                name="accessToken"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Personal Access Token</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          type={showToken ? 'text' : 'password'}
+                          placeholder="Enter your access token"
+                          className="pe-10"
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e)
+                            // Reset test status when token changes
+                            if (testStatus !== 'idle') {
+                              setTestStatus('idle')
+                              setTestError('')
+                              setTestResult(null)
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowToken(!showToken)}
+                        >
+                          {showToken ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
+                    </FormControl>
+                    <FormDescription>Token requires read access to repositories</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Test Connection Status */}
+              {testStatus !== 'idle' && (
+                <div
+                  className={cn(
+                    'rounded-lg border p-3',
+                    testStatus === 'success' && 'border-success/50 bg-success/10',
+                    testStatus === 'error' && 'border-destructive/50 bg-destructive/10',
+                    testStatus === 'testing' && 'border-info/50 bg-info/10'
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    {testStatus === 'testing' && (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-info" />
+                        <span className="text-sm text-info">Testing connection...</span>
+                      </>
+                    )}
+                    {testStatus === 'success' && (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="h-4 w-4 text-success" />
+                          <span className="text-sm text-success">Connection successful!</span>
+                        </div>
+                        {testResult && (
+                          <div className="text-xs text-muted-foreground ms-6">
+                            {testResult.username && <span>User: {testResult.username}</span>}
+                            {testResult.organization && (
+                              <span> | Org: {testResult.organization}</span>
+                            )}
+                            <span> | {testResult.repositoryCount} repositories found</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {testStatus === 'error' && (
+                      <>
+                        <XCircle className="h-4 w-4 text-destructive" />
+                        <span className="text-sm text-destructive">
+                          {testError || 'Connection failed'}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </DialogBody>
+
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -393,7 +397,7 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                 Add Connection
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>

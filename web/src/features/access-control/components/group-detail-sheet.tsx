@@ -519,7 +519,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
 
       {/* Remove Member Confirmation */}
       <Dialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Remove Member</DialogTitle>
             <DialogDescription>
@@ -545,7 +545,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
 
       {/* Remove Asset Confirmation */}
       <Dialog open={!!assetToRemove} onOpenChange={(open) => !open && setAssetToRemove(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Remove Asset</DialogTitle>
             <DialogDescription>
