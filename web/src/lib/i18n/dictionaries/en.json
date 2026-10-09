@@ -799,5 +799,8 @@
   "auth.requestAccess.confirming": "Confirming your request...",
   "auth.requestAccess.confirmed": "Your request is confirmed and waits for an administrator.",
   "auth.requestAccess.confirmFailed": "This link is invalid or has expired.",
+  "auth.verifyEmail.verifying": "Verifying your email address...",
+  "auth.verifyEmail.verified": "Your email address is verified. You can sign in.",
+  "auth.verifyEmail.failed": "This link is invalid or has expired.",
   "admin.nav.access-requests": "Access requests"
 }

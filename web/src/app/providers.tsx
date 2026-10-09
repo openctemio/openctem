@@ -5,7 +5,7 @@ import { ThemeProvider } from '@/context/theme-provider'
 import { DirectionProvider } from '@/context/direction-provider'
 import { I18nProvider } from '@/context/i18n-provider'
 import { SWRProvider } from '@/lib/swr-config'
-import { Toaster } from 'sonner'
+import { AppToaster } from '@/components/app-toaster'
 import { config as zodConfig } from 'zod/v4/core'
 import { installClientErrorListeners } from '@/lib/client-errors'
 
@@ -59,19 +59,7 @@ export function Providers({
       <SWRProvider>
         <DirectionProvider dir={dir}>
           <I18nProvider locale={locale}>{children}</I18nProvider>
-          <Toaster
-            richColors
-            position="bottom-right"
-            expand={true}
-            visibleToasts={3}
-            closeButton
-            toastOptions={{
-              style: {
-                // Ensure action buttons are always visible
-                minHeight: '48px',
-              },
-            }}
-          />
+          <AppToaster />
         </DirectionProvider>
       </SWRProvider>
     </ThemeProvider>

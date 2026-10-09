@@ -296,6 +296,8 @@ type Filter struct {
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
 	BusinessUnitIDs      []string   // Filter by business_units membership (business_unit_assets)
+	IDs                  []string   // Only these assets (a batch lookup by id; data scope still applies)
+	UnderDomains         []string   // Names equal to or below these DNS names (example.com, *.example.com)
 	HasOwner             *bool      // Filter assets with/without an assigned owner (asset_owners)
 	DataClassifications  []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
 	IsControlPlane       *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
@@ -496,6 +498,19 @@ func (f Filter) WithPropertiesFilter(kv map[string][]string) Filter {
 	return f
 }
 
+// WithUnderDomains keeps the assets named after one of these DNS names or a
+// name below it.
+func (f Filter) WithUnderDomains(names ...string) Filter {
+	f.UnderDomains = names
+	return f
+}
+
+// WithIDs narrows the list to these asset ids (a batch lookup).
+func (f Filter) WithIDs(ids ...string) Filter {
+	f.IDs = ids
+	return f
+}
+
 // WithBusinessUnitIDs filters by business_units membership.
 func (f Filter) WithBusinessUnitIDs(ids ...string) Filter {
 	f.BusinessUnitIDs = ids
@@ -584,6 +599,8 @@ func (f Filter) IsEmpty() bool {
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&
 		len(f.BusinessUnitIDs) == 0 &&
+		len(f.IDs) == 0 &&
+		len(f.UnderDomains) == 0 &&
 		f.HasOwner == nil &&
 		len(f.DataClassifications) == 0 &&
 		f.IsControlPlane == nil &&

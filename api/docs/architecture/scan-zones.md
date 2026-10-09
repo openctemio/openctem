@@ -63,7 +63,9 @@ failing closed, as in api#555).
 3. `scanzone.Router` assigns each target:
    - address or CIDR → the zone with the **narrowest** range holding all of it
      (ties: zone name, then id);
-   - hostname → resolved from the platform (`net.DefaultResolver`, 3 s per
+   - hostname → resolved with `SCAN_ZONE_RESOLVER` (the platform's own resolver,
+     or a public recursive resolver on self-service installs so that tenants
+     never resolve names through the platform's internal DNS; 3 s per
      lookup, 8 concurrent); the narrowest zone holding any resolved address;
    - public and in no range → the **default zone**; with no default zone it is
      *unzoned* and dispatched as before zones (any tenant sensor);

@@ -583,18 +583,30 @@ export function useRejectApproval(approvalId: string) {
   )
 }
 
+/** One page of approvals and the count of every status (GET /api/v1/approvals). */
+export interface ApprovalListResponse {
+  data: ApiApproval[]
+  total: number
+  page: number
+  per_page: number
+  /** Count per status under the caller's data scope, zero included. */
+  status_counts: Record<ApprovalStatus, number>
+}
+
 /**
- * List approvals for the current tenant (paginated, filterable by status)
+ * List the tenant's approvals, one server page at a time, filtered by status
+ * (omit for every status). The server applies the caller's data scope to the
+ * page, the total and the status counts.
  */
-export function usePendingApprovals(page = 1, perPage = 20, status?: ApprovalStatus) {
+export function useApprovals(page = 1, perPage = 20, status?: ApprovalStatus) {
   const { currentTenant } = useTenant()
   const params = new URLSearchParams({ page: String(page), per_page: String(perPage) })
   if (status) params.set('status', status)
-  return useSWR<{ data: ApiApproval[]; total: number; page: number; per_page: number }>(
-    currentTenant ? `/api/v1/approvals?${params}` : null,
-    get,
-    { ...defaultConfig, refreshInterval: 30000 }
-  )
+  return useSWR<ApprovalListResponse>(currentTenant ? `/api/v1/approvals?${params}` : null, get, {
+    ...defaultConfig,
+    refreshInterval: 30000,
+    keepPreviousData: true,
+  })
 }
 
 /**
