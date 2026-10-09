@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import type { ApiError } from './types'
 import { devLog } from '@/lib/logger'
 import { IP_NOT_ALLOWED_CODE, IP_NOT_ALLOWED_MESSAGE, notifyIpNotAllowed } from './ip-not-allowed'
+import { describePermissionDenied } from './permission-denied'
 
 // ============================================
 // ERROR CLASSES
@@ -227,6 +228,11 @@ export function handleApiError(
       toast.error('Approval required', {
         description: message,
       })
+    } else if (apiError.code === 'FORBIDDEN' && describePermissionDenied(apiError.details)) {
+      // The refusal named the missing permission or role.
+      toast.error('Permission needed', {
+        description: message,
+      })
     } else if (apiError.isAuthError()) {
       toast.error('Authentication Error', {
         description: message,
@@ -280,6 +286,13 @@ function getUserFriendlyMessage(
   // generic 403 text below would hide it.
   if (error.code === APPROVAL_REQUIRED_CODE && error.message) {
     return error.message
+  }
+
+  // A refused permission names what was missing (details); say it, so the
+  // person knows exactly what to ask an administrator for.
+  if (error.code === 'FORBIDDEN') {
+    const why = describePermissionDenied(error.details)
+    if (why) return why
   }
 
   // Built-in messages by error code
@@ -507,6 +520,12 @@ export function getErrorMessage(
 ): string {
   // Handle ApiClientError
   if (error instanceof ApiClientError) {
+    // A refused permission names what was missing.
+    if (error.code === 'FORBIDDEN') {
+      const why = describePermissionDenied(error.details)
+      if (why) return why
+    }
+
     // A validation failure carries its reasons as [{ field, message }]; the
     // message itself is only "Validation failed".
     if (Array.isArray(error.details)) {

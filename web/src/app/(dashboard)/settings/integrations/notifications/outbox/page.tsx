@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { formatDistanceToNow } from 'date-fns'
 import {
   ArrowLeft,
