@@ -19,7 +19,7 @@ import (
 // fakeTokens accepts one access token and returns a fixed principal.
 type fakeTokens struct{ p *mcpoauthapp.Principal }
 
-func (f fakeTokens) AuthenticateAccessToken(_ context.Context, raw, _ string) (*mcpoauthapp.Principal, error) {
+func (f fakeTokens) AuthenticateAccessToken(_ context.Context, raw, _ string, _ mcpoauthapp.DPoPRequest) (*mcpoauthapp.Principal, error) {
 	if raw != "octm_at_good" {
 		return nil, mcpoauthapp.ErrInvalidToken
 	}
@@ -136,5 +136,44 @@ func TestConsentAPIRefusesAPIKeys(t *testing.T) {
 		if !middleware.APIKeyRouteDenied(p) {
 			t.Errorf("%s is reachable with an API key", p)
 		}
+	}
+}
+
+type dpopTokens struct{}
+
+func (dpopTokens) AuthenticateAccessToken(_ context.Context, _, _ string, dp mcpoauthapp.DPoPRequest) (*mcpoauthapp.Principal, error) {
+	if dp.Scheme != "DPoP" || dp.Proof != "proof" || dp.Method != http.MethodPost {
+		return nil, mcpoauthapp.ErrDPoP
+	}
+	return &mcpoauthapp.Principal{GrantID: "g", TenantID: "11111111-1111-1111-1111-111111111111", UserID: "22222222-2222-2222-2222-222222222222"}, nil
+}
+
+// The DPoP scheme and proof reach the token check; a refused proof gets a
+// DPoP challenge, not the Bearer one; two proofs are refused.
+func TestMCPDPoPScheme(t *testing.T) {
+	log := logger.NewNop()
+	e, _ := mcpoauth.NewEndpoints("https://openctem.example")
+	router := infrahttp.NewChiRouter()
+	auth := middleware.MCPCredentialAuth(middleware.NewAPIKeyAuth(refuseEveryKey{}, log).Handler, dpopTokens{}, log)
+	registerMCPRoutes(router, handler.NewMCPHandler(nil, nil, nil, nil, nil, nil, nil, log), nil, auth,
+		&MCPDiscovery{Endpoints: e, Metadata: handler.NewMCPResourceMetadataHandler(e)})
+	mux := router.(interface{ Handler() http.Handler }).Handler()
+
+	rec := mcpCall(mux, "DPoP octm_at_x", toolsList, map[string]string{"DPoP": "proof"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid DPoP request: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = mcpCall(mux, "Bearer octm_at_x", toolsList, nil)
+	if rec.Code != http.StatusUnauthorized || !strings.HasPrefix(rec.Header().Get("WWW-Authenticate"), `DPoP error="invalid_dpop_proof"`) {
+		t.Fatalf("bound token as bearer: %d %q", rec.Code, rec.Header().Get("WWW-Authenticate"))
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(toolsList))
+	req.Header.Set("Authorization", "DPoP octm_at_x")
+	req.Header.Add("DPoP", "proof")
+	req.Header.Add("DPoP", "proof")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("two proofs: %d", rec.Code)
 	}
 }

@@ -4,8 +4,8 @@ import { useListParams } from '@/hooks/use-list-params'
 import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
-import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
-import Link from 'next/link'
+import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
+import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import {
   DEFAULT_FINDING_LENS,
@@ -161,10 +161,7 @@ import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
 import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/url-codec'
 import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
 import { savedViewId, type SavedView } from '@/features/saved-views/api/use-saved-views'
-import {
-  FINDINGS_LIST_HIDDEN_STATUSES,
-  FINDINGS_OPEN_STATUSES,
-} from '@/features/findings/lib/list-defaults'
+import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
 
 // ============================================
 // Transform API Finding to UI Finding
@@ -339,7 +336,6 @@ const GROUP_BY_LABELS: Record<GroupByDimension, string> = {
 const FILTERS_OPEN_KEY = 'openctem:findings-filters-open'
 /** Saved per browser: hide informational findings when no severity is picked. */
 const HIDE_INFO_KEY = 'openctem:findings-hide-info'
-const OPEN_STATUSES: string[] = [...FINDINGS_OPEN_STATUSES]
 // The status filter groups the one registry by category; every status appears
 // once. Pentest pre-publication states get their own group (hidden by default).
 const PRE_PUBLICATION: readonly string[] = FINDINGS_LIST_HIDDEN_STATUSES
@@ -705,9 +701,49 @@ function FindingsContent() {
     [setSlaFilter]
   )
 
+  // Any filter change resets to the first page — otherwise a user on page 8 of
+  // "All" who picks a filter with only 2 pages would sit on an empty page.
+  // Keyed on the filter *values*, so the first render (reading a shared link
+  // with ?page=3) is not reset — only a later filter change is.
+  const filterKey = [
+    assetIdFilter,
+    scanIdFilter,
+    cveParam,
+    ruleParam,
+    familyParam,
+    findingTypeParam,
+    componentParam,
+    ownerParam,
+    ownerNullParam,
+    groupParam,
+    viewParam,
+    lens,
+    effectiveSeverities.join(),
+    statuses.join(),
+    sourceFilter.join(),
+    priorityClasses.join(),
+    kevActive,
+    reachableActive,
+    branchOnlyActive,
+    mineActive,
+    slaFilter.join(),
+    debouncedSearch,
+    sortParam,
+  ].join('|')
+  // The filter the current page number belongs to. While a new filter waits
+  // for its page reset (the effect below), the list already asks page 1:
+  // asking the old page first sent the list request twice (research/81).
+  const [pagedFilterKey, setPagedFilterKey] = useState(filterKey)
+  const filterChanged = pagedFilterKey !== filterKey
+  useEffect(() => {
+    if (!filterChanged) return
+    setPagedFilterKey(filterKey)
+    setPage(1)
+  }, [filterChanged, filterKey, setPage])
+
   const apiFilters = useMemo((): FindingApiFilters => {
     const filters: FindingApiFilters = {
-      page: pagination.pageIndex + 1,
+      page: filterChanged ? 1 : pagination.pageIndex + 1,
       per_page: pagination.pageSize,
     }
     if (assetIdFilter) filters.asset_id = assetIdFilter
@@ -768,6 +804,7 @@ function FindingsContent() {
     debouncedSearch,
     HIDDEN_STATUSES,
     pagination,
+    filterChanged,
     sortParam,
     savedId,
     lens,
@@ -781,42 +818,6 @@ function FindingsContent() {
     const { page: _page, per_page: _perPage, sort: _sort, state: _state, ...rest } = apiFilters
     return { ...rest, state: 'all' as const }
   }, [apiFilters])
-
-  // Any filter change resets to the first page — otherwise a user on page 8 of
-  // "All" who picks a filter with only 2 pages would sit on an empty page.
-  // Keyed on the filter *values*, so the first render (reading a shared link
-  // with ?page=3) is not reset — only a later filter change is.
-  const filterKey = [
-    assetIdFilter,
-    scanIdFilter,
-    cveParam,
-    ruleParam,
-    familyParam,
-    findingTypeParam,
-    componentParam,
-    ownerParam,
-    ownerNullParam,
-    groupParam,
-    viewParam,
-    lens,
-    effectiveSeverities.join(),
-    statuses.join(),
-    sourceFilter.join(),
-    priorityClasses.join(),
-    kevActive,
-    reachableActive,
-    branchOnlyActive,
-    mineActive,
-    slaFilter.join(),
-    debouncedSearch,
-    sortParam,
-  ].join('|')
-  const lastFilterKey = useRef(filterKey)
-  useEffect(() => {
-    if (lastFilterKey.current === filterKey) return
-    lastFilterKey.current = filterKey
-    setPage(1)
-  }, [filterKey, setPage])
 
   // The overview strip is page-level: every finding the caller may see (their
   // data scope applies server-side), whatever the state tab, search or

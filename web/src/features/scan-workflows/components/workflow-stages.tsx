@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import {
   ReactFlow,
   ReactFlowProvider,
