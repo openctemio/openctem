@@ -958,6 +958,20 @@ expiring after it) is attested every `t2_attestation_days` (30–180, default
    The job is idempotent (it only changes T2 entries that are overdue).
    Raising the entry back to T2 is an ordinary widening (step-up, approval).
 
+Implementation: migration `001470` adds `attested_at`, `attested_by` and
+`attestation_requested_at` to `scope_targets`. The `scope-attestation`
+controller runs hourly (`scope.Service.ReconcileAttestations`); every write
+is tenant-scoped and conditional (a request opens only when none is open; the
+downgrade happens only while the request it saw is still open), so a rerun,
+a second replica or a concurrent confirmation never downgrades a confirmed
+entry. A request is audited as `scope_target.attestation_requested`, a
+confirmation as `scope_target.attested`. An active T2 entry's response
+carries `attestation: {due_at, requested_at, downgrade_at, attested_at,
+attested_by}`; the web lists due entries on the Approvals tab with "Keep T2".
+`t2_attestation_days` is part of the owner-only `PUT
+/scope/settings/intrusive`. An existing T2 entry's first period starts at its
+approval.
+
 ### 12.6 A5: platform policy for widening approvals
 
 A platform administrator sets, as a platform default and per organization

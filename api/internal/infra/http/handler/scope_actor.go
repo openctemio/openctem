@@ -115,6 +115,9 @@ func targetActorRefs(list ...*ScopeTargetResponse) []*ActorRef {
 			continue
 		}
 		out = append(out, t.CreatedBy, t.RejectedBy)
+		if t.Attestation != nil {
+			out = append(out, t.Attestation.AttestedBy)
+		}
 		for i := range t.Approvals {
 			out = append(out, t.Approvals[i].Approver)
 		}

@@ -474,6 +474,14 @@ export function remindScopeApprovers(id: string) {
   )
 }
 
+/**
+ * POST /scope/targets/{id}/attest (scope:approve): an active T2 entry keeps
+ * intrusive probes for another period (RFC-054 §12.5).
+ */
+export function attestScopeTarget(id: string) {
+  return post<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}/attest`, {})
+}
+
 /** POST /scope/targets/{id}/reject (scope:approve). */
 export function rejectScopeTarget(id: string) {
   return post<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}/reject`, {})
@@ -559,6 +567,7 @@ export function updateScopeSettings(input: UpdateScopeSettingsInput) {
 /** PUT /scope/settings/intrusive: owner only, with a reason (RFC-054 §12.4). */
 export function updateScopeIntrusiveSettings(input: {
   t2_max_duration: ScopeT2MaxDuration
+  t2_attestation_days?: number
   reason: string
 }) {
   return put<ApiScopeSettings>(`${SETTINGS_URL}/intrusive`, input)

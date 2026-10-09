@@ -37,6 +37,10 @@ type Target struct {
 	rejectedAt        *time.Time
 	// remindedAt: when the approvers were last reminded (approvers.go).
 	remindedAt *time.Time
+	// Attestation of a t2 entry (attestation.go).
+	attestedAt             *time.Time
+	attestedBy             string
+	attestationRequestedAt *time.Time
 
 	origin Origin
 	// discoveryOff: discovery switched off (discovery.go); the zero value

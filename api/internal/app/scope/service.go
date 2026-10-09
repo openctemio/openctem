@@ -33,6 +33,8 @@ type Service struct {
 	mail       ApprovalMailer
 	channels   ChannelNotifier
 	webBaseURL string
+	// auditor records the system decisions (attestation.go).
+	auditor SystemAuditor
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
 	// Coverage of the inventory (GetStats): counted in SQL over the

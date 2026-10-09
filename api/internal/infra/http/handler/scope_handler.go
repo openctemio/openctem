@@ -69,6 +69,7 @@ func (h *ScopeHandler) targetOut(r *http.Request, t *scopedom.Target) ScopeTarge
 	out := toScopeTargetResponse(t)
 	resolveActors(r.Context(), h.actors, h.logger, middleware.MustGetTenantID(r.Context()), targetActorRefs(&out))
 	h.addApprovalStatus(r, []*ScopeTargetResponse{&out}, []*scopedom.Target{t})
+	h.addAttestationStatus(r, []*ScopeTargetResponse{&out}, []*scopedom.Target{t})
 	return out
 }
 
@@ -276,6 +277,9 @@ type ScopeTargetResponse struct {
 	// Approval is set on a pending entry: how many approvals it still
 	// needs and who can give them.
 	Approval *ScopeApprovalStatusResponse `json:"approval,omitempty"`
+	// Attestation is set on an active t2 entry that is attested
+	// (RFC-054 §12.5).
+	Attestation *ScopeAttestationResponse `json:"attestation,omitempty"`
 }
 
 // ScopeApprovalResponse is one approval of a scope entry.
@@ -650,6 +654,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 		outs[i] = &responses[i]
 	}
 	h.addApprovalStatus(r, outs, result.Data)
+	h.addAttestationStatus(r, outs, result.Data)
 
 	response := ListResponse[ScopeTargetResponse]{
 		Data:       responses,
