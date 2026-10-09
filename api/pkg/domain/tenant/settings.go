@@ -203,6 +203,32 @@ type SecuritySettings struct {
 	// an owner action, audited at critical severity and alerted (D9).
 	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh,omitempty"`
 	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates,omitempty"`
+
+	// ToolHTTPUserAgent and ForbidToolInsecureTLS are the organization's
+	// layer of the tools' HTTP settings (api RFC-060 §4.1): a User-Agent its
+	// sensors' tools send unless a sensor's local policy forces one, and a
+	// refusal of tools that skip TLS verification toward targets. Sent with
+	// every scan job; they only narrow (a sensor's local policy decides
+	// first).
+	ToolHTTPUserAgent     string `json:"tool_http_user_agent,omitempty"`
+	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls,omitempty"`
+}
+
+// ToolHTTPPolicy is the organization's tool HTTP layer for sensor jobs.
+func (s *SecuritySettings) ToolHTTPPolicy() sensorHTTPPolicy {
+	p := sensorHTTPPolicy{UserAgent: s.ToolHTTPUserAgent}
+	if s.ForbidToolInsecureTLS {
+		f := false
+		p.AllowInsecureTLS = &f
+	}
+	return p
+}
+
+// sensorHTTPPolicy mirrors sensor.ToolHTTPPolicy (the tenant domain does not
+// import the sensor domain); the tenant service converts it.
+type sensorHTTPPolicy struct {
+	UserAgent        string
+	AllowInsecureTLS *bool
 }
 
 // MFARequiredFor reports whether a member with this role must use two-factor
@@ -770,6 +796,9 @@ func (s *GeneralSettings) Validate() error {
 
 // Validate validates security settings.
 func (s *SecuritySettings) Validate() error {
+	if ua := s.ToolHTTPUserAgent; ua != "" && (len(ua) > 256 || strings.IndexFunc(ua, func(r rune) bool { return r < 0x20 || r > 0x7e }) >= 0) {
+		return fmt.Errorf("%w: tool_http_user_agent must be at most 256 printable ASCII characters", shared.ErrValidation)
+	}
 	// Validate email verification mode
 	if !s.EmailVerificationMode.IsValid() {
 		return fmt.Errorf("%w: email_verification_mode must be one of: auto, always, never", shared.ErrValidation)
