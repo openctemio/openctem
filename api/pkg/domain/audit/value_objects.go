@@ -71,9 +71,20 @@ const (
 	ActionBountyProgramPaused        Action = "bounty_program.paused"
 	ActionBountyProgramResumed       Action = "bounty_program.resumed"
 	ActionBountyProgramEnded         Action = "bounty_program.ended"
+	// ActionBountyProgramSourceSet / Synced: where a program's scope comes
+	// from, and a sync that narrowed it or suspended it (RFC-065 §14).
+	ActionBountyProgramSourceSet Action = "bounty_program.source_set"
+	ActionBountyProgramSynced    Action = "bounty_program.synced"
 	// Authorization letters (RFC-065 §13).
 	ActionScopeLetterUploaded Action = "scope_letter.uploaded"
 	ActionScopeLetterRevoked  Action = "scope_letter.revoked"
+	// ActionScopeTargetSelfApproved: an owner approved their own pending
+	// scope entry because no other approver existed, with a fresh
+	// authenticator code and a reason (RFC-054 §7). High severity.
+	ActionScopeTargetSelfApproved Action = "scope_target.self_approved"
+	// ActionScopeTargetApproversReminded: someone reminded the approvers of
+	// a pending scope entry.
+	ActionScopeTargetApproversReminded Action = "scope_target.approvers_reminded"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -412,6 +423,9 @@ const (
 	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
 	ActionScannerTemplateDeprecated Action = "scanner_template.deprecated"
 	ActionScannerTemplateDeleted    Action = "scanner_template.deleted"
+	// ActionScannerTemplateApproved: a person approved a template version
+	// for sensors (RFC-040 §11.5).
+	ActionScannerTemplateApproved Action = "scanner_template.approved"
 
 	// Asset Ownership actions
 	ActionAssetAssigned         Action = "asset.assigned"
@@ -589,7 +603,9 @@ func (a Action) IsValid() bool {
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
+		ActionBountyProgramSourceSet, ActionBountyProgramSynced,
 		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
+		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
@@ -651,7 +667,7 @@ func (a Action) IsValid() bool {
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
-		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
 		ActionAssetAccessGranted, ActionAssetAccessRevoked,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
@@ -762,6 +778,7 @@ func (a Action) Category() string {
 		return "tool"
 	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
 		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
@@ -772,7 +789,7 @@ func (a Action) Category() string {
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
 		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
-		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved:
 		return "scanner_template"
 	case ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted:
@@ -993,11 +1010,11 @@ func SeverityForAction(a Action) Severity {
 		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
-		ActionScopeTargetApproved, ActionScopeSettingsUpdated,
+		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
-		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated, ActionScannerTemplateApproved,
 		// Deleting an asset also deletes its findings.
 		ActionAssetDeleted:
 		return SeverityHigh

@@ -317,10 +317,14 @@ window means any time. The trigger refuses a manual run outside the windows
 (`PROGRAM_OUTSIDE_WINDOW`) and a scheduled run is skipped with that reason.
 
 Headers and User-Agent need sdk-go `core.OrgHTTPPolicy.Headers` (sdk-go
-#228); a sensor without it ignores the field, so the delivery adds headers
-only for sensors whose version supports them and otherwise does not deliver
-a command that needs them (the sensor is reported as unable to honour the
-program's rules).
+#227, #228); a sensor without it ignores the field, so a command that carries
+a program's headers or User-Agent goes only to a sensor that reported SDK
+v0.19.0 or later (`command.MinSDKForProgramHTTPRules`). Any other sensor,
+including a development build or one that reported no version, does not get
+it: the command waits, and a claim by id answers `PROGRAM_RULES_UNSUPPORTED`.
+A rule lookup that fails withholds the command (fail closed). A program can
+never require a credential or connection header (`Authorization`, `Cookie`,
+`Host`, `Proxy-*`, `Connection`, …): the import refuses it.
 
 ## 13. Authorization letters (P1)
 

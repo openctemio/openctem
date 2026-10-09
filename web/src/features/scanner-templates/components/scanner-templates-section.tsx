@@ -18,6 +18,7 @@ import {
   GitBranch,
   Cloud,
   Globe,
+  ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -63,6 +64,7 @@ import {
   useScannerTemplates,
   useDeleteScannerTemplate,
   useDeprecateScannerTemplate,
+  approveScannerTemplate,
   useTemplateUsage,
   invalidateScannerTemplatesCache,
 } from '@/lib/api/scanner-template-hooks'
@@ -241,6 +243,22 @@ export function ScannerTemplatesSection() {
     }
   }, [selectedTemplate, deprecateTemplate])
 
+  // Approving a version for sensors: once the organization's approval count
+  // is reached, the job signer records it and sensors may run it.
+  const handleApproveClick = useCallback(async (template: ScannerTemplate) => {
+    try {
+      const updated = await approveScannerTemplate(template.id)
+      toast.success(
+        updated?.sensor_approval?.approved
+          ? `"${template.name}" is approved for sensors`
+          : `Approval recorded for "${template.name}"`
+      )
+      await invalidateScannerTemplatesCache()
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to approve template'))
+    }
+  }, [])
+
   const handleDownload = useCallback(async (template: ScannerTemplate) => {
     try {
       const response = await fetch(`/api/v1/scanner-templates/${template.id}/download`)
@@ -320,7 +338,25 @@ export function ScannerTemplatesSection() {
         id: 'status',
         accessorKey: 'status',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-        cell: ({ row }) => <TemplateStatusBadge status={row.original.status} />,
+        cell: ({ row }) => {
+          const approval = row.original.sensor_approval
+          const awaiting = row.original.status === 'active' && approval && !approval.approved
+          return (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <TemplateStatusBadge status={row.original.status} />
+              {awaiting && (
+                <Badge
+                  variant="outline"
+                  className="text-xs font-normal"
+                  title="Sensors refuse this version until it is approved for sensors"
+                >
+                  Awaiting approval {approval.approvals.length}/
+                  {Math.max(approval.approvals_required, 1)}
+                </Badge>
+              )}
+            </div>
+          )
+        },
       },
       {
         id: 'updated',
@@ -346,6 +382,18 @@ export function ScannerTemplatesSection() {
                   icon: Download,
                   onClick: () => handleDownload(template),
                 },
+                ...(template.status === 'active' &&
+                template.sensor_approval &&
+                !template.sensor_approval.approved
+                  ? ([
+                      {
+                        label: 'Approve for sensors',
+                        icon: ShieldCheck,
+                        onClick: () => handleApproveClick(template),
+                        permission: Permission.ScopeApprove,
+                      },
+                    ] satisfies RowAction[])
+                  : []),
                 ...(template.status === 'active'
                   ? ([
                       {
@@ -370,7 +418,7 @@ export function ScannerTemplatesSection() {
         },
       },
     ],
-    [handleDownload, handleDeprecateClick, handleDeleteClick]
+    [handleDownload, handleDeprecateClick, handleDeleteClick, handleApproveClick]
   )
 
   const metrics: MetricStripItem[] = usageData

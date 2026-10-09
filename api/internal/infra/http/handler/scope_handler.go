@@ -68,6 +68,7 @@ func (h *ScopeHandler) SetActorNamer(n MemberNamer) { h.actors = n }
 func (h *ScopeHandler) targetOut(r *http.Request, t *scopedom.Target) ScopeTargetResponse {
 	out := toScopeTargetResponse(t)
 	resolveActors(r.Context(), h.actors, h.logger, middleware.MustGetTenantID(r.Context()), targetActorRefs(&out))
+	h.addApprovalStatus(r, []*ScopeTargetResponse{&out}, []*scopedom.Target{t})
 	return out
 }
 
@@ -277,6 +278,9 @@ type ScopeTargetResponse struct {
 	// Join is set on a change that came into effect or changed an entry in
 	// effect: the names waiting for review the entry confirmed.
 	Join *ScopeJoinResponse `json:"join,omitempty"`
+	// Approval is set on a pending entry: how many approvals it still
+	// needs and who can give them.
+	Approval *ScopeApprovalStatusResponse `json:"approval,omitempty"`
 }
 
 // ScopeApprovalResponse is one approval of a scope entry.
@@ -284,6 +288,10 @@ type ScopeApprovalResponse struct {
 	UserID     string    `json:"user_id"`
 	Approver   *ActorRef `json:"approver"`
 	ApprovedAt time.Time `json:"approved_at"`
+	// SelfApproved: an owner approved their own entry because no other
+	// approver existed; Reason says why.
+	SelfApproved bool   `json:"self_approved,omitempty"`
+	Reason       string `json:"reason,omitempty"`
 }
 
 // ScopeExclusionResponse represents a scope exclusion in API responses.
@@ -485,7 +493,8 @@ func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
 	out := make([]ScopeApprovalResponse, 0, len(list))
 	for _, a := range list {
-		out = append(out, ScopeApprovalResponse{UserID: a.UserID, Approver: actorRef(a.UserID), ApprovedAt: a.ApprovedAt})
+		out = append(out, ScopeApprovalResponse{UserID: a.UserID, Approver: actorRef(a.UserID), ApprovedAt: a.ApprovedAt,
+			SelfApproved: a.Self, Reason: a.Reason})
 	}
 	return out
 }
@@ -507,6 +516,8 @@ func writeScopeEntryError(w http.ResponseWriter, err error) bool {
 	}
 	status := http.StatusBadRequest
 	switch {
+	case errors.Is(err, scopedom.ErrReminderTooSoon):
+		status = http.StatusTooManyRequests
 	case errors.Is(err, shared.ErrForbidden):
 		status = http.StatusForbidden
 	case errors.Is(err, shared.ErrConflict):
@@ -657,6 +668,11 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 		refs = append(refs, targetActorRefs(&responses[i])...)
 	}
 	resolveActors(r.Context(), h.actors, h.logger, middleware.MustGetTenantID(r.Context()), refs)
+	outs := make([]*ScopeTargetResponse, len(responses))
+	for i := range responses {
+		outs[i] = &responses[i]
+	}
+	h.addApprovalStatus(r, outs, result.Data)
 
 	response := ListResponse[ScopeTargetResponse]{
 		Data:       responses,

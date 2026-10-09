@@ -571,6 +571,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
 	if svc.ScopeJoin != nil {
 		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
+		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
+		if svc.BountyProgram != nil {
+			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
+		}
 		// Program data scope: assets a program covers stay assigned to its
 		// group (RFC-065 §7), also those that arrived by discovery.
 		if svc.ProgramAssigner != nil {
