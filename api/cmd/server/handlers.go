@@ -327,9 +327,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// another scope would allow gets a step-up challenge.
 	var mcpOAuthHandler *handler.MCPOAuthHandler
 	var mcpConnections *handler.MCPConnectionsHandler
+	var mcpClients *handler.MCPClientsHandler
 	if mcpOAuth := newMCPOAuthService(mcpDiscovery, deps, log); mcpOAuth != nil && mcpHandler != nil {
 		mcpOAuthHandler = handler.NewMCPOAuthHandler(mcpOAuth, log)
 		mcpConnections = handler.NewMCPConnectionsHandler(mcpOAuth, log)
+		mcpClients = handler.NewMCPClientsHandler(mcpOAuth, log)
 		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
 		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
 	}
@@ -347,6 +349,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCPOAuth:       mcpOAuthHandler,
 		MCPSettings:    mcpSettings,
 		MCPConnections: mcpConnections,
+		MCPClients:     mcpClients,
 		APIKeyAuth:     apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
