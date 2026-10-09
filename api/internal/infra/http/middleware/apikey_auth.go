@@ -204,8 +204,9 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 // with a matching scope. They manage credentials or the account itself, or
 // belong to a person's browser session rather than to automation:
 //
-//   - /api/v1/api-keys, /api/v1/scim-tokens: a key must not list, mint or
-//     revoke credentials (it could otherwise extend its own life).
+//   - /api/v1/api-keys, /api/v1/scim-tokens, /api/v1/service-accounts: a key
+//     must not list, mint or revoke credentials (it could otherwise extend
+//     its own life, or mint one for a service account).
 //   - /api/v1/me, /api/v1/notifications, /api/v1/ws: the signed-in user's own
 //     surface (permissions bootstrap, inbox, websocket).
 //   - /api/v1/platform: platform scanning as the signed-in organization sees
@@ -222,6 +223,7 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 var apiKeyDeniedPrefixes = []string{ //nolint:gochecknoglobals // fixed policy table
 	"/api/v1/api-keys",
 	"/api/v1/scim-tokens",
+	"/api/v1/service-accounts",
 	"/api/v1/me",
 	"/api/v1/notifications",
 	"/api/v1/ws",

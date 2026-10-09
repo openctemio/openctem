@@ -277,6 +277,9 @@ func registerScanWorkflowRoutes(
 		r.GET("/{id}/map", h.GetRunMap, middleware.Require(permission.ScansRead))
 		// What one step produced, new ones first (in the caller's data scope).
 		r.GET("/{id}/outputs", h.ListRunStepOutputs, middleware.Require(permission.ScansRead))
+		// The scope the run relied on (RFC-065 §9): scope or program readers only.
+		r.GET("/{id}/scope-snapshot", h.GetRunScopeSnapshot, middleware.Require(permission.ScansRead),
+			middleware.RequireAny(permission.ScopeRead, permission.ProgramsRead))
 
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.ScansWrite))
 	}, runMiddlewares...)
