@@ -245,6 +245,7 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	existing *asset.Asset,
 	ctisAsset *ctis.Asset,
 	tool *ctis.Tool,
+	observedAt time.Time,
 	recovered *[]shared.ID,
 	becameExposed *[]*asset.Asset,
 ) []*asset.AssetStateChange {
@@ -252,7 +253,7 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	oldInternet := existing.IsInternetAccessible()
 	wasFacing := oldInternet || oldExposure == asset.ExposurePublic
 
-	p.mergeCTISIntoAsset(existing, ctisAsset, tool, recovered)
+	p.mergeCTISIntoAsset(existing, ctisAsset, tool, observedAt, recovered)
 
 	if becameExposed != nil && !wasFacing &&
 		(existing.IsInternetAccessible() || existing.Exposure() == asset.ExposurePublic) {
@@ -477,6 +478,9 @@ func (p *AssetProcessor) processBatch(
 		source = report.Tool.Name
 	}
 	allKinds := len(asset.AllIdentifierKinds())
+	// When the report's source saw what it reports: last_seen and the
+	// property merge keep the newer observation, whatever the arrival order.
+	observedAt := reportObservedAt(report, time.Now())
 	isNew := map[string]bool{}
 	queued := map[string]bool{}
 	var renames []pendingRename
@@ -510,7 +514,7 @@ func (p *AssetProcessor) processBatch(
 			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, observedAt, &recoveredIDs, &becameExposed)...)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -518,7 +522,7 @@ func (p *AssetProcessor) processBatch(
 					assetMap[ctisAsset.ID] = existing.ID()
 					return
 				}
-				existing.MarkSeen()
+				existing.MarkSeenAt(observedAt)
 			}
 			if !isNew[id] && !queued[id] {
 				updateAssets = append(updateAssets, existing)
@@ -559,6 +563,9 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			scope.dropUntrustedClaims(newAsset)
+			// Seen when its source saw it, so a later report observed earlier
+			// cannot pass it.
+			newAsset.MarkSeenAt(observedAt)
 			if skipExcluded(excl, newAsset, ctisAsset.ID, output) {
 				return
 			}
@@ -1955,11 +1962,12 @@ func isPublicIP(s string) bool {
 }
 
 // mergeCTISIntoAsset merges CTIS data into an existing asset.
-func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool, recovered *[]shared.ID) {
+// observedAt is when the report's source saw the asset (reportObservedAt).
+func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool, observedAt time.Time, recovered *[]shared.ID) {
 	// Mark as seen. Capture the prior status first so we can tell when this
 	// scan reactivates a stale/inactive asset (MarkSeen flips it to active).
 	wasInactive := existing.Status() == asset.StatusStale || existing.Status() == asset.StatusInactive
-	existing.MarkSeen()
+	existing.MarkSeenAt(observedAt)
 	if recovered != nil && wasInactive && existing.Status() == asset.StatusActive {
 		*recovered = append(*recovered, existing.ID())
 	}

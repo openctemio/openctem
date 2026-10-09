@@ -1567,6 +1567,14 @@ func assetUpsertConflictSQL() string {
 				ELSE merge_jsonb_deep(EXCLUDED.properties, assets.properties)
 			END,
 			last_seen = GREATEST(assets.last_seen, EXCLUDED.last_seen),
+			-- A re-observed stale asset is active again (Asset.MarkSeen set
+			-- it; this clause used to drop it while history said
+			-- "recovered"). Inactive (a closed port, a person's decision)
+			-- and a manual status are left to their own paths.
+			status = CASE
+				WHEN assets.status = 'stale' AND EXCLUDED.status = 'active' AND NOT assets.manual_status_override
+				THEN 'active' ELSE assets.status
+			END,
 			updated_at = NOW(),
 			discovery_source = COALESCE(assets.discovery_source, EXCLUDED.discovery_source),
 			discovery_tool = COALESCE(assets.discovery_tool, EXCLUDED.discovery_tool),
