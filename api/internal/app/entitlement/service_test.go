@@ -12,13 +12,15 @@ import (
 )
 
 type fakeRepo struct {
-	defaults   plan.Defaults
-	version    int
-	plans      map[shared.ID]plan.Plan
-	overrides  map[shared.ID][]plan.Override
-	usage      map[plan.Key]int
-	ownedFree  int
-	failUsage  bool
+	defaults  plan.Defaults
+	version   int
+	plans     map[shared.ID]plan.Plan
+	overrides map[shared.ID][]plan.Override
+	usage     map[plan.Key]int
+	ownedFree int
+	failUsage bool
+	// usageCalls records each Usage call's withFindings.
+	usageCalls []bool
 	failPlan   bool
 	saveErr    error
 	savedPlans []plan.Plan
@@ -81,11 +83,18 @@ func (f *fakeRepo) DeleteOverride(_ context.Context, id shared.ID, k plan.Key) e
 	return shared.ErrNotFound
 }
 
-func (f *fakeRepo) Usage(context.Context, shared.ID) (map[plan.Key]int, error) {
+func (f *fakeRepo) Usage(_ context.Context, _ shared.ID, withFindings bool) (map[plan.Key]int, error) {
+	f.usageCalls = append(f.usageCalls, withFindings)
 	if f.failUsage {
 		return nil, errors.New("db down")
 	}
-	return f.usage, nil
+	out := map[plan.Key]int{}
+	for k, v := range f.usage {
+		if k != plan.Findings || withFindings {
+			out[k] = v
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) CountOwnedFreeTenants(context.Context, shared.ID) (int, error) {
@@ -359,5 +368,88 @@ func TestChangeTenantPlan_RefusesUnknownPlan(t *testing.T) {
 	svc := NewService(&fakeRepo{}, &fakeAudit{}, nil, nil, nil)
 	if err := svc.ChangeTenantPlan(context.Background(), actor, shared.NewID(), "gold", "", ""); !errors.Is(err, plan.ErrInvalid) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// Findings are unlimited on every built-in plan and counting them is costly:
+// while unlimited, no usage query counts them, and Check/Headroom of an
+// unlimited key count no usage at all.
+func TestFindings_UnlimitedCountsNothing(t *testing.T) {
+	repo := &fakeRepo{usage: map[plan.Key]int{plan.Seats: 1, plan.Findings: 999}}
+	svc := NewService(repo, nil, nil, nil, nil)
+	id := freeTenant(repo)
+	ctx := context.Background()
+
+	for _, p := range plan.All {
+		if got := plan.BuiltinDefaults().For(p).Get(plan.Findings); got != plan.Unlimited {
+			t.Fatalf("%s findings limit = %d, want unlimited by default", p, got)
+		}
+	}
+	if err := svc.Check(ctx, id, plan.Findings, 1000); err != nil {
+		t.Fatalf("unlimited findings: %v", err)
+	}
+	if room, err := svc.Headroom(ctx, id, plan.Findings); err != nil || room != plan.Unlimited {
+		t.Fatalf("headroom = %d, %v; want unlimited", room, err)
+	}
+	if len(repo.usageCalls) != 0 {
+		t.Fatalf("an unlimited key must count no usage, got %d Usage calls", len(repo.usageCalls))
+	}
+
+	sum, err := svc.Effective(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.usageCalls) != 1 || repo.usageCalls[0] {
+		t.Fatalf("Effective must count usage once without findings, got %v", repo.usageCalls)
+	}
+	for _, e := range sum.Limits {
+		if e.Key == plan.Findings && (!e.Uncounted || e.Used != 0) {
+			t.Fatalf("unlimited findings row = %+v, want uncounted", e)
+		}
+		if e.Key == plan.Seats && e.Used != 1 {
+			t.Fatalf("seats usage = %d, want 1 (the other keys are still counted)", e.Used)
+		}
+	}
+}
+
+func TestFindings_LimitCountsAndRefuses(t *testing.T) {
+	repo := &fakeRepo{usage: map[plan.Key]int{plan.Findings: 8}}
+	svc := NewService(repo, nil, nil, nil, nil)
+	id := freeTenant(repo)
+	ctx := context.Background()
+	repo.overrides = map[shared.ID][]plan.Override{id: {{TenantID: id, Key: plan.Findings, Value: 10, Reason: "abuse"}}}
+
+	if room, err := svc.Headroom(ctx, id, plan.Findings); err != nil || room != 2 {
+		t.Fatalf("headroom = %d, %v; want 2", room, err)
+	}
+	if err := svc.Check(ctx, id, plan.Findings, 2); err != nil {
+		t.Fatalf("2 more fit: %v", err)
+	}
+	lim := limitErr(t, svc.Check(ctx, id, plan.Findings, 3))
+	if lim.Limit != 10 || lim.Used != 8 {
+		t.Fatalf("got %+v", lim)
+	}
+	sum, err := svc.Effective(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range sum.Limits {
+		if e.Key == plan.Findings && (e.Uncounted || e.Used != 8) {
+			t.Fatalf("limited findings row = %+v, want counted 8", e)
+		}
+	}
+	for _, withFindings := range repo.usageCalls {
+		if !withFindings {
+			t.Fatalf("a findings limit applies: every Usage call must count findings, got %v", repo.usageCalls)
+		}
+	}
+
+	repo.usage[plan.Findings] = 12 // over the limit after it was lowered
+	if room, err := svc.Headroom(ctx, id, plan.Findings); err != nil || room != 0 {
+		t.Fatalf("over the limit: headroom = %d, %v; want 0", room, err)
+	}
+	repo.failUsage = true
+	if _, err := svc.Headroom(ctx, id, plan.Findings); err == nil || !limitErr(t, err).Unavailable {
+		t.Fatalf("an unreadable usage must refuse (fail-closed), got %v", err)
 	}
 }
