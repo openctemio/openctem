@@ -70,18 +70,24 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['tenants', 'teams', 'customers'],
       },
       {
-        title: 'Access requests',
-        i18nKey: 'admin.nav.access-requests',
-        url: '/admin/organizations/access-requests',
-        icon: Inbox,
-        keywords: ['requests', 'sign-up', 'approve', 'inbox'],
-      },
-      {
         title: 'Users',
         i18nKey: 'admin.nav.users',
         url: '/admin/users',
         icon: UserSearch,
         keywords: ['accounts', 'people', 'locked', 'sessions', 'support'],
+      },
+    ],
+  },
+  {
+    title: 'Requests',
+    i18nKey: 'admin.nav.group.requests',
+    items: [
+      {
+        title: 'Access requests',
+        i18nKey: 'admin.nav.access-requests',
+        url: '/admin/requests',
+        icon: Inbox,
+        keywords: ['requests', 'sign-up', 'approve', 'inbox', 'pending'],
       },
     ],
   },
