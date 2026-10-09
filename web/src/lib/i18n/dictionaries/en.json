@@ -497,6 +497,8 @@
   "scope.refusal.message.zone_no_sensor": "The scan zone of this target has no sensors.",
   "scope.refusal.label.zone_sensor_mismatch": "Wrong sensor for the zone",
   "scope.refusal.message.zone_sensor_mismatch": "The chosen sensor is not in this target's scan zone.",
+  "scope.refusal.label.program_platform": "Program target",
+  "scope.refusal.message.program_platform": "Platform sensors never probe bug-bounty program targets; use your own sensors.",
   "scope.error.PUBLIC_SUFFIX": "A public suffix (such as com.vn or azurewebsites.net) cannot be a scope entry. Enter a domain your organization registered.",
   "scope.error.DENY_LIST": "The platform does not allow this target as a scope entry.",
   "scope.error.CIDR_TOO_LARGE": "This address range is larger than the platform allows. Split it into smaller ranges.",

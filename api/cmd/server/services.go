@@ -54,6 +54,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
+	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -589,8 +590,10 @@ type Services struct {
 	AssetImport            *asset.AssetImportService
 	RelationshipSuggestion *asset.RelationshipSuggestionService
 	Scope                  *scope.Service
-	AttackSurface          *attack.SurfaceService
-	ThreatModel            *threatmodel.Service
+	// BountyProgram imports and runs bug-bounty programs (RFC-065).
+	BountyProgram *bountyprogramapp.Service
+	AttackSurface *attack.SurfaceService
+	ThreatModel   *threatmodel.Service
 
 	// Configuration (read-only system config)
 	FindingSource      *finding.FindingSourceService
@@ -970,6 +973,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Scope.SetGuardrails(scopeGuardrails)
 	s.ScopeGuardrails = scopeGuardrails
 	s.Scope.SetCoverage(postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}), s.DataScope)
+	// Program entries (RFC-065) cover nothing a program lists as out of
+	// scope: the authority check reads the program exclusions.
+	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
+	s.Scope.SetProgramExclusions(programRepo)
+	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
+	s.BountyProgram.SetGuardrails(scopeGuardrails)
+	s.BountyProgram.SetNotifier(s.Scope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
@@ -1686,8 +1696,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, s.Scope, repos.Attribution, repos.Asset, log)
 		s.ScopeJoin.SetAudit(s.Audit)
 		s.ScopeJoin.SetSettings(s.Tenant)
-		s.Scope.SetScopeJoin(easmapp.NewJoinScheduler(s.ScopeJoin, 0, log),
-			postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}))
+		joinScheduler := easmapp.NewJoinScheduler(s.ScopeJoin, 0, log)
+		s.Scope.SetScopeJoin(joinScheduler, postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}))
+		s.BountyProgram.SetJoiner(joinScheduler)
 		stamper := easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)
 		stamper.SetScopeJoin(s.ScopeJoin)
 		s.Ingest.SetScanAttributionStamper(stamper)
