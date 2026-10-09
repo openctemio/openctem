@@ -592,6 +592,8 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
+	// ScopeSnapshots stores the scope each scan run relied on (RFC-065 §9).
+	ScopeSnapshots *postgres.ScopeSnapshotRepository
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
@@ -704,6 +706,7 @@ type Services struct {
 	// Access Control
 	Group          *accesscontrol.GroupService
 	Role           *accesscontrol.RoleService
+	ServiceAccount *accesscontrol.ServiceAccountService
 	AssignmentRule *assignment.RuleService
 	ScopeRule      *scope.RuleService
 
@@ -984,6 +987,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetProgramExclusions(programRepo)
+	s.Scope.SetProgramLister(programRepo)
+	s.ScopeSnapshots = postgres.NewScopeSnapshotRepository(&postgres.DB{DB: deps.DB})
 	letterRepo := postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetLetters(letterRepo)
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
@@ -1909,6 +1914,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope)),
+		scan.WithScopeSnapshots(scope.NewSnapshotRecorder(s.Scope, s.ScopeSnapshots)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
@@ -2257,6 +2263,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Group != nil {
 		s.Group.SetRoleBindings(repos.GroupRoleBinding, s.Role)
 	}
+	// Service accounts: organization-owned identities that act only through
+	// API keys, held to the external-member role ceiling.
+	s.ServiceAccount = accesscontrol.NewServiceAccountService(repos.ServiceAccount, s.Audit, log)
+	s.Role.SetServiceAccountReader(repos.ServiceAccount)
 
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {
