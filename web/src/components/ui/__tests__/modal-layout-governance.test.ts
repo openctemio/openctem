@@ -31,6 +31,12 @@ const EXEMPT = new Set([
 ])
 
 /**
+ * Components that render a surface's Body and Footer themselves (a form whose
+ * steps scroll and whose actions are pinned), placed directly in a Content.
+ */
+const RENDERS_BODY = new Set(['ScanWorkflowForm'])
+
+/**
  * Files not migrated yet, moved onto the frame by area. The migrations leave
  * this list alone (so they do not conflict with each other); the last one
  * empties it, and then every file is checked. Never add an entry.
@@ -238,6 +244,7 @@ function looseContent(el: ts.JsxElement, P: string): boolean {
     const rest = m.filter(
       (c) =>
         ![`${P}Header`, `${P}Footer`, `${P}Body`].includes(tagOf(c) ?? '') &&
+        !RENDERS_BODY.has(tagOf(c) ?? '') &&
         !(ts.isJsxExpression(c) && (hasTag(c, `${P}Body`) || hasTag(c, `${P}Footer`)))
     )
     const wrapper =
