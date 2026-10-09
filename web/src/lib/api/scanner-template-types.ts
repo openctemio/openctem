@@ -40,6 +40,15 @@ export interface TemplateValidationResult {
 }
 
 /**
+ * Approval of a template's current version for sensors.
+ */
+export interface TemplateSensorApproval {
+  approved: boolean
+  approvals_required: number
+  approvals: { user_id: string; approved_at: string }[]
+}
+
+/**
  * Scanner Template entity
  */
 export interface ScannerTemplate {
@@ -70,6 +79,10 @@ export interface ScannerTemplate {
   sync_source?: SyncSource // How template was added (manual, git, s3, http)
   source_path?: string // Path within source (e.g., templates/sqli.yaml)
   source_commit?: string // Git commit hash
+
+  // Approval of the current version for sensors (RFC-040 §11.5): with a job
+  // signer, a version runs on sensors only once approved and recorded.
+  sensor_approval?: TemplateSensorApproval
 
   // Audit
   created_by?: string

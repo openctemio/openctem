@@ -611,6 +611,47 @@ again, without touching what an organization holds:
 - One step-up check (`confirmAdminStepUp`) serves owner recovery and ending
   a session.
 
+## Revision 17: operations
+
+Operations > Health (`GET /api/v1/admin/operations`, any admin role) shows
+the installation as the API sees it, without Prometheus:
+
+- the build (version, commit, channel) and the applied database schema
+  against the one this release ships (behind, ahead, dirty);
+- the database (ping latency, the API's connection pool) and Redis (ping
+  latency, or "not configured");
+- the work queues: sensor jobs waiting and running and the oldest waiting
+  job, open scan runs and those past their deadline, notifications waiting,
+  retrying and given up;
+- active sensors, platform and customer, by health and SDK version, with
+  versions below the configured minimum flagged;
+- background jobs: each controller's last run, its errors since start, and
+  whether its loop is started (read from the API's own metrics registry).
+
+Platform-wide counts and infrastructure facts only. The overview's
+platform items (schema, sensors, runs, notifications, waiting jobs) link to
+it.
+
+## Revision 18: system settings, announcements and feeds
+
+- **System > Announcements.** The operator publishes a notice (planned
+  maintenance, a warning, information) that every signed-in user sees as a
+  dismissible banner under the header while it is active.
+  `GET/POST /api/v1/admin/announcements` (any admin reads; ops_admin+
+  publishes with a reason, audited) and
+  `POST /api/v1/admin/announcements/{announcement_id}/cancel` (ops_admin+,
+  reason, audited; a scheduled one never shows). A notice is one line of
+  plain text (1-500 characters, no control characters, rendered as text,
+  never HTML) with a required end at most 31 days after its start, so none
+  is left up by mistake. Signed-in users read the active ones (at most 5,
+  maintenance first) at `GET /api/v1/announcements`, once per page load.
+  Table `platform_announcements` (migration 001541), platform-level.
+- **System > Threat intelligence.** The EPSS and CISA KEV feeds' sync state
+  (last run, records, next run, last error), turning the scheduled sync on
+  or off and running a sync now, on the existing
+  `/api/v1/admin/threat-intel/sync` routes (ops_admin+ for changes,
+  audited).
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/

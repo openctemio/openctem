@@ -1207,6 +1207,12 @@ export const scannerTemplateEndpoints = {
   deprecate: (templateId: string) => `${API_BASE.SCANNER_TEMPLATES}/${templateId}/deprecate`,
 
   /**
+   * Approve the template's current version for sensors (scope approvers,
+   * step-up)
+   */
+  approve: (templateId: string) => `${API_BASE.SCANNER_TEMPLATES}/${templateId}/approve`,
+
+  /**
    * Get template usage and quota information for the tenant
    */
   usage: () => `${API_BASE.SCANNER_TEMPLATES}/usage`,
