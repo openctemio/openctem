@@ -361,7 +361,7 @@ var Personas = []Persona{
 		MustNot:   []string{"write through the REST API", "act as an administrator"},
 	},
 	{
-		ID: "mcp-agent", Name: "AI assistant (MCP client)", Group: "Machines",
+		ID: "mcp-client", Name: "AI assistant (MCP client)", Group: "Machines",
 		Goal:      "Answers questions about exposures for a signed-in person.",
 		Roles:     []string{},
 		DataScope: "The person's own data scope.",
