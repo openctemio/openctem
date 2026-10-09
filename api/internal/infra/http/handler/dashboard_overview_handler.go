@@ -72,7 +72,6 @@ func NewDashboardOverviewHandler(router func() http.Handler, log *logger.Logger)
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200  {object}  DashboardOverviewResponse
-// @Failure      401  {object}  apierror.Error
 // @Router       /dashboard/overview [get]
 func (h *DashboardOverviewHandler) Overview(w http.ResponseWriter, r *http.Request) {
 	root := h.router()
