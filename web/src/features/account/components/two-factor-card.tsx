@@ -15,6 +15,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -218,7 +220,7 @@ function EnableTwoFactorDialog({
         if (!o && (!codes || saved)) onClose()
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         {codes ? (
           <>
             <DialogHeader>
@@ -228,17 +230,19 @@ function EnableTwoFactorDialog({
                 recovery code to sign in if you lose your authenticator.
               </DialogDescription>
             </DialogHeader>
-            <RecoveryCodesPanel codes={codes} accountLabel={email} />
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="enable-codes-saved"
-                checked={saved}
-                onCheckedChange={(v) => setSaved(v === true)}
-              />
-              <Label htmlFor="enable-codes-saved" className="font-normal">
-                I have saved my recovery codes
-              </Label>
-            </div>
+            <DialogBody className="grid gap-4">
+              <RecoveryCodesPanel codes={codes} accountLabel={email} />
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="enable-codes-saved"
+                  checked={saved}
+                  onCheckedChange={(v) => setSaved(v === true)}
+                />
+                <Label htmlFor="enable-codes-saved" className="font-normal">
+                  I have saved my recovery codes
+                </Label>
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button disabled={!saved} onClick={onClose}>
                 Done
@@ -246,7 +250,7 @@ function EnableTwoFactorDialog({
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={confirm} className="space-y-4">
+          <DialogForm onSubmit={confirm}>
             <DialogHeader>
               <DialogTitle>Set up two-factor authentication</DialogTitle>
               <DialogDescription>
@@ -254,41 +258,43 @@ function EnableTwoFactorDialog({
                 your current password. Turning this on signs out your other sessions.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex flex-col items-center gap-3">
-              {setup ? (
-                <>
-                  <TotpQrCode uri={setup.uri} size={176} />
-                  <SecretKey secret={setup.secret} />
-                </>
-              ) : isSettingUp || !error ? (
-                <Skeleton className="h-44 w-44" />
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="enable-password">Current password</Label>
-              <PasswordInput
-                id="enable-password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={!setup || isEnabling}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="enable-code">Authentication code</Label>
-              <OneTimeCodeInput
-                id="enable-code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                disabled={!setup || isEnabling}
-                aria-invalid={!!error}
-              />
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              )}
-            </div>
+            <DialogBody className="space-y-4">
+              <div className="flex flex-col items-center gap-3">
+                {setup ? (
+                  <>
+                    <TotpQrCode uri={setup.uri} size={176} />
+                    <SecretKey secret={setup.secret} />
+                  </>
+                ) : isSettingUp || !error ? (
+                  <Skeleton className="h-44 w-44" />
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="enable-password">Current password</Label>
+                <PasswordInput
+                  id="enable-password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={!setup || isEnabling}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="enable-code">Authentication code</Label>
+                <OneTimeCodeInput
+                  id="enable-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  disabled={!setup || isEnabling}
+                  aria-invalid={!!error}
+                />
+                {error && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
@@ -301,7 +307,7 @@ function EnableTwoFactorDialog({
                 Turn on
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>
@@ -346,8 +352,8 @@ function DisableTwoFactorDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <form onSubmit={submit} className="space-y-4">
+      <DialogContent>
+        <DialogForm onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>Turn off two-factor authentication</DialogTitle>
             <DialogDescription>
@@ -356,32 +362,34 @@ function DisableTwoFactorDialog({
                 : 'Signing in will need only your password. We will email you about this change.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="disable-password">Current password</Label>
-            <PasswordInput
-              id="disable-password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="disable-code">Authentication code or recovery code</Label>
-            <Input
-              id="disable-code"
-              autoComplete="one-time-code"
-              className="font-mono"
-              placeholder="123456 or xxxxx-xxxxx"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              aria-invalid={!!error}
-            />
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-          </div>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="disable-password">Current password</Label>
+              <PasswordInput
+                id="disable-password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="disable-code">Authentication code or recovery code</Label>
+              <Input
+                id="disable-code"
+                autoComplete="one-time-code"
+                className="font-mono"
+                placeholder="123456 or xxxxx-xxxxx"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                aria-invalid={!!error}
+              />
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
@@ -395,7 +403,7 @@ function DisableTwoFactorDialog({
               Turn off
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )
@@ -436,20 +444,22 @@ function RegenerateCodesDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         {codes ? (
           <>
             <DialogHeader>
               <DialogTitle>New recovery codes</DialogTitle>
               <DialogDescription>Your old recovery codes no longer work.</DialogDescription>
             </DialogHeader>
-            <RecoveryCodesPanel codes={codes} accountLabel={email} />
+            <DialogBody>
+              <RecoveryCodesPanel codes={codes} accountLabel={email} />
+            </DialogBody>
             <DialogFooter>
               <Button onClick={onClose}>Done</Button>
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={submit} className="space-y-4">
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>Generate new recovery codes</DialogTitle>
               <DialogDescription>
@@ -457,20 +467,22 @@ function RegenerateCodesDialog({
                 to confirm.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="regen-code">Authentication code</Label>
-              <OneTimeCodeInput
-                id="regen-code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                aria-invalid={!!error}
-              />
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              )}
-            </div>
+            <DialogBody className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="regen-code">Authentication code</Label>
+                <OneTimeCodeInput
+                  id="regen-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  aria-invalid={!!error}
+                />
+                {error && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
@@ -480,7 +492,7 @@ function RegenerateCodesDialog({
                 Generate
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>
