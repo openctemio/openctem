@@ -271,3 +271,49 @@ func TestCampaignFilterToFindingFilter_MapsKeys(t *testing.T) {
 		t.Fatalf("search not mapped")
 	}
 }
+
+type offModules map[string]bool // tenant id -> remediation off
+
+func (m offModules) TenantDisabledModules(_ context.Context, tenantID string) map[string]bool {
+	return map[string]bool{"remediation": m[tenantID]}
+}
+
+// A tenant with the remediation module off keeps its campaigns as they are:
+// no counts, no auto-complete. Another tenant reconciles normally.
+func TestReconcileProgress_SkipsTenantsWithRemediationOff(t *testing.T) {
+	repo := newFakeCampaignRepo()
+	counter := &fakeCounter{total: 3, resolved: 0}
+	svc := newService(repo, counter)
+	ctx := context.Background()
+
+	activate := func(tid string) string {
+		c, err := svc.CreateCampaign(ctx, CreateRemediationCampaignInput{
+			TenantID: tid, Name: "c " + tid, FindingFilter: map[string]any{"severities": []any{"critical"}},
+		}, auditapp.AuditContext{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.UpdateCampaignStatus(ctx, tid, c.ID().String(), string(remediation.CampaignStatusActive), auditapp.AuditContext{}); err != nil {
+			t.Fatal(err)
+		}
+		return c.ID().String()
+	}
+	off, on := shared.NewID().String(), shared.NewID().String()
+	offID, onID := activate(off), activate(on)
+	svc.SetModuleGuard(offModules{off: true})
+
+	counter.resolved = 3
+	updated, err := svc.ReconcileProgress(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated != 1 {
+		t.Fatalf("updated %d, want 1 (only the tenant with remediation on)", updated)
+	}
+	if st := repo.store[offID].Status(); st != remediation.CampaignStatusActive {
+		t.Errorf("campaign of the tenant with remediation off: status %s, want active", st)
+	}
+	if st := repo.store[onID].Status(); st != remediation.CampaignStatusCompleted {
+		t.Errorf("campaign of the tenant with remediation on: status %s, want completed", st)
+	}
+}
