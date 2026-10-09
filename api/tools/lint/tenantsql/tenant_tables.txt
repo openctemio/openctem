@@ -29,6 +29,8 @@ audit_chain_rebaseline_entries
 audit_chain_rebaselines
 audit_log_chain
 audit_logs
+bounty_program_exclusions
+bounty_programs
 business_service_assets
 business_services
 business_unit_assets
@@ -118,6 +120,7 @@ saved_views
 scan_coverage_state
 scan_freeze_windows
 scan_profiles
+scan_run_scope_snapshots
 scan_run_stage_plans
 scan_run_targets
 scan_runs
@@ -132,6 +135,7 @@ scim_group_role_mappings
 scim_groups
 scim_tokens
 scope_exclusions
+scope_snapshots
 scope_target_approvals
 scope_targets
 sensor_config_reports
