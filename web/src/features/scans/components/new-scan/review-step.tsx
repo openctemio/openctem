@@ -119,7 +119,10 @@ export function ReviewStep({
         ...t,
         assetIds: keepIds,
         assetNames: names,
-        customTargets: t.customTargets.filter((line) => !bad.has(line.trim().toLowerCase())),
+        customTargets: [
+          ...parsePastedTargets(t.customTargets).targets.filter((x) => !bad.has(x.toLowerCase())),
+          ...parsePastedTargets(t.customTargets).invalid.map((i) => i.input),
+        ],
         expandedTargets: (t.expandedTargets ?? []).filter((e) => !bad.has(e.toLowerCase())),
       },
     })

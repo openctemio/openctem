@@ -36,6 +36,7 @@ import { AlertTriangle, Loader2, Wifi } from 'lucide-react'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanRunsCache, useQuickScan } from '@/lib/api/scan-workflow-hooks'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
+import { SelectionSummary } from './target-picker/selection-summary'
 
 /** Backend hard cap on targets per quick scan (see POST /scans/quick, 1..1000). */
 const MAX_TARGETS = 1000
@@ -186,7 +187,18 @@ export function ScanAssetsDialog({
               {skippedCount} asset{skippedCount !== 1 ? 's' : ''} skipped (no scannable address).
             </p>
           )}
-          {refused.length > 0 && <ScopeRefusalPanel refused={refused} />}
+          {refused.length > 0 ? (
+            <ScopeRefusalPanel refused={refused} />
+          ) : (
+            // The same live scope check as New Scan and Quick scan.
+            <SelectionSummary
+              targets={cappedTargets}
+              chips={cappedTargets.map((t) => ({ key: t, label: t, kind: 'typed' as const }))}
+              groupCount={0}
+              invalidCount={0}
+              scannerName={scannerName}
+            />
+          )}
           {isOverCap && (
             <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
