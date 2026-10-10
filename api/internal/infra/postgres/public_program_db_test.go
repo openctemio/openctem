@@ -17,7 +17,7 @@ import (
 func TestPublicProgramRepository(t *testing.T) {
 	db, pdb := openBatchDedupDB(t)
 	ctx := context.Background()
-	if _, err := db.Exec(`DELETE FROM program_feed_state; UPDATE bounty_programs SET public_program_id = NULL; DELETE FROM public_programs`); err != nil {
+	if _, err := db.Exec(`DELETE FROM program_feed_state; DELETE FROM feed_checkpoints; UPDATE bounty_programs SET public_program_id = NULL; DELETE FROM public_programs`); err != nil {
 		t.Fatal(err)
 	}
 	cat := NewPublicProgramRepository(pdb)
