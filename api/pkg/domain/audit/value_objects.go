@@ -29,6 +29,9 @@ const (
 	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
 	// settings (RFC-039).
 	ActionTenantRetestUpdated Action = "tenant.retest_updated"
+	// ActionTenantVulnMatchingUpdated records a change to the organization's
+	// vulnerability matching policy (RFC-066).
+	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
 
 	// Idle Free workspaces (docs/architecture/idle-workspaces.md).
 	ActionTenantIdleReminded         Action = "tenant.idle_reminded"
@@ -601,7 +604,7 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
@@ -1034,7 +1037,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed,
