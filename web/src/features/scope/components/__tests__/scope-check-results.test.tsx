@@ -119,7 +119,10 @@ describe('ScopeCheckList', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Allow for 7 days' }))
     expect(await screen.findByDisplayValue('promo.net')).toBeInTheDocument()
-    expect(screen.getByLabelText('Days')).toHaveValue(7)
+    expect(await screen.findByRole('radio', { name: '7 days' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
   })
 
   it('shows hint-only fixes as text and link fixes as links', () => {

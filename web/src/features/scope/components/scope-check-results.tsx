@@ -125,6 +125,8 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
           pattern: fix.pattern,
           duration: 'one_off',
           days: fix.days,
+          // A tier_exceeds fix names the tier the probe needs.
+          tier: fix.tier === 't1' || fix.tier === 't2' ? fix.tier : undefined,
         })
         return
       case 'approve_entry':
