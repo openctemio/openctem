@@ -115,6 +115,36 @@ compares versions), on every asset or one asset, with an optional expiry.
   (trigger), its asset is the tenant's (composite foreign key), and a
   finding can only carry its own tenant's statement (trigger).
 
+## License policy
+
+The `license_policy` settings section (`GET/PUT
+/api/v1/organization/settings/license-policy`) lists rules: an SPDX id (or
+`id WITH exception`, or a `LicenseRef-`) or a category (`category:copyleft`),
+the action `allow`, `review` or `deny`, and optionally the dependency scopes
+the rule is limited to. `default` judges a known license no rule matches
+(`allow` or `review`); `unknown` judges free text, unknown ids and links
+without a license (`review` or `deny`); `review_findings` makes review
+verdicts open findings too. At most 200 rules.
+
+- **Evaluation.** Declared licenses are parsed as SPDX expressions (bounded:
+  512 characters, 64 terms, depth 16). OR takes the most permissive choice,
+  AND the strictest term, several declared licenses must all pass. A rule for
+  the id beats a category rule; for the same match the first rule that applies
+  to the link's scope wins; a link without a scope is runtime.
+- **When.** A policy change re-evaluates every package link of the
+  organization (one evaluation per distinct license set and scope); every
+  package write (sensor, CI, SBOM import) re-evaluates the assets it wrote.
+  The verdict and the deciding rule are cached on the link
+  (`asset_software.license_verdict`, `license_rule`).
+- **Findings.** A deny verdict opens a high finding, a review verdict a medium
+  one when opted in: `source = sca`, `finding_type = license`, tool
+  `license-policy`, one per asset, package and declared license set,
+  `component_id` the version. The evaluation resolves (resolution method
+  `license_policy`) the ones the policy no longer flags or whose link went
+  away, reopens them when flagged again and re-grades them when the verdict
+  moves between review and deny; it never touches another tool's findings.
+  Turning the policy off clears the verdicts and resolves its open findings.
+
 ## Authorization
 
 | Action | Permission | Scope |
@@ -123,7 +153,7 @@ compares versions), on every asset or one asset, with an optional expiry.
 | Import an SBOM | `components:write` | target asset in scope |
 | VEX statements (list, read) | `components:read` | asset-bound: asset in scope; product-wide: an in-scope asset uses the package |
 | VEX statements (create, edit, delete, import) | `findings:approve` | asset-bound: asset in scope; product-wide: full data access |
-| License policy | `settings:read` / `settings:write` | config |
+| License policy (read / replace and re-evaluate) | `settings:read` / `settings:write` | config (tenant from the token) |
 
 Module: `components`.
 
@@ -139,6 +169,7 @@ Module: `components`.
 | Licenses per link | 16 |
 | List page size | 100 |
 | VEX document | 5 MB, 5 000 statements (JSON) |
+| License policy | 200 rules; expressions of 512 characters, 64 terms, depth 16 |
 | VEX statement | 64 versions, range of 8 terms, statements of 2 000 characters, expiry within 5 years |
 
 ## Web console

@@ -16,6 +16,7 @@ type Repositories struct {
 	RepoExt                *postgres.RepositoryExtensionRepository
 	Component              *postgres.ComponentRepository
 	VEXStatement           *postgres.VEXStatementRepository
+	LicensePolicy          *postgres.LicensePolicyRepository
 	AssetGroup             *postgres.AssetGroupRepository
 	AssetType              *postgres.AssetTypeRepository
 	AssetTypeCat           *postgres.AssetTypeCategoryRepository
@@ -303,6 +304,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		RepoExt:                postgres.NewRepositoryExtensionRepository(db),
 		Component:              postgres.NewComponentRepository(db),
 		VEXStatement:           postgres.NewVEXStatementRepository(db),
+		LicensePolicy:          postgres.NewLicensePolicyRepository(db),
 		AssetGroup:             postgres.NewAssetGroupRepository(db),
 		AssetType:              postgres.NewAssetTypeRepository(db),
 		AssetTypeCat:           postgres.NewAssetTypeCategoryRepository(db),
