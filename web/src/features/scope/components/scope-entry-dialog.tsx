@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useId, useMemo, useState } from 'react'
-import { AlertTriangle, Info, Loader2 } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, Info, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -45,16 +45,28 @@ import { cn } from '@/lib/utils'
 import { createScopeTarget, invalidateScopeCache, useScopeSettingsApi } from '../api/use-scope-api'
 import type { ApiScopeTarget, ScopeTier } from '../api/scope-api.types'
 import { extractRootDomain } from '@/features/assets/lib/domain-hierarchy'
+import { VerifyDomainDialog } from '@/features/attack-surface/components/easm-verify-domain-dialog'
+import {
+  domainFor,
+  useEASMVerifiedDomains,
+} from '@/features/attack-surface/hooks/use-easm-verified-domains'
 import { useLetters } from '@/features/scope-letters'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import {
   coversText,
-  expiryBoundFor,
+  durationAllowed,
+  durationPolicy,
+  expiryDateFor,
+  formatDay,
   patternForCoverage,
+  resolveDuration,
   TIER_HINT,
   TIER_LABEL,
+  TIER_TOOLS,
   wildcardApex,
+  type DurationChoice,
 } from '../lib/scope-entry'
+import { ScopeDurationField } from './scope-duration-field'
 import {
   detectScopeKind,
   REQUESTABLE_TARGET_TYPES,
@@ -74,6 +86,8 @@ export interface ScopeEntryDraft {
   duration?: ScopeEntryDuration
   days?: number
   reason?: string
+  /** The tier the probe needs (a tier_exceeds fix). */
+  tier?: ScopeTier
 }
 
 interface ScopeEntryDialogProps {
@@ -83,8 +97,6 @@ interface ScopeEntryDialogProps {
   draft?: ScopeEntryDraft
   onCreated?: (entry: ApiScopeTarget) => void
 }
-
-const DEFAULT_MAX_DAYS = 7
 
 /** A single name or address: what a member may request. */
 export function isSingleTarget(type: string, pattern: string): boolean {
@@ -118,7 +130,7 @@ export function approvalsForNew(opts: {
 }
 
 export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: ScopeEntryDialogProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const formId = useId()
   const canApprove = useHasPermission(Permission.ScopeApprove)
   const { data: settings, isLoading: settingsLoading } = useScopeSettingsApi(open)
@@ -131,9 +143,12 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const [coverageTouched, setCoverageTouched] = useState(false)
   const [name, setName] = useState('')
   const [coverage, setCoverage] = useState<DomainCoverage>('subdomains')
-  const [duration, setDuration] = useState<ScopeEntryDuration>('permanent')
-  const [days, setDays] = useState(DEFAULT_MAX_DAYS)
+  // null: the longest duration the policy allows, until the user picks one.
+  const [durationPick, setDurationPick] = useState<DurationChoice | null>(null)
   const [tier, setTier] = useState<ScopeTier>('t1')
+  const [tierTouched, setTierTouched] = useState(false)
+  const [verifyDomain, setVerifyDomain] = useState<string | null>(null)
+  const { domains: verifiedDomains, mutate: refreshDomains } = useEASMVerifiedDomains()
   const [reason, setReason] = useState('')
   const [description, setDescription] = useState('')
   // '' : the organization owns it; otherwise the letter that authorizes it.
@@ -156,17 +171,25 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     setName(apex || pattern)
     setCoverage(apex ? 'subdomains' : pattern ? 'name' : 'subdomains')
     setCoverageTouched(!!pattern)
-    setDuration(draft?.duration ?? (canApprove ? 'permanent' : 'one_off'))
-    setDays(draft?.days ?? DEFAULT_MAX_DAYS)
+    setDurationPick(
+      draft?.duration === 'permanent'
+        ? { kind: 'permanent' }
+        : draft?.duration === 'one_off' && draft.days
+          ? { kind: 'days', days: draft.days }
+          : null
+    )
+    setTier(draft?.tier ?? 't1')
+    setTierTouched(!!draft?.tier)
     setReason(draft?.reason ?? '')
     setDescription('')
     setError(null)
-  }, [open, draft, canApprove])
+  }, [open, draft])
 
   // The default tier follows the organization's setting once it loads.
   useEffect(() => {
-    if (open && settings?.default_max_tier) setTier(settings.default_max_tier as ScopeTier)
-  }, [open, settings?.default_max_tier])
+    if (open && !tierTouched && settings?.default_max_tier)
+      setTier(settings.default_max_tier as ScopeTier)
+  }, [open, tierTouched, settings?.default_max_tier])
 
   const detected = detectScopeKind(name)
   const type: ScopeKind = override ?? detected ?? 'domain'
@@ -174,16 +197,16 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   // A member's request is one name for a few days, never a wildcard (§6.1).
   const isRequest = !canApprove
   const effectiveCoverage: DomainCoverage = isRequest ? 'name' : coverage
-  const effectiveDuration: ScopeEntryDuration = isRequest ? 'one_off' : duration
   // A request keeps what was typed, so a wildcard is refused, not narrowed.
   const pattern = isDomain && !isRequest ? patternForCoverage(name, effectiveCoverage) : name.trim()
-  // Intrusive (T2) entries follow the owner's limit, not the one-off one
-  // (RFC-054 §12.4): their expiry is never blocked by the one-off policy.
-  const { maxDays: dayCap, permanent: permanentAllowed } = expiryBoundFor(tier, settings)
-  const oneOffAllowed =
-    tier === 't2' ? canApprove : canApprove ? oneOffPolicy !== 'disabled' : requestsAllowed
-  const clampedDays = Math.min(Math.max(1, Math.round(days) || 1), dayCap)
-  const needsReason = effectiveDuration === 'one_off' || isRequest || tier === 't2'
+  // Intrusive (T2) entries follow the owner's limit, others the one-off one
+  // (RFC-054 §12.4). Only what the policy allows can be picked; the default
+  // is the longest allowed, never a forbidden value.
+  const policy = durationPolicy(tier, settings, { isRequest })
+  const duration = resolveDuration(durationPick, policy)
+  const expiring = duration.kind === 'days'
+  const expiryDays = duration.kind === 'days' ? duration.days : 0
+  const needsReason = expiring || isRequest || tier === 't2'
   const approvals = approvalsForNew({
     canApprove,
     effective: settings?.effective_widening_approvals ?? 0,
@@ -191,16 +214,26 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     policy: settings?.approval_policy?.mode,
   })
 
+  const expiresOn = expiring ? formatDay(expiryDateFor(expiryDays), locale) : ''
   const summary = useMemo(() => {
     const parts: string[] = []
     if (name.trim()) parts.push(coversText({ pattern, target_type: type }))
     parts.push(
-      effectiveDuration === 'one_off'
-        ? `expires in ${clampedDays} ${clampedDays === 1 ? 'day' : 'days'}`
-        : 'permanent'
+      expiring
+        ? t('scope.entry.expiresOn', 'expires on {date}', { date: expiresOn })
+        : t('scope.entry.permanent', 'permanent')
     )
     return parts.join(' · ')
-  }, [name, pattern, type, effectiveDuration, clampedDays])
+  }, [name, pattern, type, expiring, expiresOn, t])
+
+  // Domain proof (RFC-054 §8): intrusive probes always need a verified
+  // domain; platform sensors need one when the operator says so.
+  const proofRoot =
+    isDomain && name.trim() ? extractRootDomain(wildcardApex(pattern) || pattern) : ''
+  const proofMode = settings?.active_proof ?? 'off'
+  const proofNeeded = !!proofRoot && (tier === 't2' || proofMode !== 'off')
+  const proofRow = proofNeeded ? domainFor(proofRoot, verifiedDomains) : undefined
+  const proofMissing = proofNeeded && proofRow?.status !== 'verified'
 
   const validate = (): string | null => {
     if (!name.trim()) return 'Enter a name or address.'
@@ -210,9 +243,10 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
       return t('scope.error.REQUEST_MUST_BE_SINGLE')
     if (isRequest && !requestsAllowed) return t('scope.error.REQUEST_NOT_ALLOWED')
     if (isRequest && !isSingleTarget(type, pattern)) return t('scope.error.REQUEST_MUST_BE_SINGLE')
-    if (effectiveDuration === 'one_off' && !oneOffAllowed) return t('scope.error.ONE_OFF_DISABLED')
-    if (tier === 't2' && effectiveDuration !== 'one_off' && !permanentAllowed)
-      return t('scope.error.INTRUSIVE_NEEDS_EXPIRY')
+    if (!durationAllowed(duration, policy))
+      return tier === 't2'
+        ? t('scope.error.INTRUSIVE_NEEDS_EXPIRY')
+        : t('scope.error.ONE_OFF_DISABLED')
     if (needsReason && !reason.trim()) return t('scope.error.REASON_REQUIRED')
     return null
   }
@@ -233,7 +267,7 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
         description: description.trim() || undefined,
         reason: reason.trim() || undefined,
         max_tier: tier,
-        ...(effectiveDuration === 'one_off' ? { expires_in_days: clampedDays } : {}),
+        ...(expiring ? { expires_in_days: expiryDays } : {}),
         ...(letterId
           ? { authorization_source: 'authorization_letter' as const, letter_id: letterId }
           : {}),
@@ -386,51 +420,18 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                 </fieldset>
               )}
 
-              {!isRequest && (
-                <fieldset className="space-y-2">
-                  <legend className="text-sm font-medium">Duration</legend>
-                  <RadioGroup
-                    value={duration}
-                    onValueChange={(v) => setDuration(v as ScopeEntryDuration)}
-                    className="gap-2"
-                  >
-                    <CoverageOption
-                      value="permanent"
-                      title="Permanent"
-                      hint="Stays until someone removes it. Names found under it join the inventory."
-                    />
-                    <CoverageOption
-                      value="one_off"
-                      title="One-off"
-                      hint="Expires on its own. Authorizes scans only; found names still need review."
-                      disabled={!oneOffAllowed}
-                    />
-                  </RadioGroup>
-                </fieldset>
-              )}
-
-              {effectiveDuration === 'one_off' && (
-                <div className="space-y-2">
-                  <Label htmlFor={`${formId}-days`}>Days</Label>
-                  <Input
-                    id={`${formId}-days`}
-                    type="number"
-                    min={1}
-                    max={dayCap}
-                    value={days}
-                    onChange={(e) => setDays(Number(e.target.value))}
-                    className="w-28"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    1 to {dayCap} days (your organization&apos;s limit
-                    {tier === 't2' ? ' for intrusive entries' : ''}).
-                  </p>
-                </div>
-              )}
-
               <div className="space-y-2">
-                <Label htmlFor={`${formId}-tier`}>Deepest probe allowed</Label>
-                <Select value={tier} onValueChange={(v) => setTier(v as ScopeTier)}>
+                <Label htmlFor={`${formId}-tier`}>
+                  {t('scope.entry.tierLabel', 'Deepest probe allowed')}
+                </Label>
+                <Select
+                  value={tier}
+                  onValueChange={(v) => {
+                    setTier(v as ScopeTier)
+                    setTierTouched(true)
+                    setError(null)
+                  }}
+                >
                   <SelectTrigger id={`${formId}-tier`} className="w-full sm:w-56">
                     <SelectValue />
                   </SelectTrigger>
@@ -442,7 +443,87 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">{TIER_HINT[tier]}</p>
+                <p className="text-xs text-muted-foreground">
+                  {TIER_HINT[tier]}{' '}
+                  {t('scope.entry.tierTools', 'Runs: {tools}.', { tools: TIER_TOOLS[tier] })}
+                  {tier !== 't0' && ` ${t('scope.entry.tierBelow', 'Lower tiers are included.')}`}
+                </p>
+              </div>
+
+              <ScopeDurationField
+                policy={policy}
+                value={duration}
+                onChange={(c) => {
+                  setDurationPick(c)
+                  setError(null)
+                }}
+              />
+
+              <div
+                className="rounded-md border bg-muted/40 px-3 py-2 text-sm"
+                aria-live="polite"
+                data-testid="entry-outcome"
+              >
+                <p className="font-medium break-words">{summary}</p>
+                <p className="text-muted-foreground">
+                  {approvals > 0
+                    ? isRequest
+                      ? t(
+                          'scope.entry.outcomeRequest',
+                          'A scope approver reviews it. It authorizes nothing until approved.'
+                        )
+                      : approvals === 1
+                        ? t(
+                            'scope.entry.outcomeApproval1',
+                            'Needs 1 approval from another approver; it authorizes nothing until then.'
+                          )
+                        : t(
+                            'scope.entry.outcomeApprovalN',
+                            'Needs {n} approvals from other approvers; it authorizes nothing until then.',
+                            { n: approvals }
+                          )
+                    : t(
+                        'scope.entry.outcomeNow',
+                        'Takes effect at once. You may be asked to confirm your identity first.'
+                      )}
+                  {expiring &&
+                    ` ${t('scope.entry.outcomeExpires', 'It stops on {date}.', { date: expiresOn })}`}
+                </p>
+                {proofMissing && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 border-t pt-2">
+                    <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                      {tier === 't2'
+                        ? t(
+                            'scope.entry.proofT2',
+                            'Intrusive (T2) probes also need proof that you control {domain}.',
+                            { domain: proofRoot }
+                          )
+                        : proofMode === 'all'
+                          ? t(
+                              'scope.entry.proofAll',
+                              'Scans also need proof that you control {domain}.',
+                              { domain: proofRoot }
+                            )
+                          : t(
+                              'scope.entry.proofPlatform',
+                              'Platform sensors also need proof that you control {domain}; your own sensors need this entry only.',
+                              { domain: proofRoot }
+                            )}
+                    </p>
+                    {!isRequest && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setVerifyDomain(proofRoot)}
+                      >
+                        <BadgeCheck className="me-1 h-3.5 w-3.5" aria-hidden />
+                        {t('scope.entry.verifyDomain', 'Verify domain')}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {usableLetters.length > 0 && (
@@ -500,15 +581,6 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                   />
                 </div>
               )}
-
-              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm" aria-live="polite">
-                <p className="font-medium">{summary}</p>
-                <p className="text-muted-foreground">
-                  {approvals > 0
-                    ? `Needs ${approvals} ${approvals === 1 ? 'approval' : 'approvals'} from ${isRequest ? 'a scope approver' : 'another approver'}; it authorizes nothing until then.`
-                    : 'Takes effect at once. You may be asked to confirm your identity first.'}
-                </p>
-              </div>
             </form>
           )}
         </DialogBody>
@@ -525,6 +597,12 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
           )}
         </DialogFooter>
       </DialogContent>
+      <VerifyDomainDialog
+        domain={verifyDomain}
+        existing={proofRow}
+        onOpenChange={(o) => !o && setVerifyDomain(null)}
+        onChanged={() => void refreshDomains()}
+      />
     </Dialog>
   )
 }
