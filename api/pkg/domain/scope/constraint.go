@@ -387,6 +387,11 @@ type JobShape struct {
 	Tool     string
 	Ports    string
 	TopPorts bool
+	// LimitsEnforced is true when the job goes to a sensor that enforces
+	// scope limits (it advertises jobsign.CapabilityScopeLimits) in a
+	// signed job: the limits travel in the signed statement, so any tool
+	// may run inside them.
+	LimitsEnforced bool
 }
 
 // Overlaps reports whether two constraints allow a common port (a zero

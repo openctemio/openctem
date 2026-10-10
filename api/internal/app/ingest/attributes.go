@@ -28,6 +28,11 @@ type AttributeReconciler interface {
 // record no source and existing assets keep their tracked values.
 func (s *Service) SetAttributeReconciler(r AttributeReconciler) {
 	s.attributes = r
+	// The same reconciler decides set attributes (IP addresses,
+	// technologies, open ports) when it can; ingest then leaves those sets
+	// of existing assets to it.
+	s.sets, _ = r.(SetReconciler)
+	s.assetProcessor.trackSets = s.sets != nil
 }
 
 // maxAttributeObservationsPerReport bounds what one report may record.

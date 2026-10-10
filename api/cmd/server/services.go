@@ -1782,9 +1782,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			s.CertMonitor.SetScopeJoin(s.ScopeJoin)
 		}
 	}
-	// Open ports a port scan no longer sees are closed (research/22 P0-6).
 	s.Ingest.SetEvidenceStore(s.Evidence)
-	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
@@ -1794,7 +1792,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
-	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)
+	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset values and sets, incl. open ports (RFC-069)
 	// Inventory vulnerability matching (RFC-066): told by ingest when an
 	// organization's software changes; findings go through the same
 	// priority and SLA enrichment as ingested ones.
@@ -1922,6 +1920,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails, cfg.Scope.ActiveProof == config.ScopeProofAll)
+	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
+	// the limits of port- and path-limited targets.
+	s.Command.SetScopeLimits(s.ActiveGate)
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
