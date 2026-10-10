@@ -179,3 +179,7 @@ func TestRecordSoftware_Caps(t *testing.T) {
 		t.Fatalf("links %d, max per asset %d", len(repo.links), counts[len(counts)-1])
 	}
 }
+
+func (f *fakeSoftwareRepo) ListAssetLinks(context.Context, shared.ID, shared.ID) ([]software.AssetLink, error) {
+	return nil, nil
+}

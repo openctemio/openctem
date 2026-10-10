@@ -1,6 +1,6 @@
 # Feed transfer
 
-Design: [RFC-070](../rfcs/RFC-070-chunked-feed-transfer.md). Code: sdk-go
+Design: [RFC-072](../rfcs/RFC-072-chunked-feed-transfer.md). Code: sdk-go
 `pkg/transfer` (fetcher) and `pkg/transfer/bundle` (format, writer,
 consumer).
 

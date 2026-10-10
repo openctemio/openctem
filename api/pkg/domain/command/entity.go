@@ -141,12 +141,6 @@ type Command struct {
 	// the reaper unpins it. Never sent on the protocol-v1 wire.
 	ScanZoneID *shared.ID
 
-	// FreezeOverride lets the command through an active scan freeze window.
-	// Only the server sets it, on the commands of a run a member with
-	// scans:freeze:override started during a window (audited); it is
-	// written on create and never read back from a request.
-	FreezeOverride bool
-
 	// HostKeys are the hosts an active workflow chunk sends traffic to.
 	// While the command is acknowledged or running, no other command of
 	// the tenant with one of these keys is claimed (platform-side per-host

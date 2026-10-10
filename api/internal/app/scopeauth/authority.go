@@ -198,6 +198,27 @@ func (a *Authority) ProgramsCovering(name string) []shared.ID {
 	return out
 }
 
+// EntriesCovering lists the ids of every active scope entry that covers name
+// (program exclusions applied to program entries), in entry order: the
+// entries a scan window policy can select a target by (RFC-067).
+func (a *Authority) EntriesCovering(name string) []string {
+	if a == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range MatchForms(name) {
+		for _, t := range a.targets {
+			if t == nil || seen[t.ID().String()] || !a.coversForm(t, f) {
+				continue
+			}
+			seen[t.ID().String()] = true
+			out = append(out, t.ID().String())
+		}
+	}
+	return out
+}
+
 // CoveredByPrograms reports whether an in-effect entry of one of the given
 // programs covers name (program exclusions applied): a restricted member of
 // those programs may scan it as typed text (RFC-065 §7).
