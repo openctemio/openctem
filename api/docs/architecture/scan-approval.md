@@ -19,6 +19,7 @@ their approvals). A platform administrator can force the mode.
 | Scope entries | `internal/app/scope/entries.go` (`loadPolicy`: approvals only in Strict) |
 | Requests and run gate | `pkg/domain/scangov/request.go`, `definition.go`; `internal/app/scangov/requests.go`, `gate.go`; `internal/app/scan/governance.go` (definition, facts, gate call in `triggerLoadedScan`); `internal/infra/postgres/scan_approval_repository.go` |
 | Signer floors | `SIGNER_LEDGER_MIN_APPROVALS`, `SIGNER_LEDGER_T2_MIN_APPROVALS` (`internal/signer/ledger.go`) |
+| Tier ceilings (Strict only) | `scangov.TierCeilingsEnforced`; dispatch gate `internal/app/easm/active_gate.go` (`SetTierPolicy`); ledger `set_tier_ceilings` (`internal/app/scope/ledger.go` `CommitTierCeilings`, `internal/signer/ledger.go`) |
 
 ## Mode in force
 
@@ -52,11 +53,25 @@ approvals to two and asks a justification. Monitor rules never block.
 
 ## Scope entries and the signer
 
-In Off and On a scope widening takes effect without a second person; the
-change still goes to the signer ledger (labelled `scan_approval:<mode>`,
-`policy_required_approvals: 0`). In Strict the RFC-054 §7 approvals apply
-and the signer checks them. Operators who want recorded approvals for every
-organization set the signer floors and force Strict.
+In Off and On a scope widening takes effect without a second person and a
+scope entry is not a tier ceiling (its targets may get any probe the scan's
+intensity and rules allow); the change still goes to the signer ledger
+(labelled `scan_approval:<mode>`, `policy_required_approvals: 0`, with
+`set_tier_ceilings: false`). In Strict the RFC-054 §7 approvals and the
+entries' `max_tier` apply and the signer checks both. Operators who want
+recorded approvals for every organization set the signer floors and force
+Strict.
+
+The ledger holds each organization's tier ceilings (on or off) so it is
+never wider than the database and never refuses what the database allows:
+
+```
+owner / platform mode change crossing Strict
+   leaving Strict ── signer accepts set_tier_ceilings:false ──> save mode   (refused: mode stays Strict)
+   entering Strict ── save mode ──> set_tier_ceilings:true (best effort; sync narrows otherwise)
+every scope widening ── carries set_tier_ceilings as the database has it
+sync ── may turn ceilings on, never off (off in the snapshot only counts as diverged)
+```
 
 ## Requests and the run gate
 
