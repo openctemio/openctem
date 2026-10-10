@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,7 +53,7 @@ func (h *ComponentHandler) handleServiceError(w http.ResponseWriter, err error) 
 	case errors.Is(err, pagination.ErrInvalid):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
-		h.logger.Error("component service error", "error", err)
+		h.logger.Error("component service error", "error", strings.NewReplacer("\n", " ", "\r", " ").Replace(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }

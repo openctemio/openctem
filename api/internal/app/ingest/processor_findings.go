@@ -2151,7 +2151,7 @@ func (p *FindingProcessor) linkFindingToComponent(ctx context.Context, f *vulner
 	}
 	versionID, err := p.compRepo.EnsurePackageVersion(ctx, f.TenantID(), purl)
 	if err != nil {
-		p.logger.Debug("finding package version not resolved", "purl", purl.String(), "error", err)
+		p.logger.Debug("finding package version not resolved", "purl", sanitizeIngestLogField(purl.String()), "error", sanitizeIngestLogField(err.Error()))
 		return
 	}
 	f.SetComponentID(versionID)

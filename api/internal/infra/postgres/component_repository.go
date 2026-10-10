@@ -232,7 +232,7 @@ func (r *ComponentRepository) ListPackages(ctx context.Context, f component.Filt
 		return empty, fmt.Errorf("list packages: %w", err)
 	}
 	defer rows.Close()
-	out := make([]component.Package, 0, page.Limit())
+	out := []component.Package{}
 	for rows.Next() {
 		p, err := scanPackage(rows)
 		if err != nil {
@@ -495,7 +495,7 @@ func (r *ComponentRepository) listUsages(ctx context.Context, where string, args
 		return empty, fmt.Errorf("list package usages: %w", err)
 	}
 	defer rows.Close()
-	out := make([]component.Usage, 0, page.Limit())
+	out := []component.Usage{}
 	for rows.Next() {
 		u, err := scanUsage(rows)
 		if err != nil {
@@ -585,7 +585,7 @@ func (r *ComponentRepository) ListVulnerabilities(ctx context.Context, tenantID,
 		return empty, fmt.Errorf("list package vulnerabilities: %w", err)
 	}
 	defer rows.Close()
-	out := make([]component.Vulnerability, 0, page.Limit())
+	out := []component.Vulnerability{}
 	for rows.Next() {
 		var v component.Vulnerability
 		var cvss, epss sql.NullFloat64
