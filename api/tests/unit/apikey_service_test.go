@@ -1955,7 +1955,7 @@ func (f *fakeHolder) HeldPermissions(_ context.Context, _, _ shared.ID) (bool, [
 func mintForHolder(t *testing.T, svc *apikey.Service, userID string, scopes ...string) string {
 	t.Helper()
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: shared.NewID().String(), UserID: userID, Name: "holder-" + shared.NewID().String()[:8], Scopes: scopes,
+		TenantID: shared.NewID().String(), UserID: userID, Name: "holder-" + shared.NewID().String()[28:], Scopes: scopes,
 		ExpiresInDays: 90,
 	})
 	if err != nil {

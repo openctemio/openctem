@@ -11,6 +11,7 @@ import {
   Megaphone,
   Radar,
   Package,
+  ShieldCheck,
   UserCog,
   UserPlus,
   UserSearch,
@@ -142,6 +143,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/sign-up',
         icon: UserPlus,
         keywords: ['registration', 'self-service', 'policy'],
+      },
+      {
+        title: 'Scope approvals',
+        i18nKey: 'admin.nav.scopeApprovals',
+        url: '/admin/system/scope-approvals',
+        icon: ShieldCheck,
+        keywords: ['scope', 'approval', 'widening', 'second approver', 'policy'],
       },
       {
         title: 'Admin sign-in',

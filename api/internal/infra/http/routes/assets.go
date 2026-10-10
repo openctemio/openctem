@@ -53,6 +53,11 @@ func registerAssetRoutes(
 		r.PUT("/{id}/repository", h.UpdateRepository, middleware.Require(permission.AssetsWrite))
 		r.PATCH("/{id}/crown-jewel", h.UpdateCrownJewel, middleware.Require(permission.AssetsWrite))
 
+		// Where the values come from, and a person's locks (RFC-069).
+		r.GET("/{id}/attribute-sources", h.GetAttributeSources, middleware.Require(permission.AssetsRead))
+		r.PUT("/{id}/attribute-sources/{attribute}/lock", h.LockAttribute, middleware.Require(permission.AssetsWrite))
+		r.DELETE("/{id}/attribute-sources/{attribute}/lock", h.ReleaseAttributeLock, middleware.Require(permission.AssetsWrite))
+
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/deactivate", h.Deactivate, middleware.Require(permission.AssetsWrite))
@@ -222,6 +227,9 @@ func registerScopeRoutes(
 		// friction on widening: approvers only, with step-up.
 		r.GET("/settings", h.GetSettings, middleware.Require(permission.ScopeRead))
 		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUp())
+		// The owner-only part: how long an intrusive (t2) entry may last
+		// (RFC-054 §12.4). Owner, step-up, reason; audited, admins told.
+		r.PUT("/settings/intrusive", h.UpdateIntrusiveSettings, middleware.Require(permission.ScopeApprove), middleware.RequireOwner(), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// Scope Target routes
@@ -248,6 +256,9 @@ func registerScopeRoutes(
 		r.POST("/{id}/self-approve", h.SelfApproveTarget, middleware.Require(permission.ScopeApprove))
 		// Remind the approvers of a pending entry (once per hour per entry).
 		r.POST("/{id}/remind", h.RemindApprovers, middleware.Require(permission.ScopeWrite))
+		// Keep a t2 entry intrusive for another attestation period
+		// (RFC-054 §12.5): approvers, one click.
+		r.POST("/{id}/attest", h.AttestTarget, middleware.Require(permission.ScopeApprove))
 
 		// Bulk operations
 		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))

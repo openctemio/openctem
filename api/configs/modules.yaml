@@ -148,6 +148,7 @@
   jobs:
     - ProgramAssignmentController
     - ProgramSyncController
+    - ScopeAttestationController
 - id: business_services
   const: ModuleBusinessServices
   slug: "business-services"

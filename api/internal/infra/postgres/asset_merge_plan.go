@@ -78,6 +78,11 @@ var assetMergeRefs = []mergeRef{
 	// same location is dropped.
 	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
+	// Per-source attribute values (RFC-069): the kept asset's own value of a
+	// source wins; a merged asset's value from a source the kept one never
+	// heard from moves.
+	{table: "asset_attribute_sources", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"attribute", "source_kind", "source_name"}}}},
 	{table: "asset_components", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{
 			{cols: []string{"component_id", "path"}},

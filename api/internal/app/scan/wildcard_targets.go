@@ -5,32 +5,20 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
-// A wildcard pattern (*.example.com) names a set of hosts, not a host. The
-// target validator accepts it, so it used to reach an active scanner as a
-// literal target: live, a nuclei scan was dispatched against
+// A wildcard pattern (*.example.com) names a set of hosts, not a host. It is
+// a dynamic selector (RFC-068, target_selectors.go): each run expands it to
+// the apex and every name the inventory holds under it, and a subdomain
+// discovery tool (subfinder) takes the apex alone. It never reaches a
+// scanner as a literal host: live, a nuclei scan was dispatched against
 // "*.example.co.uk" and the sensor's local policy refused it ("cannot
-// resolve"), a run that could never have worked.
+// resolve").
 //
-// Rules:
-//   - a discovery (passive) tool takes the pattern as its root domain: the
-//     run hands "example.com" to subfinder, never "*.example.com";
-//   - any other tool refuses it, with WILDCARD_TARGET, at create, at edit
-//     and at trigger (a refused trigger is a blocked run). The way forward
-//     is a discovery scan seeded with the root, or the known assets that
-//     match the pattern.
-//
-// A workflow takes the pattern when every step that starts the run (no
-// dependencies) is passive; later steps get what discovery found.
-//
-// Security: this is a correctness gate in front of the ownership and scope
-// gates, which still run on the root domain like on any other target.
+// Security: a correctness rule in front of the ownership and scope gates,
+// which decide the apex and every expanded name like any other target.
 
 // CodeWildcardTarget refuses a wildcard pattern given to an active tool.
 const CodeWildcardTarget = "WILDCARD_TARGET"
@@ -74,98 +62,39 @@ func wildcardTargetsToRoots(targets []string) []string {
 	return out
 }
 
-// wildcardRefusal is the WILDCARD_TARGET error for pattern and the tool that
-// cannot take it.
-func wildcardRefusal(pattern, tool string) error {
-	root := WildcardRoot(pattern)
-	return shared.NewDomainError(CodeWildcardTarget, fmt.Sprintf(
-		"Target %q is a pattern, not a host: %s cannot scan it. Discover the subdomains of %s with a discovery scan "+
-			"(for example the External discovery preset, seeded with %s), or scan the known assets that match %s.",
-		pattern, tool, root, root, pattern), shared.ErrValidation)
+// refuseWildcardTargets checks the wildcard selectors of a scan when it is
+// saved: each must be *.<domain>, and not a root the platform lets nobody
+// cover (a public suffix, a shared provider apex, a denied name).
+func (s *Service) refuseWildcardTargets(_ context.Context, sc *scan.Scan) error {
+	return validateSelectorTargets(sc.Targets)
 }
 
-// wildcardTaker reports whether the scan's tools take a wildcard pattern as
-// its root domain, and otherwise names the tool that does not.
-func (s *Service) wildcardTaker(ctx context.Context, sc *scan.Scan) (bool, string, error) {
-	if sc.ScanType != scan.ScanTypeWorkflow {
-		return stage.PassiveTool(sc.ScannerName), sc.ScannerName, nil
-	}
-	if sc.ScanWorkflowID == nil {
-		return false, "this workflow", nil
-	}
-	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
-	if err != nil {
-		return false, "", fmt.Errorf("failed to get scan workflow steps: %w", err)
-	}
-	for _, st := range steps {
-		if len(st.DependsOn) > 0 {
-			continue
-		}
-		if !passiveStep(st) {
-			return false, stepToolLabel(st), nil
-		}
-	}
-	return true, "", nil
-}
-
-// passiveStep reports whether a step is passive work: its tool is a passive
-// tool of the stage catalog, or its capabilities name a passive stage.
-func passiveStep(st *scanworkflow.Step) bool {
-	if st.Tool != "" {
-		return stage.PassiveTool(st.Tool)
-	}
-	sg, err := stage.ForCapabilities(st.Capabilities)
-	return err == nil && sg.Tier.Passive()
-}
-
-func stepToolLabel(st *scanworkflow.Step) string {
-	if st.Tool != "" {
-		return fmt.Sprintf("%s (step %q)", st.Tool, st.StepKey)
-	}
-	return fmt.Sprintf("step %q", st.StepKey)
-}
-
-// refuseWildcardTargets refuses a scan whose direct targets hold a wildcard
-// pattern its tools cannot take. Used at create and edit.
-func (s *Service) refuseWildcardTargets(ctx context.Context, sc *scan.Scan) error {
-	pattern := firstWildcard(sc.Targets)
-	if pattern == "" {
-		return nil
-	}
-	ok, tool, err := s.wildcardTaker(ctx, sc)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return wildcardRefusal(pattern, tool)
-	}
-	return nil
-}
-
-// applyWildcardTargets is the trigger-time rule: a pattern the scan's tools
-// cannot take refuses the run; otherwise it returns a copy of the scan for
-// this run in which every pattern is its root domain, in the targets and in
-// a scanner_config "targets" list. The stored scan is never changed.
-func (s *Service) applyWildcardTargets(ctx context.Context, sc *scan.Scan) (*scan.Scan, error) {
-	pattern := firstWildcard(sc.Targets)
-	if pattern == "" {
-		if cfgTargets, ok := sc.ScannerConfig["targets"]; ok {
-			pattern = firstWildcard(anyStrings(cfgTargets))
-		}
-	}
-	if pattern == "" {
-		return sc, nil
-	}
-	ok, tool, err := s.wildcardTaker(ctx, sc)
-	if err != nil {
+// applyWildcardTargets is the trigger-time rule for a scan whose only tool
+// is subdomain discovery: it returns a copy of the scan for this run in
+// which every pattern is its apex, in the targets and in a scanner_config
+// "targets" list. Any other scan keeps its patterns, which the run expands
+// (expandSelectors). A pattern in scanner_config "targets" of another tool
+// would reach the sensor as written, so it refuses the run. The stored scan
+// is never changed.
+func (s *Service) applyWildcardTargets(_ context.Context, sc *scan.Scan) (*scan.Scan, error) {
+	if err := validateSelectorTargets(sc.Targets); err != nil {
 		return nil, err
 	}
-	if !ok {
-		return nil, wildcardRefusal(pattern, tool)
+	cfgTargets, hasCfg := sc.ScannerConfig["targets"]
+	rootsOnly := sc.ScanType != scan.ScanTypeWorkflow && rootsOnlyTool(sc.ScannerName)
+	if hasCfg && !rootsOnly {
+		if pattern := firstWildcard(anyStrings(cfgTargets)); pattern != "" {
+			return nil, shared.NewDomainError(CodeWildcardTarget, fmt.Sprintf(
+				"Target %q in the scanner settings is a pattern, not a host: put it in the scan's targets, where each run expands it to the known names under %s.",
+				pattern, WildcardRoot(pattern)), shared.ErrValidation)
+		}
+	}
+	if !rootsOnly || (firstWildcard(sc.Targets) == "" && (!hasCfg || firstWildcard(anyStrings(cfgTargets)) == "")) {
+		return sc, nil
 	}
 	run := *sc
 	run.Targets = wildcardTargetsToRoots(sc.Targets)
-	if cfgTargets, ok := sc.ScannerConfig["targets"]; ok {
+	if hasCfg {
 		cfg := make(map[string]any, len(sc.ScannerConfig))
 		for k, v := range sc.ScannerConfig {
 			cfg[k] = v
