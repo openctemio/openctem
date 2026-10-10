@@ -238,6 +238,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}

@@ -10,6 +10,8 @@ import (
 	"io"
 	"sort"
 
+	"github.com/openctemio/openctem/api/internal/app/licensepolicy"
+
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
@@ -27,6 +29,15 @@ type assetTenantChecker interface {
 // MaxSBOMBytes is the largest SBOM accepted.
 const MaxSBOMBytes = 50 << 20
 
+// SBOMLicenseEvaluator re-evaluates the license policy on an asset's
+// packages (internal/app/licensepolicy).
+type SBOMLicenseEvaluator interface {
+	EvaluateAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (licensepolicy.Result, error)
+}
+
+// SetLicenseEvaluator wires the license policy evaluation after an import.
+func (s *SBOMImportService) SetLicenseEvaluator(e SBOMLicenseEvaluator) { s.license = e }
+
 // SBOMStore writes packages and reads the current inventory for the diff.
 type SBOMStore interface {
 	software.PackageWriter
@@ -35,6 +46,7 @@ type SBOMStore interface {
 
 // SBOMImportService imports CycloneDX and SPDX documents.
 type SBOMImportService struct {
+	license      SBOMLicenseEvaluator
 	store        SBOMStore
 	assetChecker assetTenantChecker
 	dataScope    *datascope.Enforcer
@@ -127,6 +139,11 @@ func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID st
 		return nil, err
 	}
 	res.Written = &written
+	if s.license != nil {
+		if _, err := s.license.EvaluateAssets(ctx, tid, []shared.ID{aid}); err != nil {
+			s.logger.Warn("license policy evaluation failed", "tenant_id", tid.String(), "error", err)
+		}
+	}
 	res.ComponentsImported = written.Links
 	s.logger.Info("sbom imported", "tenant_id", tid.String(), "asset_id", aid.String(),
 		"format", parsed.Format, "packages", len(parsed.Nodes), "links", written.Links, "removed", written.Removed)
