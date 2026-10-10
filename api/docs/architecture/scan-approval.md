@@ -15,7 +15,7 @@ their approvals). A platform administrator can force the mode.
 | Organization settings section `scan_governance` | `pkg/domain/tenant/scan_governance.go`, `internal/app/tenant/scan_governance.go` |
 | Settings service (mode, rules) | `internal/app/scangov` |
 | Platform policy and the mode in force | `internal/app/scanpolicy` (`EffectiveMode`, `ScanGovernanceMode`) |
-| Routes | `GET/PUT /api/v1/organization/settings/scan-governance[/mode|/rules]`, `GET/PUT /api/v1/admin/settings/scan-approval-policy`, `GET/PUT /api/v1/admin/tenants/{id}/scan-approval-policy` |
+| Routes | `GET/PUT /api/v1/organization/settings/scan-governance[/mode|/rules]`, `POST .../scan-governance/test` (rule tester, `internal/app/scangov/tester.go`), `GET/PUT /api/v1/admin/settings/scan-approval-policy`, `GET/PUT /api/v1/admin/tenants/{id}/scan-approval-policy` |
 | Scope entries | `internal/app/scope/entries.go` (`loadPolicy`: approvals only in Strict) |
 | Requests and run gate | `pkg/domain/scangov/request.go`, `definition.go`; `internal/app/scangov/requests.go`, `gate.go`; `internal/app/scan/governance.go` (definition, facts, gate call in `triggerLoadedScan`); `internal/infra/postgres/scan_approval_repository.go` |
 | Signer floors | `SIGNER_LEDGER_MIN_APPROVALS`, `SIGNER_LEDGER_T2_MIN_APPROVALS` (`internal/signer/ledger.go`) |
@@ -34,6 +34,16 @@ owner's choice (tenants.settings.scan_governance.mode) ───────┘
 run is refused.
 
 ## Rules
+
+Conditions read the definition (intensity, tools, targets, schedule,
+placement, zone), the inventory (tags, criticality, crown jewels) and the
+caller: requester role and group, origin (`ui`, `api_key`,
+`service_account`, `mcp`, `ci`, `system`, set by the authentication
+middleware with `scangov.WithOrigin`), trusted service accounts, and
+business hours in the organization's timezone
+(`internal/app/scangov/requester.go`, directory
+`ScanApprovalRepository.RequesterProfile`). Unknown caller or time is
+caught (fail closed).
 
 Conditions inside a rule are AND'ed, rules are OR'ed. Every matched rule
 is listed; the matched rule with the most approvals decides the approvers;

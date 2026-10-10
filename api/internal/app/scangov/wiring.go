@@ -110,17 +110,30 @@ func (s *Service) rules(ctx context.Context, tenantID shared.ID) (scangov.Mode, 
 	return m, *st, nil
 }
 
-// Evaluate applies the organization's rules to a definition's facts.
-func (s *Service) Evaluate(ctx context.Context, tenantID shared.ID, f scangov.Facts) (scangov.Evaluation, error) {
+// Evaluate applies the organization's rules to a definition's facts, for
+// userID asking through the origin of ctx and a run now.
+func (s *Service) Evaluate(ctx context.Context, tenantID shared.ID, f scangov.Facts, userID string) (scangov.Evaluation, error) {
+	return s.evaluateAt(ctx, tenantID, f, userID, s.clock())
+}
+
+// evaluateAt is Evaluate for a run at at.
+func (s *Service) evaluateAt(ctx context.Context, tenantID shared.ID, f scangov.Facts, userID string, at time.Time) (scangov.Evaluation, error) {
 	m, st, err := s.rules(ctx, tenantID)
 	if err != nil {
+		return scangov.Evaluation{}, err
+	}
+	if m == scangov.ModeOff {
+		return scangov.Evaluate(m, nil, f), nil
+	}
+	if f, err = s.withRequester(ctx, tenantID, st.Rules, f, userID, at); err != nil {
 		return scangov.Evaluation{}, err
 	}
 	return scangov.Evaluate(m, st.Rules, f), nil
 }
 
-// Preview evaluates an unsaved scan: what the New Scan review step shows.
-func (s *Service) Preview(ctx context.Context, sc *scan.Scan) (scangov.Evaluation, error) {
+// Preview evaluates an unsaved scan for userID: what the New Scan review
+// step shows.
+func (s *Service) Preview(ctx context.Context, sc *scan.Scan, userID string) (scangov.Evaluation, error) {
 	if s.scans == nil {
 		return scangov.Evaluation{}, fmt.Errorf("%w: scans not wired", shared.ErrInternal)
 	}
@@ -128,7 +141,7 @@ func (s *Service) Preview(ctx context.Context, sc *scan.Scan) (scangov.Evaluatio
 	if err != nil {
 		return scangov.Evaluation{}, err
 	}
-	return s.Evaluate(ctx, sc.TenantID, f)
+	return s.Evaluate(ctx, sc.TenantID, f, userID)
 }
 
 func (s *Service) requireRepo() error {
