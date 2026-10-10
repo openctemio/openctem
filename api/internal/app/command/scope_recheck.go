@@ -28,6 +28,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -95,6 +96,38 @@ type recheckJob struct {
 	cmd     *commanddom.Command
 	targets []string
 	gate    commanddom.DispatchGate
+	// job is the command's tool and port settings, checked against port-
+	// and path-limited scope entries.
+	job scopedom.JobShape
+}
+
+// recheckKey groups jobs the gate can decide in one call.
+type recheckKey struct {
+	gate commanddom.DispatchGate
+	job  scopedom.JobShape
+}
+
+// jobShapeOf reads a command's tool and port settings as the sensor's
+// admission check does (sensordom.JobOf), plus whether it asks for a
+// "top N" port list.
+func jobShapeOf(c *commanddom.Command) scopedom.JobShape {
+	j := sensordom.JobOf(string(c.Type), c.Payload)
+	shape := scopedom.JobShape{Tool: j.Tool, Ports: j.Ports}
+	var p struct {
+		Config map[string]any `json:"config"`
+	}
+	if json.Unmarshal(c.Payload, &p) == nil {
+		switch v := p.Config["top_ports"].(type) {
+		case nil:
+		case string:
+			shape.TopPorts = strings.TrimSpace(v) != ""
+		case float64:
+			shape.TopPorts = v != 0
+		default:
+			shape.TopPorts = true
+		}
+	}
+	return shape
 }
 
 // recheckScope re-checks cmds for sensorID and returns those to hand out, in
@@ -155,7 +188,7 @@ func (s *Service) recheck(ctx context.Context, tenantID shared.ID, sensorID *sha
 			}
 			continue
 		}
-		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate})
+		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate, job: jobShapeOf(c)})
 	}
 	for _, batch := range recheckBatches(jobs) {
 		s.recheckBatch(ctx, tenantID, sensorID, batch, outcomes, replaced)
@@ -202,16 +235,17 @@ const gateRecordMissingMessage = FailureGateRecordMissing +
 // recheckBatches groups the jobs that share a gate record, so the gate runs
 // once per group (a step's chunks share one), split at maxRecheckTargets.
 func recheckBatches(jobs []recheckJob) [][]recheckJob {
-	index := map[commanddom.DispatchGate]int{}
+	index := map[recheckKey]int{}
 	var groups [][]recheckJob
 	sizes := []int{}
 	for _, j := range jobs {
-		i, ok := index[j.gate]
+		key := recheckKey{gate: j.gate, job: j.job}
+		i, ok := index[key]
 		if !ok || sizes[i]+len(j.targets) > maxRecheckTargets {
 			groups = append(groups, nil)
 			sizes = append(sizes, 0)
 			i = len(groups) - 1
-			index[j.gate] = i
+			index[key] = i
 		}
 		groups[i] = append(groups[i], j)
 		sizes[i] += len(j.targets)
@@ -230,6 +264,8 @@ func (s *Service) recheckBatch(ctx context.Context, tenantID shared.ID, sensorID
 		AllowNonNetworkTargets: !g.Validated, SkipZoneRouting: g.NoZoneRouting,
 		Tier: &tier, PassiveOnly: g.Passive, ActScope: g.ActScope,
 	}
+	job := jobs[0].job
+	in.Job = &job
 	if g.ActScope && g.Actor != "" {
 		actor, err := shared.IDFromString(g.Actor)
 		if err != nil || actor.IsZero() {

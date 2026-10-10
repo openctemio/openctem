@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/testdb"
+
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -146,12 +148,9 @@ func TestFindingImport_RealFixtures_DB(t *testing.T) {
 func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	ih := newImportHarness(t, ingest.SourceResolveEnforce)
 	ctx := context.Background()
-	compID := shared.NewID()
-	purl := "pkg:golang/example.com/libexample@v1.4.2-" + compID.String()[28:]
-	if _, err := ih.db.ExecContext(ctx, `INSERT INTO components (id, purl, name, version, ecosystem) VALUES ($1, $2, 'libexample', 'v1.4.2', 'go')`, compID, purl); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _, _ = ih.db.ExecContext(context.Background(), `DELETE FROM components WHERE id = $1`, compID) })
+	// A global package version (the feed's), so findings of two tenants can
+	// name it; the fixture's statement names this package URL.
+	_, compID := testdb.SeedPackageVersion(t, ih.db, "", "pkg:golang/example.com/libexample@v1.4.2")
 	asset := func(tenant, name string) shared.ID {
 		id := shared.NewID()
 		if _, err := ih.db.ExecContext(ctx, `INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, $3, 'container')`, id, tenant, name); err != nil {

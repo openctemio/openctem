@@ -1,0 +1,13 @@
+- id: suppressions
+  const: ModuleSuppressions
+  slug: suppressions
+  name: Suppressions
+  description: Finding suppression rules to mute known false positives
+  icon: EyeOff
+  category: mobilization
+  order: 41
+  permission: "findings:suppressions:read"
+  depends:
+    - {id: findings, kind: hard, reason: "suppressions suppress findings"}
+  routes:
+    - /api/v1/suppressions
