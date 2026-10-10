@@ -1118,6 +1118,7 @@
   "scope.entry.tierLabel": "Mức quét sâu nhất được phép",
   "scope.entry.tierTools": "Công cụ: {tools}.",
   "scope.entry.tierBelow": "Bao gồm cả các mức thấp hơn.",
+  "scope.entry.noTierCeiling": "Một mục phạm vi cho phép mọi mức quét: cường độ quét và các quy tắc phê duyệt quyết định mức độ quét các mục tiêu của nó.",
   "scope.entry.outcomeRequest": "Người phê duyệt phạm vi sẽ xem xét. Chưa được phép quét cho đến khi được phê duyệt.",
   "scope.entry.outcomeApproval1": "Cần 1 phê duyệt từ người phê duyệt khác; chưa được phép quét cho đến lúc đó.",
   "scope.entry.outcomeApprovalN": "Cần {n} phê duyệt từ những người phê duyệt khác; chưa được phép quét cho đến lúc đó.",
