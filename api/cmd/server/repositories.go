@@ -23,6 +23,7 @@ type Repositories struct {
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
 	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
 	Software               *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
+	CVECorpus              *postgres.CVECorpusRepository              // CVE corpus for inventory matching (RFC-066)
 	SoftwareMatch          *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources  *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
 	AssetChangeEvents      *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
@@ -133,8 +134,10 @@ type Repositories struct {
 
 	// Scan zones (RFC-023)
 	ScanZone *postgres.ScanZoneRepository
-	// Scan freeze windows (docs/architecture/scan-zones.md)
-	ScanFreezeWindow *postgres.ScanFreezeWindowRepository
+	// Scan window policies, overrides and the assets behind targets (RFC-067)
+	ScanWindowPolicy   *postgres.ScanWindowPolicyRepository
+	ScanWindowOverride *postgres.ScanWindowOverrideRepository
+	ScanWindowAsset    *postgres.ScanWindowAssetRepository
 	// Content packs (RFC-061)
 	ContentPack *postgres.ContentPackRepository
 	// Platform content packs and channels (RFC-061)
@@ -191,7 +194,7 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin         *postgres.AdminRepository
 	SignupPolicy  *postgres.SignupPolicyRepository
-	ScopePolicy   *postgres.ScopePolicyRepository
+	ScanPolicy    *postgres.ScanPolicyRepository
 	AccessRequest *postgres.AccessRequestRepository
 	Plan          *postgres.PlanRepository
 	IdleLifecycle *postgres.IdleLifecycleRepository
@@ -305,6 +308,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
 		WebEndpoint:            postgres.NewWebEndpointRepository(db),
 		Software:               postgres.NewSoftwareRepository(db),
+		CVECorpus:              postgres.NewCVECorpusRepository(db),
 		SoftwareMatch:          postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:  postgres.NewAssetAttributeSourceRepository(db),
 		AssetChangeEvents:      postgres.NewAssetChangeEventRepository(db),
@@ -401,7 +405,9 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Scan zones (RFC-023)
 		ScanZone:            postgres.NewScanZoneRepository(db),
-		ScanFreezeWindow:    postgres.NewScanFreezeWindowRepository(db),
+		ScanWindowPolicy:    postgres.NewScanWindowPolicyRepository(db),
+		ScanWindowOverride:  postgres.NewScanWindowOverrideRepository(db),
+		ScanWindowAsset:     postgres.NewScanWindowAssetRepository(db),
 		ContentPack:         postgres.NewContentPackRepository(db),
 		PlatformContentPack: postgres.NewPlatformContentPackRepository(db),
 
@@ -452,7 +458,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:         postgres.NewAdminRepository(db),
 		SignupPolicy:  postgres.NewSignupPolicyRepository(db),
-		ScopePolicy:   postgres.NewScopePolicyRepository(db),
+		ScanPolicy:    postgres.NewScanPolicyRepository(db),
 		AccessRequest: postgres.NewAccessRequestRepository(db),
 		Plan:          postgres.NewPlanRepository(db),
 		IdleLifecycle: postgres.NewIdleLifecycleRepository(db),

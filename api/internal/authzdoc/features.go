@@ -53,7 +53,7 @@ var Features = []Feature{
 			"registerAssetRoutes", "registerAssetGroupRoutes", "registerAssetTypeRoutes", "registerAssetOwnerRoutes",
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
-			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerComponentRoutes",
+			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerComponentRoutes",
 			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes",
 		},
 	},
@@ -107,7 +107,7 @@ var Features = []Feature{
 		Description: "Scans, scan runs and workflows, profiles, tools, templates, content packs, the secret store and freeze windows.",
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
-			"registerScanRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanFreezeWindowRoutes",
+			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
 			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",

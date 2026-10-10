@@ -4,11 +4,12 @@
  * Everything the Review step shows and the reasons Start is disabled, from
  * the server's answers only: the scope check of the direct targets (the same
  * request the selection summary made, so it is cached), the workflow preview
- * (readiness, blocking steps, an active freeze window) and the form's own
+ * (readiness, blocking steps, targets waiting for their scan windows) and the form's own
  * completeness. The create request is re-validated by the API anyway.
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { useScopeCheck } from '@/features/scope'
 import { useDebounce } from '@/hooks/use-debounce'
 import type { NewScanFormData } from '../types'
@@ -36,6 +37,7 @@ export function useScanReview(
   workflowRequest: WorkflowPreviewRequest,
   enabled: boolean
 ): ScanReview {
+  const { t } = useTranslation()
   const targets = directTargets(form)
   const joined = useDebounce(targets.join('\n'), SUMMARY_SCOPE_DEBOUNCE_MS)
   const list = enabled && joined ? joined.split('\n') : []
@@ -52,9 +54,9 @@ export function useScanReview(
     const blockers: string[] = []
     const warnings: string[] = []
     for (const problem of [
-      basicInfoError(form),
-      targetsError(form),
-      scheduleError(form, { requireFuture: true }),
+      basicInfoError(form, t),
+      targetsError(form, t),
+      scheduleError(form, { requireFuture: true }, t),
     ]) {
       if (problem) blockers.push(problem)
     }
@@ -62,7 +64,11 @@ export function useScanReview(
     if (refused.length > 0) {
       // Create refuses the whole request when a direct target is refused.
       blockers.push(
-        `${refused.length} ${refused.length === 1 ? 'target' : 'targets'} may not be scanned: remove ${refused.length === 1 ? 'it' : 'them'} or fix the scope first`
+        t(
+          refused.length === 1 ? 'scans.review.blockedOne' : 'scans.review.blockedMany',
+          undefined,
+          { count: refused.length }
+        )
       )
     }
     const wf = workflow.data
@@ -72,24 +78,37 @@ export function useScanReview(
         .filter((m): m is string => !!m)
       const why = reasons[0] ?? wf.targets?.error?.message
       blockers.push(
-        why ? `The workflow would not start: ${why}` : 'The workflow would not start as it is'
+        why
+          ? t('scans.review.workflowWouldNotStartWhy', undefined, { why })
+          : t('scans.review.workflowWouldNotStart')
       )
     }
-    if (wf?.freeze) {
+    const windows = wf?.targets?.windows
+    if ((windows?.never_count ?? 0) > 0) {
+      // The trigger refuses a run with a target whose windows never open.
+      blockers.push(
+        t(
+          'scanWindows.review.never',
+          '{n} targets have scan windows that never open: starting the scan is refused until a policy changes',
+          { n: windows?.never_count ?? 0 }
+        )
+      )
+    }
+    if ((windows?.waiting_count ?? 0) > 0) {
       warnings.push(
-        `Freeze window ${wf.freeze.window ?? ''} is active${wf.freeze.until ? ` until ${new Date(wf.freeze.until).toLocaleString()}` : ''}: starting the scan now is refused until it ends (a scheduled run is moved to its end).`
+        t(
+          'scanWindows.review.waiting',
+          '{n} targets wait for their scan windows; they are scanned when their windows open',
+          { n: windows?.waiting_count ?? 0 }
+        )
       )
     }
     if (form.targets.assetGroupIds.length > 0) {
-      warnings.push(
-        'Asset group members are resolved when the scan runs; members outside your scope are skipped then.'
-      )
+      warnings.push(t('scans.review.groupsResolved'))
     }
     if (scope.error) {
-      warnings.push(
-        'The scope check is not available right now; the scan is still checked when it starts.'
-      )
+      warnings.push(t('scans.scope.unavailable'))
     }
     return { blockers, warnings, refused, scope, workflow, targets }
-  }, [form, scope, workflow, targets])
+  }, [form, scope, workflow, targets, t])
 }

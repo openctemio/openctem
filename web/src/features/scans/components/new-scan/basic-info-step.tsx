@@ -11,6 +11,7 @@
 'use client'
 
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/context/i18n-provider'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Badge } from '@/components/ui/badge'
@@ -58,6 +59,7 @@ interface BasicInfoStepProps {
 }
 
 export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoStepProps) {
+  const { t } = useTranslation()
   // Workflow scans are a module: when it is off for the organization the
   // API refuses them, so none is offered (an existing workflow scan being
   // edited keeps showing its workflow).
@@ -103,11 +105,11 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
       {/* Scan Name */}
       <div className="space-y-2">
         <Label htmlFor="scan-name">
-          Scan Name <span className="text-destructive">*</span>
+          {t('scans.basic.name')} <span className="text-destructive">*</span>
         </Label>
         <Input
           id="scan-name"
-          placeholder="e.g., Production Security Scan"
+          placeholder={t('scans.basic.namePlaceholder')}
           value={data.name}
           onChange={(e) => onChange({ name: e.target.value })}
         />
@@ -116,7 +118,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
       {/* What to run: a single check, a starter workflow or another workflow */}
       {!lockMode && offerWorkflows && (
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">What to run</legend>
+          <legend className="text-sm font-medium">{t('scans.basic.whatToRun')}</legend>
           <RadioGroup
             value={choice}
             onValueChange={choose}
@@ -124,8 +126,8 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
           >
             <ChoiceCard
               value="single"
-              title="Single check"
-              description="One scanner on the targets."
+              title={t('scans.basic.singleCheck')}
+              description={t('scans.basic.singleCheckHint')}
               icon={<Radar className="h-4 w-4" />}
             />
             {starters.map((s) => (
@@ -141,8 +143,8 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
             ))}
             <ChoiceCard
               value="other"
-              title="Another workflow"
-              description="One of your organization's workflows."
+              title={t('scans.basic.anotherWorkflow')}
+              description={t('scans.basic.anotherWorkflowHint')}
               icon={<Layers className="h-4 w-4" />}
             />
           </RadioGroup>
@@ -153,7 +155,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
       {data.mode === 'single' && (
         <div className="space-y-2">
           <Label htmlFor="scan-scanner">
-            Scanner <span className="text-destructive">*</span>
+            {t('scans.basic.scanner')} <span className="text-destructive">*</span>
           </Label>
           <ScannerSelect
             id="scan-scanner"
@@ -163,8 +165,8 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
             zoneId={data.scanZoneId}
           />
           <p className="text-muted-foreground text-xs">
-            Active scanners in the tool registry. A scanner no online sensor can run is listed but
-            off.{!lockMode && ' To chain several tools, choose a scan workflow under What to run.'}
+            {t('scans.basic.scannerHint')}
+            {!lockMode && ` ${t('scans.basic.chainHint')}`}
           </p>
         </div>
       )}
@@ -181,26 +183,26 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
       {data.mode === 'workflow' && (lockMode || !selectedStarter) && (
         <div className="space-y-3">
           <Label>
-            Select Workflow <span className="text-destructive">*</span>
+            {t('scans.basic.selectWorkflow')} <span className="text-destructive">*</span>
           </Label>
           <Select
             value={data.workflowId || undefined}
             onValueChange={(value) => onChange({ workflowId: value })}
           >
-            <SelectTrigger aria-label="Workflow">
+            <SelectTrigger aria-label={t('scans.basic.workflow')}>
               <SelectValue
                 placeholder={
                   isLoadingWorkflows
-                    ? 'Loading workflows…'
+                    ? t('scans.basic.loadingWorkflows')
                     : workflows.length === 0
-                      ? 'No active workflows'
-                      : 'Choose a workflow'
+                      ? t('scans.basic.noActiveWorkflows')
+                      : t('scans.basic.chooseWorkflow')
                 }
               />
             </SelectTrigger>
             <SelectContent>
               {data.workflowId && !selectedWorkflow && !isLoadingWorkflows && (
-                <SelectItem value={data.workflowId}>Current workflow (not active)</SelectItem>
+                <SelectItem value={data.workflowId}>{t('scans.basic.currentInactive')}</SelectItem>
               )}
               {runnable.map((workflow) => (
                 <SelectItem key={workflow.id} value={workflow.id}>
@@ -208,7 +210,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                     <span>{workflow.name}</span>
                     {workflow.is_system_template && (
                       <Badge variant="outline" className="text-xs">
-                        System
+                        {t('scans.basic.system')}
                       </Badge>
                     )}
                     {readinessLabel(workflow.readiness) && (
@@ -221,7 +223,9 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
               ))}
               {notAvailable.length > 0 && (
                 <SelectGroup>
-                  <SelectLabel className="text-xs text-muted-foreground">Not available</SelectLabel>
+                  <SelectLabel className="text-xs text-muted-foreground">
+                    {t('scans.basic.notAvailable')}
+                  </SelectLabel>
                   {notAvailable.map((workflow) => (
                     <SelectItem
                       key={workflow.id}
@@ -244,11 +248,9 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
           </Select>
           {!isLoadingWorkflows && workflows.length === 0 && (
             <p className="text-muted-foreground text-xs">
-              Create one under{' '}
               <Link href="/scans/workflows" className="underline">
-                Workflows
+                {t('scans.basic.createWorkflow')}
               </Link>
-              .
             </p>
           )}
 
@@ -266,7 +268,11 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Layers className="h-4 w-4 shrink-0" />
-                  <span>Steps ({selectedWorkflow.steps?.length ?? 0})</span>
+                  <span>
+                    {t('scans.basic.steps', undefined, {
+                      count: selectedWorkflow.steps?.length ?? 0,
+                    })}
+                  </span>
                 </div>
                 <WorkflowStagesView
                   steps={selectedWorkflow.steps ?? []}
@@ -298,6 +304,7 @@ function ChoiceCard({
   stages?: string[][]
   readiness?: WorkflowReadiness
 }) {
+  const { t } = useTranslation()
   const id = `run-choice-${value}`
   const off = !isRunnable(readiness)
   const label = readinessLabel(readiness)
@@ -344,12 +351,14 @@ function ChoiceCard({
         {stages && stages.length > 0 && (
           <span
             className="flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground"
-            aria-label="Stages"
+            aria-label={t('scans.basic.stages')}
           >
             {stages.map((names, i) => (
               <span key={i} className="flex items-center">
                 {i > 0 && <ChevronRight className="h-3 w-3" />}
-                {names.length > 1 ? `${names.join(' + ')} (in parallel)` : names[0]}
+                {names.length > 1
+                  ? t('scans.basic.inParallel', undefined, { names: names.join(' + ') })
+                  : names[0]}
               </span>
             ))}
           </span>

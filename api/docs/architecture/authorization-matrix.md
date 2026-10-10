@@ -28,7 +28,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Core (dashboard, audit, settings) | 4 | `dashboard:read`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
-| Scans | 23 | `scans:read/write/delete/execute`, `scans:freeze:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
+| Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
 | Sensors | 14 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
@@ -320,21 +320,24 @@ create's target validator, exclusions, zone routing) in one call.
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
 
-#### Scan freeze windows (`/api/v1/scan-freeze-windows`)
+#### Scan windows (`/api/v1/scan-window-policies`, `/api/v1/scan-windows`, `/api/v1/scan-window-overrides`)
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/scan-freeze-windows` · `/{id}` | `scans:read` |
-| `POST /api/v1/scan-freeze-windows` · `PATCH /{id}` | `sensors:zones:write` |
-| `DELETE /api/v1/scan-freeze-windows/{id}` | `sensors:zones:delete` |
-| `POST /api/v1/scans/{id}/trigger` with `override_freeze: true` | `scans:execute` **and** `scans:freeze:override` (checked in the handler; 403 otherwise) |
+| `GET /api/v1/scan-window-policies` · `/{id}`, `POST /api/v1/scan-window-policies/preview` | `scans:read` |
+| `POST /api/v1/scan-window-policies` · `PATCH /{id}` · `DELETE /{id}` | `scans:windows:manage` |
+| `POST /api/v1/scan-windows/preview` | `scans:read` (an asset id out of the caller's data scope is 404) |
+| `GET /api/v1/scan-window-overrides` | `scans:read` |
+| `POST /api/v1/scan-window-overrides` · `DELETE /{id}` | `scans:windows:override`; creating also needs a current code from the caller's authenticator app in the body |
 
-> `scans:freeze:override` is seeded by migration `001115` for owner and admin
-> and may be put on custom roles. Object level: every query carries
-> `tenant_id`; a zone window's zone is the same tenant's by the composite
-> foreign key `(tenant_id, scan_zone_id)`. Enforcement is the claim
-> predicate, so no command path bypasses a window. See
-> [scan-zones.md](scan-zones.md#freeze-windows).
+> `scans:windows:manage` (migration `001760`) and `scans:windows:override`
+> (migration `001761`, renamed from `scans:freeze:override`) are granted to
+> owner and admin and may be put on custom roles. Object level: every query
+> carries `tenant_id`; a selector id must be the organization's own (422
+> otherwise, the same answer whether it exists elsewhere or not); an
+> override's policy is the same tenant's by the composite foreign key. The
+> claim enforces the windows for every command path; bug-bounty program
+> windows are never overridden. See [scan-windows.md](scan-windows.md).
 
 #### Sensors (`/api/v1/sensors`)
 
@@ -993,6 +996,23 @@ from exactly two sources:
 |---|---|---|
 | **Group assignment**: the assets assigned to the user's active groups | `team:groups:write` (Groups → Assets, scope rules, or a *group* owner on an asset's Owners tab) | `asset_owners` rows with `group_id` × `group_members` |
 | **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000372`) |
+
+**Private program assets** (RFC-065 §15.3): the program-only assets of
+private bug-bounty programs, and their findings, are seen only by the
+programs' members and the organization's owners. An administrator or
+full-data role who is neither gets `DataScope{Unrestricted: true}` from the
+enforcer (only while something is hidden from them; otherwise `nil` as
+before): every asset of the tenant but the hidden ones. `dataScopeCondAt` /
+`filterspec.ScopeSQL` add `filterspec.NotHiddenSQL` to every scoped read
+(restricted scopes too), the id checks (`AssertAsset`, `AssertFinding`,
+`Filter`) use the same rule, and acting (`CanActOnAssets`, `Delegable`)
+stays unrestricted. `Caller.IsOwner` (and `SetOwnerLookup` outside a
+request) decides who is an owner; `ResolveActing` keeps it only when the
+acting user is the request's caller. Program system tags shown to, or
+matched by the tag filter of, a non-owner are derived only from programs
+not hidden from them (`filterspec.ProgramHiddenSQL`, the one "program
+hidden" predicate). Notification pushes for a hidden asset reach only
+owners and the program's members.
 
 **Being an owner is not an access grant** (owner decision O1, 2026-10-03).
 Naming a user as an owner of an asset, in any RACI role or through the

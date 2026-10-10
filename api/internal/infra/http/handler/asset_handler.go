@@ -35,6 +35,7 @@ type AssetHandler struct {
 	snoozeRateLimiter  *snoozeRateLimiter
 	validator          *validator.Validator
 	logger             *logger.Logger
+	programFlags       ProgramAssetFlagReader
 }
 
 // NewAssetHandler creates a new asset handler.
@@ -297,6 +298,13 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
+	// SystemTags are derived by the platform from program links (RFC-065
+	// §16.5: bug-bounty, source:…, platform:…, program:…:…,
+	// program-unattested); no request can change them.
+	SystemTags []string `json:"system_tags,omitempty"`
+	// ProgramOnly: the asset came with a bug-bounty program and no own
+	// scope covers it; organization metrics leave it out by default.
+	ProgramOnly           bool                     `json:"program_only,omitempty"`
 	ID                    string                   `json:"id"`
 	TenantID              string                   `json:"tenant_id,omitempty"`
 	ParentID              string                   `json:"parent_id,omitempty"`
@@ -655,6 +663,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		ExpiresBefore:        parseQueryTimePtr(query.Get("expires_before")),
 		Attribution:          parseQueryArray(query.Get("attribution")),
 		CoveredBy:            query.Get("covered_by"),
+		ProgramAssets:        query.Get("program_assets"),
 		Sort:                 query.Get("sort"),
 		Page:                 paging.Page,
 		PerPage:              paging.PerPage,
@@ -727,6 +736,11 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		resp.PrimaryOwner = toOwnerBriefResponse(owners[a.ID().String()])
 		data[i] = resp
 	}
+	ptrs := make([]*AssetResponse, len(data))
+	for i := range data {
+		ptrs[i] = &data[i]
+	}
+	h.addProgramFlags(r, input.TenantID, ptrs)
 
 	response := ListResponse[AssetResponse]{
 		Data:       data,
@@ -833,6 +847,7 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := toAssetResponse(a)
+	h.addProgramFlags(r, tenantID, []*AssetResponse{&resp})
 
 	// Fetch primary owner
 	if h.accessControlRepo != nil {
@@ -1678,7 +1693,8 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tags, err := h.service.ListTags(r.Context(), tenantID, prefix, types, limit)
+	tags, err := h.service.ListTags(r.Context(), tenantID, middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()),
+		prefix, types, limit)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

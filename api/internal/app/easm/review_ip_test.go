@@ -12,10 +12,10 @@ import (
 type fakeAddrStore struct {
 	resolved map[string][]string
 	props    map[string]map[string]any
-	scope    *shared.ID
+	scope    *shared.DataScope
 }
 
-func (f *fakeAddrStore) ResolvedFrom(_ context.Context, _ shared.ID, scopeUser *shared.ID, _ []string) (map[string][]string, error) {
+func (f *fakeAddrStore) ResolvedFrom(_ context.Context, _ shared.ID, scopeUser *shared.DataScope, _ []string) (map[string][]string, error) {
 	f.scope = scopeUser
 	return f.resolved, nil
 }
@@ -116,13 +116,13 @@ func TestExplainAddresses_CoveredRowNeedsNoFix(t *testing.T) {
 	via := scopeauth.Via{Kind: scopeauth.KindScopeTarget, Pattern: "198.51.100.0/24"}
 	page := &ReviewPage{Items: []ReviewItem{{AssetID: "1", Name: "198.51.100.20", CoveredBy: &via}}}
 	user := shared.NewID()
-	if err := s.explainAddresses(context.Background(), shared.NewID(), &user, ReviewCaller{CanApprove: true}, page); err != nil {
+	if err := s.explainAddresses(context.Background(), shared.NewID(), &shared.DataScope{UserID: user}, ReviewCaller{CanApprove: true}, page); err != nil {
 		t.Fatal(err)
 	}
 	if it := page.Items[0]; it.Hint != "" || len(it.Fixes) != 0 {
 		t.Fatalf("covered row: %+v", it)
 	}
-	if store.scope == nil || *store.scope != user {
+	if store.scope == nil || store.scope.UserID != user {
 		t.Fatal("the caller's data scope did not reach the store")
 	}
 }
