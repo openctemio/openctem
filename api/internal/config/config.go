@@ -94,6 +94,11 @@ type ScopeConfig struct {
 	// imported.
 	ProgramFeedDir       string
 	ProgramFeedRootKeyID string
+	// ProgramFeedLocalBundleDir is the directory of the operator's own
+	// unsigned local-only bundle (PROGRAMFEED_LOCAL_BUNDLE_DIR, output of
+	// `programfeed build --local-only`); read only while a platform
+	// administrator has the source enabled. Never set from the UI.
+	ProgramFeedLocalBundleDir string
 }
 
 // ScanZoneResolverSystem routes hostnames with the platform's own resolver.
@@ -1403,8 +1408,9 @@ func Load() (*Config, error) {
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
 			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
 			// The public program feed (RFC-065 §16).
-			ProgramFeedDir:       getEnv("PROGRAMFEED_DIR", ""),
-			ProgramFeedRootKeyID: getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
+			ProgramFeedDir:            getEnv("PROGRAMFEED_DIR", ""),
+			ProgramFeedRootKeyID:      getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
+			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),

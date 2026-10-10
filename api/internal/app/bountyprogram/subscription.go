@@ -76,7 +76,6 @@ func (s *Service) Subscribe(ctx context.Context, tenantID, actor, publicID share
 	}); err != nil {
 		return nil, nil, err
 	}
-	s.ensureTargets(ctx, p, pv)
 	s.assign(ctx, p)
 	return p, pv, nil
 }
@@ -248,7 +247,6 @@ func (s *Service) replaceAwaitingAcceptance(ctx context.Context, p *bp.Program, 
 	}
 	s.audited(ctx, p, shared.ID{}, "Program scope or terms changed; entries wait for a new acceptance",
 		map[string]any{"entries_created": len(create), "entries_removed": len(drop)})
-	s.ensureTargets(ctx, p, pv)
 	s.assign(ctx, p)
 	if s.notifier != nil {
 		body := fmt.Sprintf("%s changed its scope or terms; a member must accept the new terms before its targets are scanned actively", p.Name)

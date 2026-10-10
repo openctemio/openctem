@@ -41,12 +41,7 @@ const RENDERS_BODY = new Set(['ScanWorkflowForm'])
  * this list alone (so they do not conflict with each other); the last one
  * empties it, and then every file is checked. Never add an entry.
  */
-const PENDING = new Set<string>([
-  'features/scans/components/edit-scan-dialog.tsx',
-  'features/scans/components/new-scan/new-scan-dialog.tsx',
-  'features/scans/components/quick-scan-dialog.tsx',
-  'features/scans/components/scan-assets-dialog.tsx',
-])
+const PENDING = new Set<string>([])
 
 function* tsxFiles(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {

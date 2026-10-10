@@ -2,6 +2,7 @@ package programfeed
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ type memCatalog struct {
 	stale   []bp.ProgramRef
 }
 
-func (m *memCatalog) FeedState(context.Context) (bp.FeedState, error) { return m.state, nil }
+func (m *memCatalog) FeedState(context.Context, string) (bp.FeedState, error) { return m.state, nil }
 func (m *memCatalog) Apply(_ context.Context, a bp.FeedApply) ([]bp.CatalogChange, error) {
 	m.state = a.State
 	m.applied = append(m.applied, a)
@@ -115,5 +116,48 @@ func TestImporter(t *testing.T) {
 	}
 	if _, _, err := DirSource("").Fetch(ctx); err == nil {
 		t.Fatal("empty dir source accepted")
+	}
+}
+
+type memSettings struct{ st bp.LocalBundleSetting }
+
+func (m *memSettings) LocalBundle(context.Context) (bp.LocalBundleSetting, error) { return m.st, nil }
+func (m *memSettings) SetLocalBundle(_ context.Context, st bp.LocalBundleSetting) error {
+	m.st = st
+	return nil
+}
+
+func TestLocalImporter(t *testing.T) {
+	ctx := context.Background()
+	const local = "../../../pkg/programfeed/testdata/local"
+	b, err := os.ReadFile(filepath.Join(local, "created-at.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, _ := time.Parse(time.RFC3339, strings.TrimSpace(string(b)))
+	cat := &memCatalog{}
+	settings := &memSettings{}
+	imp := NewLocalImporter(filepath.Join(local, "seq1"), cat, &memSubs{}, settings, nil)
+	imp.now = func() time.Time { return at.Add(time.Minute) }
+	// Off by default: nothing is read.
+	if _, err := imp.Import(ctx); !errors.Is(err, ErrSourceDisabled) || len(cat.applied) != 0 {
+		t.Fatalf("disabled source: %v (applies %d)", err, len(cat.applied))
+	}
+	settings.st.Enabled = true
+	res, err := imp.Import(ctx)
+	if err != nil {
+		t.Fatalf("import local seq1: %v", err)
+	}
+	if res.Stream != bp.StreamLocal || cat.applied[0].Stream != bp.StreamLocal || !cat.applied[0].Snapshot || res.Sequence != 1 {
+		t.Fatalf("local seq1: %+v %+v", res, cat.applied[0])
+	}
+	imp.source = DirSource(filepath.Join(local, "seq2"))
+	if res, err = imp.Import(ctx); err != nil || !res.Delta || cat.state.AppliedSequence != 2 {
+		t.Fatalf("local seq2: %+v %v", res, err)
+	}
+	// An older bundle is not applied again.
+	imp.source = DirSource(filepath.Join(local, "seq1"))
+	if res, err = imp.Import(ctx); err != nil || len(cat.applied) != 2 {
+		t.Fatalf("older local bundle: %+v %v (applies %d)", res, err, len(cat.applied))
 	}
 }
