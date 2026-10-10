@@ -115,6 +115,7 @@ compares versions), on every asset or one asset, with an optional expiry.
   (trigger), its asset is the tenant's (composite foreign key), and a
   finding can only carry its own tenant's statement (trigger).
 
+## Authorization
 
 | Action | Permission | Scope |
 |---|---|---|
