@@ -379,7 +379,7 @@ API process that asks for anything, gets a refusal.
 
 | Item | Fields | From |
 |---|---|---|
-| entry | `id`, `type` (scope target type), `pattern`, `max_tier` (0, 1, 2), `expires_at` | a scope entry in effect (active, unexpired) |
+| entry | `id`, `type` (scope target type), `pattern`, `max_tier` (0, 1, 2), `expires_at`, `ports` and `protocol` (the port limit, canonical form; absent: none) | a scope entry in effect (active, unexpired) |
 | exclusion | `id`, `type` (domain, subdomain, ip_address, ip_range, cidr, url, repository), `pattern`, `expires_at` | a target exclusion in effect (approved, active) |
 | tier ceilings | on (default) or off, per organization (`set_tier_ceilings`, snapshot `tier_ceilings_off`) | the scan approval mode: on only in Strict (RFC-073 §7); off widens and needs the intrusive floor, on narrows; a sync turns them on, never off |
 
@@ -397,7 +397,19 @@ and `NeedsAuthority` the API's authority check uses):
 3. otherwise an unexpired entry covering the target with `max_tier` at or
    above the tier (any covering entry when the organization's tier ceilings
    are off): covered only below it is `tier_exceeds_ledger`, not at all
-   `out_of_ledger`.
+   `out_of_ledger`. Matching is `scope.EntryMatches`: a port-limited entry
+   covers only a target that names an allowed port (`host:port`, or a URL
+   whose port is allowed), a URL entry with a path only URLs under it;
+4. a target covered only by port- or path-limited entries is signed only for
+   a tool that stays on the target it is given
+   (`scope.ConstrainedToolAllowed`; otherwise `out_of_ledger`). The job's
+   port list is checked by the API at claim (the signer does not see the
+   payload).
+
+The port limit is part of an entry like its pattern: dropping or relaxing
+it is a widening (approvals as for a new entry), and a sync from the
+database removes an entry whose limit differs instead of taking the new
+one. A limit that is not in canonical form is malformed.
 
 Expiry is applied with the signer's clock: an expired entry stops
 authorizing without any message from the API.
