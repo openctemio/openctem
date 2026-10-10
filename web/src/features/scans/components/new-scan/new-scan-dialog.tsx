@@ -407,20 +407,19 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
         <DialogBody className="px-0 py-0 sm:px-0">{renderStep()}</DialogBody>
 
-        {isLastStep && awaitingApproval && (
-          <p
-            className="border-t bg-muted/40 px-4 py-2 text-xs text-muted-foreground sm:px-6"
-            data-testid="scope-wait-notice"
-          >
-            {t(
-              'scans.new.waitNotice',
-              'Some targets wait for a scope approval (see Targets). The scan is saved now and starts on its own once the entry is approved.'
-            )}
-          </p>
-        )}
-
         <DialogFooter className="sm:items-center sm:justify-between">
           <div className="flex flex-col items-center gap-1 sm:flex-row sm:justify-start">
+            {isLastStep && awaitingApproval && (
+              <p
+                className="text-xs text-muted-foreground sm:order-2 sm:max-w-[18rem]"
+                data-testid="scope-wait-notice"
+              >
+                {t(
+                  'scans.new.waitNotice',
+                  'Some targets wait for a scope approval (see Targets). The scan is saved now and starts on its own once the entry is approved.'
+                )}
+              </p>
+            )}
             {isLastStep && blocked && !awaitingApproval && (
               <p
                 id="review-blocked"
