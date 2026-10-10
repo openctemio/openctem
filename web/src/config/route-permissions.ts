@@ -753,6 +753,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/vulnerability-matching': {
     permission: Permission.TeamUpdate,
   },
+  // License policy (RFC-070): settings:read to see, settings:write to save.
+  '/settings/license-policy': {
+    permission: Permission.SettingsRead,
+  },
   // Asset source precedence (RFC-069): owner/admin on the API.
   '/settings/asset-sources': {
     permission: Permission.TeamUpdate,
