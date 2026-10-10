@@ -13,4 +13,4 @@
   1-24 hours, audited critical), `GET /api/v1/scan-approvals`, and
   `approve`, `reject`, `self-approve` (sole owner with an authenticator
   code), `remind`, `cancel`. The scan list returns `approval_status`.
-- Migration `001950` adds `scan_approval_requests` and the permission.
+- Migration `001921` adds `scan_approval_requests` and the permission.
