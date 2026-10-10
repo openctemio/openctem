@@ -298,6 +298,12 @@ export const QUICK_PRESETS: QuickPreset[] = [
     isActive: (f) => f.isControlPlane === true,
   },
   {
+    id: 'bug-bounty',
+    label: 'Bug bounty',
+    apply: { programAssets: 'only' },
+    isActive: (f) => f.programAssets === 'only',
+  },
+  {
     id: 'stale',
     label: 'Stale >30d',
     apply: { lastSeenBefore: staleBeforeISO(30) },

@@ -643,6 +643,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// the scope views leave out the entries of private programs the caller
 	// may not see.
 	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
+	// Program asset flags on asset responses (RFC-065 §16.5).
+	handlers.Asset.SetProgramFlags(postgres.NewProgramAssetFlagRepository(deps.DB))
 	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {
 		handlers.Scope.SetDryRun(svc.Scan, svc.ActiveGate)
