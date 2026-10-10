@@ -22,7 +22,9 @@ type SchedulePreviewRequest struct {
 	ScheduleRRule string  `json:"schedule_rrule"`
 	ScheduleDay   *int    `json:"schedule_day"`
 	ScheduleTime  *string `json:"schedule_time"` // HH:MM
-	Timezone      string  `json:"timezone"`
+	// RunAt (RFC 3339) is the one run of schedule_type once.
+	RunAt    *time.Time `json:"run_at"`
+	Timezone string     `json:"timezone"`
 	// Count is how many occurrences to list, 1-10 (default 5).
 	Count int `json:"count"`
 }
@@ -65,6 +67,7 @@ func (h *ScanHandler) PreviewSchedule(w http.ResponseWriter, r *http.Request) {
 		ScheduleCron:  req.ScheduleCron,
 		ScheduleRRule: req.ScheduleRRule,
 		ScheduleDay:   req.ScheduleDay,
+		RunAt:         req.RunAt,
 		Timezone:      req.Timezone,
 		Count:         req.Count,
 	}

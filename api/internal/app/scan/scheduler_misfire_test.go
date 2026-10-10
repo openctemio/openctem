@@ -88,3 +88,23 @@ func TestScheduler_MisfiredOccurrenceIsSkippedAndCounted(t *testing.T) {
 		t.Fatalf("skipped_misfire counted %v, want 1", got)
 	}
 }
+
+// A one-off run has no following occurrence: it still starts when somewhat
+// late, and is skipped once it is later than OnceMisfireGrace.
+func TestIsMisfire_Once(t *testing.T) {
+	sc, err := scan.NewScan(shared.NewID(), "once", shared.NewID(), scan.ScanTypeSingle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc.Status = scan.StatusActive
+	runAt := time.Now().Add(time.Hour)
+	if err := sc.SetOnceSchedule(&runAt, "UTC", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if isMisfire(sc, runAt, runAt.Add(5*time.Minute)) {
+		t.Error("5 minutes late: skipped, want run")
+	}
+	if !isMisfire(sc, runAt, runAt.Add(scan.OnceMisfireGrace+time.Minute)) {
+		t.Error("past the grace: run, want skipped")
+	}
+}

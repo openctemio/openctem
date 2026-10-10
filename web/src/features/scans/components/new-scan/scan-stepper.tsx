@@ -7,25 +7,42 @@
 import { cn } from '@/lib/utils'
 import { Check } from 'lucide-react'
 
-export type ScanWizardStep = 'basic' | 'targets' | 'options' | 'schedule'
+export type ScanWizardStep = 'basic' | 'targets' | 'options' | 'schedule' | 'review'
 
 interface ScanStepperProps {
   currentStep: ScanWizardStep
   onStepClick?: (step: ScanWizardStep) => void
+  /** The steps shown, in order (New adds Review). */
+  steps?: ScanWizardStep[]
+  className?: string
 }
 
-const STEPS: { id: ScanWizardStep; label: string }[] = [
-  { id: 'basic', label: 'Basic Info' },
-  { id: 'targets', label: 'Targets' },
-  { id: 'options', label: 'Options' },
-  { id: 'schedule', label: 'Schedule' },
-]
+const LABELS: Record<ScanWizardStep, string> = {
+  basic: 'What',
+  targets: 'Targets',
+  options: 'Options',
+  schedule: 'Schedule',
+  review: 'Review',
+}
 
-export function ScanStepper({ currentStep, onStepClick }: ScanStepperProps) {
+const DEFAULT_STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
+
+export function ScanStepper({
+  currentStep,
+  onStepClick,
+  steps = DEFAULT_STEPS,
+  className,
+}: ScanStepperProps) {
+  const STEPS = steps.map((id) => ({ id, label: LABELS[id] }))
   const currentIndex = STEPS.findIndex((s) => s.id === currentStep)
 
   return (
-    <div className="flex min-w-0 items-center justify-between overflow-x-auto px-4 py-3 sm:px-6">
+    <div
+      className={cn(
+        'flex min-w-0 items-center justify-between overflow-x-auto px-4 py-3 sm:px-6',
+        className
+      )}
+    >
       {STEPS.map((step, index) => {
         const isCompleted = index < currentIndex
         const isCurrent = index === currentIndex
@@ -67,7 +84,7 @@ export function ScanStepper({ currentStep, onStepClick }: ScanStepperProps) {
             {index < STEPS.length - 1 && (
               <div
                 className={cn(
-                  'flex-1 mx-2 h-0.5 min-w-[12px]',
+                  'mx-1 h-0.5 min-w-[8px] flex-1 sm:mx-2 sm:min-w-[12px]',
                   index < currentIndex ? 'bg-primary' : 'bg-muted'
                 )}
               />

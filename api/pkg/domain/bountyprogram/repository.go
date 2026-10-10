@@ -84,6 +84,23 @@ type Repository interface {
 	// SyncDue lists active programs with a source not synced since
 	// olderThan (all tenants: the controller).
 	SyncDue(ctx context.Context, olderThan time.Time, limit int) ([]ProgramRef, error)
+	// Attest records a person's acceptance of a program's terms
+	// (RFC-065 §15.3); it replaces their earlier one.
+	Attest(ctx context.Context, a Attestation) error
+	// Attestations returns, per program, the terms hash the user last
+	// accepted.
+	Attestations(ctx context.Context, tenantID, userID shared.ID) (map[shared.ID]string, error)
+	// PrivateProgramIDs lists the tenant's private programs.
+	PrivateProgramIDs(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
+}
+
+// Attestation is one person's acceptance of a program's terms.
+type Attestation struct {
+	TenantID    shared.ID
+	ProgramID   shared.ID
+	UserID      shared.ID
+	TermsSHA256 string
+	AcceptedAt  time.Time
 }
 
 // ProgramRef names one program of one tenant.

@@ -38,6 +38,7 @@ import {
   scopeRefusalMessage,
 } from '../lib/scope-codes'
 import { ScopeEntryDialog, type ScopeEntryDraft } from './scope-entry-dialog'
+import { ScopePendingEntry } from './scope-pending-entry'
 
 /** A refusal as `TARGET_OUT_OF_SCOPE` lists it in `details.refused[]`. */
 export interface ScopeRefusal {
@@ -226,7 +227,14 @@ export function viaText(via: ApiScopeCheckResult['via']): string {
   }
 }
 
-interface ScopeCheckRowProps {
+/** What the check ran with, for what still blocks a pending entry. */
+interface CheckContext {
+  /** The probe tier the server checked at (`useScopeCheck().tier`). */
+  probeTier?: number
+  sensorPreference?: string
+}
+
+interface ScopeCheckRowProps extends CheckContext {
   /** A dry-run result, or a refusal from an error's details. */
   result: ApiScopeCheckResult | ScopeRefusal
   onApplied?: () => void
@@ -234,7 +242,13 @@ interface ScopeCheckRowProps {
 }
 
 /** One target: allowed (and through what) or refused (why, and the fixes). */
-export function ScopeCheckRow({ result, onApplied, className }: ScopeCheckRowProps) {
+export function ScopeCheckRow({
+  result,
+  onApplied,
+  className,
+  probeTier,
+  sensorPreference,
+}: ScopeCheckRowProps) {
   const { t } = useTranslation()
   const allowed = 'allowed' in result && result.allowed === true
   const target = result.target ?? ''
@@ -270,7 +284,18 @@ export function ScopeCheckRow({ result, onApplied, className }: ScopeCheckRowPro
           {scopeRefusalMessage(t, code, result.message)}
           {result.rule?.pattern ? ` (${result.rule.pattern})` : ''}
         </p>
-        <ScopeFixButtons fixes={result.fixes ?? []} rule={result.rule} onApplied={onApplied} />
+        {code === 'entry_pending' && result.rule?.id ? (
+          // Who can approve, reminders and every other blocker; never an
+          // Approve button for the person who asked.
+          <ScopePendingEntry
+            entryId={result.rule.id}
+            probeTier={probeTier}
+            sensorPreference={sensorPreference}
+            onApplied={onApplied}
+          />
+        ) : (
+          <ScopeFixButtons fixes={result.fixes ?? []} rule={result.rule} onApplied={onApplied} />
+        )}
       </div>
     </li>
   )
@@ -316,7 +341,7 @@ export function scopeRefusalSummary(
   return parts.join('; ')
 }
 
-interface ScopeCheckListProps {
+interface ScopeCheckListProps extends CheckContext {
   results: (ApiScopeCheckResult | ScopeRefusal)[]
   onApplied?: () => void
   /** Show allowed targets too (default: refused only). */
@@ -333,6 +358,8 @@ export function ScopeCheckList({
   showAllowed = false,
   limit = 50,
   className,
+  probeTier,
+  sensorPreference,
 }: ScopeCheckListProps) {
   const refused = results.filter((r) => !('allowed' in r && r.allowed))
   const allowed = showAllowed ? results.filter((r) => 'allowed' in r && r.allowed) : []
@@ -343,7 +370,13 @@ export function ScopeCheckList({
     <div className={className}>
       <ul className="divide-y" aria-label="Scope check per target">
         {shown.map((r, i) => (
-          <ScopeCheckRow key={`${r.target}-${i}`} result={r} onApplied={onApplied} />
+          <ScopeCheckRow
+            key={`${r.target}-${i}`}
+            result={r}
+            onApplied={onApplied}
+            probeTier={probeTier}
+            sensorPreference={sensorPreference}
+          />
         ))}
       </ul>
       {rows.length > shown.length && (

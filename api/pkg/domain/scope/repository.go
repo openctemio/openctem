@@ -45,6 +45,9 @@ type TargetFilter struct {
 	Statuses    []Status
 	Tags        []string
 	Search      *string
+	// ExcludeProgramIDs leaves out the entries of these programs (the
+	// private programs the caller may not see, RFC-065 §15.3).
+	ExcludeProgramIDs []string
 }
 
 // =============================================================================
