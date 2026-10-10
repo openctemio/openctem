@@ -39,9 +39,10 @@ function useDebounced<T>(value: T, ms: number): T {
  * (POST /scans/workflow-preview). A blocking verdict is one the trigger
  * would refuse with.
  */
-export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRequest }) {
+export function useWorkflowPreview(request: WorkflowPreviewRequest, enabled = true) {
   const debounced = useDebounced(request, 400)
   const ready =
+    enabled &&
     !!debounced.scan_workflow_id &&
     ((debounced.targets?.length ?? 0) > 0 || (debounced.asset_group_ids?.length ?? 0) > 0)
   const { data, error, isLoading } = useSWR(
@@ -49,6 +50,11 @@ export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRe
     () => post<WorkflowPreview>(scanEndpoints.workflowPreview(), debounced),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   )
+  return { data, error, isLoading, ready }
+}
+
+export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRequest }) {
+  const { data, error, isLoading, ready } = useWorkflowPreview(request)
 
   return (
     <section
