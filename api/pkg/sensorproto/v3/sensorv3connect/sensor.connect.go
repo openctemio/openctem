@@ -29,13 +29,12 @@
 package sensorv3connect
 
 import (
+	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
+	v3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
 	http "net/http"
 	strings "strings"
-
-	connect "connectrpc.com/connect"
-	v3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
 )
 
 // This is a compile-time assertion to ensure that this generated file and the connect package are
