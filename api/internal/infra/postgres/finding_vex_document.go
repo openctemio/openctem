@@ -16,11 +16,11 @@ import (
 // scoped by tenant_id first; the caller filters the candidates by the
 // uploader's data scope before anything is written.
 
-// purlBaseSQL is the version-less, lower-case base of components.purl, the
+// purlBaseSQL is the version-less, lower-case base of software_versions.purl, the
 // same rule as vulnerability.SplitPURL.
 const purlBaseSQL = `lower(rtrim(regexp_replace(split_part(split_part(c.purl, '#', 1), '?', 1), '@[^@/]*$', ''), '/'))`
 
-// purlVersionSQL is the version of components.purl (” when it has none).
+// purlVersionSQL is the version of software_versions.purl (” when it has none).
 const purlVersionSQL = `COALESCE(substring(split_part(split_part(c.purl, '#', 1), '?', 1) from '@([^@/]*)$'), '')`
 
 // MatchVEXDocument returns the tenant's findings a VEX statement covers (see
@@ -41,7 +41,7 @@ func (r *FindingRepository) MatchVEXDocument(ctx context.Context, tenantID share
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.id::text, f.asset_id::text, f.status, f.source
 		FROM findings f
-		JOIN components c ON c.id = f.component_id
+		JOIN software_versions c ON c.id = f.component_id
 		WHERE f.tenant_id = $1
 			AND (
 				upper(f.cve_id) = ANY($2::text[])
@@ -54,7 +54,7 @@ func (r *FindingRepository) MatchVEXDocument(ctx context.Context, tenantID share
 			AND EXISTS (
 				SELECT 1 FROM unnest($3::text[], $4::text[]) AS p(base, version)
 				WHERE `+purlBaseSQL+` = p.base
-					AND (p.version = '' OR `+purlVersionSQL+` = p.version OR c.version = p.version)
+					AND (p.version = '' OR `+purlVersionSQL+` = p.version OR c.raw = p.version)
 			)
 			AND (cardinality($6::text[]) = 0 OR EXISTS (
 				SELECT 1 FROM assets a

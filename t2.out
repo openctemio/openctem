@@ -1,0 +1,16 @@
+ok  	github.com/openctemio/openctem/api/cmd/server	0.223s
+ok  	github.com/openctemio/openctem/api/internal/app/scan	0.299s
+ok  	github.com/openctemio/openctem/api/internal/app/scangov	0.003s
+ok  	github.com/openctemio/openctem/api/internal/authzdoc	0.424s
+--- FAIL: TestOpenAPIDocumentsFilterParams (0.00s)
+    filter_params_drift_test.go:72: open ../../../../api/openapi/swagger.yaml: no such file or directory (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)
+FAIL
+FAIL	github.com/openctemio/openctem/api/internal/infra/http/handler	0.844s
+ok  	github.com/openctemio/openctem/api/internal/infra/http/routes	0.176s
+ok  	github.com/openctemio/openctem/api/internal/infra/postgres	0.659s
+ok  	github.com/openctemio/openctem/api/pkg/domain/audit	0.027s
+ok  	github.com/openctemio/openctem/api/pkg/domain/notification	0.012s
+ok  	github.com/openctemio/openctem/api/pkg/domain/permission	0.012s
+ok  	github.com/openctemio/openctem/api/pkg/domain/scangov	0.028s
+ok  	github.com/openctemio/openctem/api/tests/unit	64.911s
+FAIL

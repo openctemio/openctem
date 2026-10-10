@@ -70,9 +70,8 @@ const (
 
 	// Component permissions (assets:components:*)
 	// Note: Components (SBOM) is a separate module with its own permissions
-	ComponentsRead   Permission = "assets:components:read"
-	ComponentsWrite  Permission = "assets:components:write"
-	ComponentsDelete Permission = "assets:components:delete"
+	ComponentsRead  Permission = "assets:components:read"
+	ComponentsWrite Permission = "assets:components:write"
 
 	// Note: Repositories and Branches use general assets:* permissions
 	// as they are just asset types, not separate security boundaries
@@ -149,6 +148,9 @@ const (
 	ScansWrite   Permission = "scans:write"
 	ScansDelete  Permission = "scans:delete"
 	ScansExecute Permission = "scans:execute"
+	// ScansApprove approves or rejects scan approval requests and starts
+	// emergency runs (RFC-073). Owners and administrators by default.
+	ScansApprove Permission = "scans:approve"
 
 	// Scan Profile permissions (scans:profiles:*)
 	ScanProfilesRead   Permission = "scans:profiles:read"
@@ -443,7 +445,7 @@ func AllPermissions() []Permission {
 		// Assets module
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 
 		// Findings module
 		FindingsRead, FindingsWrite, FindingsDelete,
@@ -457,7 +459,7 @@ func AllPermissions() []Permission {
 		WorkflowsRead, WorkflowsWrite,
 
 		// Scans module
-		ScansRead, ScansWrite, ScansDelete, ScansExecute,
+		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
 		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,

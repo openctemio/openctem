@@ -1,441 +1,208 @@
+// Package component is the read model of the software components inventory:
+// package products of the software catalog, the versions an organization
+// uses, where each is used and the dependency graph between them.
+// Design: api/docs/rfcs/RFC-070-software-components-inventory.md.
 package component
 
-import (
-	"encoding/json"
-	"fmt"
-	"time"
+import "time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-)
-
-// Security limits
-const (
-	// MaxMetadataSize is the maximum allowed size for component metadata (64KB)
-	MaxMetadataSize = 64 * 1024
-	// MaxMetadataKeys is the maximum number of keys in metadata
-	MaxMetadataKeys = 100
-)
-
-// Component represents a unique software package (Global).
-type Component struct {
-	id                 shared.ID
-	name               string
-	version            string
-	ecosystem          Ecosystem
-	purl               string
-	license            string
-	description        string
-	homepage           string
-	vulnerabilityCount int
-	metadata           map[string]any
-	createdAt          time.Time
-	updatedAt          time.Time
+// SeverityCounts are open findings by severity.
+type SeverityCounts struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
 }
 
-// ComponentStats aggregates counts for dashboard.
-type ComponentStats struct {
-	TotalComponents        int `json:"total_components"`
-	DirectDependencies     int `json:"direct_dependencies"`
-	TransitiveDependencies int `json:"transitive_dependencies"`
-	VulnerableComponents   int `json:"vulnerable_components"`
+// Total is the number of open findings counted.
+func (s SeverityCounts) Total() int { return s.Critical + s.High + s.Medium + s.Low }
 
-	// Extended stats from findings analysis
-	TotalVulnerabilities int            `json:"total_vulnerabilities"`
-	OutdatedComponents   int            `json:"outdated_components"`
-	CisaKevComponents    int            `json:"cisa_kev_components"`
-	VulnBySeverity       map[string]int `json:"vuln_by_severity"` // critical, high, medium, low
-	LicenseRisks         map[string]int `json:"license_risks"`    // critical, high, medium, low
+// Package is one row of the package list: a catalog product used by the
+// caller's in-scope assets.
+type Package struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	Namespace       string         `json:"namespace,omitempty"`
+	Ecosystem       string         `json:"ecosystem"`
+	PURLType        string         `json:"purl_type"`
+	PURL            string         `json:"purl"`
+	VersionsInUse   int            `json:"versions_in_use"`
+	Assets          int            `json:"assets"`
+	DirectLinks     int            `json:"direct_links"`
+	TransitiveLinks int            `json:"transitive_links"`
+	Vulnerabilities SeverityCounts `json:"vulnerabilities"`
+	KEV             int            `json:"kev"`
+	FixAvailable    bool           `json:"fix_available"`
+	Licenses        []string       `json:"licenses"`
+	RiskScore       int            `json:"risk_score"`
+	FirstSeenAt     time.Time      `json:"first_seen_at"`
+	LastSeenAt      time.Time      `json:"last_seen_at"`
 }
 
-// EcosystemStats represents statistics for a single ecosystem.
-type EcosystemStats struct {
-	Ecosystem    string `json:"ecosystem"`
-	Total        int    `json:"total"`
-	Vulnerable   int    `json:"vulnerable"`
-	Outdated     int    `json:"outdated"`
-	ManifestFile string `json:"manifest_file"`
+// PackageDetail is a package with its descriptive fields.
+type PackageDetail struct {
+	Package
+	// Global: the identity comes from the vulnerability feed; otherwise the
+	// product is private to the organization.
+	Global      bool    `json:"global"`
+	Description string  `json:"description,omitempty"`
+	Homepage    string  `json:"homepage,omitempty"`
+	Health      *Health `json:"health"`
 }
 
-// VulnerableComponent represents a component with vulnerability details for display.
-type VulnerableComponent struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	Ecosystem string `json:"ecosystem"`
-	PURL      string `json:"purl"`
-	License   string `json:"license,omitempty"`
-
-	// Vulnerability breakdown
-	CriticalCount int  `json:"critical_count"`
-	HighCount     int  `json:"high_count"`
-	MediumCount   int  `json:"medium_count"`
-	LowCount      int  `json:"low_count"`
-	InfoCount     int  `json:"info_count"`
-	TotalCount    int  `json:"total_count"`
-	InCisaKev     bool `json:"in_cisa_kev"`
+// Health is package health from the vulnerability feed (nil until the feed
+// carries it).
+type Health struct {
+	LatestVersion string     `json:"latest_version,omitempty"`
+	Deprecated    bool       `json:"deprecated"`
+	EOLDate       *time.Time `json:"eol_date,omitempty"`
 }
 
-// ComponentAssetUsage represents a single (component, asset) link used to answer
-// "which assets use this component?" — the blast-radius reverse lookup view.
-// Joins asset_components × assets to surface asset context (name, type,
-// criticality, exposure) alongside the per-asset link details.
-type ComponentAssetUsage struct {
-	// Asset identity & context
-	AssetID           string `json:"asset_id"`
-	AssetName         string `json:"asset_name"`
-	AssetType         string `json:"asset_type"`
-	Criticality       string `json:"criticality"`
-	AssetStatus       string `json:"asset_status"`
-	Exposure          string `json:"exposure"`
-	RiskScore         int    `json:"risk_score"`
-	IsInternetExposed bool   `json:"is_internet_accessible"`
-
-	// Per-asset link details (from asset_components)
-	DependencyID       string    `json:"dependency_id"` // asset_components.id (for further drill-down)
-	DependencyType     string    `json:"dependency_type"`
-	IsDirect           bool      `json:"is_direct"`
-	Depth              int       `json:"depth"`
-	ManifestFile       string    `json:"manifest_file,omitempty"`
-	ManifestPath       string    `json:"manifest_path,omitempty"`
-	License            string    `json:"license,omitempty"`
-	VulnerabilityCount int       `json:"vulnerability_count"`
-	HighestSeverity    string    `json:"highest_severity,omitempty"`
-	LinkedAt           time.Time `json:"linked_at"`
+// Version is one version of a package in use.
+type Version struct {
+	ID              string         `json:"id"`
+	Version         string         `json:"version"`
+	PURL            string         `json:"purl"`
+	Assets          int            `json:"assets"`
+	Vulnerabilities SeverityCounts `json:"vulnerabilities"`
+	KEV             int            `json:"kev"`
+	FixedVersions   []string       `json:"fixed_versions"`
+	Upgrade         *UpgradeAdvice `json:"upgrade,omitempty"`
+	Licenses        []string       `json:"licenses"`
+	FirstSeenAt     time.Time      `json:"first_seen_at"`
+	LastSeenAt      time.Time      `json:"last_seen_at"`
 }
 
-// ComponentVulnerability represents one CVE that affects a global component
-// (forward lookup view from the component detail sheet). Aggregates findings
-// GROUP BY vulnerability_id so a CVE appearing on multiple assets shows once,
-// with affected_assets_count rolled up.
-type ComponentVulnerability struct {
-	// Vulnerability identity (from global vulnerabilities table)
-	VulnerabilityID  string   `json:"vulnerability_id"`
-	CVEID            string   `json:"cve_id"`
-	Title            string   `json:"title"`
-	Severity         string   `json:"severity"`
-	CVSSScore        *float64 `json:"cvss_score,omitempty"`
-	EPSSScore        *float64 `json:"epss_score,omitempty"`
-	InCISAKEV        bool     `json:"in_cisa_kev"`
-	ExploitMaturity  string   `json:"exploit_maturity,omitempty"`
-	ExploitAvailable bool     `json:"exploit_available"`
-	FixedVersions    []string `json:"fixed_versions"`
+// UpgradeAdvice is the nearest version that fixes the open findings of a
+// version.
+type UpgradeAdvice struct {
+	Version string `json:"version"`
+	// Breaking: the upgrade changes the major version.
+	Breaking bool `json:"breaking"`
+	// Complete: the version fixes every open finding (otherwise only some).
+	Complete bool `json:"complete"`
+}
 
-	// Aggregated finding context for THIS component within THIS tenant
+// Usage is one place a package version is used: an asset and location.
+type Usage struct {
+	LinkID       string    `json:"id"`
+	AssetID      string    `json:"asset_id"`
+	AssetName    string    `json:"asset_name"`
+	AssetType    string    `json:"asset_type"`
+	Criticality  string    `json:"criticality"`
+	ProductID    string    `json:"component_id"`
+	Name         string    `json:"name"`
+	Ecosystem    string    `json:"ecosystem"`
+	VersionID    string    `json:"version_id"`
+	Version      string    `json:"version"`
+	PURL         string    `json:"purl"`
+	Relationship string    `json:"relationship"`
+	Scope        string    `json:"scope,omitempty"`
+	Location     string    `json:"location,omitempty"`
+	Depth        *int      `json:"depth,omitempty"`
+	Channel      string    `json:"channel,omitempty"`
+	Licenses     []string  `json:"licenses"`
+	OpenFindings int       `json:"open_findings"`
+	FirstSeenAt  time.Time `json:"first_seen_at"`
+	LastSeenAt   time.Time `json:"last_seen_at"`
+}
+
+// Vulnerability is a vulnerability affecting a package, across its versions.
+type Vulnerability struct {
+	VulnerabilityID     string    `json:"vulnerability_id"`
+	CVEID               string    `json:"cve_id"`
+	Title               string    `json:"title"`
+	Severity            string    `json:"severity"`
+	CVSSScore           *float64  `json:"cvss_score,omitempty"`
+	EPSSScore           *float64  `json:"epss_score,omitempty"`
+	InCISAKEV           bool      `json:"in_cisa_kev"`
+	FixedVersions       []string  `json:"fixed_versions"`
+	AffectedVersions    []string  `json:"affected_versions"`
 	AffectedAssetsCount int       `json:"affected_assets_count"`
 	OpenFindingCount    int       `json:"open_finding_count"`
 	TotalFindingCount   int       `json:"total_finding_count"`
-	WorstFindingStatus  string    `json:"worst_finding_status"`
+	VEXStatus           string    `json:"vex_status,omitempty"`
 	FirstDetectedAt     time.Time `json:"first_detected_at"`
 	LastSeenAt          time.Time `json:"last_seen_at"`
 }
 
-// LicenseStats represents statistics for a single license.
-type LicenseStats struct {
-	LicenseID string  `json:"license_id"`    // SPDX identifier
-	Name      string  `json:"name"`          // Human-readable name
-	Category  string  `json:"category"`      // permissive, copyleft, weak-copyleft, proprietary, public-domain, unknown
-	Risk      string  `json:"risk"`          // critical, high, medium, low, none, unknown
-	URL       *string `json:"url,omitempty"` // Link to license text (SPDX URL)
-	Count     int     `json:"count"`         // Number of components using this license
+// FacetValue is one value of a facet with its count.
+type FacetValue struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
 }
 
-// AssetDependency represents a component usage by an asset.
-type AssetDependency struct {
-	id                shared.ID
-	tenantID          shared.ID
-	assetID           shared.ID
-	componentID       shared.ID
-	path              string
-	dependencyType    DependencyType
-	manifestFile      string
-	parentComponentID *shared.ID // For transitive deps: the parent that pulled this in
-	depth             int        // Dependency depth: 1 = direct, 2+ = transitive (for risk scoring)
-	license           string     // Licenses this tenant's report declared (", "-joined SPDX ids)
-	component         *Component // For retrieval/joining
-	createdAt         time.Time
-	updatedAt         time.Time
+// Facets are the filter values present in the filtered package set.
+type Facets map[string][]FacetValue
+
+// Summary is the KPI strip of the inventory.
+type Summary struct {
+	Packages           int  `json:"packages"`
+	Versions           int  `json:"versions"`
+	Assets             int  `json:"assets"`
+	VulnerablePackages int  `json:"vulnerable_packages"`
+	KEVPackages        int  `json:"kev_packages"`
+	FixablePackages    int  `json:"fixable_packages"`
+	Outdated           *int `json:"outdated"`
+	LicenseViolations  *int `json:"license_violations"`
 }
 
-// NewComponent creates a new Global Component.
-func NewComponent(
-	name string,
-	version string,
-	ecosystem Ecosystem,
-) (*Component, error) {
-	if name == "" {
-		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
-	}
-	if version == "" {
-		return nil, fmt.Errorf("%w: version is required", shared.ErrValidation)
-	}
-	if !ecosystem.IsValid() {
-		return nil, fmt.Errorf("%w: invalid ecosystem", shared.ErrValidation)
-	}
-
-	now := time.Now().UTC()
-	c := &Component{
-		id:                 shared.NewID(),
-		name:               name,
-		version:            version,
-		ecosystem:          ecosystem,
-		vulnerabilityCount: 0,
-		metadata:           make(map[string]any),
-		createdAt:          now,
-		updatedAt:          now,
-	}
-
-	// Build PURL
-	c.purl = BuildPURL(ecosystem, "", name, version)
-
-	return c, nil
+// GraphNode is a package link in an asset's dependency graph.
+type GraphNode struct {
+	ID              string         `json:"id"`
+	ProductID       string         `json:"component_id"`
+	VersionID       string         `json:"version_id"`
+	Name            string         `json:"name"`
+	Version         string         `json:"version"`
+	PURL            string         `json:"purl"`
+	Ecosystem       string         `json:"ecosystem"`
+	Relationship    string         `json:"relationship"`
+	Scope           string         `json:"scope,omitempty"`
+	Location        string         `json:"location,omitempty"`
+	Depth           *int           `json:"depth,omitempty"`
+	Vulnerabilities SeverityCounts `json:"vulnerabilities"`
+	KEV             bool           `json:"kev"`
 }
 
-// NewAssetDependency creates a link between asset and component.
-// Default depth is 1 (direct dependency). Use SetDepth() for transitive deps.
-func NewAssetDependency(
-	tenantID, assetID, componentID shared.ID,
-	path string,
-	depType DependencyType,
-) (*AssetDependency, error) {
-	if tenantID.IsZero() || assetID.IsZero() || componentID.IsZero() {
-		return nil, fmt.Errorf("%w: missing required IDs", shared.ErrValidation)
-	}
-
-	now := time.Now().UTC()
-	return &AssetDependency{
-		id:             shared.NewID(),
-		tenantID:       tenantID,
-		assetID:        assetID,
-		componentID:    componentID,
-		path:           path,
-		dependencyType: depType,
-		depth:          1, // Default to direct dependency depth
-		createdAt:      now,
-		updatedAt:      now,
-	}, nil
+// GraphEdge: From depends on To.
+type GraphEdge struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
-// Reconstitute recreates a Component from persistence.
-func Reconstitute(
-	id shared.ID,
-	name string,
-	version string,
-	ecosystem Ecosystem,
-	purl string,
-	license string,
-	description string,
-	homepage string,
-	vulnerabilityCount int,
-	metadata map[string]any,
-	createdAt time.Time,
-	updatedAt time.Time,
-) *Component {
-	if metadata == nil {
-		metadata = make(map[string]any)
-	}
-	return &Component{
-		id:                 id,
-		name:               name,
-		version:            version,
-		ecosystem:          ecosystem,
-		purl:               purl,
-		license:            license,
-		description:        description,
-		homepage:           homepage,
-		vulnerabilityCount: vulnerabilityCount,
-		metadata:           metadata,
-		createdAt:          createdAt,
-		updatedAt:          updatedAt,
-	}
+// Graph is a bounded part of an asset's dependency graph.
+type Graph struct {
+	Nodes     []GraphNode `json:"nodes"`
+	Edges     []GraphEdge `json:"edges"`
+	Truncated bool        `json:"truncated"`
 }
 
-// ReconstituteAssetDependency recreates a dependency link.
-func ReconstituteAssetDependency(
-	id, tenantID, assetID, componentID shared.ID,
-	path string,
-	depType DependencyType,
-	manifestFile string,
-	parentComponentID *shared.ID,
-	depth int,
-	createdAt, updatedAt time.Time,
-) *AssetDependency {
-	// Default depth to 1 if not set
-	if depth < 1 {
-		depth = 1
-	}
-	return &AssetDependency{
-		id:                id,
-		tenantID:          tenantID,
-		assetID:           assetID,
-		componentID:       componentID,
-		path:              path,
-		dependencyType:    depType,
-		manifestFile:      manifestFile,
-		parentComponentID: parentComponentID,
-		depth:             depth,
-		createdAt:         createdAt,
-		updatedAt:         updatedAt,
-	}
+// Path is one introduction path, from a root link to the target link.
+type Path []GraphNode
+
+// SBOMEntry is one package of an SBOM export.
+type SBOMEntry struct {
+	ID                 string
+	Name               string
+	Version            string
+	Ecosystem          string
+	PURL               string
+	Licenses           []string
+	VulnerabilityCount int
 }
 
-// ID returns the component ID.
-func (c *Component) ID() shared.ID { return c.id }
-
-// Name returns the component name.
-func (c *Component) Name() string { return c.name }
-
-// Version returns the version.
-func (c *Component) Version() string { return c.version }
-
-// Ecosystem returns the ecosystem.
-func (c *Component) Ecosystem() Ecosystem { return c.ecosystem }
-
-// PURL returns the Package URL.
-func (c *Component) PURL() string { return c.purl }
-
-// License returns the license.
-func (c *Component) License() string { return c.license }
-
-// Description returns the description.
-func (c *Component) Description() string { return c.description }
-
-// Homepage returns the homepage.
-func (c *Component) Homepage() string { return c.homepage }
-
-// VulnerabilityCount returns the vulnerability count.
-func (c *Component) VulnerabilityCount() int { return c.vulnerabilityCount }
-
-// Metadata returns a copy of the metadata.
-func (c *Component) Metadata() map[string]any {
-	metadata := make(map[string]any, len(c.metadata))
-	for k, v := range c.metadata {
-		metadata[k] = v
-	}
-	return metadata
-}
-
-// CreatedAt returns the creation time.
-func (c *Component) CreatedAt() time.Time { return c.createdAt }
-
-// UpdatedAt returns the last update time.
-func (c *Component) UpdatedAt() time.Time { return c.updatedAt }
-
-// Mutators
-
-func (c *Component) UpdateLicense(license string) {
-	c.license = license
-	c.updatedAt = time.Now().UTC()
-}
-
-func (c *Component) UpdateDescription(desc string) {
-	c.description = desc
-	c.updatedAt = time.Now().UTC()
-}
-
-func (c *Component) UpdateHomepage(url string) {
-	c.homepage = url
-	c.updatedAt = time.Now().UTC()
-}
-
-// SetPURL overrides the generated PURL with a custom one.
-// Use this when the sensor provides a more accurate PURL.
-func (c *Component) SetPURL(purl string) {
-	if purl != "" {
-		c.purl = purl
-		c.updatedAt = time.Now().UTC()
-	}
-}
-
-// SetMetadata sets a metadata key-value pair with size validation.
-// Returns error if metadata exceeds size limits (DoS prevention).
-func (c *Component) SetMetadata(key string, value any) error {
-	// Check key count limit
-	if _, exists := c.metadata[key]; !exists && len(c.metadata) >= MaxMetadataKeys {
-		return fmt.Errorf("%w: metadata key limit exceeded (%d)", shared.ErrValidation, MaxMetadataKeys)
-	}
-
-	// Temporarily add the key to check size
-	c.metadata[key] = value
-
-	// Check serialized size
-	data, err := json.Marshal(c.metadata)
-	if err != nil {
-		delete(c.metadata, key)
-		return fmt.Errorf("%w: invalid metadata value", shared.ErrValidation)
-	}
-
-	if len(data) > MaxMetadataSize {
-		delete(c.metadata, key)
-		return fmt.Errorf("%w: metadata size exceeds limit (%d bytes)", shared.ErrValidation, MaxMetadataSize)
-	}
-
-	c.updatedAt = time.Now().UTC()
-	return nil
-}
-
-// AssetDependency Methods
-
-func (ad *AssetDependency) ID() shared.ID                  { return ad.id }
-func (ad *AssetDependency) TenantID() shared.ID            { return ad.tenantID }
-func (ad *AssetDependency) AssetID() shared.ID             { return ad.assetID }
-func (ad *AssetDependency) ComponentID() shared.ID         { return ad.componentID }
-func (ad *AssetDependency) Path() string                   { return ad.path }
-func (ad *AssetDependency) DependencyType() DependencyType { return ad.dependencyType }
-func (ad *AssetDependency) Component() *Component          { return ad.component }
-
-func (ad *AssetDependency) SetComponent(c *Component) {
-	ad.component = c
-}
-
-func (ad *AssetDependency) ManifestFile() string          { return ad.manifestFile }
-func (ad *AssetDependency) ParentComponentID() *shared.ID { return ad.parentComponentID }
-func (ad *AssetDependency) Depth() int                    { return ad.depth }
-func (ad *AssetDependency) CreatedAt() time.Time          { return ad.createdAt }
-func (ad *AssetDependency) UpdatedAt() time.Time          { return ad.updatedAt }
-
-// SetDependencyType updates the dependency type.
-func (ad *AssetDependency) SetDependencyType(t DependencyType) {
-	ad.dependencyType = t
-	ad.updatedAt = time.Now().UTC()
-}
-
-// SetPath updates the dependency path.
-func (ad *AssetDependency) SetPath(p string) {
-	ad.path = p
-	ad.updatedAt = time.Now().UTC()
-}
-
-// SetManifestFile updates the manifest file.
-func (ad *AssetDependency) SetManifestFile(f string) {
-	ad.manifestFile = f
-	ad.updatedAt = time.Now().UTC()
-}
-
-// SetParentComponentID sets the parent dependency ID for transitive deps.
-// Returns error if attempting to create a circular dependency (self-reference).
-func (ad *AssetDependency) SetParentComponentID(parentID *shared.ID) error {
-	// Prevent self-referencing (circular dependency check)
-	if parentID != nil && *parentID == ad.id {
-		return fmt.Errorf("%w: circular dependency detected (self-reference)", shared.ErrValidation)
-	}
-	ad.parentComponentID = parentID
-	return nil
-}
-
-// SetLicense records the licenses the tenant's report declared for this
-// dependency. Licenses are a tenant observation: they are stored on the
-// tenant's asset_components row, never on the shared component.
-func (ad *AssetDependency) SetLicense(license string) {
-	ad.license = license
-}
-
-// License returns the licenses declared for this dependency.
-func (ad *AssetDependency) License() string { return ad.license }
-
-// SetDepth sets the dependency depth for risk scoring.
-func (ad *AssetDependency) SetDepth(depth int) {
-	if depth < 1 {
-		depth = 1
-	}
-	ad.depth = depth
+// FindingComponent is the package version a finding is about, and how the
+// finding's asset uses it.
+type FindingComponent struct {
+	VersionID    string
+	ProductID    string
+	Name         string
+	Version      string
+	Ecosystem    string
+	PURL         string
+	Licenses     []string
+	Relationship string
+	Scope        string
+	Location     string
+	Depth        *int
 }
