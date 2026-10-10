@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-09, delegated; D1–D3 adopted as recommended, §10). P0 delivered; §11 (ordering, change timeline) in implementation |
+| Status | Accepted (2026-10-09, delegated; D1–D3 adopted as recommended, §10). P0, §11 (ordering, change timeline) and §12 (precedence per class) delivered; §13 (per-source sets) in implementation |
 | Scope | api (`pkg/domain/asset`, `internal/app/asset`, `internal/app/ingest`, the asset repository, migration `asset_attribute_sources`), web (asset "Where values come from" section, Settings › Asset sources) |
 | Architecture | [asset-attribute-reconciliation.md](../architecture/asset-attribute-reconciliation.md) |
 | Related | RFC-005 (asynchronous ingest), RFC-040 (sensor result binding), RFC-042 (inventory v2), RFC-043 (identity), RFC-066 (software inventory), [asset-source-priority.md](../architecture/asset-source-priority.md) (RFC-003, withdrawn), [data-sources.md](../architecture/data-sources.md) |
@@ -201,13 +201,9 @@ seen before the closing report's observation time.
 
 ### 5.7 Sets
 
-Kept on their existing per-element mechanisms, which already distinguish
-"not observed" from "removed": open ports (`open_port` assets closed only by
-the same kind of scan), software (`asset_software`, RFC-066 superseding and
-`not_observed`). P1 adds per-source set observations for IP addresses and
-technologies in `properties` to this table: a source's newest set replaces
-only its own contribution; the asset shows the union of fresh trusted
-sources.
+IP addresses, technologies and open ports are reconciled per source and
+per element (§13). Software keeps its own per-element mechanism
+(`asset_software`, RFC-066 superseding and `not_observed`).
 
 ### 5.8 Existence
 
@@ -337,9 +333,8 @@ pagination (`cursor`, `limit` ≤ 200).
 
 Delivered: ordering, clock clamp, `source_run`, winner flag, equal-rank
 conflicts, timeline table, API, controller (#1688). Next: the web Timeline
-tab and the organization feed; per-source set attributes (IP addresses,
-program targets) with per-element `last_seen`; feed bundle sequence and
-expiry checks for programfeed sources.
+tab and the organization feed; per-source set attributes (§13); feed
+bundle sequence and expiry checks for programfeed sources.
 
 ## 12. Precedence per attribute class (owner requirements, 2026-10-10)
 
@@ -380,3 +375,84 @@ shape are dropped and the defaults apply; the feature was one day old).
 | Preview or re-resolution crosses tenants | every read `WHERE tenant_id`; asset preview of another tenant's asset is 404 | `TestAssetReconciliationSettings_PreviewAndBackgroundReResolve` |
 | A feed claims ownership data | feeds untrusted for ownership by default | `TestReconciliationPolicy_ClassesInheritTheDefault`, `TestAssetTimeline_FeedSourceKind` |
 | Oversized policy | 50 rules per list, 64 KiB body, names ≤ 100 | `TestPolicyFromSettings` |
+
+## 13. Per-source set attributes (owner requirements, 2026-10-10)
+
+An asset's IP addresses, technologies and open ports are sets several
+sources contribute to. A source that does not report an element has not
+said it is gone: a partial scan must never delete what it did not look at.
+
+### 13.1 Model
+
+`asset_attribute_set_elements` (migration `asset_attribute_set_elements`):
+one row per tenant, asset, attribute, source (kind, name) and element, with
+`first_seen`, `last_seen` (observation time), `removed_at`, the
+`coverage_key` of the observation that last saw it and `source_run`.
+Composite FK to the asset (cascade, merge plan moves it).
+
+| Attribute | Element | Shown as | Class (§12 rules: trust, TTL) |
+|---|---|---|---|
+| `ip_addresses` | canonical address | `properties.ip_addresses` | identity |
+| `technologies` | `Name:version` as reported | `properties.technologies` | software |
+| `open_ports` | `443/tcp` on an IP address asset | the address's `open_port` assets active / inactive | network |
+
+### 13.2 Coverage
+
+Each observation states what it looked at:
+
+| Mode | Covers | Used by |
+|---|---|---|
+| `full` | every element of the source | DNS resolvers (dnsx, massdns, puredns, shuffledns) for IP addresses; fingerprinting probes (httpx, wappalyzer, webanalyze, whatweb) for technologies |
+| `ranges` | TCP ports in the scanned ranges, plus elements seen under the same key | a port scan with an explicit list (`ports: 80,443,8000-8100`) or `full` |
+| `keyed` | elements the same source last saw under the same key | a port scan with `top_ports`, `top-N` or no setting (`ports:top-100`, `ports:default`): it cannot name its ports, so it removes only what an earlier scan with the same setting found |
+| `sightings` | nothing (TTL only) | every other report: imports, integrations, feeds, a web probe reporting the one address it connected to, a truncated list |
+
+The coverage comes from the bound command's port settings (`config.ports`,
+`config.top_ports`) and the report's tool, never from the report body.
+
+### 13.3 Rules
+
+- Per element and source, only an observation strictly newer than the
+  record counts; an element removed at T is not revived by an observation
+  before T (late and replayed reports change nothing).
+- An element leaves a source's contribution (`removed_at`) only when the
+  same source observes a coverage that includes it without it.
+- A re-sighting refreshes `last_seen` at most hourly; nothing else is
+  written and no event is recorded.
+- The asset shows the union of the elements a trusted source still reports
+  and saw within its TTL (§12 class rules), plus elements no source has a
+  record of (values from before this change or other writers), which a
+  trusted `full` or `ranges` observation that names them and leaves them out
+  removes; a `keyed` one never does.
+- Ingest no longer overwrites (`ip_addresses`) or unions forever
+  (`technologies`) these properties on existing assets; it no longer closes
+  ports by "the same kind of scan". A port closes when its set loses it:
+  status `inactive`, `disappeared` history, `port_open`/`service_detected`
+  exposures resolved; it reopens when a source reports it again.
+- Timeline: one `asset_change_events` row per changed set with `added` /
+  `removed` (≤ 200 each), source kind, name and run, reason
+  `newer_observation`; the daily sweep and a policy change re-resolve sets
+  too (`ttl_expiry`, `policy_change`). A change that exactly undoes the
+  previous one within an hour folds into it (`flap_count`, latest
+  direction).
+- Retention: element rows removed or last seen before the timeline
+  retention are deleted with the events.
+
+### 13.4 Threat model
+
+| Threat | Control | Test |
+|---|---|---|
+| A partial scan (or a sensor told to scan little) erases ports or addresses | removal only within the same source's coverage; keyed coverage never removes untracked values | `TestPortScanCoverage`, `TestPlanSetObservation`, `TestAssetSets_PortCoverage` |
+| A sensor claims full coverage to wipe a set | coverage from the bound command's settings and the tool, every sensor report is `scan`; an untrusted source removes nothing from the shown set | `TestAssetSets_PortCoverage` |
+| One source removes what another still reports | per-source records; union of trusted sources | `TestResolveSet`, `TestAssetSets_PortCoverage` |
+| A delayed or replayed report revives or removes elements | strictly-newer per element, `removed_at` ordering | `TestPlanSetObservation`, `TestAssetSets_IPAddresses` |
+| Flapping floods the timeline | exact reversal within an hour folds | `TestChangeEventCoalesces`, `TestAssetSets_IPAddresses` |
+| Write amplification | re-sighting writes nothing within the hour; ≤ 1000 elements per observation (more: sightings) | `TestAssetSets_IPAddresses` |
+| Cross-tenant write or read | asset rows locked `WHERE tenant_id`, observations of other tenants' assets dropped, open_port assets read and changed `WHERE tenant_id`; composite FK | `TestAssetSets_TenantIsolation` |
+
+### 13.5 Not covered
+
+Software links keep RFC-066's mechanism. Program targets and cloud tags have
+no set attribute on assets yet; they join this table when they get one.
+Manual locks on sets are not offered.
+
