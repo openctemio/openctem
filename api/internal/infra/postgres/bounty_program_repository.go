@@ -211,7 +211,7 @@ func (r *BountyProgramRepository) SaveSync(ctx context.Context, p *bountyprogram
 func (r *BountyProgramRepository) SyncDue(ctx context.Context, olderThan time.Time, limit int) ([]bountyprogram.ProgramRef, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tenant_id::text, id::text FROM bounty_programs
-		WHERE scope_source <> 'paste' AND status = 'active'
+		WHERE scope_source IN ('program_api', 'program_file') AND status = 'active'
 		  AND (last_synced_at IS NULL OR last_synced_at < $1)
 		ORDER BY last_synced_at NULLS FIRST LIMIT $2`, olderThan, limit)
 	if err != nil {

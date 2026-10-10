@@ -144,7 +144,7 @@ func (s *Service) fetch(ctx context.Context, p *bp.Program) ([]bp.Item, bool, er
 
 //nolint:cyclop // one decision per outcome of the fetch
 func (s *Service) sync(ctx context.Context, p *bp.Program, actor shared.ID) (*SyncResult, error) {
-	if p.ScopeSource == bp.ScopeSourcePaste || p.ScopeSource == "" {
+	if p.ScopeSource != bp.ScopeSourceAPI && p.ScopeSource != bp.ScopeSourceFile {
 		return nil, bp.ErrSyncNotConfigured
 	}
 	if p.Status == bp.StatusEnded {
