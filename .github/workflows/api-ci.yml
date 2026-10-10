@@ -361,6 +361,14 @@ jobs:
           KIND: ${{ matrix.kind }}
           SHARD: ${{ matrix.shard }}
           TOTAL: ${{ matrix.total }}
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: openctem
+          DB_NAME: app_test
+          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+          OPENCTEM_TEST_DB_REQUIRED: "1"
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
         run: |
           if [ "$KIND" = unit ]; then
             run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
@@ -375,15 +383,6 @@ jobs:
                 | if $e == null then $l + "\n"
                   elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
                   else empty end'
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: openctem
-          DB_NAME: app_test
-          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
-          OPENCTEM_TEST_DB_REQUIRED: "1"
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
 
       # A test that skips itself on a failed ping (t.Skipf) would otherwise let
       # this job go green without running its DB checks.
