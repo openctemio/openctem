@@ -27,6 +27,14 @@ type v1Target struct {
 	EligibleForBounty *bool  `json:"eligible_for_bounty,omitempty"`
 	MaxSeverity       string `json:"max_severity,omitempty"`
 	Notes             string `json:"notes,omitempty"`
+	// Schema 1.1 qualifiers (all optional).
+	AssetType    string   `json:"asset_type,omitempty"`
+	Ports        []int    `json:"ports,omitempty"`
+	Protocol     string   `json:"protocol,omitempty"`
+	PathPrefix   string   `json:"path_prefix,omitempty"`
+	Environment  string   `json:"environment,omitempty"`
+	Instructions string   `json:"instructions,omitempty"`
+	Requires     []string `json:"requires,omitempty"`
 }
 
 type v1Rejected struct {
@@ -105,6 +113,14 @@ var v1ChangeKinds = map[string]bool{"program_added": true, "program_reopened": t
 
 // v1Label is the asset type label the classifier honors for a feed target
 // type ("" for an unknown type).
+// Classifier labels used more than once.
+const (
+	labelURL       = "url"
+	labelDomain    = "domain"
+	labelCIDR      = "cidr"
+	labelIPAddress = "ip_address"
+)
+
 func v1Label(feedType string) string {
 	switch feedType {
 	case "domain", "wildcard", "cidr", "url", "mobile_app", "other":
@@ -112,7 +128,7 @@ func v1Label(feedType string) string {
 	case "source_repo":
 		return "source_code"
 	case "ip":
-		return "ip_address"
+		return labelIPAddress
 	}
 	return ""
 }
@@ -122,9 +138,48 @@ func v1Item(t v1Target, inScope bool) (bp.Item, error) {
 	if label == "" || len(t.Value) > 512 {
 		return bp.Item{}, fmt.Errorf("%w: target type %q", shared.ErrValidation, t.Type)
 	}
+	if t.AssetType != "" {
+		// The fine-grained type decides: a mobile app, a contract or a
+		// model stays a program target the scanners never receive.
+		if l := v1AssetLabel(t.AssetType); l != "" {
+			label = l
+		} else {
+			label = "other"
+		}
+	}
 	it := bp.ClassifyTyped(t.Value, label)
-	it.InScope, it.Confidence, it.AssetType = inScope, t.Confidence, t.Type
+	it.InScope, it.Confidence, it.AssetType = inScope, t.Confidence, firstNonEmpty(t.AssetType, t.Type)
+	if inScope && it.Scannable() && (len(t.Ports) > 0 || t.Protocol != "" || t.PathPrefix != "") {
+		// A port-, protocol- or path-restricted target must never become an
+		// entry for the whole host: until scope entries carry those
+		// constraints (RFC-065 §16.8) it stays a program target, not scanned.
+		it.Kind, it.TargetType, it.Pattern = bp.KindOther, "", ""
+		it.Note = "restricted to ports, a protocol or a path: not scanned until the restriction can be enforced"
+	}
 	return it, nil
+}
+
+// v1AssetLabel maps the schema 1.1 asset_type onto the classifier's labels;
+// "" for types that are not network targets.
+func v1AssetLabel(assetType string) string {
+	switch strings.ToLower(strings.TrimSpace(assetType)) {
+	case "domain", "subdomain", "wildcard":
+		return labelDomain
+	case "ip_address", "ip":
+		return labelIPAddress
+	case "cidr", "ip_range":
+		return labelCIDR
+	case "url", "web_application", "website", "api":
+		return labelURL
+	}
+	return ""
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // Parse reads one program record.
