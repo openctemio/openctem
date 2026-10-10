@@ -177,6 +177,9 @@ func (s *Service) authorizeSubject(ctx context.Context, tenantID shared.ID, asse
 	if err != nil {
 		return err
 	}
+	// Any scope, including an Unrestricted one (an administrator who does
+	// not see some private program assets), means the caller cannot see
+	// every asset the statement would act on.
 	if scope != nil {
 		return ErrFullDataRequired
 	}
