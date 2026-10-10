@@ -88,7 +88,12 @@ step-up; at most 50 rules. Both are compare-and-swap section writes
     "min_intensity": "active", "tools": ["hydra"], "asset_tags": ["production"],
     "min_criticality": "high", "crown_jewel": true, "dynamic_selectors": true,
     "targets_over": 500, "cidr_wider_than": 24, "recurring": true,
-    "sensor_placement": "platform", "zone_ids": ["uuid"]
+    "sensor_placement": "platform", "zone_ids": ["uuid"],
+    "requester_roles": ["member", "uuid"], "requester_group_ids": ["uuid"],
+    "origins": ["api_key", "service_account", "mcp", "ci"],
+    "trusted_service_account_ids": ["uuid"],
+    "hours": {"match": "outside", "timezone": "Asia/Ho_Chi_Minh",
+              "windows": [{"days": ["mon", "tue", "wed", "thu", "fri"], "start": "09:00", "end": "18:00"}]}
   },
   "requirement": {
     "approvals": 1, "approver_roles": ["admin"], "approver_user_ids": ["uuid"],
@@ -99,13 +104,46 @@ step-up; at most 50 rules. Both are compare-and-swap section writes
 ```
 
 Ticket patterns are RE2 (linear time), anchored, at most 200 characters.
+
+Requester and time conditions read who asks for the scan (or starts the
+run), through what, and when it runs:
+
+- `requester_roles`: the requester's effective role (`owner`, `admin`,
+  `member`, `viewer`) or the id of any role they hold in the organization;
+  `requester_group_ids`: any active group of the organization they belong to.
+- `origins`: how the action authenticated, recorded by the authentication
+  middleware (never from the request body): `ui` (a person's session),
+  `api_key` (a person's `oct_` key), `service_account` (an `oct_` key of one
+  of the organization's service accounts), `mcp` (the MCP endpoint), `ci`
+  (a CI run token), `system` (no caller: the scheduler, an automation).
+- `trusted_service_account_ids`: service accounts this rule never catches.
+  Only an id the directory confirms is a service account of this
+  organization is exempt; a person's id in the list exempts nobody.
+- `hours`: a weekly schedule (1 to 14 windows of weekdays and `HH:MM`
+  start/end, end up to `24:00`), `match` `outside` (default) or `inside`,
+  in `timezone` (IANA) or else the organization's timezone (Settings >
+  General), else UTC. Wall-clock times, so the windows follow daylight
+  saving.
+
+Who and when. A run: the person who starts it through the origin of the
+request; a scheduled run is `system` acting for the scan's creator; the
+time is now. A request, the approval state and the New Scan preview: the
+person asking, at the scan's next scheduled run when one is set in the
+future, else now. Every run is evaluated again at the gate, so an
+approval obtained in office hours still covers an approved definition
+whose validity covers the later run; use `validity: run` for per-run
+approvals. Fail closed: an unknown requester or origin is caught by every
+requester condition, an unknown time or timezone by every hours condition,
+and a failed directory lookup refuses the run. Today `oct_` keys and the
+MCP endpoint are read-only and CI run tokens only upload results, so
+`api_key`, `service_account`, `mcp` and `ci` rules take effect when those
+callers may start scans.
+
 Conditions our data does not support yet are documented as later (§9):
-requester role, group or origin (UI, API key, MCP, CI) with a trusted
-service-account allowlist; business hours and blackout overrides; business
-unit, asset group and environment beyond tags; bug-bounty program targets;
-targets outside verified domains; asset owners as approvers; change-ticket
-lookup in the Jira integration; approver-added constraints (run window,
-rate cap).
+blackout overrides; business unit, asset group and environment beyond
+tags; bug-bounty program targets; targets outside verified domains;
+change-ticket lookup in the Jira integration; approver-added constraints
+(run window, rate cap). Asset owners as approvers: §10.
 
 ### 4.2 Presets
 
@@ -277,4 +315,5 @@ steps probe at; when RFC-071 lands it is the scan's declared intensity.
 | Setting | modes, platform policy renamed to scans, rules and presets (validation, evaluation), settings API, scope entries Strict-only, signer t2 floor, admin console and scope page texts (migration `001881`) |
 | Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge (migration `001921`) |
 | Web | Settings > Scanning (mode, rule builder, presets), New Scan review "needs approval by…", Submit for approval, Approvals inbox, scan list badge |
+| Requester conditions | requester role and group, origin with trusted service accounts, business hours (§4.1) |
 | Later | monitor-mode report, rule tester, the §4.1 later conditions, asset-owner approvers |

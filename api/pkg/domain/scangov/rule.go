@@ -74,6 +74,21 @@ type Conditions struct {
 	SensorPlacement string `json:"sensor_placement,omitempty"`
 	// ZoneIDs: the scan is pinned to any of these scan zones.
 	ZoneIDs []string `json:"zone_ids,omitempty"`
+	// RequesterRoles: the requester holds any of these roles (owner,
+	// admin, member, viewer, or a custom role id).
+	RequesterRoles []string `json:"requester_roles,omitempty"`
+	// RequesterGroupIDs: the requester belongs to any of these groups.
+	RequesterGroupIDs []string `json:"requester_group_ids,omitempty"`
+	// Origins: the scan is asked for or started through any of these
+	// (ui, api_key, service_account, mcp, ci, system).
+	Origins []string `json:"origins,omitempty"`
+	// TrustedServiceAccountIDs: the organization's service accounts this
+	// rule never catches (only service accounts: a person's id here exempts
+	// nobody).
+	TrustedServiceAccountIDs []string `json:"trusted_service_account_ids,omitempty"`
+	// Hours: a weekly schedule; the rule catches scans outside it (or
+	// inside it, Match "inside"), at the time of the run.
+	Hours *Hours `json:"hours,omitempty"`
 }
 
 // Requirement is what a caught scan needs before it runs.
@@ -226,6 +241,11 @@ func cleanList(in []string, lower bool, what string) ([]string, error) {
 	return out, nil
 }
 
+func isUUID(v string) bool {
+	u, err := uuid.Parse(v)
+	return err == nil && u.String() == v
+}
+
 func cleanUUIDs(in []string, what string) ([]string, error) {
 	out, err := cleanList(in, true, what)
 	if err != nil {
@@ -267,7 +287,7 @@ func (c Conditions) normalized() (Conditions, error) {
 	default:
 		return c, invalid("sensor_placement must be platform or tenant")
 	}
-	return c, nil
+	return c.normalizedRequester()
 }
 
 func (q Requirement) normalized() (Requirement, error) {
