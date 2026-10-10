@@ -52,7 +52,7 @@ type Importer struct {
 }
 
 // NewImporter wires the importer. pinnedRoot is the key id of the feed's
-// offline root (PROGRAM_FEED_ROOT_KEY_ID); without it nothing is imported.
+// offline root (PROGRAMFEED_ROOT_KEY_ID); without it nothing is imported.
 func NewImporter(source BundleSource, catalog bp.CatalogRepository, subs Subscriptions, pinnedRoot string, log *logger.Logger) *Importer {
 	if log == nil {
 		log = logger.NewNop()
@@ -64,6 +64,8 @@ func NewImporter(source BundleSource, catalog bp.CatalogRepository, subs Subscri
 // Result is what one import did.
 type Result struct {
 	Sequence uint64
+	// Delta: the delta was applied (otherwise the snapshot).
+	Delta    bool
 	Programs int
 	Changes  int
 	// Subscribers counts subscribed programs by outcome.
@@ -93,15 +95,22 @@ func (i *Importer) Import(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("program feed refused: %w", err)
 	}
-	programs, err := v.ReadPrograms(i.parser)
+	programs, feedChanges, err := v.Read(i.parser)
 	if err != nil {
 		return nil, fmt.Errorf("program feed refused: %w", err)
 	}
-	changes, err := i.catalog.ApplySnapshot(ctx, bp.FeedState{AppliedSequence: v.Manifest.Sequence, KeySetVersion: v.KeySet.Version}, programs)
+	apply := bp.FeedApply{State: bp.FeedState{AppliedSequence: v.Latest.Sequence, KeySetVersion: v.KeySet.Version},
+		Snapshot: !v.IsDelta(), Programs: programs}
+	for _, c := range feedChanges {
+		if c.Kind == bp.FeedChangeDropped {
+			apply.Dropped = append(apply.Dropped, c.Program)
+		}
+	}
+	changes, err := i.catalog.Apply(ctx, apply)
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{Sequence: v.Manifest.Sequence, Programs: len(programs), Changes: len(changes)}
+	res := &Result{Sequence: v.Latest.Sequence, Delta: v.IsDelta(), Programs: len(programs), Changes: len(changes)}
 	res.Subscribers = i.Reconcile(ctx)
 	i.log.Info("program feed imported", "sequence", res.Sequence, "programs", res.Programs, "changes", res.Changes)
 	return res, nil
@@ -133,6 +142,7 @@ func (i *Importer) Reconcile(ctx context.Context) map[string]int {
 			}
 			outcome, err := i.subs.ApplyFeedChange(ctx, ref)
 			if err != nil || outcome == "" {
+				// "" with no error: nothing to do for it (ended, unlinked).
 				if err != nil {
 					i.log.Warn("program feed: subscribed program not updated", "program_id", ref.ProgramID.String(), "error", err)
 				}

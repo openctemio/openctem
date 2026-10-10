@@ -1178,5 +1178,13 @@
   "programs.source.kinds.program_api": "API nhà nghiên cứu của nền tảng",
   "programs.source.kinds.program_file": "Tệp phạm vi trên tên miền chương trình",
   "programs.source.kinds.public_feed": "Nguồn chương trình công khai",
-  "programs.form.requestFailed": "Yêu cầu không thành công."
+  "programs.form.requestFailed": "Yêu cầu không thành công.",
+  "programs.suggestions.title": "Mục tiêu được gợi ý ({count})",
+  "programs.suggestions.hint": "Nguồn gợi ý các mục tiêu này nhưng chương trình không công bố chúng là phạm vi của mình. Chúng không bao giờ được quét trừ khi bạn xác nhận chúng thuộc chương trình; xác nhận sẽ yêu cầu chấp nhận lại điều khoản.",
+  "programs.suggestions.byPlatform": "do nền tảng lưu trữ liệt kê",
+  "programs.suggestions.inferred": "do nguồn suy ra",
+  "programs.suggestions.confirm": "Xác nhận các mục tiêu đã chọn",
+  "programs.suggestions.done": "Đã xác nhận mục tiêu: chấp nhận lại điều khoản để kiểm thử",
+  "programs.catalog.countsSuggested": "{in} trong phạm vi, {suggested} được gợi ý, {out} ngoài phạm vi; từ {source}, {date}",
+  "programs.catalog.platformNotice": "Do {platform} liệt kê: dữ liệu đến từ nền tảng đó và tuân theo điều khoản của nền tảng đó."
 }

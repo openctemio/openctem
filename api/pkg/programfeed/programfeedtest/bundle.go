@@ -1,6 +1,7 @@
 // Package programfeedtest builds signed program-feed bundles for tests: a
 // fresh offline root and online key per Builder, so no key is ever
-// committed and no test reaches the network.
+// committed and no test reaches the network. Bundles the collector itself
+// wrote are in pkg/programfeed/testdata/collector.
 package programfeedtest
 
 import (
@@ -12,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,7 +30,10 @@ type Builder struct {
 	OnlinePriv ed25519.PrivateKey
 	// KeySetVersion is the version of the key set it signs (default 1).
 	KeySetVersion uint64
-	Now           time.Time
+	// LocalOnly marks the manifest local-only (an unsigned self-hoster
+	// build the signed-feed path must refuse).
+	LocalOnly bool
+	Now       time.Time
 }
 
 // New returns a builder with fresh keys.
@@ -50,9 +55,27 @@ func (b *Builder) RootKeyID() string {
 	return jobsign.KeyID(b.RootPriv.Public().(ed25519.PublicKey))
 }
 
-// Write writes a snapshot bundle of records (JSON objects, one per
-// program) with the given sequence to a new directory and returns it.
-func (b *Builder) Write(t *testing.T, sequence uint64, records []map[string]any) string {
+func gz(t *testing.T, lines []map[string]any) []byte {
+	t.Helper()
+	var raw bytes.Buffer
+	for _, r := range lines {
+		line, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw.Write(line)
+		raw.WriteByte('\n')
+	}
+	var out bytes.Buffer
+	w := gzip.NewWriter(&out)
+	_, _ = w.Write(raw.Bytes())
+	_ = w.Close()
+	return out.Bytes()
+}
+
+// Write writes a snapshot bundle of program records (with an empty change
+// log) at sequence to a new directory and returns it.
+func (b *Builder) Write(t *testing.T, sequence uint64, programs []map[string]any) string {
 	t.Helper()
 	dir := t.TempDir()
 	rootPub := b.RootPriv.Public().(ed25519.PublicKey)
@@ -62,31 +85,26 @@ func (b *Builder) Write(t *testing.T, sequence uint64, records []map[string]any)
 		RootKeyID: jobsign.KeyID(rootPub), RootPublicKey: base64.StdEncoding.EncodeToString(rootPub)}
 	b.sign(t, dir, programfeed.KeySetFile, b.RootPriv, programfeed.KeySetPayloadType, ks)
 
-	var raw bytes.Buffer
-	for _, r := range records {
-		line, err := json.Marshal(r)
-		if err != nil {
+	files := make([]programfeed.File, 0, 2)
+	for _, f := range []struct {
+		records string
+		lines   []map[string]any
+	}{{"programs", programs}, {"changes", nil}} {
+		name := programfeed.FileName(programfeed.KindSnapshot, f.records)
+		data := gz(t, f.lines)
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		raw.Write(line)
-		raw.WriteByte('\n')
+		sum := sha256.Sum256(data)
+		files = append(files, programfeed.File{Name: name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(data)), Records: len(f.lines)})
 	}
-	var gz bytes.Buffer
-	w := gzip.NewWriter(&gz)
-	_, _ = w.Write(raw.Bytes())
-	_ = w.Close()
-	if err := os.WriteFile(filepath.Join(dir, programfeed.ProgramsFile), gz.Bytes(), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256(gz.Bytes())
 	m := programfeed.Manifest{Schema: programfeed.ManifestSchema, Sequence: sequence, Kind: programfeed.KindSnapshot,
 		CreatedAt: b.Now, ExpiresAt: b.Now.Add(48 * time.Hour),
-		Sources: []programfeed.Source{{Name: "fixture", AsOf: b.Now, Terms: "test data", Attribution: "test"}},
-		Files: []programfeed.File{{Name: programfeed.ProgramsFile, SHA256: hex.EncodeToString(sum[:]),
-			Size: int64(gz.Len()), Records: len(records)}}}
-	b.sign(t, dir, "snapshot.manifest.dsse.json", b.OnlinePriv, programfeed.ManifestPayloadType, m)
-	l := programfeed.Latest{Schema: programfeed.LatestSchema, Sequence: sequence, Snapshot: "snapshot.manifest.dsse.json",
-		CreatedAt: b.Now, ExpiresAt: b.Now.Add(48 * time.Hour)}
+		Sources: []programfeed.Source{{Name: "fixture", AsOf: b.Now, Licence: "test"}}, Files: files, //nolint:misspell // the collector wire name
+		Collector: programfeed.Collector{LocalOnly: b.LocalOnly}}
+	b.sign(t, dir, programfeed.ManifestName(programfeed.KindSnapshot), b.OnlinePriv, programfeed.ManifestPayloadType, m)
+	l := programfeed.Latest{Schema: programfeed.LatestSchema, Sequence: sequence, Tag: fmt.Sprintf("v1-%d", sequence),
+		Snapshot: programfeed.ManifestName(programfeed.KindSnapshot), CreatedAt: b.Now, ExpiresAt: b.Now.Add(48 * time.Hour)}
 	b.sign(t, dir, programfeed.LatestFile, b.OnlinePriv, programfeed.LatestPayloadType, l)
 	return dir
 }
@@ -106,19 +124,29 @@ func (b *Builder) sign(t *testing.T, dir, name string, priv ed25519.PrivateKey, 
 	}
 }
 
-// Record is a valid v1 record for platform:handle with the given scope.
-func Record(platform, handle string, inScope, outOfScope []string, asOf time.Time) map[string]any {
+// Record is a valid v1 program record "<source>:<slug>" with published
+// in-scope targets and out-of-scope targets.
+func Record(source, slug string, inScope, outOfScope []string, asOf time.Time) map[string]any {
 	targets := func(ids []string) []map[string]string {
 		out := make([]map[string]string, 0, len(ids))
 		for _, id := range ids {
-			out = append(out, map[string]string{"identifier": id})
+			typ := "domain"
+			if len(id) > 2 && id[:2] == "*." {
+				typ = "wildcard"
+			}
+			out = append(out, map[string]string{"type": typ, "value": id, "confidence": "published"})
 		}
 		return out
 	}
+	ts := asOf.UTC().Format(time.RFC3339)
 	return map[string]any{
-		"id": platform + ":" + handle, "platform": platform, "handle": handle, "name": "Program " + handle,
-		"url": "https://" + platform + ".example/" + handle, "offers_bounty": true, "open": true,
-		"in_scope": targets(inScope), "out_of_scope": targets(outOfScope),
-		"rules": map[string]any{}, "terms_text": "", "source": "fixture", "as_of": asOf.Format(time.RFC3339),
+		"id": source + ":" + slug, "source": source, "platform": "self-hosted", "name": "Program " + slug,
+		"url": "https://" + slug + ".example/security", "type": "bounty", "status": "open", "offers_bounty": true,
+		"scope_published": true, "in_scope": targets(inScope), "out_of_scope": targets(outOfScope), "rejected": []any{},
+		"rules":      map[string]any{"testing_restrictions": []string{}, "required_headers": []string{}, "safe_harbour": "unknown", "languages": []string{}}, //nolint:misspell // the collector wire name
+		"terms":      map[string]any{"url": "https://" + slug + ".example/security"},
+		"contact":    map[string]any{},
+		"provenance": map[string]any{"source": source, "source_url": "https://" + slug + ".example/list.json", "fetched_at": ts},
+		"first_seen": ts, "last_seen": ts, "last_changed": ts,
 	}
 }

@@ -16,7 +16,7 @@ type fakeCatalog struct {
 }
 
 func (f *fakeCatalog) FeedState(context.Context) (bp.FeedState, error) { return bp.FeedState{}, nil }
-func (f *fakeCatalog) ApplySnapshot(context.Context, bp.FeedState, []bp.PublicProgram) ([]bp.CatalogChange, error) {
+func (f *fakeCatalog) Apply(context.Context, bp.FeedApply) ([]bp.CatalogChange, error) {
 	return nil, nil
 }
 func (f *fakeCatalog) ListPublic(context.Context, string, int, int) ([]bp.PublicProgram, int, error) {
@@ -39,13 +39,15 @@ func publicProgram(t *testing.T, inScope ...string) *bp.PublicProgram {
 	items := make([]bp.Item, 0, len(inScope)+1)
 	for _, s := range inScope {
 		it := bp.Classify(s)
-		it.InScope = true
+		it.InScope, it.Confidence = true, bp.ConfidencePublished
 		items = append(items, it)
 	}
-	items = append(items, bp.Classify("admin.pub.example"))
-	p := &bp.PublicProgram{ID: shared.NewID(), FeedID: "acme-bounty:pub", Platform: "acme-bounty", Handle: "pub",
-		Name: "Pub", URL: "https://acme-bounty.example/pub", Open: true, Items: items, Source: "fixture",
-		AsOf: time.Now()}
+	out := bp.Classify("admin.pub.example")
+	out.Confidence = bp.ConfidencePublished
+	items = append(items, out)
+	p := &bp.PublicProgram{ID: shared.NewID(), FeedID: "acme-bounty:pub", Source: "acme-bounty", Platform: "acme-bounty",
+		Name: "Pub", URL: "https://acme-bounty.example/pub", Type: "bounty", Status: bp.FeedStatusOpen, Items: items,
+		AsOf: time.Now(), Provenance: bp.FeedProvenance{Source: "acme-bounty", SourceURL: "https://acme-bounty.example/list.json"}}
 	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +127,7 @@ func TestSubscribe_PassiveUntilAccepted(t *testing.T) {
 		t.Fatalf("after narrowing: active %d of %d", a, total)
 	}
 	got, _ := repo.GetByID(ctx, tenant, p.ID)
-	if got.Status != bp.StatusActive || got.TermsSHA256 != narrowed.TermsSHA256 {
+	if got.Status != bp.StatusActive || got.PublicSyncedSHA256 != narrowed.TermsSHA256 {
 		t.Fatalf("after narrowing: %+v", got)
 	}
 	// Applying the same catalog again changes nothing.
@@ -164,11 +166,12 @@ func TestSubscribe_PassiveUntilAccepted(t *testing.T) {
 	}
 
 	// A closed program suspends an active subscription.
-	if _, err := svc.Resume(ctx, tenant, user, p.ID, rules.TermsSHA256); err != nil {
+	cur, _ := repo.GetByID(ctx, tenant, p.ID)
+	if _, err := svc.Resume(ctx, tenant, user, p.ID, cur.TermsSHA256); err != nil {
 		t.Fatal(err)
 	}
 	closed := *rules
-	closed.Open = false
+	closed.Status = bp.FeedStatusClosed
 	cat.programs[pub.ID] = &closed
 	if out, _ := svc.ApplyFeedChange(ctx, bp.ProgramRef{TenantID: tenant, ProgramID: p.ID}); out != "suspended" {
 		t.Fatalf("closed: %q", out)
@@ -205,5 +208,66 @@ func TestSubscribe_GuardrailsApply(t *testing.T) {
 		if e.Pattern() == "*.com" || e.Status() == scopedom.StatusActive {
 			t.Fatalf("entry %s %s", e.Pattern(), e.Status())
 		}
+	}
+}
+
+func TestSubscribe_InferredTargetsNeedConfirmation(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepo()
+	cat := &fakeCatalog{programs: map[shared.ID]*bp.PublicProgram{}}
+	pub := publicProgram(t, "api.pub.example")
+	sugg := bp.Classify("agency.pub-two.example")
+	sugg.InScope, sugg.Confidence = true, bp.ConfidenceInferred
+	pub.Items = append(pub.Items, sugg)
+	if err := pub.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cat.programs[pub.ID] = pub
+	svc := NewService(repo, fullData(false), nil)
+	svc.SetCatalog(cat)
+	tenant, user := shared.NewID(), shared.NewID()
+	p, _, err := svc.Subscribe(ctx, tenant, user, pub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patterns := func() map[string]bool {
+		es, _ := repo.Entries(ctx, tenant, p.ID)
+		out := map[string]bool{}
+		for _, e := range es {
+			out[e.Pattern()] = e.IsActive()
+		}
+		return out
+	}
+	// The inferred target is no entry until confirmed.
+	if got := patterns(); len(got) != 1 || got["agency.pub-two.example"] {
+		t.Fatalf("entries before confirmation = %v", got)
+	}
+	// Only a suggestion of this program can be confirmed.
+	if _, _, err := svc.ConfirmTargets(ctx, tenant, user, p.ID, []string{"evil.example"}); !errors.Is(err, bp.ErrNotInferred) {
+		t.Fatalf("confirm a non-suggestion: %v", err)
+	}
+	if _, err := svc.Resume(ctx, tenant, user, p.ID, p.TermsSHA256); err != nil {
+		t.Fatal(err)
+	}
+	got, pv, err := svc.ConfirmTargets(ctx, tenant, user, p.ID, []string{"agency.pub-two.example"})
+	if err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	// Confirming widens: every entry waits for a new acceptance.
+	if got.Status != bp.StatusPendingAttestation {
+		t.Fatalf("status after confirming = %s", got.Status)
+	}
+	if e := patterns(); len(e) != 2 || e["agency.pub-two.example"] || e["api.pub.example"] {
+		t.Fatalf("entries after confirmation = %v", e)
+	}
+	if _, err := svc.Resume(ctx, tenant, user, p.ID, pv.TermsSHA256); err != nil {
+		t.Fatal(err)
+	}
+	if e := patterns(); !e["agency.pub-two.example"] {
+		t.Fatalf("confirmed target not in effect after acceptance: %v", e)
+	}
+	// Another tenant cannot confirm on this program.
+	if _, _, err := svc.ConfirmTargets(ctx, shared.NewID(), user, p.ID, []string{"agency.pub-two.example"}); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant confirm: %v", err)
 	}
 }

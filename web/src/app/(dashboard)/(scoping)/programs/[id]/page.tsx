@@ -35,6 +35,7 @@ import {
   ProgramLocked,
   ProgramPendingTerms,
   ProgramSource,
+  ProgramSuggestions,
   endProgram,
   formatWindow,
   invalidatePrograms,
@@ -267,6 +268,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
         </section>
 
         <ProgramPendingTerms program={p} canWrite={canWrite} onChanged={refresh} />
+        <ProgramSuggestions program={p} canWrite={canWrite} onChanged={refresh} />
 
         <ProgramSource program={p} canWrite={canWrite} onChanged={refresh} />
 

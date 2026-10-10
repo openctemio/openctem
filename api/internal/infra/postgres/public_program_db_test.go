@@ -28,12 +28,17 @@ func TestPublicProgramRepository(t *testing.T) {
 		items := make([]bountyprogram.Item, 0, len(inScope))
 		for _, s := range inScope {
 			it := bountyprogram.Classify(s)
-			it.InScope = true
+			it.InScope, it.Confidence = true, bountyprogram.ConfidencePublished
 			items = append(items, it)
 		}
-		p := bountyprogram.PublicProgram{FeedID: "acme-bounty:" + handle, Platform: "acme-bounty", Handle: handle,
-			Name: "P " + handle, URL: "https://acme-bounty.example/" + handle, Open: open, Items: items,
-			Source: "fixture", AsOf: now}
+		status := bountyprogram.FeedStatusOpen
+		if !open {
+			status = bountyprogram.FeedStatusClosed
+		}
+		p := bountyprogram.PublicProgram{FeedID: "acme-bounty:" + handle, Source: "acme-bounty", Platform: "self-hosted",
+			Name: "P " + handle, URL: "http://acme-bounty.example/" + handle, Type: "bounty", Status: status, Items: items,
+			AsOf: now, Provenance: bountyprogram.FeedProvenance{Source: "acme-bounty", SourceURL: "https://acme-bounty.example/list.json",
+				Dataset: "acme/programs", DatasetCommit: strings.Repeat("b", 40)}}
 		if err := p.Validate(); err != nil {
 			t.Fatal(err)
 		}
@@ -47,8 +52,8 @@ func TestPublicProgramRepository(t *testing.T) {
 		return out
 	}
 
-	ch, err := cat.ApplySnapshot(ctx, bountyprogram.FeedState{AppliedSequence: 1, KeySetVersion: 1},
-		[]bountyprogram.PublicProgram{mk("a", true, "*.a.example"), mk("b", true, "b.example")})
+	ch, err := cat.Apply(ctx, bountyprogram.FeedApply{State: bountyprogram.FeedState{AppliedSequence: 1, KeySetVersion: 1},
+		Snapshot: true, Programs: []bountyprogram.PublicProgram{mk("a", true, "*.a.example"), mk("b", true, "b.example"), mk("c", true, "c.example")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,14 +61,17 @@ func TestPublicProgramRepository(t *testing.T) {
 		t.Fatalf("first apply: %v", k)
 	}
 	// An older or equal sequence is refused.
-	if _, err := cat.ApplySnapshot(ctx, bountyprogram.FeedState{AppliedSequence: 1, KeySetVersion: 1}, nil); err == nil {
+	if _, err := cat.Apply(ctx, bountyprogram.FeedApply{State: bountyprogram.FeedState{AppliedSequence: 1, KeySetVersion: 1}, Snapshot: true}); err == nil {
 		t.Fatal("same sequence applied twice")
 	}
 	list, total, err := cat.ListPublic(ctx, "", 10, 0)
-	if err != nil || total != 2 || len(list) != 2 {
+	if err != nil || total != 3 || len(list) != 3 {
 		t.Fatalf("list = %d/%d %v", len(list), total, err)
 	}
 	a := list[0]
+	if a.Provenance.Dataset != "acme/programs" {
+		t.Fatalf("provenance not kept: %+v", a.Provenance)
+	}
 
 	// Two tenants follow program a; a second subscription of one tenant is
 	// refused.
@@ -71,9 +79,9 @@ func TestPublicProgramRepository(t *testing.T) {
 		user := seedGroupsUser(ctx, t, db, "pf.example")
 		pid := a.ID
 		p := &bountyprogram.Program{ID: shared.NewID(), TenantID: tenant, Name: name, Platform: "acme-bounty",
-			ProgramURL: a.URL, Visibility: bountyprogram.VisibilityPublic, Status: bountyprogram.StatusPendingAttestation,
+			ProgramURL: a.ProgramURL(), Visibility: bountyprogram.VisibilityPublic, Status: bountyprogram.StatusPendingAttestation,
 			ScopeSource: bountyprogram.ScopeSourcePublicFeed, ScopeItems: a.Items, TermsSHA256: a.TermsSHA256,
-			PublicProgramID: &pid, CreatedBy: &user, CreatedAt: now, UpdatedAt: now}
+			PublicProgramID: &pid, PublicSyncedSHA256: a.TermsSHA256, CreatedBy: &user, CreatedAt: now, UpdatedAt: now}
 		err := programs.Import(ctx, bountyprogram.ImportWrite{Program: p, Group: bountyprogram.NewGroup{
 			ID: shared.NewID(), Name: "Program: " + name, Slug: "program-" + strings.ReplaceAll(p.ID.String(), "-", "")[:16], Member: &user}})
 		if err != nil {
@@ -99,25 +107,34 @@ func TestPublicProgramRepository(t *testing.T) {
 		t.Fatalf("stale before a change: %v", stale)
 	}
 
-	// Program a changes scope, b disappears: changed / removed; both
-	// subscriptions of a are stale.
-	ch, err = cat.ApplySnapshot(ctx, bountyprogram.FeedState{AppliedSequence: 2, KeySetVersion: 1},
-		[]bountyprogram.PublicProgram{mk("a", true, "*.a.example", "new.a2.example")})
+	// A delta: program a changes scope, c is dropped (archived), b is not
+	// in the delta and stays; both subscriptions of a are stale.
+	ch, err = cat.Apply(ctx, bountyprogram.FeedApply{State: bountyprogram.FeedState{AppliedSequence: 2, KeySetVersion: 1},
+		Programs: []bountyprogram.PublicProgram{mk("a", true, "*.a.example", "new.a2.example")}, Dropped: []string{"acme-bounty:c"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if k := kinds(ch); k["acme-bounty:a"] != "changed" || k["acme-bounty:b"] != "removed" {
+	if k := kinds(ch); k["acme-bounty:a"] != "changed" || k["acme-bounty:c"] != "removed" || k["acme-bounty:b"] != "" {
 		t.Fatalf("second apply: %v", k)
 	}
 	stale, err := cat.StaleSubscriptions(ctx, 100)
 	if err != nil || len(stale) != 2 {
 		t.Fatalf("stale = %v %v", stale, err)
 	}
-	if _, total, _ := cat.ListPublic(ctx, "", 10, 0); total != 1 {
-		t.Fatalf("removed program still listed: %d", total)
+	if _, total, _ := cat.ListPublic(ctx, "", 10, 0); total != 2 {
+		t.Fatalf("listed after the delta: %d", total)
+	}
+	// A snapshot archives what it does not list.
+	ch, err = cat.Apply(ctx, bountyprogram.FeedApply{State: bountyprogram.FeedState{AppliedSequence: 3, KeySetVersion: 1},
+		Snapshot: true, Programs: []bountyprogram.PublicProgram{mk("a", false, "*.a.example", "new.a2.example")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k := kinds(ch); k["acme-bounty:b"] != "removed" || k["acme-bounty:a"] != "changed" {
+		t.Fatalf("third apply: %v", k)
 	}
 	st, err := cat.FeedState(ctx)
-	if err != nil || st.AppliedSequence != 2 || st.KeySetVersion != 1 {
+	if err != nil || st.AppliedSequence != 3 || st.KeySetVersion != 1 {
 		t.Fatalf("state = %+v %v", st, err)
 	}
 }

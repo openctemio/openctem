@@ -544,35 +544,62 @@ covers the target.
 
 ### 16.6 Implementation notes (feed importer)
 
-- Bundle (until the collector's README fixes it; the record parser is an
-  interface, `programfeed.RecordParser`): `keyset.dsse.json` (payload type
-  `application/vnd.openctem.programfeed.keyset+json`, kind
-  `openctem.programfeed.keyset/v1`), `latest.dsse.json`
-  (`…programfeed.latest+json`, schema `openctem.programfeed.latest/v1`:
-  sequence, snapshot manifest name, created/expires), the snapshot manifest
-  (`…programfeed.manifest+json`, schema `openctem.programfeed/v1`) and
-  `snapshot-programs.jsonl.gz`, one program per line (`id` =
-  `<platform>:<handle>`, name, url, offers_bounty, open, in_scope and
-  out_of_scope `{identifier, type}`, rules, terms_text, source, as_of;
-  unknown fields refused). Deltas follow when the collector publishes them.
-- Verification is shared with other signed feeds (`pkg/feedsign`). Caps:
-  manifest 1 MiB, file 64 MiB, 512 MiB decompressed, 1 MiB per record,
-  50 000 programs, 7-day bundle validity.
-- Source: a directory (`PROGRAM_FEED_DIR`, a mirror or an air-gapped upload)
-  with the pinned root (`PROGRAM_FEED_ROOT_KEY_ID`); both unset, nothing is
-  imported. Controller `program-feed`, hourly.
-- Tables: `public_programs` (global catalog), `program_feed_state` (applied
-  sequence, highest key-set version; the apply locks it and refuses an older
-  sequence), `bounty_programs.public_program_id` (unique per tenant),
-  status `pending_attestation`, source `public_feed` (migration `001710`).
-- Fan-out is a reconcile: every tick, subscribed programs whose terms differ
-  from their catalog program (or that are active while it is closed or
-  removed) are brought up to date, so a failed update is retried.
+- Bundle (collector `openctemio/programfeed`, record schema
+  `openctem.programfeed/v1`, its `schema/` directory is the reference):
+  `keyset.dsse.json` (`application/vnd.openctem.programfeed.keyset+json`),
+  `latest.dsse.json` (sequence, tag, snapshot and delta manifests, base
+  sequence, expiry), `snapshot.manifest.dsse.json` with
+  `snapshot-programs.jsonl.gz` and `snapshot-changes.jsonl.gz`, and
+  `delta.manifest.dsse.json` with `delta-programs.jsonl.gz` and
+  `delta-changes.jsonl.gz`. The record parser is an interface
+  (`programfeed.RecordParser`); unknown fields are refused and every target
+  is classified again by the platform's own parser.
+- Verification is shared with other signed feeds (`pkg/feedsign`, the same
+  DSSE, root and key-set rules as the vulnerability feed): pinned root
+  (`PROGRAMFEED_ROOT_KEY_ID`, distinct from the vulnerability feed's),
+  key-set version never lower, sequence newer than applied, the delta only
+  when its base is the applied sequence (otherwise the snapshot), at most 7
+  days valid, size and SHA-256 per file. Caps: manifest 1 MiB, file 64 MiB,
+  512 MiB decompressed, 1 MiB per record, 100 000 programs.
+- Apply: a snapshot replaces the catalog (programs it does not list are
+  archived); a delta upserts its programs and archives the ones a
+  `program_dropped` change names. A closed or paused program suspends the
+  followed programs that are in effect (monitoring stops). Out of scope wins
+  (the collector already resolves it; the platform's program exclusions bind
+  program entries).
+- A feed target is never permission to test. Entries are made only from
+  targets with `confidence: published`; `inferred` targets (most records
+  have `scope_published: false`) are shown as suggestions and become entries
+  only when a member confirms them (`POST /programs/{id}/targets/confirm`),
+  which widens the program and asks for a new acceptance. The terms a person
+  accepts are the hash of what they were shown (scope, rules, terms text);
+  the terms text carries the terms document URL and its `terms.sha256` when
+  the collector read it.
+- Source: a directory (`PROGRAMFEED_DIR`, a mirror or an air-gapped upload)
+  with the pinned root; both unset, nothing is imported. Controller
+  `program-feed`, hourly.
+- Tables: `public_programs` (global catalog with source, type, status,
+  scope_published, terms URL and document hash, content hash),
+  `program_feed_state` (applied sequence, highest key-set version; the apply
+  locks it and refuses an older sequence), `bounty_programs.public_program_id`
+  (unique per tenant), `public_synced_sha256`, `confirmed_targets`, status
+  `pending_attestation`, source `public_feed` (migration `001710`).
+- Fan-out is a reconcile: every tick, followed programs whose catalog
+  content changed (or that are in effect while it is closed, paused or
+  archived) are brought up to date, so a failed update is retried.
 - Routes: `GET /programs/catalog` (`programs:read`), `POST
   /programs/subscriptions {public_program_id}` (`programs:write`, audited
-  `bounty_program.subscribed`); acceptance is `POST
-  /programs/{id}/reactivate` (step-up, terms hash), which records the
-  person's attestation.
+  `bounty_program.subscribed`), `POST /programs/{id}/targets/confirm`
+  (`programs:write`, audited); acceptance is `POST /programs/{id}/reactivate`
+  (step-up, terms hash), which records the person's attestation.
+- Owner decision (option A, 2026-10-10): the platform does not republish
+  restricted platform data. Next to the signed feed, a platform administrator
+  may enable an external program dataset source (off by default, step-up and
+  a reason, audited; datasets from a fixed allowlist pinned in configuration,
+  fetched by the platform with conditional GET and size caps and parsed with
+  the same v1 parser; provenance kept per record; a notice that the data
+  originates from the platforms and is subject to their terms; every target
+  inferred until a follower confirms it). Planned as its own change.
 
 ### 16.7 Plan
 
@@ -582,4 +609,5 @@ covers the target.
 | Private programs (web) | `/programs/new` source picker (Enter manually / Import file), visibility, locked view and acceptance |
 | Feed importer | §16.2–16.3: catalog, verification, sequence and freshness, subscriptions, fan-out, notifications (fixture bundles; no network in CI) |
 | Program assets | §16.5: provenance links, system tags, inventory filter, default exclusion from organization metrics |
+| External dataset source | owner option A: admin-enabled, allowlisted public datasets fetched by the platform (§16.6) |
 | Later | per-user researcher API connector (P7), passive sweep of unaccepted program targets (§16.4) |

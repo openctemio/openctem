@@ -23,14 +23,23 @@ const pub = {
   handle: 'acme',
   name: 'Acme public',
   url: 'https://acme-bounty.example/acme',
+  source: 'disclose',
+  type: 'bounty' as const,
+  status: 'open' as const,
+  scope_published: true,
   offers_bounty: true,
   in_scope: 3,
+  suggested: 2,
   out_of_scope: 1,
+  provenance: {
+    source: 'disclose',
+    source_url: 'https://acme-bounty.example/list.json',
+    fetched_at: '2026-10-10T00:00:00Z',
+    original_platform: 'acme-bounty',
+  },
   items: [],
   rules: {},
   terms_text: '',
-  terms_sha256: 'c'.repeat(64),
-  source: 'fixture',
   as_of: '2026-10-10T00:00:00Z',
 }
 
@@ -49,7 +58,7 @@ describe('ProgramCatalog', () => {
     const onFollowed = vi.fn()
     render(<ProgramCatalog onFollowed={onFollowed} onError={() => {}} />)
     expect(screen.getByText('Acme public')).toBeInTheDocument()
-    expect(screen.getByText(/3 in scope, 1 out of scope/)).toBeInTheDocument()
+    expect(screen.getByText(/3 in scope, 2 suggested, 1 out of scope/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Follow' }))
     await waitFor(() => expect(api.subscribeProgram).toHaveBeenCalledWith('pp1'))
     expect(onFollowed).toHaveBeenCalledWith(change)
