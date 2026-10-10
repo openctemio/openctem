@@ -1945,6 +1945,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails, cfg.Scope.ActiveProof == config.ScopeProofAll)
+	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
+	// the limits of port- and path-limited targets.
+	s.Command.SetScopeLimits(s.ActiveGate)
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(

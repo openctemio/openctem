@@ -143,9 +143,14 @@ claim re-check), a target that only limited entries cover is refused
 (`constrained`) unless `scope.ConstrainedJobRefusal` allows it: only tools
 that stay on the target they are given (`naabu` and `httpx` for ports,
 `httpx` for paths); a port list must lie within the allowed ports, `naabu`
-needs one, and `top_ports` is refused. Crawlers, template scanners and DAST
-tools stay refused there until they take an enforced scope from the
-platform. A gate without the check fails closed. The coverage report counts
+needs one, and `top_ports` is refused. Crawlers, template scanners, DAST
+tools and top-ports scans are allowed there only for a job claimed by a
+sensor that enforces scope limits (`JobShape.LimitsEnforced`: the sensor
+reports `scope.limits@1` and jobs are signed). The signed statement then
+carries the limits and the sensor's task forwarder enforces them
+(job-signing.md, "Scope limits"). For any other sensor the claim re-check
+withholds such a job so an enforcing sensor can take it. A gate without the
+check fails closed. The coverage report counts
 only unlimited entries.
 
 ## What the gate checks
