@@ -27,6 +27,8 @@ targets + groups + selectors
        wildcard → apex (literal) + ListSelectorAssets(UnderDomain)
        cidr (inventory mode) → ListSelectorAssets(InCIDR)
        options: seen_within_days, include_stale; cap 5 000 per selector
+       new_since_last_run: only assets confirmed (or first seen without a
+         record) since the previous completed/partial run; no apex literal (RFC-071)
   └─ scanner type gate (single-scanner runs)
   └─ ResolveDispatchTargets: validator, exclusions, ownership, act scope,
      private ranges, tier ceiling

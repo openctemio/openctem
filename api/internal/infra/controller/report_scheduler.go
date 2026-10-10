@@ -249,8 +249,14 @@ func (c *ReportScheduler) render(ctx context.Context, s *reportschedule.ReportSc
 		if err != nil {
 			return "", fmt.Errorf("resolve creator scope: %w", err)
 		}
-		if sc != nil {
+		switch {
+		case sc.Restricted():
 			scope, statsUser = sc, creator
+		case sc != nil:
+			// Unrestricted but private program findings hidden from the
+			// creator (RFC-065 §15.3).
+			scope = sc
+			filter.HiddenFor = creator
 		}
 	}
 	stats, err := c.stats.GetStats(ctx, s.TenantID(), statsUser, filter)

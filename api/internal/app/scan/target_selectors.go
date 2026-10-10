@@ -38,6 +38,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -152,6 +153,14 @@ func (s *Service) expandSelectors(ctx context.Context, sc *scan.Scan) (*selector
 		t := time.Now().UTC().AddDate(0, 0, -d)
 		seenSince = &t
 	}
+	var newSince *time.Time
+	newOnly := sc.TargetOptions.NewSinceLastRun
+	if newOnly {
+		var err error
+		if newSince, err = s.lastSuccessfulRunStart(ctx, sc); err != nil {
+			return nil, err
+		}
+	}
 	seenRoot := map[string]bool{}
 	for _, raw := range sc.Targets {
 		t := strings.TrimSpace(raw)
@@ -164,7 +173,11 @@ func (s *Service) expandSelectors(ctx context.Context, sc *scan.Scan) (*selector
 				continue
 			}
 			seenRoot[root] = true
-			out.Literal = append(out.Literal, root)
+			if !newOnly {
+				// Only new assets: the apex is one only if the inventory
+				// says so.
+				out.Literal = append(out.Literal, root)
+			}
 			out.Roots = append(out.Roots, root)
 			q, kind = scan.SelectorQuery{UnderDomain: root}, SelectorKindWildcard
 		case inventoryCIDR && isCIDRTarget(t):
@@ -179,6 +192,7 @@ func (s *Service) expandSelectors(ctx context.Context, sc *scan.Scan) (*selector
 				shared.ErrValidation)
 		}
 		q.TenantID, q.SeenSince, q.IncludeStale = sc.TenantID, seenSince, sc.TargetOptions.IncludeStale
+		q.NewOnly, q.NewSince = newOnly, newSince
 		q.Limit = MaxSelectorTargets + 1
 		members, err := s.selectorAssets.ListSelectorAssets(ctx, q)
 		if err != nil {
@@ -270,4 +284,42 @@ func dropUnderRoots(targets, roots []string) []string {
 		}
 	}
 	return out
+}
+
+// recentRunsChecked bounds how many of the scan's latest runs are read to
+// find its previous successful one.
+const recentRunsChecked = 50
+
+// lastSuccessfulRunStart is when the scan's most recent completed or
+// partial run started (nil: none among its recent runs, so every asset
+// counts as new). A failed read refuses the run: guessing "everything is
+// new" or "nothing is" would both be wrong.
+func (s *Service) lastSuccessfulRunStart(ctx context.Context, sc *scan.Scan) (*time.Time, error) {
+	if s.runRepo == nil {
+		return nil, shared.NewDomainError(CodeSelectorUnavailable,
+			"The scan takes only assets new since its last run, and this server cannot read its runs; the run was not started.",
+			shared.ErrValidation)
+	}
+	runs, _, err := s.runRepo.ListByScanID(ctx, sc.ID, 1, recentRunsChecked)
+	if err != nil {
+		return nil, fmt.Errorf("read the scan's previous runs: %w", err)
+	}
+	var latest *time.Time
+	for _, r := range runs {
+		if r == nil || !r.TenantID.Equals(sc.TenantID) {
+			continue
+		}
+		if r.Status != scanrun.RunStatusCompleted && r.Status != scanrun.RunStatusPartial {
+			continue
+		}
+		at := r.CreatedAt
+		if r.StartedAt != nil {
+			at = *r.StartedAt
+		}
+		if latest == nil || at.After(*latest) {
+			t := at
+			latest = &t
+		}
+	}
+	return latest, nil
 }

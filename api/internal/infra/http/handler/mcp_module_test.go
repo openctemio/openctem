@@ -16,42 +16,31 @@ func (g fakeModuleGate) IsEnabled(_ context.Context, tenantID, moduleID string) 
 	return !g.off[tenantID][moduleID]
 }
 
-// Every MCP tool and prompt names the module of its REST route ("" = core),
-// so a new tool cannot be added without deciding it.
-func TestMCP_EveryToolAndPromptIsClassified(t *testing.T) {
-	want := map[string]string{
-		"list_findings":            "",
-		"get_finding":              "",
-		"finding_stats":            "",
-		"list_active_cves":         "",
-		"explain_finding_priority": "",
-		"list_remediation_groups":  "", // /findings/remediation-groups is core
-		"list_assets":              "",
-		"get_exposure_chains":      moduledom.ModuleAttackSurface,
-		"compliance_posture":       moduledom.ModuleCompliance,
-		"get_campaign":             moduledom.ModulePentest,
-		"list_campaign_findings":   moduledom.ModulePentest,
-		"get_pentest_finding":      moduledom.ModulePentest,
-		"list_retests":             moduledom.ModulePentest,
-		"list_finding_templates":   moduledom.ModulePentest,
-		"campaign_report_stats":    moduledom.ModulePentest,
-		// prompts
-		"exec_summary":         moduledom.ModulePentest,
-		"finding_writeup":      moduledom.ModulePentest,
-		"remediation_guidance": moduledom.ModulePentest,
-		"attack_narrative":     moduledom.ModulePentest,
+// Every MCP tool and prompt is declared under one module of the registry
+// (configs/modules.yaml, `mcp`), and its Module is that module ("" for a core
+// one). A new tool cannot be added without deciding it.
+func TestMCP_EveryToolAndPromptFollowsTheRegistry(t *testing.T) {
+	owner := map[string]string{}
+	for _, d := range moduledom.Registry {
+		for _, name := range d.MCP {
+			owner[name] = d.ID
+		}
 	}
 	h := newTestMCPWithPentest(&fakeFindingReader{}, &fakePentestReader{})
-	seen := 0
+	seen := map[string]bool{}
 	check := func(name, module string) {
-		seen++
-		m, ok := want[name]
+		seen[name] = true
+		id, ok := owner[name]
 		if !ok {
-			t.Errorf("MCP %q is not classified: add it to this test with the module of its REST route", name)
+			t.Errorf("MCP %q is not in the module registry: add it to the `mcp` list of the module of its REST route", name)
 			return
 		}
-		if m != module {
-			t.Errorf("MCP %q: module %q, want %q", name, module, m)
+		want := id
+		if moduledom.IsCoreModule(id) {
+			want = ""
+		}
+		if module != want {
+			t.Errorf("MCP %q: Module %q, want %q (registry: %s)", name, module, want, id)
 		}
 	}
 	for _, tool := range h.tools {
@@ -60,8 +49,10 @@ func TestMCP_EveryToolAndPromptIsClassified(t *testing.T) {
 	for _, p := range h.prompts {
 		check(p.Name, p.Module)
 	}
-	if seen != len(want) {
-		t.Errorf("classified %d names, registry has %d: drop the retired ones", len(want), seen)
+	for name, id := range owner {
+		if !seen[name] {
+			t.Errorf("registry module %s lists MCP %q, which does not exist", id, name)
+		}
 	}
 }
 

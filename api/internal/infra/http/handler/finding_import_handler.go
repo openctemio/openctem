@@ -61,7 +61,9 @@ func NewFindingImportHandler(svc *findingimport.Service, ds *datascope.Enforcer,
 	if ds != nil {
 		h.actorOf = func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error) {
 			scope, err := ds.Resolve(ctx, tenantID)
-			if err != nil || scope == nil {
+			if err != nil || !scope.Restricted() {
+				// An unrestricted uploader may create assets; hiding private
+				// program assets is about reading, not importing.
 				return nil, err
 			}
 			return uploaderScope{enforcer: ds, scope: scope}, nil

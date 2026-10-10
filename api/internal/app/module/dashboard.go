@@ -179,7 +179,9 @@ const dashboardKFloor = 5
 // second case (apply the k-floor).
 func (s *DashboardService) countScope(ctx context.Context, tenantID shared.ID) (scope *shared.DataScope, aggregated bool, err error) {
 	scope, err = s.dataScope.Resolve(ctx, tenantID)
-	if err != nil || scope == nil {
+	if err != nil || !scope.Restricted() {
+		// Unrestricted (nil, or every asset but the private program assets
+		// hidden from the viewer): the organization's totals, no k-floor.
 		return scope, false, err
 	}
 	if s.aggregate != nil && s.aggregate(ctx) {
