@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
 	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -72,6 +73,7 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 			svc.ScanPolicy.SetSettings(svc.Tenant)
 		}
 		svc.Scope.SetGovernance(svc.ScanPolicy)
+		wireScanGovernance(svc, repos, log)
 	}
 	var totp scopeapp.TOTPVerifier
 	if svc.Auth != nil {
@@ -112,4 +114,34 @@ func (m scopePolicyMailer) NotifyScopePolicyChanged(_ context.Context, to []stri
 			m.log.Warn("scan policy email failed", "error", logger.SanitizeError(err))
 		}
 	}()
+}
+
+// wireScanGovernance builds scan approval governance (RFC-072): the settings,
+// the approval requests, the approver directory, the authenticator check for
+// an owner's own approval, notifications and audit, and the gate every scan
+// run passes.
+func wireScanGovernance(svc *Services, repos *Repositories, log *logger.Logger) {
+	if svc.Tenant == nil {
+		return
+	}
+	g := scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log)
+	if repos.ScanApproval != nil {
+		g.SetRequests(repos.ScanApproval)
+		var totp scangovapp.TOTPVerifier
+		if svc.Auth != nil {
+			totp = scopeTOTP{auth: svc.Auth}
+		}
+		g.SetApprovers(repos.ScanApproval, totp)
+	}
+	if svc.Notification != nil {
+		g.SetNotifier(svc.Notification)
+	}
+	if svc.Audit != nil {
+		g.SetAudit(svc.Audit)
+	}
+	if svc.Scan != nil {
+		g.SetScans(svc.Scan)
+		svc.Scan.SetApprovalGate(g, repos.ScanApproval)
+	}
+	svc.ScanGovernance = g
 }

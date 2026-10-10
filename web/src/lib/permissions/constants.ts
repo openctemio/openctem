@@ -161,6 +161,7 @@ export const Permission = {
   ScansWrite: 'scans:write',
   ScansDelete: 'scans:delete',
   ScansExecute: 'scans:execute',
+  ScansApprove: 'scans:approve',
 
   // Scan Profiles (scans:profiles:*)
   ScanProfilesRead: 'scans:profiles:read',
@@ -653,6 +654,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ScansWrite]: 'Manage Scans',
   [Permission.ScansDelete]: 'Delete Scans',
   [Permission.ScansExecute]: 'Execute Scans',
+  [Permission.ScansApprove]: 'Approve Scans',
   [Permission.ScanProfilesRead]: 'View Scan Profiles',
   [Permission.ScanProfilesWrite]: 'Manage Scan Profiles',
   [Permission.ScanProfilesDelete]: 'Delete Scan Profiles',
@@ -857,6 +859,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScansWrite,
     Permission.ScansDelete,
     Permission.ScansExecute,
+    Permission.ScansApprove,
     Permission.ScanProfilesRead,
     Permission.ScanProfilesWrite,
     Permission.ScanProfilesDelete,
@@ -1020,6 +1023,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScansWrite,
     Permission.ScansDelete,
     Permission.ScansExecute,
+    Permission.ScansApprove,
     Permission.ScanProfilesRead,
     Permission.ScanProfilesWrite,
     Permission.ScanProfilesDelete,

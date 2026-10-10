@@ -589,6 +589,7 @@ func Register(
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
+	registerScanApprovalRoutes(router, h.Scan.Approvals(), authMiddleware, userSync)
 	registerAssetReconciliationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	// Finding evidence: masked proof per detection / retest + audited reveal.
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
