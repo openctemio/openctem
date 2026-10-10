@@ -104,11 +104,11 @@ func (s *Service) DetachChannel(ctx context.Context, tenantID, actor, id, integr
 	return p, nil
 }
 
-// SetOrgChannels turns organization-wide delivery of a private program's
+// ChangeOrgChannels turns organization-wide delivery of a private program's
 // events on or off. Owners only; turning it on needs a reason. A
 // non-member who is not an owner gets not found (loadForCaller); a member
 // who is not an owner gets forbidden.
-func (s *Service) SetOrgChannels(ctx context.Context, tenantID, actor, id shared.ID, enabled bool, reason string) (*bp.Program, string, error) {
+func (s *Service) ChangeOrgChannels(ctx context.Context, tenantID, actor, id shared.ID, enabled bool, reason string) (*bp.Program, string, error) {
 	st, err := s.deliveryStore()
 	if err != nil {
 		return nil, "", err
