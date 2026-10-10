@@ -23,6 +23,7 @@ type Repositories struct {
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
 	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
 	Software               *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
+	AssetAttributeSources  *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
 	APISpec                *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
@@ -145,6 +146,7 @@ type Repositories struct {
 	ToolCapability   *postgres.ToolCapabilityRepository
 	TenantToolConfig *postgres.TenantToolConfigRepository
 	Scan             *postgres.ScanRepository
+	ScanSelector     *postgres.ScanSelectorRepository
 	ScannerTemplate  *postgres.ScannerTemplateRepository
 	TemplateSource   *postgres.TemplateSourceRepository
 	SecretStore      *postgres.SecretStoreRepository
@@ -187,6 +189,7 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin         *postgres.AdminRepository
 	SignupPolicy  *postgres.SignupPolicyRepository
+	ScopePolicy   *postgres.ScopePolicyRepository
 	AccessRequest *postgres.AccessRequestRepository
 	Plan          *postgres.PlanRepository
 	IdleLifecycle *postgres.IdleLifecycleRepository
@@ -300,6 +303,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
 		WebEndpoint:            postgres.NewWebEndpointRepository(db),
 		Software:               postgres.NewSoftwareRepository(db),
+		AssetAttributeSources:  postgres.NewAssetAttributeSourceRepository(db),
 		APISpec:                postgres.NewAPISpecRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
@@ -405,6 +409,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ToolCapability:   postgres.NewToolCapabilityRepository(db),
 		TenantToolConfig: postgres.NewTenantToolConfigRepository(db),
 		Scan:             postgres.NewScanRepository(db),
+		ScanSelector:     postgres.NewScanSelectorRepository(db),
 		ScannerTemplate:  postgres.NewScannerTemplateRepository(db),
 		TemplateSource:   postgres.NewTemplateSourceRepository(db),
 		SecretStore:      postgres.NewSecretStoreRepository(db),
@@ -443,6 +448,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:         postgres.NewAdminRepository(db),
 		SignupPolicy:  postgres.NewSignupPolicyRepository(db),
+		ScopePolicy:   postgres.NewScopePolicyRepository(db),
 		AccessRequest: postgres.NewAccessRequestRepository(db),
 		Plan:          postgres.NewPlanRepository(db),
 		IdleLifecycle: postgres.NewIdleLifecycleRepository(db),

@@ -66,6 +66,7 @@ type Service struct {
 	compRepo     component.Repository
 	webEndpoints webendpoint.Repository
 	software     *softwareRecorder
+	attributes   AttributeReconciler
 	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
@@ -446,6 +447,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Load tenant settings once for both asset processing and finding processing
 	var tenantRules branch.BranchTypeRules
 	var assetIdentityCfg *CorrelationConfig
+	reconcilePolicy := asset.DefaultReconciliationPolicy()
 	if s.tenantRepo != nil {
 		if t, err := s.tenantRepo.GetByID(ctx, tenantID); err == nil && t != nil {
 			settings := t.TypedSettings()
@@ -456,8 +458,16 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 				aiSettings.StaleAssetDays, aiSettings.MaxIPsPerAsset,
 			)
 			assetIdentityCfg = &cfg
+			if p, perr := settings.AssetReconciliation.Policy(); perr == nil {
+				reconcilePolicy = p
+			}
 		}
 	}
+	// Who this report is for attribute reconciliation (RFC-069), and when
+	// its source saw what it reports.
+	sourceKind, sourceName := reportSource(binding, opts, report)
+	observedAt := reportObservedAt(report, time.Now())
+	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind)
 
 	// Step 1: Process assets using batch operations
 	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
@@ -483,6 +493,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 
 	output.AssetMap = assetMap
+
+	// The tracked values this report states (RFC-069), before findings are
+	// prioritized on the assets' criticality and exposure.
+	s.recordAttributes(ctx, tenantID, scope, sourceKind, sourceName, observedAt, report, assetMap)
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
