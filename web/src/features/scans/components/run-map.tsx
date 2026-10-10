@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import useSWR, { useSWRConfig } from 'swr'
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
@@ -35,6 +36,7 @@ export function RunMap({
   tasks?: RunTask[]
   tasksTruncated?: boolean
 }) {
+  const { t } = useTranslation()
   const [selected, setSelected] = useState<string | null>(null)
   // Live: the run's change notices (run:{id}, at most one a second) refresh
   // every cached read of this run (map, run, tasks, stages, timeline). The
@@ -62,35 +64,35 @@ export function RunMap({
     for (const n of data?.nodes ?? []) {
       out[n.step_key ?? ''] = (
         <span className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-          {nodeBadgeLines(n).map((line) => (
+          {nodeBadgeLines(n, t).map((line) => (
             <span key={line}>{line}</span>
           ))}
         </span>
       )
     }
     return out
-  }, [data])
+  }, [data, t])
 
   const selectedNode = data?.nodes?.find((n) => n.step_key === selected)
-  const warnings = useMemo(() => zeroOutputWarnings(data), [data])
+  const warnings = useMemo(() => zeroOutputWarnings(data, t), [data, t])
 
   if (error) {
-    return <p className="text-sm text-muted-foreground">The run map could not be loaded.</p>
+    return <p className="text-sm text-muted-foreground">{t('scans.map.loadFailed')}</p>
   }
   if (isLoading && !data) {
-    return <p className="text-sm text-muted-foreground">Loading the run map…</p>
+    return <p className="text-sm text-muted-foreground">{t('scans.map.loading')}</p>
   }
   return (
     <div className="space-y-2">
       {data?.scan_workflow_version ? (
         <p className="text-xs text-muted-foreground">
-          Workflow version {data.scan_workflow_version}, as the run started
+          {t('scans.map.workflowVersion', undefined, { version: data.scan_workflow_version })}
         </p>
       ) : null}
       {warnings.length > 0 ? (
         <ul
           role="status"
-          aria-label="Steps without output"
+          aria-label={t('scans.map.noOutputSteps')}
           className="space-y-0.5 text-xs text-warning"
         >
           {warnings.map((w) => (
