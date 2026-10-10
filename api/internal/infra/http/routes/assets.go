@@ -583,9 +583,11 @@ func registerRelationshipSuggestionRoutes(
 	h *handler.RelationshipSuggestionHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Suggestions are relationships the platform proposes: they follow the
+	// relationships module, as the console page and the relationship API do.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Suggestion routes under /api/v1/relationships/suggestions
 	router.Group("/api/v1/relationships/suggestions", func(r Router) {
