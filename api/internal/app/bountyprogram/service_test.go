@@ -15,7 +15,7 @@ type fakeRepo struct {
 	programs map[shared.ID]*bp.Program
 	entries  map[shared.ID]*scopedom.Target
 	excl     map[shared.ID][]bp.Exclusion
-	members  map[shared.ID]map[shared.ID]bool // program -> users
+	members  map[shared.ID]map[shared.ID]bool   // program -> users
 	attest   map[shared.ID]map[shared.ID]string // program -> user -> terms
 }
 
