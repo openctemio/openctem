@@ -83,6 +83,11 @@ export function useProgramCatalog(search: string) {
   })
 }
 
+/** Confirm targets the feed only suggested for a followed program. */
+export function confirmProgramTargets(id: string, targets: string[]) {
+  return post<ProgramChange>(`${BASE}/${id}/targets/confirm`, { targets })
+}
+
 /** Follow a public program: entries stay inactive until someone accepts its terms. */
 export function subscribeProgram(publicProgramId: string) {
   return post<ProgramChange>(`${BASE}/subscriptions`, { public_program_id: publicProgramId })

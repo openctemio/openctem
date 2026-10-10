@@ -15,21 +15,37 @@ import (
 
 // PublicProgramResponse is one program of the catalog.
 type PublicProgramResponse struct {
-	ID           string    `json:"id"`
-	FeedID       string    `json:"feed_id"`
-	Platform     string    `json:"platform"`
-	Handle       string    `json:"handle"`
-	Name         string    `json:"name"`
-	URL          string    `json:"url"`
-	OffersBounty bool      `json:"offers_bounty"`
-	InScope      int       `json:"in_scope"`
-	OutOfScope   int       `json:"out_of_scope"`
-	Items        []bp.Item `json:"items"`
-	Rules        bp.Rules  `json:"rules"`
-	TermsText    string    `json:"terms_text"`
-	TermsSHA256  string    `json:"terms_sha256"`
-	Source       string    `json:"source"`
-	AsOf         time.Time `json:"as_of"`
+	ID             string `json:"id"`
+	FeedID         string `json:"feed_id"`
+	Source         string `json:"source"`
+	Platform       string `json:"platform"`
+	Handle         string `json:"handle"`
+	Name           string `json:"name"`
+	URL            string `json:"url"`
+	Type           string `json:"type"`
+	Status         string `json:"status"`
+	OffersBounty   bool   `json:"offers_bounty"`
+	ScopePublished bool   `json:"scope_published"`
+	// InScope counts published in-scope targets; Suggested counts targets
+	// the feed only inferred (never permission to test).
+	InScope        int       `json:"in_scope"`
+	Suggested      int       `json:"suggested"`
+	OutOfScope     int       `json:"out_of_scope"`
+	Items          []bp.Item `json:"items"`
+	Rules          bp.Rules  `json:"rules"`
+	TermsText      string    `json:"terms_text"`
+	TermsURL       string    `json:"terms_url,omitempty"`
+	TermsDocSHA256 string    `json:"terms_doc_sha256,omitempty"`
+	AsOf           time.Time `json:"as_of"`
+	// Provenance names the source of the record and, for a record read
+	// through a public dataset, the dataset, its commit, the original
+	// platform and program page (that platform's terms apply).
+	Provenance bp.FeedProvenance `json:"provenance"`
+}
+
+// ProgramConfirmTargetsRequest names suggested targets to confirm.
+type ProgramConfirmTargetsRequest struct {
+	Targets []string `json:"targets"`
 }
 
 // ProgramSubscribeRequest is the body of a subscription.
@@ -38,17 +54,21 @@ type ProgramSubscribeRequest struct {
 }
 
 func toPublicProgramResponse(p bp.PublicProgram) PublicProgramResponse {
-	out := PublicProgramResponse{ID: p.ID.String(), FeedID: p.FeedID, Platform: p.Platform, Handle: p.Handle,
-		Name: p.Name, URL: p.URL, OffersBounty: p.OffersBounty, Items: p.Items, Rules: p.Rules,
-		TermsText: p.TermsText, TermsSHA256: p.TermsSHA256, Source: p.Source, AsOf: p.AsOf}
+	out := PublicProgramResponse{ID: p.ID.String(), FeedID: p.FeedID, Source: p.Source, Platform: p.Platform,
+		Handle: p.Handle, Name: p.Name, URL: p.URL, Type: p.Type, Status: p.Status, OffersBounty: p.OffersBounty,
+		ScopePublished: p.ScopePublished, Items: p.Items, Rules: p.Rules, TermsText: p.TermsText,
+		TermsURL: p.TermsURL, TermsDocSHA256: p.TermsDocSHA256, AsOf: p.AsOf, Provenance: p.Provenance}
 	if out.Items == nil {
 		out.Items = []bp.Item{}
 	}
 	for _, it := range p.Items {
-		if it.InScope {
-			out.InScope++
-		} else {
+		switch {
+		case !it.InScope:
 			out.OutOfScope++
+		case it.Confidence != bp.ConfidencePublished:
+			out.Suggested++
+		default:
+			out.InScope++
 		}
 	}
 	return out
@@ -125,4 +145,41 @@ func (h *BountyProgramHandler) Subscribe(w http.ResponseWriter, r *http.Request)
 	}
 	h.auditProgram(r, audit.ActionBountyProgramSubscribed, p, "Public program followed; entries wait for an acceptance of the terms", planCounts(pv))
 	writeJSON(w, http.StatusCreated, ProgramChangeResponse{Program: toProgramResponse(p), Preview: pv})
+}
+
+// ConfirmTargets handles POST /api/v1/programs/{id}/targets/confirm
+// @Summary      Confirm suggested targets
+// @Description  Add targets the program feed only suggested (inferred) for a followed program to its scope. Only the program's own suggestions are accepted (400 PROGRAM_TARGET_NOT_SUGGESTED). It widens the program: every entry waits until a member accepts the new terms (POST /programs/{id}/reactivate). Audited.
+// @Tags         Programs
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                        true  "Program ID"
+// @Param        body  body      ProgramConfirmTargetsRequest  true  "Targets"
+// @Success      200   {object}  ProgramChangeResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /programs/{id}/targets/confirm [post]
+func (h *BountyProgramHandler) ConfirmTargets(w http.ResponseWriter, r *http.Request) {
+	tenantID, actor, ok := h.caller(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	id, ok := h.programID(w, r)
+	if !ok {
+		return
+	}
+	var req ProgramConfirmTargetsRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	p, pv, err := h.svc.ConfirmTargets(r.Context(), tenantID, actor, id, req.Targets)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.auditProgram(r, audit.ActionBountyProgramScopeReplaced, p, "Suggested program targets confirmed; entries wait for an acceptance of the terms",
+		map[string]any{"targets_confirmed": len(req.Targets)})
+	writeJSON(w, http.StatusOK, ProgramChangeResponse{Program: toProgramResponse(p), Preview: pv})
 }
