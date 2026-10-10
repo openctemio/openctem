@@ -384,6 +384,18 @@ Test notifications are rate-limited to prevent spam:
 const testNotificationRateLimit = 30 * time.Second
 ```
 
+## Private program events
+
+Before sending, the outbox worker resolves what an entry is about (its
+`finding`, `asset`, `exposure` or `approval` aggregate, and the assets in
+`metadata.assets`). An event about an asset that only private bug-bounty
+programs list goes only to the integrations attached to one of those
+programs; private program names, handles and tags are scrubbed from the
+title and body for every other destination. If the decision cannot be made,
+the entry fails and is retried rather than sent. See
+[bounty-programs.md](bounty-programs.md#outbound-delivery-of-private-program-events)
+and RFC-065 §15.4.
+
 ## Event Types
 
 Dynamic event types stored as JSONB:
