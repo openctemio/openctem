@@ -65,6 +65,9 @@ type Item struct {
 	AssetType string `json:"asset_type,omitempty"`
 	// Note says why an item is not scannable.
 	Note string `json:"note,omitempty"`
+	// Confidence is the program feed's confidence in the target
+	// (published or inferred, RFC-065 §16); empty for other sources.
+	Confidence string `json:"confidence,omitempty"`
 }
 
 // Scannable reports whether the item becomes a scope entry or exclusion.
