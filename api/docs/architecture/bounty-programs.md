@@ -192,4 +192,4 @@ the run and hold `scope:read` or `programs:read`.
 | `pkg/programfeed/` | program feed bundle: verify, read records (`V1` parser) |
 | `internal/app/programfeed/`, `internal/infra/controller/program_feed.go` | importer and reconcile |
 | `internal/app/bountyprogram/subscription.go`, `internal/infra/postgres/public_program_repository.go` | subscriptions, catalog |
-| `migrations/001724_public_program_feed.*` | catalog, feed state, subscriptions |
+| `migrations/001736_public_program_feed.*` | catalog, feed state, subscriptions |
