@@ -129,9 +129,10 @@ type Repository interface {
 	// This is used after bulk finding ingestion to refresh asset statistics.
 	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
 
-	// ListDistinctTags returns distinct tags across all assets for a tenant.
-	// Supports prefix filtering for autocomplete and a limit for result size.
-	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error)
+	// ListDistinctTags returns distinct tags across the assets of a tenant
+	// that access admits (data scope; never an asset hidden from the
+	// caller). Supports prefix filtering for autocomplete and a limit.
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, access AccessScope, prefix string, types []string, limit int) ([]string, error)
 
 	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
 	// This replaces the N+1 pattern of calling Count() per type.
@@ -336,6 +337,12 @@ type Filter struct {
 	// covers (system tag bug-bounty); "exclude" leaves out the program-only
 	// ones (RFC-065 §16.5). Empty: no filter.
 	ProgramAssets string
+	// ProgramTagViewer: when set, the tag filter and ProgramAssets "only"
+	// match only the system tags derived from programs not hidden from this
+	// user (RFC-065 §15.3), so a non-member cannot learn through the filter
+	// that a private program covers a shared asset. Nil (owners, internal
+	// calls) matches every stored system tag.
+	ProgramTagViewer *shared.ID
 
 	// Layer 2: Data Scope. When set, only the assets in this user's scope
 	// rows (user_accessible_assets) are returned; a user with none sees none.

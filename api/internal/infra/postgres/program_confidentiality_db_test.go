@@ -9,6 +9,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -23,14 +24,43 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-func TestPrivateProgramAssetsHiddenFromNonMembers(t *testing.T) {
+// privateProgramFixture is a tenant with a private program (member in its
+// group), a non-member administrator and an owner: a program-only asset
+// (hidden, user tag "secret-bb") with a finding, a shared asset the
+// organization had first, an own asset (tag "own-tag") with a finding, and
+// an asset of the same name in another tenant.
+type privateProgramFixture struct {
+	db                        *sql.DB
+	pdb                       *DB
+	tenant, other             shared.ID
+	member, admin, owner      shared.ID
+	suffix                    string
+	hidden, shared1, own      shared.ID
+	foreign                   shared.ID
+	hiddenFinding, ownFinding shared.ID
+}
+
+func seedPrivateProgram(t *testing.T) privateProgramFixture {
+	t.Helper()
 	db, pdb := openBatchDedupDB(t)
 	ctx := context.Background()
 	tenant, other := seedBatchTenant(t, db), seedBatchTenant(t, db)
 	member := seedGroupsUser(ctx, t, db, "ppc.example")
 	admin := seedGroupsUser(ctx, t, db, "ppc.example")
-	for _, u := range []shared.ID{member, admin} {
-		if _, err := db.Exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, u.String(), tenant.String()); err != nil {
+	owner := seedGroupsUser(ctx, t, db, "ppc.example")
+	// System roles by id (owner 1, admin 2, member 3), as the team role
+	// view reads them.
+	for _, m := range []struct {
+		u    shared.ID
+		role string
+		rid  string
+	}{{member, "member", "00000000-0000-0000-0000-000000000003"}, {admin, "admin", "00000000-0000-0000-0000-000000000002"},
+		{owner, "owner", "00000000-0000-0000-0000-000000000001"}} {
+		if _, err := db.Exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, $3)`, m.u.String(), tenant.String(), m.role); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+			m.u.String(), tenant.String(), m.rid); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -69,9 +99,22 @@ func TestPrivateProgramAssetsHiddenFromNonMembers(t *testing.T) {
 		return id
 	}
 	hiddenFinding, ownFinding := findingOn(tenant, hidden), findingOn(tenant, own)
+	if _, err := db.Exec(`UPDATE assets SET tags = CASE WHEN id = $1 THEN '{secret-bb}'::text[] ELSE '{own-tag}'::text[] END
+		WHERE id IN ($1, $2)`, hidden.String(), own.String()); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := programs.AssignProgramAssets(ctx, tenant, p.ID); err != nil {
 		t.Fatal(err)
 	}
+	return privateProgramFixture{db: db, pdb: pdb, tenant: tenant, other: other, member: member, admin: admin, owner: owner,
+		suffix: suffix, hidden: hidden, shared1: shared1, own: own, foreign: foreign, hiddenFinding: hiddenFinding, ownFinding: ownFinding}
+}
+
+func TestPrivateProgramAssetsHiddenFromNonMembers(t *testing.T) {
+	fx := seedPrivateProgram(t)
+	ctx := context.Background()
+	db, pdb, tenant, other, member, admin, suffix := fx.db, fx.pdb, fx.tenant, fx.other, fx.member, fx.admin, fx.suffix
+	hidden, shared1, own, foreign, hiddenFinding, ownFinding := fx.hidden, fx.shared1, fx.own, fx.foreign, fx.hiddenFinding, fx.ownFinding
 
 	var caller datascope.Caller
 	enf := datascope.New(NewDataScopeRepository(pdb), func(context.Context) datascope.Caller { return caller }, nil)

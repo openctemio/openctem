@@ -177,10 +177,20 @@ func HiddenAssetWhereExpr(userExpr, tenantExpr string) string {
 		AND NOT EXISTS (SELECT 1 FROM asset_program_links pl
 		            JOIN bounty_programs pp ON pp.tenant_id = pl.tenant_id AND pp.id = pl.program_id
 		            WHERE pl.tenant_id = ph.tenant_id AND pl.asset_id = ph.id
-		              AND (pp.visibility <> 'private' OR EXISTS (
-		                    SELECT 1 FROM groups pg JOIN group_members pgm ON pgm.group_id = pg.id
-		                    WHERE pg.tenant_id = pp.tenant_id AND pg.id = pp.group_id AND pg.is_active
-		                      AND pgm.user_id = %[1]s)))`, userExpr, tenantExpr)
+		              AND NOT %[3]s)`, userExpr, tenantExpr, ProgramHiddenSQL("pp", userExpr))
+}
+
+// ProgramHiddenSQL is the condition "program prog (a bounty_programs alias)
+// is hidden from user userExpr": it is private and the user is not in its
+// active group (RFC-065 §15.3). Owners never get a query that applies it.
+// Everything a non-member may learn about programs through assets (which
+// assets are hidden, which system tags an asset shows or matches) is
+// derived from this one predicate.
+func ProgramHiddenSQL(prog, userExpr string) string {
+	return fmt.Sprintf(`(%[1]s.visibility = 'private' AND NOT EXISTS (
+		SELECT 1 FROM groups pg JOIN group_members pgm ON pgm.group_id = pg.id
+		WHERE pg.tenant_id = %[1]s.tenant_id AND pg.id = %[1]s.group_id AND pg.is_active
+		  AND pgm.user_id = %[2]s))`, prog, userExpr)
 }
 
 // NotHiddenForViewer is NotHiddenSQL for a user given as a typed id (the

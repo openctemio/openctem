@@ -1512,6 +1512,15 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	}
 	filter.DataScopeUserID = access.DataScopeUserID
 	filter.DataScopeUnrestricted = access.DataScopeUnrestricted
+	// A non-owner's tag filter matches only the system tags of programs
+	// not hidden from them (RFC-065 §15.3).
+	if input.ActingUserID != "" && !s.callerIsOwner(ctx, input.ActingUserID) {
+		uid, uerr := shared.IDFromString(input.ActingUserID)
+		if uerr != nil {
+			return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: invalid acting user id", shared.ErrForbidden)
+		}
+		filter.ProgramTagViewer = &uid
+	}
 
 	// Build list options with sorting
 	opts := assetdom.NewListOptions()
@@ -1522,6 +1531,17 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 
 	page := pagination.New(input.Page, input.PerPage)
 	return s.repo.List(ctx, filter, opts, page)
+}
+
+// callerIsOwner reports whether actingUserID is the request's caller and
+// owns the tenant. Unwired or another user: false (private program tags
+// stay hidden, fail closed).
+func (s *AssetService) callerIsOwner(ctx context.Context, actingUserID string) bool {
+	if s.dataScope == nil {
+		return false
+	}
+	c := s.dataScope.CallerOf(ctx)
+	return c.IsOwner && c.UserID == actingUserID
 }
 
 // listAccessScope is the Layer-2 data scope the asset list applies, shared by
@@ -1611,10 +1631,14 @@ func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID
 
 // ListTags returns distinct tags across all assets for a tenant.
 // Supports prefix filtering for autocomplete.
-func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, types []string, limit int) ([]string, error) {
+func (s *AssetService) ListTags(ctx context.Context, tenantID, actingUserID string, isAdmin bool, prefix string, types []string, limit int) ([]string, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
 	}
 
 	if limit <= 0 || limit > 100 {
@@ -1627,7 +1651,7 @@ func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix str
 		prefix = prefix[:50]
 	}
 
-	return s.repo.ListDistinctTags(ctx, parsedTenantID, prefix, types, limit)
+	return s.repo.ListDistinctTags(ctx, parsedTenantID, access, prefix, types, limit)
 }
 
 // ActivateAsset activates an asset.

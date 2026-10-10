@@ -133,11 +133,11 @@ func (s *RuleService) pending(ctx context.Context, tenantID shared.ID, states []
 	if len(states) == 0 {
 		states = []attribution.State{attribution.StateNeedsReview}
 	}
-	scopeUser, err := s.review.scopeUser(ctx, tenantID)
+	scope, err := s.review.viewScope(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	page, err := s.review.store.ListForReview(ctx, tenantID, scopeUser, ReviewQuery{States: states, Limit: maxRuleItems})
+	page, err := s.review.store.ListForReview(ctx, tenantID, scope, ReviewQuery{States: states, Limit: maxRuleItems})
 	if err != nil {
 		return nil, err
 	}

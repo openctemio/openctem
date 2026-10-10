@@ -22,6 +22,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // entryMatchesAsset is the scope match of program_assign.go (domain
@@ -55,6 +56,33 @@ const programTargetAssets = `
 		WHERE (x.p LIKE '*.%' AND (lower(a.name) = substr(x.p, 3) OR right(lower(a.name), length(x.p) - 1) = substr(x.p, 2)))
 		   OR lower(a.name) = x.p)`
 
+// programLinkTags is the FROM clause that yields, as column t, the system
+// tags each program link (l, its program p) gives its asset; t is NULL for
+// a tag that does not apply. Stored system_tags are its union over every
+// link; a non-owner's view and filter use only the links whose program is
+// not hidden from them (filterspec.ProgramHiddenSQL).
+const programLinkTags = `asset_program_links l
+	JOIN bounty_programs p ON p.tenant_id = l.tenant_id AND p.id = l.program_id
+	CROSS JOIN LATERAL (SELECT
+		COALESCE(NULLIF(regexp_replace(lower(p.platform), '[^a-z0-9-]+', '-', 'g'), ''), 'self') AS plat,
+		regexp_replace(lower(COALESCE(NULLIF(p.handle, ''), p.name)), '[^a-z0-9-]+', '-', 'g') AS slug) s
+	CROSS JOIN LATERAL unnest(ARRAY[
+		'bug-bounty',
+		'source:' || replace(l.source, '_', '-'),
+		'platform:' || s.plat,
+		'program:' || s.plat || ':' || s.slug,
+		CASE WHEN p.status = 'pending_attestation' THEN 'program-unattested' END]) AS t`
+
+// visibleProgramLinkSQL is the condition "asset assetExpr of tenant
+// tenantExpr has a program link not hidden from user userExpr" (extra
+// narrows the links further, e.g. "AND t = ANY($3)"; it may use t, l, p).
+func visibleProgramLinkSQL(assetExpr, tenantExpr, userExpr, extra string) string {
+	return `EXISTS (SELECT 1 FROM ` + programLinkTags + `
+		WHERE l.tenant_id = ` + tenantExpr + `
+		  AND l.asset_id = ` + assetExpr + ` AND t IS NOT NULL ` + extra + `
+		  AND NOT ` + filterspec.ProgramHiddenSQL("p", userExpr) + `)`
+}
+
 // syncProgramAssetLinks keeps the program's links equal to its targets and
 // recomputes the derived columns of the tenant's assets.
 func syncProgramAssetLinks(ctx context.Context, tx *sql.Tx, tenantID, programID string) error {
@@ -83,17 +111,7 @@ func recomputeProgramAssetFlags(ctx context.Context, tx *sql.Tx, tenantID string
 	if _, err := tx.ExecContext(ctx, `
 		WITH tags AS (
 			SELECT l.asset_id, array_agg(DISTINCT t ORDER BY t) AS tags, min(p.created_at) AS first_program
-			FROM asset_program_links l
-			JOIN bounty_programs p ON p.tenant_id = l.tenant_id AND p.id = l.program_id
-			CROSS JOIN LATERAL (SELECT
-				COALESCE(NULLIF(regexp_replace(lower(p.platform), '[^a-z0-9-]+', '-', 'g'), ''), 'self') AS plat,
-				regexp_replace(lower(COALESCE(NULLIF(p.handle, ''), p.name)), '[^a-z0-9-]+', '-', 'g') AS slug) s
-			CROSS JOIN LATERAL unnest(ARRAY[
-				'bug-bounty',
-				'source:' || replace(l.source, '_', '-'),
-				'platform:' || s.plat,
-				'program:' || s.plat || ':' || s.slug,
-				CASE WHEN p.status = 'pending_attestation' THEN 'program-unattested' END]) AS t
+			FROM `+programLinkTags+`
 			WHERE l.tenant_id = $1 AND t IS NOT NULL
 			GROUP BY l.asset_id
 		), own AS (
@@ -119,10 +137,11 @@ func recomputeProgramAssetFlags(ctx context.Context, tx *sql.Tx, tenantID string
 }
 
 // ProgramAssetFlagsFor is ProgramAssetFlags as viewer may see them
-// (RFC-065 §15.3): an owner sees every flag; anyone else does not learn of
-// a private program they are not a member of. Its program tag is removed,
-// and an asset all of whose programs are such loses every program flag (it
-// is shown as an ordinary asset; a program-only one is hidden anyway).
+// (RFC-065 §15.3): an owner sees every flag; anyone else sees only the
+// system tags derived from the programs not hidden from them, and an asset
+// all of whose programs are hidden loses every program flag (it is shown
+// as an ordinary asset; a program-only one is hidden anyway). The tag
+// filter of the inventory matches the same set (visibleProgramLinkSQL).
 func (r *ProgramAssetFlagRepository) ProgramAssetFlagsFor(ctx context.Context, tenantID string, assetIDs []string, viewer shared.ProgramViewer) (map[string]bountyprogram.AssetFlags, error) {
 	flags, err := r.ProgramAssetFlags(ctx, tenantID, assetIDs)
 	if err != nil || viewer.Owner || len(flags) == 0 {
@@ -133,53 +152,35 @@ func (r *ProgramAssetFlagRepository) ProgramAssetFlagsFor(ctx context.Context, t
 		ids = append(ids, id)
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT l.asset_id::text,
-		       (p.visibility = 'private' AND NOT EXISTS (
-		            SELECT 1 FROM groups g JOIN group_members gm ON gm.group_id = g.id
-		            WHERE g.tenant_id = p.tenant_id AND g.id = p.group_id AND g.is_active AND gm.user_id = $3::uuid)) AS hidden,
-		       'program:' || COALESCE(NULLIF(regexp_replace(lower(p.platform), '[^a-z0-9-]+', '-', 'g'), ''), 'self') || ':' ||
-		           regexp_replace(lower(COALESCE(NULLIF(p.handle, ''), p.name)), '[^a-z0-9-]+', '-', 'g') AS tag
-		FROM asset_program_links l
-		JOIN bounty_programs p ON p.tenant_id = l.tenant_id AND p.id = l.program_id
-		WHERE l.tenant_id = $1 AND l.asset_id = ANY($2::uuid[])`,
+		SELECT l.asset_id::text, array_agg(DISTINCT t ORDER BY t)
+		FROM `+programLinkTags+`
+		WHERE l.tenant_id = $1 AND l.asset_id = ANY($2::uuid[]) AND t IS NOT NULL
+		  AND NOT `+filterspec.ProgramHiddenSQL("p", "$3::uuid")+`
+		GROUP BY l.asset_id`,
 		tenantID, pq.Array(ids), viewer.UserID.String())
 	if err != nil {
 		return nil, fmt.Errorf("read program visibility: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	hiddenTags := map[string]map[string]bool{}
-	visible := map[string]bool{}
+	visible := map[string][]string{}
 	for rows.Next() {
-		var id, tag string
-		var hidden bool
-		if err := rows.Scan(&id, &hidden, &tag); err != nil {
+		var id string
+		var tags []string
+		if err := rows.Scan(&id, pq.Array(&tags)); err != nil {
 			return nil, err
 		}
-		if !hidden {
-			visible[id] = true
-			continue
-		}
-		if hiddenTags[id] == nil {
-			hiddenTags[id] = map[string]bool{}
-		}
-		hiddenTags[id][tag] = true
+		visible[id] = tags
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for id, tags := range hiddenTags {
-		if !visible[id] {
+	for id, f := range flags {
+		tags, ok := visible[id]
+		if !ok {
 			delete(flags, id)
 			continue
 		}
-		f := flags[id]
-		kept := make([]string, 0, len(f.SystemTags))
-		for _, t := range f.SystemTags {
-			if !tags[t] {
-				kept = append(kept, t)
-			}
-		}
-		f.SystemTags = kept
+		f.SystemTags = tags
 		flags[id] = f
 	}
 	return flags, nil

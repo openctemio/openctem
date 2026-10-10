@@ -1007,7 +1007,12 @@ before): every asset of the tenant but the hidden ones. `dataScopeCondAt` /
 (restricted scopes too), the id checks (`AssertAsset`, `AssertFinding`,
 `Filter`) use the same rule, and acting (`CanActOnAssets`, `Delegable`)
 stays unrestricted. `Caller.IsOwner` (and `SetOwnerLookup` outside a
-request) decides who is an owner.
+request) decides who is an owner; `ResolveActing` keeps it only when the
+acting user is the request's caller. Program system tags shown to, or
+matched by the tag filter of, a non-owner are derived only from programs
+not hidden from them (`filterspec.ProgramHiddenSQL`, the one "program
+hidden" predicate). Notification pushes for a hidden asset reach only
+owners and the program's members.
 
 **Being an owner is not an access grant** (owner decision O1, 2026-10-03).
 Naming a user as an owner of an asset, in any RACI role or through the

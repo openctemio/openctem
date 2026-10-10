@@ -59,32 +59,33 @@ const inInventory = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE 
 func InInventorySQL(col string) string { return fmt.Sprintf(inInventory, col) }
 
 // scopeClause returns the SQL that narrows an asset id column to the data
-// scope, with its args appended; empty when the caller is unrestricted.
-func scopeClause(col string, scopeUserID *shared.ID, tenantID shared.ID, args []any) (string, []any) {
-	if scopeUserID == nil {
+// scope (dataScopeCondAt: scope rows for a restricted scope, and never an
+// asset hidden from the caller), with its args appended; empty when the
+// caller is unrestricted (nil).
+func scopeClause(col string, scope *shared.DataScope, args []any) (string, []any) {
+	if scope == nil {
 		return "", args
 	}
-	args = append(args, scopeUserID.String(), tenantID.String())
-	return fmt.Sprintf(" AND %s IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)",
-		col, len(args)-1, len(args)), args
+	cond, sargs := dataScopeCondAt(col, scope, len(args)+1)
+	return " AND " + cond, append(args, sargs...)
 }
 
-// Summary computes the overview. scopeUserID nil = unrestricted.
-func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, now time.Time, topN int) (*easm.SummaryData, error) {
+// Summary computes the overview. scope nil = unrestricted.
+func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, now time.Time, topN int) (*easm.SummaryData, error) {
 	out := &easm.SummaryData{
 		AssetsByType: map[string]int{}, AttributionByState: map[string]int{},
 		OpenBySeverity: map[string]int{}, OpenByType: map[string]int{},
 	}
 	tid := tenantID.String()
 
-	if err := r.surfaceCounts(ctx, tenantID, scopeUserID, out); err != nil {
+	if err := r.surfaceCounts(ctx, tenantID, scope, out); err != nil {
 		return nil, err
 	}
 
 	// Review queue age, internet-facing services, new assets.
 	var oldest sql.NullTime
 	args := []any{tid}
-	sc, args := scopeClause("aa.asset_id", scopeUserID, tenantID, args)
+	sc, args := scopeClause("aa.asset_id", scope, args)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT min(aa.created_at) FROM asset_attributions aa
 		WHERE aa.tenant_id = $1 AND aa.state = 'needs_review'`+sc, args...).Scan(&oldest); err != nil {
@@ -93,14 +94,14 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 	out.OldestReviewSince = nullTimeValue(oldest)
 
 	// The review queue by the rule that put each asset there.
-	byReason, err := r.reviewByReason(ctx, tenantID, scopeUserID)
+	byReason, err := r.reviewByReason(ctx, tenantID, scope)
 	if err != nil {
 		return nil, err
 	}
 	out.ReviewByReason = byReason
 
 	args = []any{tid}
-	sc, args = scopeClause("a.id", scopeUserID, tenantID, args)
+	sc, args = scopeClause("a.id", scope, args)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM assets a
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'service' AND a.is_internet_accessible AND a.status <> 'archived'`+InInventorySQL("a.id")+sc,
@@ -119,7 +120,7 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 		cycleFrom = *out.CycleStart
 	}
 	args = []any{tid, pq.Array(EASMSurfaceTypes), now.Add(-7 * 24 * time.Hour), now.Add(-30 * 24 * time.Hour), cycleFrom}
-	sc, args = scopeClause("a.id", scopeUserID, tenantID, args)
+	sc, args = scopeClause("a.id", scope, args)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT count(*) FILTER (WHERE a.first_seen >= $3),
 		       count(*) FILTER (WHERE a.first_seen >= $4),
@@ -130,10 +131,10 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 		return nil, fmt.Errorf("easm new assets: %w", err)
 	}
 
-	if err := r.exposureCounts(ctx, tenantID, scopeUserID, out); err != nil {
+	if err := r.exposureCounts(ctx, tenantID, scope, out); err != nil {
 		return nil, err
 	}
-	risks, err := r.topRisks(ctx, tenantID, scopeUserID, topN)
+	risks, err := r.topRisks(ctx, tenantID, scope, topN)
 	if err != nil {
 		return nil, err
 	}
@@ -156,9 +157,9 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 
 // reviewByReason counts the review queue (needs_review, candidate) by the
 // rule that set each record, narrowed to the data scope.
-func (r *EASMSummaryRepository) reviewByReason(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID) (map[string]int, error) {
+func (r *EASMSummaryRepository) reviewByReason(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[string]int, error) {
 	args := []any{tenantID.String()}
-	sc, args := scopeClause("aa.asset_id", scopeUserID, tenantID, args)
+	sc, args := scopeClause("aa.asset_id", scope, args)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT aa.reason, count(*) FROM asset_attributions aa
 		JOIN assets a ON a.id = aa.asset_id AND a.tenant_id = aa.tenant_id AND a.deleted_at IS NULL
@@ -181,9 +182,9 @@ func (r *EASMSummaryRepository) reviewByReason(ctx context.Context, tenantID sha
 }
 
 // surfaceCounts fills the surface by type and attribution state.
-func (r *EASMSummaryRepository) surfaceCounts(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, out *easm.SummaryData) error {
+func (r *EASMSummaryRepository) surfaceCounts(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, out *easm.SummaryData) error {
 	args := []any{tenantID.String(), pq.Array(EASMSurfaceTypes)}
-	sc, args := scopeClause("a.id", scopeUserID, tenantID, args)
+	sc, args := scopeClause("a.id", scope, args)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT a.asset_type, COALESCE(aa.state, ''), count(*)
 		FROM assets a
@@ -209,9 +210,9 @@ func (r *EASMSummaryRepository) surfaceCounts(ctx context.Context, tenantID shar
 }
 
 // exposureCounts fills the open external exposures by severity and type.
-func (r *EASMSummaryRepository) exposureCounts(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, out *easm.SummaryData) error {
+func (r *EASMSummaryRepository) exposureCounts(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, out *easm.SummaryData) error {
 	args := []any{tenantID.String(), pq.Array(EASMExposureTypes)}
-	sc, args := scopeClause("e.asset_id", scopeUserID, tenantID, args)
+	sc, args := scopeClause("e.asset_id", scope, args)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT e.severity, e.event_type, count(*)
 		FROM exposure_events e
@@ -235,9 +236,9 @@ func (r *EASMSummaryRepository) exposureCounts(ctx context.Context, tenantID sha
 }
 
 // topRisks lists the most severe open external exposures (medium and up).
-func (r *EASMSummaryRepository) topRisks(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, topN int) ([]easm.RiskRow, error) {
+func (r *EASMSummaryRepository) topRisks(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, topN int) ([]easm.RiskRow, error) {
 	args := []any{tenantID.String(), pq.Array(EASMExposureTypes), topN}
-	sc, args := scopeClause("e.asset_id", scopeUserID, tenantID, args)
+	sc, args := scopeClause("e.asset_id", scope, args)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT e.id, e.event_type, e.severity, e.title, e.asset_id, a.name, e.last_seen_at
 		FROM exposure_events e

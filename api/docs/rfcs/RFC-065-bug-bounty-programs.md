@@ -469,8 +469,14 @@ program records `scope_source = file_import`.
   admit a hidden asset either. An asset the organization also owns (not
   program-only) stays visible, but the program's tag and flags are left out
   of its response for non-members. Acting (scans) is not narrowed by it.
-  Residual: the inventory's tag filter still matches a private program's
-  system tag on a shared asset.
+  A non-member's system tags, in responses and in the inventory's tag and
+  `program_assets=only` filters, are only those derived from programs not
+  hidden from them (`filterspec.ProgramHiddenSQL`), so the filter cannot
+  reveal that a private program covers a shared asset. The same rule
+  covers the tag suggestions (`GET /assets/tags`, data-scoped), the EASM
+  overview counts and review queue (SQL, not a page filter), and the live
+  notification push (a hidden asset's notice reaches only owners and the
+  program's members).
 
 | Threat | Control |
 |---|---|

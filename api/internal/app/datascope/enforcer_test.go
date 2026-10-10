@@ -494,3 +494,27 @@ func TestEnforcer_PrivateProgramAssetsHiddenFromNonMembers(t *testing.T) {
 		t.Fatalf("lookup error admitted: %v", err)
 	}
 }
+
+// ResolveActing keeps owner visibility only for the request caller: the
+// owner listing assets or findings sees private program assets, and the
+// same acting user id from another caller (or another acting user from the
+// owner) does not.
+func TestEnforcer_ResolveActingOwnerIsTheCallerOnly(t *testing.T) {
+	tenant, owner, admin, hidden := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	repo := &fakeRepo{hidden: map[shared.ID]map[shared.ID]bool{owner: {hidden: true}, admin: {hidden: true}}}
+	var caller Caller
+	e := New(repo, func(context.Context) Caller { return caller }, nil)
+	ctx := context.Background()
+
+	caller = Caller{UserID: owner.String(), IsAdmin: true, IsOwner: true}
+	if scope, err := e.ResolveActing(ctx, tenant, owner.String(), true); err != nil || scope != nil {
+		t.Fatalf("owner acting as themselves: scope %+v err %v, want unrestricted", scope, err)
+	}
+	if scope, err := e.ResolveActing(ctx, tenant, admin.String(), true); err != nil || scope == nil || !scope.Unrestricted {
+		t.Fatalf("owner caller acting as an admin: scope %+v err %v, want hidden assets", scope, err)
+	}
+	caller = Caller{UserID: admin.String(), IsAdmin: true}
+	if scope, err := e.ResolveActing(ctx, tenant, owner.String(), true); err != nil || scope == nil || !scope.Unrestricted {
+		t.Fatalf("non-owner caller acting as the owner: scope %+v err %v, want hidden assets", scope, err)
+	}
+}
