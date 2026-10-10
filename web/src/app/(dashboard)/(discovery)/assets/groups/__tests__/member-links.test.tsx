@@ -36,7 +36,7 @@ vi.mock('@/features/repositories/components/repository-workspace', () => ({
 vi.mock('@/features/assets', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   const sections = Object.keys(actual)
-    .filter((k) => /^Asset\w*Sections?$/.test(k))
+    .filter((k) => /^Asset\w*(Sections?|Timeline)$/.test(k))
     .map((k) => [k, () => null])
   return {
     ...actual,

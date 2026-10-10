@@ -60,3 +60,6 @@ export {
   saveReconciliationSettings,
   previewReconciliationSettings,
 } from './use-attribute-sources'
+
+// Asset change timeline (RFC-069)
+export { useAssetChanges } from './use-asset-timeline'

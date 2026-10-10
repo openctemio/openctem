@@ -28,9 +28,11 @@ import {
   AssetAttributeSourcesSection,
   AssetAttributionSection,
   AssetIdentitySections,
+  AssetTimeline,
   useAsset,
 } from '@/features/assets'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
 import { CRITICALITY_TEXT_COLORS } from '@/lib/criticality-colors'
 
@@ -41,6 +43,7 @@ export default function AssetDetailPage() {
   const params = useParams<{ id: string }>()
   const assetId = params?.id ?? null
 
+  const { t } = useTranslation()
   const { asset, isLoading, error } = useAsset(assetId)
   useBreadcrumbTitle(asset?.name)
 
@@ -197,7 +200,7 @@ export default function AssetDetailPage() {
         </CardContent>
       </Card>
 
-      <Card className="mt-4">
+      <Card className="mt-4" id="asset-identity">
         <CardHeader>
           <CardTitle>Identity</CardTitle>
         </CardHeader>
@@ -215,6 +218,22 @@ export default function AssetDetailPage() {
               properties={asset.metadata}
             />
           </DetailSections>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>{t('assetTimeline.tab', 'Timeline')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AssetTimeline
+            assetId={asset.id}
+            onWhy={() =>
+              document
+                .getElementById('asset-identity')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+          />
         </CardContent>
       </Card>
 
