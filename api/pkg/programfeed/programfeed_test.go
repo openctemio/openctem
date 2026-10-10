@@ -358,7 +358,34 @@ func TestRecordToleratesAddedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if progs, _, err := v.Read(programfeed.V1{}); err != nil || len(progs) != 1 {
+	progs, _, err := v.Read(programfeed.V1{})
+	if err != nil || len(progs) != 1 {
 		t.Fatalf("added fields: %d %v", len(progs), err)
+	}
+	// A port-restricted target is never an entry for the whole host.
+	for _, it := range progs[0].ItemsFor(nil) {
+		if it.InScope && it.Scannable() {
+			t.Fatalf("port-restricted target scannable: %+v", it)
+		}
+	}
+	// A fine-grained non-network asset type stays a program target.
+	rec["in_scope"] = []map[string]any{{"type": "other", "value": "com.acme.app", "confidence": "published", "asset_type": "android_app"},
+		{"type": "domain", "value": "www.acme.io", "confidence": "published", "asset_type": "web_application"}}
+	v, err = programfeed.VerifyDir(b.Write(t, 4, []map[string]any{rec}), programfeed.Options{PinnedRoot: b.RootKeyID(), Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	progs, _, err = v.Read(programfeed.V1{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scannable []string
+	for _, it := range progs[0].ItemsFor(nil) {
+		if it.InScope && it.Scannable() {
+			scannable = append(scannable, it.Pattern)
+		}
+	}
+	if strings.Join(scannable, ",") != "www.acme.io" {
+		t.Fatalf("scannable = %v", scannable)
 	}
 }
