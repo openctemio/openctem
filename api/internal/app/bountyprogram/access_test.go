@@ -41,7 +41,11 @@ func privateFixture(t *testing.T, full bool) (*Service, *fakeRepo, *fakeLedger, 
 }
 
 func TestPrivateProgram_ImportFromFile(t *testing.T) {
-	_, repo, l, _, importer, p := privateFixture(t, false)
+	svc, repo, l, tenant, importer, p := privateFixture(t, false)
+	// An imported file is not read again: nothing to sync.
+	if _, err := svc.Sync(context.Background(), tenant, importer, p.ID); !errors.Is(err, bp.ErrSyncNotConfigured) {
+		t.Fatalf("sync of an imported program: %v", err)
+	}
 	if !p.IsPrivate() || p.ScopeSource != bp.ScopeSourceFileImport || p.ProgramURL != "" {
 		t.Fatalf("program = %+v", p)
 	}
