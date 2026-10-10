@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 
 	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
+	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -40,6 +41,10 @@ type WorkflowEventDispatcher struct {
 
 	// modules reports the modules a tenant has off; nil runs every tenant.
 	modules ModuleGuard
+
+	// delivery keeps events about private program assets from starting
+	// organization-wide automations (program_delivery.go); nil allows all.
+	delivery bountyprogram.DeliveryResolver
 }
 
 // ModuleGuard reports the modules a tenant has off (*module.ModuleService).
@@ -80,6 +85,10 @@ type FindingEvent struct {
 // DispatchFindingEvent dispatches a finding event to matching workflows.
 // It evaluates all active workflows with matching trigger types and filters.
 func (d *WorkflowEventDispatcher) DispatchFindingEvent(ctx context.Context, event FindingEvent) error {
+	if event.Finding != nil && d.restrictedSubject(ctx, event.TenantID,
+		bountyprogram.DeliverySubject{AssetIDs: []shared.ID{event.Finding.AssetID()}}) {
+		return nil
+	}
 	// Find all active workflows for the tenant with matching trigger type
 	workflows, err := d.findMatchingWorkflows(ctx, event.TenantID, event.EventType)
 	if err != nil {
@@ -342,13 +351,24 @@ func (d *WorkflowEventDispatcher) dispatchFindingsCreated(ctx context.Context, t
 		return 0
 	}
 
+	assetIDs := make([]shared.ID, 0, len(findings))
+	for _, f := range findings {
+		if f != nil {
+			assetIDs = append(assetIDs, f.AssetID())
+		}
+	}
+	restricted, ok := d.restrictedAssets(ctx, tenantID, assetIDs)
+	if !ok {
+		return 0
+	}
+
 	started, duplicates := 0, 0
 	for _, wf := range workflows {
 		if wf.TenantID != tenantID {
 			continue
 		}
 		for _, f := range findings {
-			if f == nil || f.TenantID() != tenantID {
+			if f == nil || f.TenantID() != tenantID || restricted[f.AssetID()] {
 				continue
 			}
 			event := FindingEvent{TenantID: tenantID, Finding: f, EventType: automationdom.TriggerTypeFindingCreated}
@@ -465,6 +485,9 @@ type AITriageEvent struct {
 
 // DispatchAITriageEvent dispatches an AI triage event to matching workflows.
 func (d *WorkflowEventDispatcher) DispatchAITriageEvent(ctx context.Context, event AITriageEvent) error {
+	if d.restrictedSubject(ctx, event.TenantID, bountyprogram.DeliverySubject{FindingIDs: []shared.ID{event.FindingID}}) {
+		return nil
+	}
 	// Find all active workflows for the tenant with matching trigger type
 	workflows, err := d.findMatchingWorkflows(ctx, event.TenantID, event.EventType)
 	if err != nil {

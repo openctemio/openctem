@@ -1,0 +1,15 @@
+- id: ctem_cycles
+  const: ModuleCTEMCycles
+  slug: "ctem-cycles"
+  name: CTEM Cycles
+  description: "Gartner CTEM lifecycle — scoping, discovery, prioritisation, validation, mobilisation"
+  icon: RotateCcw
+  category: scoping
+  order: 8
+  user_facing: true
+  permission: "ctem:cycles:read"
+  depends:
+    - {id: scope_config, kind: hard, reason: "cycles operate on a defined scope"}
+    - {id: findings, kind: soft, reason: "cycle phases reference findings progress"}
+  routes:
+    - "/api/v1/ctem-cycles"

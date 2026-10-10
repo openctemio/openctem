@@ -80,6 +80,15 @@ var assetMergeRefs = []mergeRef{
 	// same location is dropped.
 	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
+	// Package dependency edges follow their links (moved just above; a
+	// duplicate link was dropped and its edges with it).
+	{table: "asset_software_edges", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid"},
+	// VEX statements for one asset (RFC-070) follow it; a statement the kept
+	// asset already has for the same subject wins. Findings that carried a
+	// dropped statement lose it (ON DELETE SET NULL) and are re-decided on
+	// the next ingest or statement change.
+	{table: "vex_statements", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"vuln_id", "product_id", "versions", "version_range"}, nullSafe: []string{"version_range"}}}},
 	// Per-source attribute values (RFC-069): the kept asset's own value of a
 	// source wins; a merged asset's value from a source the kept one never
 	// heard from moves.
@@ -89,11 +98,6 @@ var assetMergeRefs = []mergeRef{
 	// element from a source wins; others move.
 	{table: "asset_attribute_set_elements", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"attribute", "source_kind", "source_name", "element"}}}},
-	{table: "asset_components", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
-		keys: []mergeKey{
-			{cols: []string{"component_id", "path"}},
-			{cols: []string{"name", "version"}, nullSafe: []string{"branch_id"}},
-		}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",
@@ -363,8 +367,6 @@ func mergeRepositoryExtension(ctx context.Context, tx *sql.Tx, tenantID, keepID 
 		{table: "findings", column: "branch_id", tenantCol: "tenant_id"},
 		{table: "finding_branch_occurrences", column: "branch_id", tenantCol: "tenant_id", idCol: "id",
 			keys: []mergeKey{{cols: []string{"finding_id"}}}},
-		{table: "asset_components", column: "branch_id", tenantCol: "tenant_id", idCol: "id",
-			keys: []mergeKey{{cols: []string{"asset_id", "name", "version"}}}},
 	}
 	for _, p := range pairs {
 		for _, ref := range branchRefs {

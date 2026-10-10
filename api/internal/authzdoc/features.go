@@ -53,7 +53,7 @@ var Features = []Feature{
 			"registerAssetRoutes", "registerAssetGroupRoutes", "registerAssetTypeRoutes", "registerAssetOwnerRoutes",
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
-			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerComponentRoutes",
+			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
 			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes",
 		},
 	},
@@ -107,7 +107,7 @@ var Features = []Feature{
 		Description: "Scans, scan runs and workflows, profiles, tools, templates, content packs, the secret store and freeze windows.",
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
-			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
+			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
 			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
@@ -181,7 +181,7 @@ var Features = []Feature{
 		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), plan and the audit log.",
 		Registers: []string{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes",
-			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes",
+			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes",
 		},
 	},
