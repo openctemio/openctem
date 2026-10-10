@@ -128,7 +128,10 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	exec(`INSERT INTO compensating_controls (id, tenant_id, name, control_type) VALUES ($1,$2,'cc','other')`, newID("cc"), T)
 	exec(`INSERT INTO threat_models (id, tenant_id, scope_type, name) VALUES ($1,$2,'tenant','tm')`, newID("tm"), T)
 	exec(`INSERT INTO scan_workflows (id, tenant_id, name) VALUES ($1,$2,'pt')`, newID("pt"), T)
-	exec(`INSERT INTO components (id, purl, name, ecosystem) VALUES ($1,'pkg:npm/m-'||md5(random()::text),'m','npm')`, newID("comp"))
+	exec(`INSERT INTO software_products (id, tenant_id, part, name, purl_type, purl_namespace, purl_name, source)
+		VALUES ($1,$2,'a','m','npm','','m-'||md5(random()::text),'observed')`, newID("prod"), T)
+	exec(`INSERT INTO software_versions (id, product_id, tenant_id, raw, normalized, scheme) VALUES ($1,$2,$3,'1.0.0','1.0.0','npm')`, newID("comp"), ids["prod"], T)
+	exec(`INSERT INTO software_versions (id, product_id, tenant_id, raw, normalized, scheme) VALUES ($1,$2,$3,'2.0.0','2.0.0','npm')`, newID("comp2"), ids["prod"], T)
 
 	// One row per reference for the merged asset ($2); where noted, the kept
 	// asset ($3) already holds the same unique key, so the merged row is
@@ -165,7 +168,11 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	exec(`INSERT INTO compensating_control_assets (control_id, asset_id) VALUES ($1,$2)`, ids["cc"], M)
 	exec(`INSERT INTO threat_model_threats (tenant_id, threat_model_id, entry_point_asset_id, hop_asset_id, target_asset_id) VALUES ($1,$2,$3,$3,$3)`, T, ids["tm"], M)
 	exec(`INSERT INTO scan_runs (tenant_id, scan_workflow_id, trigger_type, asset_id) VALUES ($1,$2,'manual',$3)`, T, ids["pt"], M)
-	exec(`INSERT INTO asset_components (tenant_id, asset_id, component_id, path, name, ecosystem) VALUES ($1,$2,$3,'/m','m','npm')`, T, M, ids["comp"])
+	exec(`INSERT INTO asset_software (id, tenant_id, asset_id, product_id, software_version_id, location, source, confidence, relationship)
+		VALUES ($1,$2,$3,$4,$5,'/m','package',100,'direct')`, newID("link1"), T, M, ids["prod"], ids["comp"])
+	exec(`INSERT INTO asset_software (id, tenant_id, asset_id, product_id, software_version_id, location, source, confidence, relationship)
+		VALUES ($1,$2,$3,$4,$5,'/m','package',100,'transitive')`, newID("link2"), T, M, ids["prod"], ids["comp2"])
+	exec(`INSERT INTO asset_software_edges (tenant_id, asset_id, parent_id, child_id) VALUES ($1,$2,$3,$4)`, T, M, ids["link1"], ids["link2"])
 	exec(`INSERT INTO pentest_campaigns (tenant_id, name, asset_ids) VALUES ($1,'pc',$2)`, T, pq.Array([]string{M, O}))
 
 	// Repository data: the merged repo has branches main (the kept repo has
@@ -234,7 +241,8 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		`SELECT count(*) FROM business_service_assets WHERE asset_id = $1`:                                                         1,
 		`SELECT count(*) FROM asset_group_members WHERE asset_id = $1`:                                                             1,
 		`SELECT count(*) FROM compensating_control_assets WHERE asset_id = $1`:                                                     1,
-		`SELECT count(*) FROM asset_components WHERE asset_id = $1`:                                                                1,
+		`SELECT count(*) FROM asset_software WHERE asset_id = $1 AND source = 'package'`:                                           2,
+		`SELECT count(*) FROM asset_software_edges WHERE asset_id = $1`:                                                            1,
 		`SELECT count(*) FROM relationship_suggestions WHERE source_asset_id = $1`:                                                 1, // loop dropped
 		`SELECT count(*) FROM asset_relationships WHERE target_asset_id = $1`:                                                      1,
 		`SELECT count(*) FROM assets WHERE parent_id = $1`:                                                                         1,
@@ -257,6 +265,5 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	}
 
 	_, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, T)
-	_, _ = db.Exec(`DELETE FROM components WHERE id = $1`, ids["comp"])
 	_, _ = db.Exec(`DELETE FROM users WHERE id = $1`, U)
 }

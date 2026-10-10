@@ -1,0 +1,5 @@
+### Behaviour change: scope entry tier ceilings apply only in Strict scan approval
+
+- In the Off and On scan approval modes a scope entry is a list of targets (with exclusions): its `max_tier` no longer refuses a probe; the scan's intensity and the approval rules decide how hard it probes. Coverage, exclusions, the deny list and ownership proof for intrusive steps are unchanged. Strict keeps the ceilings (RFC-073 §6).
+- The job signer's ledger holds each organization's tier ceilings (`set_tier_ceilings`, snapshot `tier_ceilings_off`): leaving Strict is accepted by the signer before the mode is saved (a refusal keeps Strict), entering Strict narrows after, every scope widening carries the state, and a sync can only turn the ceilings back on. Turning them off needs the `SIGNER_LEDGER_T2_MIN_APPROVALS` floor.
+- Upgrade: existing ledgers keep the ceilings on until an organization's next scope widening or mode change (the signer is the stricter side meanwhile). To bring every organization in step at once, run `server -signer-ledger-export` and import it into the stopped signer with `ledger import -replace`.
