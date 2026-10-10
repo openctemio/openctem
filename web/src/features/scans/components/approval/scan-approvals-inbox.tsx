@@ -2,7 +2,7 @@
 
 /**
  * Scans > Approvals: the scan approval requests of the organization
- * (RFC-072). Approvers see what each scan will do (targets, intensity,
+ * (RFC-073). Approvers see what each scan will do (targets, intensity,
  * tools, schedule, the rule that caught it and what changed since the last
  * approval) and approve or reject it; requesters remind or withdraw. The
  * backend decides who may act: these buttons only follow `can_approve` and

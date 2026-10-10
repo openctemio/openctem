@@ -1,7 +1,7 @@
 ### Added: scan approval in the web console
 
 - Settings > Scanning > Scan approval: the mode (owner), presets, and
-  turning rules on, off or into monitor mode (RFC-072).
+  turning rules on, off or into monitor mode (RFC-073).
 - New Scan: the review step says when the scan needs approval and by whom,
   asks for the justification or change ticket the rules need, and saves
   and submits it ("Submit for approval").

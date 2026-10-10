@@ -1,5 +1,5 @@
 /**
- * Scan approval UI (RFC-072): the New Scan notice says who must approve and
+ * Scan approval UI (RFC-073): the New Scan notice says who must approve and
  * asks for the evidence the rules need; the inbox offers Approve only when
  * the API says the viewer may, and self-approval only with a reason and a
  * code; the list badge shows a waiting scan.

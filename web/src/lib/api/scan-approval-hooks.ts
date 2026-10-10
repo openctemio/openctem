@@ -1,5 +1,5 @@
 /**
- * Scan approval governance (RFC-072): the organization's settings, the New
+ * Scan approval governance (RFC-073): the organization's settings, the New
  * Scan preview, a scan's approval state, and the approvals inbox.
  * The backend is the authority: these calls only show what it decided.
  */

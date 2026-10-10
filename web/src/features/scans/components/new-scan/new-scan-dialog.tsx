@@ -146,7 +146,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   )
   const review = useScanReview(formData, workflowRequest, open && currentStep === 'review')
 
-  // Scan approval (RFC-072): what the organization's rules ask of this scan,
+  // Scan approval (RFC-073): what the organization's rules ask of this scan,
   // shown on the review step; the scan is then saved and submitted.
   const [approvalJustification, setApprovalJustification] = useState('')
   const [approvalTicket, setApprovalTicket] = useState('')
