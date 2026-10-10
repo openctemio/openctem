@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-10, delegated; D1–D8 adopted as recommended, §12). F3/F4 implemented in #1701, F1/F2 in programfeed#5 and vulnfeed#2; F5 pending |
+| Status | Accepted (2026-10-10, delegated; D1–D8 adopted as recommended, §12). F3/F4 implemented in #1701, F1/F2 in programfeed#5 and vulnfeed#2, F5 (vulnfeed importer reads v2, migration `cve_corpus_feed_sequence`) implemented |
 | Scope | sdk-go (`pkg/transfer`, `pkg/transfer/bundle`), openctemio/programfeed and openctemio/vulnfeed (bundle writers), api (feed importers, migration `feed_checkpoints`) |
 | Architecture | [feed-transfer.md](../architecture/feed-transfer.md); sdk-go `docs/ARCHITECTURE.md` "Feed transfer" |
 | Related | RFC-005 (asynchronous ingest), RFC-026 (sensor results ingest, protocol v2 segments), RFC-061 (content packs), RFC-065 §16 (public program feed), RFC-066 §5.5 (vulnerability feed) |
