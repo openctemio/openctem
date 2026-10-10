@@ -13,7 +13,41 @@ type fakeRepo struct {
 	findings map[shared.ID]shared.ID          // finding -> asset
 	tenant   map[shared.ID]shared.ID          // asset -> tenant (live assets)
 	fullData map[shared.ID]bool               // user -> holds a full-data role
+	hidden   map[shared.ID]map[shared.ID]bool // user -> asset hidden from them
 	err      error
+}
+
+func (f *fakeRepo) HasHiddenAssets(_ context.Context, _, userID shared.ID) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	return len(f.hidden[userID]) > 0, nil
+}
+
+func (f *fakeRepo) AssetIDsVisible(_ context.Context, _, userID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []shared.ID
+	for _, id := range ids {
+		if !f.hidden[userID][id] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) FindingIDsVisible(_ context.Context, _, userID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []shared.ID
+	for _, id := range ids {
+		if !f.hidden[userID][f.findings[id]] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) HasFullDataRole(_ context.Context, _, userID shared.ID) (bool, error) {
@@ -389,5 +423,98 @@ func TestEnforcer_FullDataRole(t *testing.T) {
 	repo.err = errors.New("db down")
 	if _, err := New(repo, ctxCaller, nil).ResolveFor(context.Background(), tenant, Caller{UserID: reader.String()}); err == nil {
 		t.Error("a failed full-data lookup must not resolve to unrestricted")
+	}
+}
+
+// Private program assets (RFC-065 §15.3): an administrator or full-data
+// caller who is not a member sees every asset but the hidden ones (404 by
+// id, left out of filters); an owner sees them; acting (scans) is not
+// narrowed; a lookup error refuses.
+func TestEnforcer_PrivateProgramAssetsHiddenFromNonMembers(t *testing.T) {
+	tenant, admin, owner, reader := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	hidden, open := shared.NewID(), shared.NewID()
+	finding := shared.NewID()
+	repo := &fakeRepo{
+		findings: map[shared.ID]shared.ID{finding: hidden},
+		fullData: map[shared.ID]bool{reader: true},
+		hidden: map[shared.ID]map[shared.ID]bool{
+			admin: {hidden: true}, reader: {hidden: true}, owner: {hidden: true},
+		},
+	}
+	var caller Caller
+	e := New(repo, func(context.Context) Caller { return caller }, nil)
+	ctx := context.Background()
+
+	for name, c := range map[string]Caller{
+		"admin":     {UserID: admin.String(), IsAdmin: true},
+		"full data": {UserID: reader.String()},
+	} {
+		caller = c
+		if err := e.AssertAsset(ctx, tenant, hidden); !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("%s: hidden asset by id: %v", name, err)
+		}
+		if err := e.AssertFinding(ctx, tenant, finding); !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("%s: hidden finding by id: %v", name, err)
+		}
+		if err := e.AssertAsset(ctx, tenant, open); err != nil {
+			t.Errorf("%s: other asset: %v", name, err)
+		}
+		pred, err := e.FilterForCaller(ctx, tenant, []shared.ID{hidden, open})
+		if err != nil || pred(hidden) || !pred(open) {
+			t.Errorf("%s: filter (%v)", name, err)
+		}
+		scope, err := e.Resolve(ctx, tenant)
+		if err != nil || scope == nil || !scope.Unrestricted || scope.Restricted() {
+			t.Errorf("%s: scope = %+v %v", name, scope, err)
+		}
+		if _, unrestricted, err := e.CanActOnAssets(ctx, tenant, nil, []shared.ID{hidden}); err != nil || !unrestricted {
+			t.Errorf("%s: acting must not be narrowed: %v %v", name, unrestricted, err)
+		}
+	}
+
+	caller = Caller{UserID: owner.String(), IsAdmin: true, IsOwner: true}
+	if err := e.AssertAsset(ctx, tenant, hidden); err != nil {
+		t.Fatalf("owner: %v", err)
+	}
+	if s, _ := e.Resolve(ctx, tenant); s != nil {
+		t.Fatalf("owner scope = %+v", s)
+	}
+
+	// Nothing hidden from an administrator: unrestricted as before.
+	other := shared.NewID()
+	caller = Caller{UserID: other.String(), IsAdmin: true}
+	if s, err := e.Resolve(ctx, tenant); s != nil || err != nil {
+		t.Fatalf("admin with nothing hidden: %+v %v", s, err)
+	}
+
+	// A lookup error refuses (fail closed).
+	repo.err = errors.New("db down")
+	caller = Caller{UserID: admin.String(), IsAdmin: true}
+	if err := e.AssertAsset(ctx, tenant, open); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("lookup error admitted: %v", err)
+	}
+}
+
+// ResolveActing keeps owner visibility only for the request caller: the
+// owner listing assets or findings sees private program assets, and the
+// same acting user id from another caller (or another acting user from the
+// owner) does not.
+func TestEnforcer_ResolveActingOwnerIsTheCallerOnly(t *testing.T) {
+	tenant, owner, admin, hidden := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	repo := &fakeRepo{hidden: map[shared.ID]map[shared.ID]bool{owner: {hidden: true}, admin: {hidden: true}}}
+	var caller Caller
+	e := New(repo, func(context.Context) Caller { return caller }, nil)
+	ctx := context.Background()
+
+	caller = Caller{UserID: owner.String(), IsAdmin: true, IsOwner: true}
+	if scope, err := e.ResolveActing(ctx, tenant, owner.String(), true); err != nil || scope != nil {
+		t.Fatalf("owner acting as themselves: scope %+v err %v, want unrestricted", scope, err)
+	}
+	if scope, err := e.ResolveActing(ctx, tenant, admin.String(), true); err != nil || scope == nil || !scope.Unrestricted {
+		t.Fatalf("owner caller acting as an admin: scope %+v err %v, want hidden assets", scope, err)
+	}
+	caller = Caller{UserID: admin.String(), IsAdmin: true}
+	if scope, err := e.ResolveActing(ctx, tenant, owner.String(), true); err != nil || scope == nil || !scope.Unrestricted {
+		t.Fatalf("non-owner caller acting as the owner: scope %+v err %v, want hidden assets", scope, err)
 	}
 }

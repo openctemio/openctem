@@ -1,7 +1,7 @@
 package handler
 
 // Console > System > Scan approval and Organization > Security: the
-// platform policy for scan approval (RFC-072 §5): let the organization
+// platform policy for scan approval (RFC-073 §5): let the organization
 // choose, or force off, on (at least) or strict. Reads: any
 // platform administrator. Changes: super_admin (route) with a fresh
 // authenticator code and a reason (here); the service audits (critical) and
@@ -80,7 +80,7 @@ type UpdateScanPolicyOrganizationRequest struct {
 
 // GetDefault returns the platform default.
 // @Summary      Scan approval policy (platform default)
-// @Description  Scan approval for organizations without an override (RFC-072 §5): tenant_controlled (default: the organization's owner chooses), off, on (at least) or strict. Any administrator.
+// @Description  Scan approval for organizations without an override (RFC-073 §5): tenant_controlled (default: the organization's owner chooses), off, on (at least) or strict. Any administrator.
 // @Tags         Admin System
 // @Produce      json
 // @Success      200  {object}  ScanPolicyDefaultResponse

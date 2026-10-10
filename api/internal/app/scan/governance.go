@@ -1,6 +1,6 @@
 package scan
 
-// Scan approval governance (docs/rfcs/RFC-072-scan-approval-governance.md):
+// Scan approval governance (docs/rfcs/RFC-073-scan-approval-governance.md):
 // the definition an approval covers, the facts the approval rules read, and
 // the gate every run passes. The gate sits in triggerLoadedScan, so manual,
 // scheduled, quick and retried runs and a run started after an approval all

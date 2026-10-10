@@ -11,6 +11,7 @@ import (
 	"time"
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
@@ -117,6 +118,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/email"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -307,6 +309,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 	return datascope.Caller{
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
+		IsOwner: middleware.IsOwner(ctx),
 		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
 	}
 }
@@ -845,10 +848,10 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
-	// ScanPolicy is the platform policy for scan approval (RFC-072)
+	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
-	// ScanGovernance is scan approval governance (RFC-072): settings,
+	// ScanGovernance is scan approval governance (RFC-073): settings,
 	// requests and the run gate (wired in wireScopeApprovers).
 	ScanGovernance *scangovapp.Service
 	// The request-access queue (sign-up closed, requests allowed).
@@ -978,6 +981,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
+	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
 	s.Asset.SetScoringConfigProvider(asset.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)
@@ -1034,14 +1038,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The public program catalog and the feed importer (RFC-065 §16).
 	catalogRepo := postgres.NewPublicProgramRepository(&postgres.DB{DB: deps.DB})
 	s.BountyProgram.SetCatalog(catalogRepo)
-	if cfg.Scope.ProgramFeedDir != "" && cfg.Scope.ProgramFeedRootKeyID != "" {
+	// Chunked (v2) bundles are fetched through the SSRF-guarded client with
+	// retries, resume and mirror fall-back, and applied chunk by chunk with
+	// a durable checkpoint (docs/architecture/feed-transfer.md); the v1 reader stays the fallback.
+	feedTransfer := programfeedapp.Transfer{URLs: cfg.Scope.ProgramFeedURLs, CacheDir: cfg.Scope.FeedCacheDir,
+		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer}
+	if (cfg.Scope.ProgramFeedDir != "" || len(cfg.Scope.ProgramFeedURLs) > 0) && cfg.Scope.ProgramFeedRootKeyID != "" {
 		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
-			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log)
+			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log).WithChunks(catalogRepo, feedTransfer)
 	}
 	s.ProgramFeedSettings = catalogRepo
 	if cfg.Scope.ProgramFeedLocalBundleDir != "" {
+		localTransfer := feedTransfer
+		localTransfer.URLs, localTransfer.Registerer = nil, nil
 		s.ProgramFeedLocal = programfeedapp.NewLocalImporter(cfg.Scope.ProgramFeedLocalBundleDir, catalogRepo,
-			s.BountyProgram, catalogRepo, log)
+			s.BountyProgram, catalogRepo, log).WithChunks(catalogRepo, localTransfer)
 	}
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)

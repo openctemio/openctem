@@ -1,5 +1,5 @@
-// Package scangov is scan approval governance (RFC-072,
-// docs/rfcs/RFC-072-scan-approval-governance.md): the organization's
+// Package scangov is scan approval governance (RFC-073,
+// docs/rfcs/RFC-073-scan-approval-governance.md): the organization's
 // approval settings (the mode an owner chooses and the approval rules).
 //
 // Threat model. Scan approval is an organization's own control, opt-in,
