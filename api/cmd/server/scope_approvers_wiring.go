@@ -140,6 +140,7 @@ func wireScanGovernance(svc *Services, repos *Repositories, log *logger.Logger) 
 			totp = scopeTOTP{auth: svc.Auth}
 		}
 		svc.ScanGovernance.SetApprovers(repos.ScanApproval, totp)
+		svc.ScanGovernance.SetRequesters(repos.ScanApproval, svc.Tenant)
 	}
 	if svc.Notification != nil {
 		svc.ScanGovernance.SetNotifier(svc.Notification)

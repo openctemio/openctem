@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
@@ -191,6 +192,7 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), ciRunContextKey{}, run)
 		// The tenant-keyed rate limiters and concurrency caps read it.
 		ctx = context.WithValue(ctx, middleware.TenantIDKey, run.TenantID.String())
+		ctx = scangov.WithOrigin(ctx, scangov.OriginCI)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
