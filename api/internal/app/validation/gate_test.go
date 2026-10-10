@@ -266,3 +266,11 @@ func TestCheckTarget_PassesAssetToGate(t *testing.T) {
 		t.Fatalf("gate asset = %+v, %v", a, ok)
 	}
 }
+
+func (tenantAttribution) UncoveredTargets(context.Context, shared.ID, []string) ([]string, error) {
+	return nil, nil
+}
+
+func (failingAttribution) UncoveredTargets(context.Context, shared.ID, []string) ([]string, error) {
+	return nil, nil
+}

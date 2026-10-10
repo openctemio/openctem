@@ -140,6 +140,8 @@ type attrTable struct {
 	byName map[string]attribution.State
 	// ceiling: name -> max_tier of the entry covering it (absent: any).
 	ceiling map[string]scopedom.Tier
+	// uncovered: names no scope authority covers (passive stages).
+	uncovered map[string]bool
 }
 
 func (a attrTable) ActiveCheckBlocked(_ context.Context, _ shared.ID, ids []string) (map[string]attribution.State, error) {
@@ -721,4 +723,14 @@ func TestHopTargetKey_ServiceNames(t *testing.T) {
 	if _, ok := hopTargetKey("example.co.uk:70000:tcp"); ok {
 		t.Error("an out-of-range port was accepted")
 	}
+}
+
+func (a attrTable) UncoveredTargets(_ context.Context, _ shared.ID, ts []string) ([]string, error) {
+	var out []string
+	for _, t := range ts {
+		if a.uncovered[t] {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
