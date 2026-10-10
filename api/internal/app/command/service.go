@@ -54,6 +54,9 @@ type Service struct {
 	// programRules applies bug-bounty program rules at delivery
 	// (program_rules.go); nil: not applied.
 	programRules ProgramRuleSource
+	// windows applies scan windows at the claim (window_hold.go); nil: not
+	// applied.
+	windows WindowSource
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
 }
@@ -308,10 +311,11 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	}
 	// Scope may have changed since the jobs were queued (scope_recheck.go).
 	cmds = s.recheckScope(ctx, tenantID, sensorID, cmds)
-	// Program rules: testing windows, conflicts, headers and rate caps
-	// (program_rules.go).
+	// Scan windows: jobs outside their windows wait (window_hold.go).
+	cmds, rates := s.windowHold(ctx, tenantID, cmds)
+	// Program rules: conflicts, headers and rate caps (program_rules.go).
 	cmds, rules := s.programHold(ctx, tenantID, sensorID, cmds)
-	return s.deliver(ctx, input.SensorID, cmds, rules)
+	return s.deliver(ctx, input.SensorID, cmds, withWindowRates(rules, rates))
 }
 
 // ClaimInput is a claim-N poll: the sensor takes its work in one request.
@@ -378,7 +382,9 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	// The scope may have changed since the jobs were queued: their targets
 	// pass the dispatch gate again before the claim (scope_recheck.go).
 	cands = s.recheckScope(ctx, tenantID, &sensorID, cands)
+	cands, rates := s.windowHold(ctx, tenantID, cands)
 	cands, rules := s.programHold(ctx, tenantID, &sensorID, cands)
+	rules = withWindowRates(rules, rates)
 	if len(cands) == 0 {
 		return nil, nil
 	}
@@ -550,8 +556,16 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 		if cmd, err = s.recheckOne(ctx, sid, cmd); err != nil {
 			return nil, err
 		}
+		// Scan windows (window_hold.go): outside its windows the job waits.
+		var rate int
+		if cmd, rate, err = s.windowHoldOne(ctx, cmd); err != nil {
+			return nil, err
+		}
 		if rules, err = s.programHoldOne(ctx, sid, cmd); err != nil {
 			return nil, err
+		}
+		if rate > 0 {
+			rules = withWindowRates(map[shared.ID]*bp.JobRules{cmd.ID: rules}, map[shared.ID]int{cmd.ID: rate})[cmd.ID]
 		}
 	}
 
