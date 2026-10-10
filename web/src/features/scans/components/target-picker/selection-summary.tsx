@@ -136,7 +136,13 @@ export function SelectionSummary({
       {open && (
         <div className="mt-3 max-h-64 space-y-3 overflow-y-auto">
           {refused > 0 && (
-            <ScopeCheckList results={results} onApplied={() => void check.recheck()} limit={50} />
+            <ScopeCheckList
+              results={results}
+              onApplied={() => void check.recheck()}
+              limit={50}
+              probeTier={check.tier}
+              sensorPreference={sensorPreference}
+            />
           )}
           <ul className="flex flex-wrap gap-1.5" aria-label="Selection">
             {chips.map((chip) => (
