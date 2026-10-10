@@ -169,7 +169,7 @@ left out of the organization's own metrics by default (RFC-065 §16.5).
 When the source offers bundle format v2 (a `latest.v2.dsse.json` pointer in
 `PROGRAMFEED_DIR`, or `PROGRAMFEED_URL` / `PROGRAMFEED_MIRRORS` configured),
 the importer reads it through the sdk-go bundle consumer
-([feed-transfer.md](feed-transfer.md)); otherwise the whole-bundle (v1)
+(`feed-transfer.md`, the chunked feed transfer design); otherwise the whole-bundle (v1)
 reader above runs, for one release.
 
 ```
