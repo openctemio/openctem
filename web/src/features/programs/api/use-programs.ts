@@ -9,12 +9,14 @@
 'use client'
 
 import useSWR, { mutate as globalMutate } from 'swr'
-import { get, post, put } from '@/lib/api/client'
+import { del, get, post, put } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import type {
+  NotificationChannelOption,
   Program,
   ProgramChange,
+  ProgramDelivery,
   ProgramDetail,
   ProgramInput,
   ProgramPreview,
@@ -139,4 +141,54 @@ export function applyPendingTerms(id: string, acceptTermsSha256: string) {
   return post<ProgramChange>(`${BASE}/${id}/pending/apply`, {
     accept_terms_sha256: acceptTermsSha256,
   })
+}
+
+/**
+ * Where events about the program private assets go (RFC-065 §15.4): its
+ * channels and the owner organization-channel opt-in. Members and owners
+ * who accepted the current terms; the API answers 404 to anyone else.
+ */
+export function useProgramDelivery(id: string | null) {
+  const { currentTenant } = useTenant()
+  const can = useHasPermission(Permission.ProgramsRead)
+  const key = currentTenant && can && id ? ['program', currentTenant.id, id, 'delivery'] : null
+  return useSWR<ProgramDelivery>(key, () => get<ProgramDelivery>(`${BASE}/${id}/delivery`), {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  })
+}
+
+/** The organization notification integrations that may be attached. */
+export function useNotificationChannelOptions(enabled: boolean) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && enabled ? ['notification-channel-options', currentTenant.id] : null
+  return useSWR<NotificationChannelOption[]>(
+    key,
+    async () =>
+      (
+        (await get<{ data: NotificationChannelOption[] }>('/api/v1/integrations/notifications'))
+          ?.data ?? []
+      ).map(({ id, name, provider }) => ({ id, name, provider })),
+    { revalidateOnFocus: false }
+  )
+}
+
+/** Attach a notification integration to the program (step-up). */
+export function attachProgramChannel(id: string, integrationId: string) {
+  return put<ProgramDelivery>(
+    `${BASE}/${id}/notification-channels/${encodeURIComponent(integrationId)}`,
+    {}
+  )
+}
+
+/** Detach it: events about the program private assets stop going there. */
+export function detachProgramChannel(id: string, integrationId: string) {
+  return del<ProgramDelivery>(
+    `${BASE}/${id}/notification-channels/${encodeURIComponent(integrationId)}`
+  )
+}
+
+/** Owners only: let the events reach organization channels (reason, step-up). */
+export function setProgramOrgChannels(id: string, enabled: boolean, reason: string) {
+  return put<ProgramDelivery>(`${BASE}/${id}/org-channels`, { enabled, reason })
 }

@@ -93,9 +93,9 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
-			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule, schedule_run_at, target_options
+			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule, schedule_run_at, target_options, intensity
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''), $39, $40)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''), $39, $40, $41)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -139,6 +139,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		s.ScheduleRRule,
 		s.ScheduleRunAt,
 		targetOptions,
+		string(s.EffectiveIntensity()),
 	)
 
 	if err != nil {
@@ -268,7 +269,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
 		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29, schedule_rrule = NULLIF($30, ''), schedule_run_at = $31,
-		    target_options = $32
+		    target_options = $32, intensity = $33
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -303,8 +304,9 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		nullableIDString(s.ScanZoneID),
 		s.AdHoc, // $29
 		s.ScheduleRRule,
-		s.ScheduleRunAt, // $31
-		targetOptions,   // $32
+		s.ScheduleRunAt,                // $31
+		targetOptions,                  // $32
+		string(s.EffectiveIntensity()), // $33
 	)
 
 	if err != nil {
@@ -644,7 +646,7 @@ func (r *ScanRepository) selectQuery() string {
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
-		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options
+		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options, intensity
 		FROM scans
 	`
 }
@@ -729,6 +731,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.BlockedRuns,
 		&s.ScheduleRunAt,
 		&targetOptions,
+		&s.Intensity,
 	)
 	if err != nil {
 		return nil, err
