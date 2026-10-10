@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -466,7 +467,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Who this report is for attribute reconciliation (RFC-069), and when
 	// its source saw what it reports.
 	sourceKind, sourceName := reportSource(binding, opts, report)
+	clampReportTimestamp(report, binding, time.Now())
 	observedAt := reportObservedAt(report, time.Now())
+	sourceRun := binding.Run()
+	if binding.Kind == BindingTrusted {
+		sourceRun = opts.SourceRun
+	}
 	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind)
 
 	// Step 1: Process assets using batch operations
@@ -496,7 +502,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// The tracked values this report states (RFC-069), before findings are
 	// prioritized on the assets' criticality and exposure.
-	s.recordAttributes(ctx, tenantID, scope, sourceKind, sourceName, observedAt, report, assetMap)
+	s.recordAttributes(ctx, tenantID, scope, attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}, observedAt, report, assetMap)
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
@@ -561,6 +567,14 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		// createIngestAuditLog derives run status from len(output.Errors). Without
 		// this the degraded run was silently audited as a success.
 		addError(output, fmt.Sprintf("cve upsert failed: %v", cveErr))
+	}
+
+	// The version-match tool name belongs to the inventory matcher (RFC-066):
+	// only it may create findings under it, and only its own findings are
+	// closed when software changes. A report claiming it is refused.
+	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
+		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		report.Findings = nil
 	}
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)

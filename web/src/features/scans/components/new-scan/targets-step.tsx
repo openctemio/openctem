@@ -134,9 +134,10 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
       label: t,
       kind: 'typed' as const,
       onRemove: () =>
-        setTyped(
-          targets.customTargets.filter((line) => line.trim().toLowerCase() !== t.toLowerCase())
-        ),
+        setTyped([
+          ...pasted.targets.filter((x) => x !== t),
+          ...pasted.invalid.map((bad) => bad.input),
+        ]),
     })),
     // The *.domain targets the coverage level made of typed or picked
     // domains, and the addresses of `subdomains_ips`.

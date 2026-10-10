@@ -36,9 +36,14 @@ export function PasteSource({ value, onChange, children }: PasteSourceProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-end justify-between gap-2">
-        <Label htmlFor="custom-targets" className="text-sm">
-          Targets, one per line
-        </Label>
+        <div>
+          <Label htmlFor="custom-targets" className="text-sm">
+            Targets
+          </Label>
+          <p className="text-muted-foreground text-xs">
+            One per line, or separated by commas or spaces.
+          </p>
+        </div>
         {canClean && (
           <Button
             type="button"

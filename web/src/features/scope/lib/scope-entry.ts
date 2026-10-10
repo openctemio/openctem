@@ -121,6 +121,13 @@ export const TIER_HINT: Record<string, string> = {
   t2: 'Intrusive tests that may change state. Needs an expiry, an approval and a verified domain.',
 }
 
+/** The tools each tier lets run (the stage catalog's default tools). */
+export const TIER_TOOLS: Record<string, string> = {
+  t0: 'subfinder, dnsx',
+  t1: 'naabu, httpx, katana, nuclei (safe templates)',
+  t2: 'ZAP web application scans that send attack payloads',
+}
+
 /** Approvals still needed, never below 0. */
 export function approvalsMissing(e: Pick<ApiScopeTarget, 'approvals' | 'approvals_required'>) {
   return Math.max(0, (e.approvals_required ?? 0) - (e.approvals?.length ?? 0))
@@ -163,4 +170,109 @@ export function expiryBoundFor(
     }
   }
   return { maxDays: Math.max(1, settings?.one_off_max_days ?? 7), permanent: true }
+}
+
+/** The durations offered for an expiring entry, in days. */
+export const DURATION_PRESET_DAYS = [7, 30, 90, 365] as const
+
+/**
+ * What a new or edited entry may last, for its tier and the caller:
+ * - permanent: allowed, forbidden (offered disabled with the reason: an
+ *   owner may allow it) or hidden (a member request always expires);
+ * - expiring: whether an expiry is allowed at all;
+ * - maxDays: the longest expiry, in days.
+ */
+export interface DurationPolicy {
+  maxDays: number
+  permanent: 'allowed' | 'forbidden' | 'hidden'
+  expiring: boolean
+}
+
+type DurationSettings = {
+  one_off_targets?: string
+  one_off_max_days?: number
+  t2_max_days?: number
+  t2_permanent_allowed?: boolean
+}
+
+export function durationPolicy(
+  tier: string,
+  settings: DurationSettings | undefined,
+  opts: { isRequest: boolean }
+): DurationPolicy {
+  const { maxDays, permanent } = expiryBoundFor(tier, settings)
+  if (opts.isRequest) return { maxDays, permanent: 'hidden', expiring: true }
+  if (tier === 't2') {
+    return { maxDays, permanent: permanent ? 'allowed' : 'forbidden', expiring: true }
+  }
+  return {
+    maxDays,
+    permanent: 'allowed',
+    expiring: (settings?.one_off_targets ?? 'admins_and_requests') !== 'disabled',
+  }
+}
+
+/** How long an entry lasts: no expiry, a number of days from now, or as it is. */
+export type DurationChoice =
+  { kind: 'permanent' } | { kind: 'days'; days: number; custom?: boolean } | { kind: 'keep' }
+
+/** The preset durations under the limit, and the limit itself when it is not one. */
+export function presetDays(maxDays: number): number[] {
+  const out: number[] = DURATION_PRESET_DAYS.filter((d) => d <= maxDays)
+  if (!out.includes(maxDays)) out.push(maxDays)
+  return out
+}
+
+/** The longest duration the policy allows: permanent when allowed, else its day limit. */
+export function defaultDuration(p: DurationPolicy): DurationChoice {
+  if (p.permanent === 'allowed' || !p.expiring) return { kind: 'permanent' }
+  return { kind: 'days', days: p.maxDays }
+}
+
+/** Whether the policy allows the choice. */
+export function durationAllowed(c: DurationChoice, p: DurationPolicy): boolean {
+  if (c.kind === 'keep') return true
+  if (c.kind === 'permanent') return p.permanent === 'allowed'
+  return p.expiring && c.days >= 1 && c.days <= p.maxDays
+}
+
+/** The user's choice while the policy allows it, otherwise the default. */
+export function resolveDuration(c: DurationChoice | null, p: DurationPolicy): DurationChoice {
+  return c && durationAllowed(c, p) ? c : defaultDuration(p)
+}
+
+const DAY_MS = 86_400_000
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+/** The day an entry expiring in `days` ends on. */
+export function expiryDateFor(days: number, now: Date = new Date()): Date {
+  const d = startOfDay(now)
+  d.setDate(d.getDate() + days)
+  return d
+}
+
+/** "YYYY-MM-DD", for a date input. */
+export function isoDay(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** Whole days from today to the "YYYY-MM-DD" day (0 when it does not parse). */
+export function daysToDay(day: string, now: Date = new Date()): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+  if (!m) return 0
+  const target = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return Math.round((target.getTime() - startOfDay(now).getTime()) / DAY_MS)
+}
+
+/** "9 Nov 2026" in the reader's language. */
+export function formatDay(d: Date, locale = 'en'): string {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-GB' : locale, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(d)
 }

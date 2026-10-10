@@ -135,6 +135,7 @@ type Handlers struct {
 	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
 	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
@@ -583,6 +584,7 @@ func Register(
 	// Continuous retest (RFC-039): Retest now + a finding's retest history.
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerAssetReconciliationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	// Finding evidence: masked proof per detection / retest + audited reveal.
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
