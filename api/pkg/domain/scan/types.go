@@ -24,6 +24,8 @@ const (
 	// ScheduleRRule: an RFC 5545 recurrence rule in the scan timezone
 	// (RFC-046 D11), in ScheduleRRule.
 	ScheduleRRule ScheduleType = "rrule"
+	// ScheduleOnce: one run at ScheduleRunAt, then none.
+	ScheduleOnce ScheduleType = "once"
 )
 
 // Status represents the scan status.
