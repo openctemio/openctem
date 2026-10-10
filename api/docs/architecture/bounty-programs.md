@@ -194,7 +194,7 @@ the run and hold `scope:read` or `programs:read`.
 | `pkg/domain/bountyprogram/scope_file.go` | scope files: platform CSV, Burp scope JSON, CSV with a column mapping |
 | `internal/app/bountyprogram/access.go` | visibility, per-person attestation, hidden program entries |
 | `migrations/001700_private_programs.*` | visibility, terms text, optional link, attestations |
-| `internal/infra/postgres/program_asset_links.go`, `migrations/001762_program_assets.*` | program asset links, system tags, program-only |
+| `internal/infra/postgres/program_asset_links.go`, `migrations/001792_program_assets.*` | program asset links, system tags, program-only |
 | `pkg/feedsign/` | shared verification of signed feed bundles (DSSE, root, key set) |
 | `pkg/programfeed/` | program feed bundle: verify, read records (`V1` parser) |
 | `internal/app/programfeed/`, `internal/infra/controller/program_feed.go` | importer and reconcile |
