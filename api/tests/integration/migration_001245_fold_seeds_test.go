@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -54,7 +55,14 @@ func TestMigration001262FoldsSeedsIntoEntries(t *testing.T) {
 			t.Fatalf("%v\n%s", err, q)
 		}
 	}
-	// Back to the state before 001262 (the scratch database is migrated).
+	// Back to the state before 001262 (the scratch database is migrated):
+	// later migrations that change what 001262 relies on (the unique key it
+	// upserts on) are rolled back first, inside this transaction.
+	later, err := filepath.Glob("../../migrations/*_scope_entry_constraints.down.sql")
+	if err != nil || len(later) != 1 {
+		t.Fatalf("scope_entry_constraints down migration: %v %v", later, err)
+	}
+	exec(read(filepath.Base(later[0])))
 	exec(down)
 
 	seed := func(tenant shared.ID, v string, discovery bool) {

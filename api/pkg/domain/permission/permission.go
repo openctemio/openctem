@@ -70,9 +70,8 @@ const (
 
 	// Component permissions (assets:components:*)
 	// Note: Components (SBOM) is a separate module with its own permissions
-	ComponentsRead   Permission = "assets:components:read"
-	ComponentsWrite  Permission = "assets:components:write"
-	ComponentsDelete Permission = "assets:components:delete"
+	ComponentsRead  Permission = "assets:components:read"
+	ComponentsWrite Permission = "assets:components:write"
 
 	// Note: Repositories and Branches use general assets:* permissions
 	// as they are just asset types, not separate security boundaries
@@ -446,7 +445,7 @@ func AllPermissions() []Permission {
 		// Assets module
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 
 		// Findings module
 		FindingsRead, FindingsWrite, FindingsDelete,
