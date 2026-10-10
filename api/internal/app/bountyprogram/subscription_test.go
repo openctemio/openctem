@@ -15,7 +15,9 @@ type fakeCatalog struct {
 	programs map[shared.ID]*bp.PublicProgram
 }
 
-func (f *fakeCatalog) FeedState(context.Context) (bp.FeedState, error) { return bp.FeedState{}, nil }
+func (f *fakeCatalog) FeedState(context.Context, string) (bp.FeedState, error) {
+	return bp.FeedState{}, nil
+}
 func (f *fakeCatalog) Apply(context.Context, bp.FeedApply) ([]bp.CatalogChange, error) {
 	return nil, nil
 }

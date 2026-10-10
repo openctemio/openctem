@@ -151,7 +151,13 @@ POST /programs/{id}/reactivate (step-up, terms hash) ──► entries in effect
 ```
 
 Before acceptance only passive work runs: the active-probe gate finds no
-active entry. Program assets will carry provenance and system tags and be
+active entry.
+
+A second stream reads the operator's own unsigned local bundle
+(`PROGRAMFEED_LOCAL_BUNDLE_DIR`, `programfeed.VerifyLocalDir`) only while a
+platform administrator has it enabled (admin console, step-up, audited).
+Its programs are local-only: every target is a suggestion until confirmed;
+the signed stream's record wins on the same id. Program assets will carry provenance and system tags and be
 left out of the organization's own metrics by default (RFC-065 §16.5).
 
 ## Evidence

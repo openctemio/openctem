@@ -592,14 +592,25 @@ covers the target.
   `bounty_program.subscribed`), `POST /programs/{id}/targets/confirm`
   (`programs:write`, audited); acceptance is `POST /programs/{id}/reactivate`
   (step-up, terms hash), which records the person's attestation.
-- Owner decision (option A, 2026-10-10): the platform does not republish
-  restricted platform data. Next to the signed feed, a platform administrator
-  may enable an external program dataset source (off by default, step-up and
-  a reason, audited; datasets from a fixed allowlist pinned in configuration,
-  fetched by the platform with conditional GET and size caps and parsed with
-  the same v1 parser; provenance kept per record; a notice that the data
-  originates from the platforms and is subject to their terms; every target
-  inferred until a follower confirms it). Planned as its own change.
+- Owner decision (option A, 2026-10-10): the project does not republish
+  restricted platform data. Next to the signed feed, a platform operator may
+  import its own **local bundle** (`programfeed build --local-only`, unsigned,
+  manifest marked `collector.local_only`) from a directory the server
+  configuration names (`PROGRAMFEED_LOCAL_BUNDLE_DIR`, mounted read-only;
+  never set from the UI or by a tenant). It is off until a platform
+  administrator enables it (`PUT /api/v1/admin/program-feed/local-bundle`,
+  super_admin, a reason and a fresh console authenticator code, admin audit
+  high; `GET /api/v1/admin/program-feed` shows the state and the notice that
+  the records come from the hosting platforms and stay subject to their
+  terms). The same strict parser, caps, sequence monotonicity (its own
+  stream: `program_feed_state` row 2), delta-on-applied-base and 7-day
+  validity apply; a local-only manifest is accepted only on this path and
+  refused on the signed one. Local programs are marked local-only in the
+  catalog (`feed_stream = local`): every in-scope target is a suggestion
+  until a follower confirms it, provenance is kept per record, a signed
+  record with the same id wins, and each stream archives only its own
+  programs. Controller `program-feed-local`, hourly. Fetching allowlisted
+  public datasets directly from the platform is a later option.
 
 ### 16.7 Plan
 

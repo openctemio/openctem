@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
@@ -18,16 +19,17 @@ type ProgramFeedImporter interface {
 // and, on every tick, brings subscribed programs that differ from the
 // catalog up to date, so a failed update is retried (RFC-065 §16).
 type ProgramFeedController struct {
+	name     string
 	importer ProgramFeedImporter
 }
 
-// NewProgramFeedController creates the controller.
-func NewProgramFeedController(i ProgramFeedImporter) *ProgramFeedController {
-	return &ProgramFeedController{importer: i}
+// NewProgramFeedController creates the controller of one stream.
+func NewProgramFeedController(name string, i ProgramFeedImporter) *ProgramFeedController {
+	return &ProgramFeedController{name: name, importer: i}
 }
 
 // Name implements Controller.
-func (c *ProgramFeedController) Name() string { return "program-feed" }
+func (c *ProgramFeedController) Name() string { return c.name }
 
 // Interval implements Controller.
 func (c *ProgramFeedController) Interval() time.Duration { return time.Hour }
@@ -39,6 +41,9 @@ func (c *ProgramFeedController) Reconcile(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	res, err := c.importer.Import(ctx)
+	if errors.Is(err, programfeedapp.ErrSourceDisabled) {
+		return 0, nil // the administrator has not enabled the local source
+	}
 	if err != nil {
 		// A refused or missing bundle keeps the catalog; subscriptions are
 		// still reconciled against it.

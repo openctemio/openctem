@@ -40,29 +40,50 @@ type Subscriptions interface {
 	ApplyFeedChange(ctx context.Context, ref bp.ProgramRef) (string, error)
 }
 
-// Importer verifies and applies the program feed.
+// Importer verifies and applies one stream of the program feed: the signed
+// feed (NewImporter) or the operator's local bundle (NewLocalImporter).
 type Importer struct {
 	source     BundleSource
 	catalog    bp.CatalogRepository
 	subs       Subscriptions
 	parser     feed.RecordParser
 	pinnedRoot string
-	log        *logger.Logger
-	now        func() time.Time
+	stream     string
+	// settings gates the local stream on the administrator's switch.
+	settings bp.FeedSourceSettings
+	log      *logger.Logger
+	now      func() time.Time
 }
 
-// NewImporter wires the importer. pinnedRoot is the key id of the feed's
-// offline root (PROGRAMFEED_ROOT_KEY_ID); without it nothing is imported.
+// NewImporter wires the signed feed importer. pinnedRoot is the key id of
+// the feed's offline root (PROGRAMFEED_ROOT_KEY_ID); without it nothing is
+// imported.
 func NewImporter(source BundleSource, catalog bp.CatalogRepository, subs Subscriptions, pinnedRoot string, log *logger.Logger) *Importer {
 	if log == nil {
 		log = logger.NewNop()
 	}
 	return &Importer{source: source, catalog: catalog, subs: subs, parser: feed.V1{}, pinnedRoot: pinnedRoot,
-		log: log.With("service", "program-feed"), now: func() time.Time { return time.Now().UTC() }}
+		stream: bp.StreamSigned, log: log.With("service", "program-feed"), now: func() time.Time { return time.Now().UTC() }}
 }
+
+// NewLocalImporter wires the local bundle importer (owner option A): an
+// unsigned bundle from a directory the server configuration names
+// (PROGRAMFEED_LOCAL_BUNDLE_DIR), read only while a platform administrator
+// has the source enabled.
+func NewLocalImporter(dir string, catalog bp.CatalogRepository, subs Subscriptions, settings bp.FeedSourceSettings, log *logger.Logger) *Importer {
+	if log == nil {
+		log = logger.NewNop()
+	}
+	return &Importer{source: DirSource(dir), catalog: catalog, subs: subs, parser: feed.V1{}, stream: bp.StreamLocal,
+		settings: settings, log: log.With("service", "program-feed-local"), now: func() time.Time { return time.Now().UTC() }}
+}
+
+// ErrSourceDisabled: the local bundle source is off.
+var ErrSourceDisabled = errors.New("the local program bundle source is not enabled by a platform administrator")
 
 // Result is what one import did.
 type Result struct {
+	Stream   string
 	Sequence uint64
 	// Delta: the delta was applied (otherwise the snapshot).
 	Delta    bool
@@ -72,13 +93,41 @@ type Result struct {
 	Subscribers map[string]int
 }
 
-// Import fetches, verifies and applies the newest bundle. A bundle that is
-// not newer than the applied one is not an error (nothing to do).
-func (i *Importer) Import(ctx context.Context) (*Result, error) {
-	if i.pinnedRoot == "" {
-		return nil, errors.New("program feed root key id is not configured")
+func (i *Importer) verify(dir string, state bp.FeedState) (*feed.Verified, uint64, error) {
+	opt := feed.Options{PinnedRoot: i.pinnedRoot, MinKeySetVersion: state.KeySetVersion,
+		AppliedSequence: state.AppliedSequence, Now: i.now()}
+	if i.stream == bp.StreamLocal {
+		v, err := feed.VerifyLocalDir(dir, opt)
+		return v, 0, err
 	}
-	state, err := i.catalog.FeedState(ctx)
+	v, err := feed.VerifyDir(dir, opt)
+	if err != nil {
+		return nil, 0, err
+	}
+	return v, v.KeySet.Version, nil
+}
+
+// Import fetches, verifies and applies the newest bundle of the stream. A
+// bundle that is not newer than the applied one is not an error.
+func (i *Importer) Import(ctx context.Context) (*Result, error) {
+	switch i.stream {
+	case bp.StreamLocal:
+		if i.settings == nil {
+			return nil, ErrSourceDisabled
+		}
+		st, err := i.settings.LocalBundle(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !st.Enabled {
+			return nil, ErrSourceDisabled
+		}
+	default:
+		if i.pinnedRoot == "" {
+			return nil, errors.New("program feed root key id is not configured")
+		}
+	}
+	state, err := i.catalog.FeedState(ctx, i.stream)
 	if err != nil {
 		return nil, err
 	}
@@ -87,10 +136,9 @@ func (i *Importer) Import(ctx context.Context) (*Result, error) {
 		return nil, fmt.Errorf("fetch program feed: %w", err)
 	}
 	defer cleanup()
-	v, err := feed.VerifyDir(dir, feed.Options{PinnedRoot: i.pinnedRoot, MinKeySetVersion: state.KeySetVersion,
-		AppliedSequence: state.AppliedSequence, Now: i.now()})
+	v, keySetVersion, err := i.verify(dir, state)
 	if errors.Is(err, feed.ErrNotNewer) {
-		return &Result{Sequence: state.AppliedSequence}, nil
+		return &Result{Stream: i.stream, Sequence: state.AppliedSequence}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("program feed refused: %w", err)
@@ -99,7 +147,7 @@ func (i *Importer) Import(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("program feed refused: %w", err)
 	}
-	apply := bp.FeedApply{State: bp.FeedState{AppliedSequence: v.Latest.Sequence, KeySetVersion: v.KeySet.Version},
+	apply := bp.FeedApply{Stream: i.stream, State: bp.FeedState{AppliedSequence: v.Latest.Sequence, KeySetVersion: keySetVersion},
 		Snapshot: !v.IsDelta(), Programs: programs}
 	for _, c := range feedChanges {
 		if c.Kind == bp.FeedChangeDropped {
@@ -110,9 +158,9 @@ func (i *Importer) Import(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{Sequence: v.Latest.Sequence, Delta: v.IsDelta(), Programs: len(programs), Changes: len(changes)}
+	res := &Result{Stream: i.stream, Sequence: v.Latest.Sequence, Delta: v.IsDelta(), Programs: len(programs), Changes: len(changes)}
 	res.Subscribers = i.Reconcile(ctx)
-	i.log.Info("program feed imported", "sequence", res.Sequence, "programs", res.Programs, "changes", res.Changes)
+	i.log.Info("program feed imported", "stream", i.stream, "sequence", res.Sequence, "programs", res.Programs, "changes", res.Changes)
 	return res, nil
 }
 
