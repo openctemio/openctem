@@ -153,6 +153,12 @@ jobs:
       - name: Asset Types Drift
         run: GOWORK=off go run ./cmd/gen-asset-types -check
 
+      # The module registry (RFC-064): configs/modules.yaml generates the Go
+      # catalog, the web constants and the modules rows (newest registry
+      # migration). Fails when any of them drifted from the YAML.
+      - name: Module Registry Drift
+        run: GOWORK=off go run ./cmd/gen-modules -check
+
       # Sensor protocol v3 (RFC-059): buf lint, buf breaking against the
       # base branch, and the committed Go code matches the .proto.
       - name: Sensor Protocol v3 (buf lint, breaking, generated code)
