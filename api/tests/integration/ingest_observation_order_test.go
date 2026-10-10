@@ -21,7 +21,7 @@ import (
 
 func TestIngest_ObservationOrder(t *testing.T) {
 	r := newV2RigWith(t, ingest.DefaultBlindingGuard(), func(svc *ingest.Service, db *postgres.DB) {
-		svc.SetPortReconciler(postgres.NewEASMPortRepository(db))
+		wireSetReconciliation(svc, db)
 	})
 	tn := r.newTenant("naabu", "httpx")
 	ctx := context.Background()

@@ -163,11 +163,29 @@ func (r *AssetChangeEventRepository) DeleteBefore(ctx context.Context, cutoff ti
 			break
 		}
 	}
+	// Set element records a source removed or stopped reporting before the
+	// cutoff go with the events that could mention them.
+	for i := 0; i < changeRetentionMaxBatches; i++ {
+		res, err := r.db.ExecContext(ctx, `
+			DELETE FROM asset_attribute_set_elements
+			 WHERE ctid IN (
+			       SELECT ctid FROM asset_attribute_set_elements
+			        WHERE COALESCE(removed_at, last_seen) < $1
+			        LIMIT $2)`, cutoff.UTC(), changeRetentionBatch)
+		if err != nil {
+			return total, fmt.Errorf("asset set element retention: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < changeRetentionBatch {
+			break
+		}
+	}
 	return total, nil
 }
 
 // AssetsWithAttributeSources returns up to limit ids of the tenant's assets
-// that have a recorded source, after the id after (keyset), for bulk
+// that have a recorded source (of a value or a set element), after the id after (keyset), for bulk
 // re-resolution.
 func (r *AssetChangeEventRepository) AssetsWithAttributeSources(ctx context.Context, tenantID shared.ID, after *shared.ID, limit int) ([]shared.ID, error) {
 	var cursor any // nil: from the start
@@ -175,8 +193,13 @@ func (r *AssetChangeEventRepository) AssetsWithAttributeSources(ctx context.Cont
 		cursor = after.String()
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT asset_id FROM asset_attribute_sources
-		 WHERE tenant_id = $1 AND ($2::uuid IS NULL OR asset_id > $2::uuid)
+		SELECT asset_id FROM (
+		       SELECT asset_id FROM asset_attribute_sources
+		        WHERE tenant_id = $1 AND ($2::uuid IS NULL OR asset_id > $2::uuid)
+		       UNION
+		       SELECT asset_id FROM asset_attribute_set_elements
+		        WHERE tenant_id = $1 AND ($2::uuid IS NULL OR asset_id > $2::uuid)
+		       ) s
 		 ORDER BY asset_id
 		 LIMIT $3`, tenantID.String(), cursor, limit)
 	if err != nil {
@@ -200,7 +223,7 @@ func (r *AssetChangeEventRepository) AssetsWithAttributeSources(ctx context.Cont
 
 // TenantsWithAttributeSources lists the tenants that have a recorded source.
 func (r *AssetChangeEventRepository) TenantsWithAttributeSources(ctx context.Context) ([]shared.ID, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT tenant_id FROM asset_attribute_sources`)
+	rows, err := r.db.QueryContext(ctx, `SELECT tenant_id FROM asset_attribute_sources UNION SELECT tenant_id FROM asset_attribute_set_elements`)
 	if err != nil {
 		return nil, fmt.Errorf("tenants with attribute sources: %w", err)
 	}
