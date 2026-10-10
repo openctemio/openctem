@@ -79,6 +79,10 @@ func (r *BountyProgramRepository) AssignProgramAssets(ctx context.Context, tenan
 		return 0, 0, fmt.Errorf("unassign program assets: %w", err)
 	}
 	removed, _ = res.RowsAffected()
+	// Program asset provenance and the derived system tags (RFC-065 §16.5).
+	if err := syncProgramAssetLinks(ctx, tx, tenantID.String(), programID.String()); err != nil {
+		return 0, 0, err
+	}
 	return added, removed, tx.Commit()
 }
 

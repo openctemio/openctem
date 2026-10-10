@@ -325,6 +325,13 @@ type CatalogRepository interface {
 	StaleSubscriptions(ctx context.Context, limit int) ([]ProgramRef, error)
 }
 
+// AssetFlags are the fields of an asset derived from its program links
+// (RFC-065 §16.5).
+type AssetFlags struct {
+	SystemTags  []string
+	ProgramOnly bool
+}
+
 // LocalBundleSetting is the platform administrator's switch for the local
 // bundle source (off by default).
 type LocalBundleSetting struct {

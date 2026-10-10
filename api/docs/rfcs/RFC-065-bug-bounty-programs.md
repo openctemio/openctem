@@ -544,6 +544,17 @@ covers the target.
   scores, SLA and CTEM metrics by default (a toggle includes them).
 - The inventory gets a "Bug bounty" filter and platform/program facets, and a
   "Program target" badge with the program and its attestation state.
+- Implementation: migration `001792` (`asset_program_links`,
+  `assets.system_tags`, `assets.program_only`); the program assignment pass
+  keeps the links of every program (entries active or not, minus its
+  exclusions; none for an ended program) and derives the tags and
+  program-only in the same transaction. Program-only = linked, added after
+  the earliest linked program was created, and no active own entry
+  (ownership, self-attestation, letter) covers it. Dashboard queries add the
+  exclusion unless the request carries `include_program_assets=true`;
+  asset lists take `program_assets=only|exclude`; tag filters match system
+  tags. Assets of followed public programs arrive through the collector
+  ingest (§16.8).
 
 ### 16.6 Implementation notes (feed importer)
 
