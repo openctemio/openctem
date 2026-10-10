@@ -14,8 +14,10 @@ export interface ClassifiedTarget {
   /** The form sent to the API (lower-case host, no trailing dot). */
   value: string
   kind: TargetKind
-  /** Why an invalid line is invalid. */
+  /** Why an invalid line is invalid (English; the UI shows `reasonKey`). */
   reason?: string
+  /** i18n key of the reason. */
+  reasonKey?: string
 }
 
 export const TARGET_KIND_LABELS: Record<TargetKind, string> = {
@@ -28,6 +30,18 @@ export const TARGET_KIND_LABELS: Record<TargetKind, string> = {
   'host:port': 'Host:port',
   invalid: 'Invalid',
 }
+
+const REASONS = {
+  empty: 'Empty line',
+  urlChars: 'Contains characters a URL cannot have',
+  noHost: 'No host',
+  badUrl: 'Not a valid URL',
+  targetChars: 'Contains characters a target cannot have',
+  wildcardForm: 'A wildcard is *. followed by a domain',
+  badCidr: 'Not a valid CIDR range',
+  badHostPort: 'Not a valid host:port',
+  unknown: 'Not a domain, IP address, CIDR range, URL or host:port',
+} as const
 
 const LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
 const DOMAIN = new RegExp(`^(?:${LABEL}\\.)+[a-z]{2,63}$`)
@@ -48,33 +62,34 @@ function isIPv6(s: string): boolean {
 /** The format of one typed line. */
 export function classifyTarget(raw: string): ClassifiedTarget {
   const input = raw.trim()
-  const invalid = (reason: string): ClassifiedTarget => ({
+  const invalid = (id: keyof typeof REASONS): ClassifiedTarget => ({
     input,
     value: input,
     kind: 'invalid',
-    reason,
+    reason: REASONS[id],
+    reasonKey: `scans.targetReason.${id}`,
   })
-  if (!input) return invalid('Empty line')
+  if (!input) return invalid('empty')
 
   if (/^https?:\/\//i.test(input)) {
-    if (/[\s<>"'`\\]/.test(input)) return invalid('Contains characters a URL cannot have')
+    if (/[\s<>"'`\\]/.test(input)) return invalid('urlChars')
     try {
       const url = new URL(input)
-      if (!url.hostname) return invalid('No host')
+      if (!url.hostname) return invalid('noHost')
       return { input, value: input, kind: 'url' }
     } catch {
-      return invalid('Not a valid URL')
+      return invalid('badUrl')
     }
   }
   if (UNSAFE.test(input) || input.includes('[') || input.includes(']')) {
-    return invalid('Contains characters a target cannot have')
+    return invalid('targetChars')
   }
 
   const lower = input.toLowerCase().replace(/\.$/, '')
   if (lower.startsWith('*.')) {
     return DOMAIN.test(lower.slice(2))
       ? { input, value: lower, kind: 'wildcard' }
-      : invalid('A wildcard is *. followed by a domain')
+      : invalid('wildcardForm')
   }
   if (IPV4.test(lower)) return { input, value: lower, kind: 'ipv4' }
   if (lower.includes('/')) {
@@ -84,7 +99,7 @@ export function classifyTarget(raw: string): ClassifiedTarget {
       if (IPV4.test(addr) && n <= 32) return { input, value: lower, kind: 'cidr' }
       if (isIPv6(addr) && n <= 128) return { input, value: lower, kind: 'cidr' }
     }
-    return invalid('Not a valid CIDR range')
+    return invalid('badCidr')
   }
   if (isIPv6(lower)) return { input, value: lower, kind: 'ipv6' }
   const hp = /^(.+):(\d{1,5})$/.exec(lower)
@@ -98,10 +113,10 @@ export function classifyTarget(raw: string): ClassifiedTarget {
     ) {
       return { input, value: lower, kind: 'host:port' }
     }
-    return invalid('Not a valid host:port')
+    return invalid('badHostPort')
   }
   if (DOMAIN.test(lower)) return { input, value: lower, kind: 'domain' }
-  return invalid('Not a domain, IP address, CIDR range, URL or host:port')
+  return invalid('unknown')
 }
 
 export interface PastedTargets {

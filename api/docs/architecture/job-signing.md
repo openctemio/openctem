@@ -70,6 +70,7 @@ Signer (`openctem-signer serve`):
 | `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
 | `SIGNER_LEDGER` | scope ledger mode: `enforce`, `audit` or `off` ([Scope ledger](#scope-ledger)) | the recorded default: `enforce` on a signer that had never signed, `audit` on one upgraded to the ledger |
 | `SIGNER_LEDGER_MIN_APPROVALS` | the operator's floor under every widening's approval count (0, 1 or 2) | 0 |
+| `SIGNER_LEDGER_T2_MIN_APPROVALS` | the operator's floor for a widening that puts an intrusive (t2) entry into the ledger (0, 1 or 2; RFC-073 §7) | 0 |
 
 API:
 
@@ -491,7 +492,8 @@ narrows, and identical puts are a no-op.
 A widening needs, counted by the signer: distinct approvers (lower-case
 UUIDs, `approved_at` not in the future), **not the requester**, at least
 `max(policy_required_approvals, SIGNER_LEDGER_MIN_APPROVALS)`, and at least
-one when an entry is t2 (RFC-054 S3: never zero for intrusive). A
+`SIGNER_LEDGER_T2_MIN_APPROVALS` when an entry is t2 (the organization's
+policy is 0 in scan approval Off and On, RFC-073 §7). A
 requester's plain approval never counts; a `self_approved` approval (RFC-054
 §12 A2, a sole owner with a fresh second factor) counts once and only for
 the requester. A t2 entry without an expiry is malformed. The approval count

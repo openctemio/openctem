@@ -9,6 +9,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // DataScopeRepository answers the Layer 2 data-scope questions over
@@ -42,7 +43,8 @@ func (r *DataScopeRepository) HasFullDataRole(ctx context.Context, tenantID, use
 	return full, nil
 }
 
-// AssetIDsInScope returns the subset of assetIDs the user has a scope row for.
+// AssetIDsInScope returns the subset of assetIDs the user has a scope row
+// for and that are not hidden from them (private program assets).
 func (r *DataScopeRepository) AssetIDsInScope(ctx context.Context, tenantID, userID shared.ID, assetIDs []shared.ID) ([]shared.ID, error) {
 	if len(assetIDs) == 0 {
 		return nil, nil
@@ -53,7 +55,8 @@ func (r *DataScopeRepository) AssetIDsInScope(ctx context.Context, tenantID, use
 	}
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT asset_id FROM user_accessible_assets
-		 WHERE user_id = $1 AND tenant_id = $2 AND asset_id = ANY($3::uuid[])`,
+		 WHERE user_id = $1 AND tenant_id = $2 AND asset_id = ANY($3::uuid[])
+		   AND `+notHiddenCond("user_accessible_assets.asset_id", 1, 2),
 		userID.String(), tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("list in-scope assets: %w", err)
@@ -84,7 +87,8 @@ func (r *DataScopeRepository) FindingIDsInScope(ctx context.Context, tenantID, u
 		`SELECT f.id FROM findings f
 		 WHERE f.tenant_id = $2 AND f.id = ANY($3::uuid[])
 		   AND f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa
-		                      WHERE uaa.user_id = $1 AND uaa.tenant_id = $2)`,
+		                      WHERE uaa.user_id = $1 AND uaa.tenant_id = $2)
+		   AND `+notHiddenCond("f.asset_id", 1, 2),
 		userID.String(), tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("list in-scope findings: %w", err)
@@ -182,9 +186,8 @@ func pairInScopeCond(sourceExpr, targetExpr string, scope *shared.DataScope, arg
 // dataScopeCondAt is dataScopeCond for builders that number their own
 // placeholders: the predicate uses $first and $first+1, and the two
 // arguments are returned for the caller to append. scope must not be nil.
+// A restricted scope admits the user's scope rows; both kinds leave out
+// the assets hidden from the user (private program assets).
 func dataScopeCondAt(assetExpr string, scope *shared.DataScope, first int) (string, []any) {
-	return fmt.Sprintf(
-			"%s IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $%d AND uaa.tenant_id = $%d)",
-			assetExpr, first, first+1),
-		[]any{scope.UserID.String(), scope.TenantID.String()}
+	return filterspec.ScopeSQL(assetExpr, scope, first)
 }

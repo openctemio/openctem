@@ -54,7 +54,9 @@ type TeamInvitationJobPayload struct {
 type TenantService struct {
 	repo tenantdom.Repository
 	// stepUp requires the acting owner's recent re-authentication (SetStepUpGate).
-	stepUp           shared.RecentAuthGate
+	stepUp shared.RecentAuthGate
+	// assetPolicy re-resolves assets after a source precedence change.
+	assetPolicy      AssetPolicyListener
 	auditService     *auditapp.AuditService
 	emailEnqueuer    EmailJobEnqueuer
 	userInfoProvider UserInfoProvider // For fetching user names

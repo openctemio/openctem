@@ -242,3 +242,21 @@ func nullStr(s string) sql.NullString {
 	s = strings.TrimSpace(s)
 	return sql.NullString{String: s, Valid: s != ""}
 }
+
+// CVEIDs returns the ids of every stored CVE record.
+func (r *CVECorpusRepository) CVEIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT cve_id FROM cve_records ORDER BY cve_id`)
+	if err != nil {
+		return nil, fmt.Errorf("cve ids: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("cve ids: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

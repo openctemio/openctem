@@ -9,6 +9,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { ChevronDown, Cloud, Server, Sparkles } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -44,6 +45,7 @@ const PREFERENCE_ICONS: Record<SensorPreference, React.ReactNode> = {
 }
 
 export function OptionsStep({ data, onChange, showProfile = false }: OptionsStepProps) {
+  const { t } = useTranslation()
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const { offered: platformOffered } = usePlatformScanning()
   const canReadProfiles = useHasPermission(Permission.ScanProfilesRead)
@@ -61,7 +63,7 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
   return (
     <div className="space-y-6 p-4">
       <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">Where it runs</legend>
+        <legend className="text-sm font-medium">{t('scans.options.whereRuns')}</legend>
         <RadioGroup
           value={data.sensorPreference}
           onValueChange={(value: SensorPreference) => onChange({ sensorPreference: value })}
@@ -80,23 +82,21 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
               <span className="min-w-0 space-y-0.5">
                 <span className="flex items-center gap-1.5 text-sm font-medium">
                   {PREFERENCE_ICONS[p]}
-                  {SENSOR_PREFERENCE_CONFIG[p].label}
+                  {t(`scans.sensorPref.${p}.label`, SENSOR_PREFERENCE_CONFIG[p].label)}
                 </span>
                 <span className="text-muted-foreground block text-xs">
-                  {SENSOR_PREFERENCE_CONFIG[p].description}
+                  {t(`scans.sensorPref.${p}.description`, SENSOR_PREFERENCE_CONFIG[p].description)}
                 </span>
               </span>
             </label>
           ))}
         </RadioGroup>
-        <p className="text-muted-foreground text-xs">
-          The scan zone each target goes to is shown, and can be pinned, on Review.
-        </p>
+        <p className="text-muted-foreground text-xs">{t('scans.options.zoneNote')}</p>
       </fieldset>
 
       {showProfile && canReadProfiles && profiles.length > 0 && (
         <div className="space-y-2">
-          <Label htmlFor="scan-profile">Scan profile</Label>
+          <Label htmlFor="scan-profile">{t('scans.options.profile')}</Label>
           <Select
             value={data.profileId ?? DEFAULT_PROFILE}
             onValueChange={(v) => onChange({ profileId: v === DEFAULT_PROFILE ? undefined : v })}
@@ -105,19 +105,19 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={DEFAULT_PROFILE}>Organization default</SelectItem>
+              <SelectItem value={DEFAULT_PROFILE}>{t('scans.options.orgDefault')}</SelectItem>
               {profiles.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name}
-                  {p.is_default ? ' (default)' : ''}
+                  {p.is_default ? t('scans.options.defaultSuffix') : ''}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <p className="text-muted-foreground text-xs">
             {chosenProfile
-              ? `${chosenProfile.intensity} intensity${chosenProfile.description ? ` · ${chosenProfile.description}` : ''}`
-              : 'Tool settings, intensity and quality gate come from the profile.'}
+              ? `${t('scans.options.profileIntensity', undefined, { intensity: chosenProfile.intensity })}${chosenProfile.description ? ` · ${chosenProfile.description}` : ''}`
+              : t('scans.options.profileHelp')}
           </p>
         </div>
       )}
@@ -128,38 +128,41 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
             className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-180')}
             aria-hidden
           />
-          Advanced: job size, timeout and retries
+          {t('scans.options.advanced')}
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-4 pt-3">
           <div className="space-y-2">
-            <Label htmlFor="max-concurrent">Targets per job</Label>
+            <Label htmlFor="max-concurrent">{t('scans.options.perJob')}</Label>
             <Select
               value={data.maxConcurrent.toString()}
               onValueChange={(value) => onChange({ maxConcurrent: parseInt(value, 10) })}
             >
               <SelectTrigger id="max-concurrent" className="w-full">
-                <SelectValue placeholder="Select targets per job" />
+                <SelectValue placeholder={t('scans.options.perJobPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 {Array.from(new Set([1, 5, 10, 15, 20, 25, 50, data.maxConcurrent]))
                   .sort((a, b) => a - b)
                   .map((n) => (
                     <SelectItem key={n} value={n.toString()}>
-                      {n} {n === 1 ? 'target' : 'targets'}
+                      {t(
+                        n === 1 ? 'scans.options.targetsOne' : 'scans.options.targetsMany',
+                        undefined,
+                        {
+                          count: n,
+                        }
+                      )}
                     </SelectItem>
                   ))}
               </SelectContent>
             </Select>
-            <p className="text-muted-foreground text-xs">
-              How many targets one sensor job scans. Smaller jobs spread a scan over more sensors;
-              larger ones mean fewer jobs.
-            </p>
+            <p className="text-muted-foreground text-xs">{t('scans.options.perJobHelp')}</p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="timeout-seconds" className="text-xs">
-                Timeout (seconds)
+                {t('scans.options.timeout')}
               </Label>
               <Input
                 id="timeout-seconds"
@@ -176,11 +179,11 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
                   })
                 }
               />
-              <p className="text-muted-foreground text-[11px]">30s – 24h</p>
+              <p className="text-muted-foreground text-[11px]">{t('scans.options.timeoutRange')}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="max-retries" className="text-xs">
-                Max retries
+                {t('scans.options.maxRetries')}
               </Label>
               <Input
                 id="max-retries"
@@ -194,11 +197,11 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
                   })
                 }
               />
-              <p className="text-muted-foreground text-[11px]">0 = no retries</p>
+              <p className="text-muted-foreground text-[11px]">{t('scans.options.noRetries')}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="retry-backoff" className="text-xs">
-                Retry backoff (s)
+                {t('scans.options.backoff')}
               </Label>
               <Input
                 id="retry-backoff"
@@ -216,7 +219,7 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
                 }
                 disabled={data.maxRetries === 0}
               />
-              <p className="text-muted-foreground text-[11px]">Initial wait between retries</p>
+              <p className="text-muted-foreground text-[11px]">{t('scans.options.backoffHelp')}</p>
             </div>
           </div>
         </CollapsibleContent>

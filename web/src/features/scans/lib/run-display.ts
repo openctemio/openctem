@@ -1,5 +1,6 @@
 import type { ScanRun } from '@/lib/api/scan-types'
 import { scanSuccessRate } from './format'
+import { enTranslate, type Translate } from './translate'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -18,27 +19,27 @@ export function isRunInProgress(run: { status: string }): boolean {
  * (a deleted user) reads "Unknown user".
  */
 /** What started a run that no person started, in words. */
-const TRIGGER_TYPE_LABELS: Record<string, string> = {
-  automation: 'Automation',
-  schedule: 'Schedule',
-  api: 'API',
-  webhook: 'Webhook',
-  asset_discovery: 'Asset discovery',
-  system: 'Platform',
-}
+const TRIGGER_TYPES = new Set([
+  'automation',
+  'schedule',
+  'api',
+  'webhook',
+  'asset_discovery',
+  'system',
+])
 
 export function runTriggeredByLabel(
-  run: Pick<ScanRun, 'triggered_by' | 'triggered_by_name' | 'trigger'>
+  run: Pick<ScanRun, 'triggered_by' | 'triggered_by_name' | 'trigger'>,
+  t: Translate = enTranslate
 ): string | null {
-  const t = run.trigger
-  if (t) {
-    if (t.type === 'user') return t.label || 'Unknown user'
-    const label = TRIGGER_TYPE_LABELS[t.type]
-    if (label) return label
+  const trigger = run.trigger
+  if (trigger) {
+    if (trigger.type === 'user') return trigger.label || t('scans.trigger.unknownUser')
+    if (TRIGGER_TYPES.has(trigger.type)) return t(`scans.trigger.${trigger.type}`)
   }
   if (run.triggered_by_name) return run.triggered_by_name
   if (!run.triggered_by) return null
-  return UUID.test(run.triggered_by) ? 'Unknown user' : run.triggered_by
+  return UUID.test(run.triggered_by) ? t('scans.trigger.unknownUser') : run.triggered_by
 }
 
 /**
@@ -91,7 +92,10 @@ export interface TaskCounts {
  * Null when the API sent no task summary (a run that dispatched nothing, or
  * an API without it), so the caller can fall back to steps.
  */
-export function runTaskProgress(summary?: TaskCounts | null): {
+export function runTaskProgress(
+  summary?: TaskCounts | null,
+  t: Translate = enTranslate
+): {
   label: string
   details: { key: 'running' | 'queued' | 'failed' | 'canceled'; count: number }[]
 } | null {
@@ -99,7 +103,13 @@ export function runTaskProgress(summary?: TaskCounts | null): {
   const details = (['running', 'queued', 'failed', 'canceled'] as const)
     .map((key) => ({ key, count: summary[key] ?? 0 }))
     .filter((d) => d.count > 0)
-  return { label: `${summary.completed ?? 0}/${summary.total} tasks`, details }
+  return {
+    label: t('scans.run.tasksProgress', undefined, {
+      done: summary.completed ?? 0,
+      total: summary.total,
+    }),
+    details,
+  }
 }
 
 /**
@@ -151,25 +161,18 @@ export const IDLE_RUN_LIST_REFRESH_MS = 120_000
 
 /** The run kinds a person filters by (system runs are housekeeping: hidden). */
 export const RUN_KIND_FILTERS = [
-  { value: 'all', label: 'All kinds' },
-  { value: 'scan', label: 'Scans' },
-  { value: 'quick', label: 'Quick scans' },
-  { value: 'retest', label: 'Retests' },
+  { value: 'all' },
+  { value: 'scan' },
+  { value: 'quick' },
+  { value: 'retest' },
 ] as const
 
-const RUN_KIND_LABELS: Record<string, string> = {
-  scan: 'Scan',
-  quick: 'Quick scan',
-  retest: 'Retest',
-  validation: 'Validation',
-  test: 'Test',
-  connector: 'Connector',
-  system: 'System',
-}
+const RUN_KINDS = new Set(['scan', 'quick', 'retest', 'validation', 'test', 'connector', 'system'])
 
 /** A run kind in words; a run from before kinds existed is a scan. */
-export function runKindLabel(kind?: string | null): string {
-  return RUN_KIND_LABELS[kind || 'scan'] ?? 'Run'
+export function runKindLabel(kind?: string | null, t: Translate = enTranslate): string {
+  const k = kind || 'scan'
+  return RUN_KINDS.has(k) ? t(`scans.runKind.${k}`) : t('scans.runKind.run')
 }
 
 /** The finding a run is about (a retest), when it names one. */

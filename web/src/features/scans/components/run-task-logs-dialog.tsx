@@ -1,6 +1,8 @@
 'use client'
 
 import useSWR from 'swr'
+import { useTranslation } from '@/context/i18n-provider'
+import { enTranslate, type Translate } from '../lib/translate'
 import { FileText, Loader2 } from 'lucide-react'
 
 import {
@@ -39,26 +41,29 @@ const REFUSED_PREFIX = /^refused by\b/i
  * before any tool started, or that failed before it logged anything, says
  * why (its error message) instead of the generic "no logs".
  */
-export function logsEmptyState(task?: Pick<RunTask, 'status' | 'error_message'> | null): {
+export function logsEmptyState(
+  task?: Pick<RunTask, 'status' | 'error_message'> | null,
+  t: Translate = enTranslate
+): {
   title: string
   description: string
 } {
   const msg = task?.error_message?.trim()
   if (msg && REFUSED_PREFIX.test(msg)) {
     return {
-      title: 'This task was refused before it ran',
+      title: t('scans.logs.refused'),
       description: toDisplayText(msg, 1024),
     }
   }
   if (msg && task?.status === 'failed') {
     return {
-      title: 'This task failed before it sent any logs',
+      title: t('scans.logs.failedEarly'),
       description: toDisplayText(msg, 1024),
     }
   }
   return {
-    title: 'No logs from this task',
-    description: 'The sensor sent no log lines, or they are older than 14 days.',
+    title: t('scans.logs.none'),
+    description: t('scans.logs.noneHint'),
   }
 }
 
@@ -70,6 +75,7 @@ function lineTime(ts?: string): string {
 }
 
 function LogLineRow({ line }: { line: RunTaskLogLine }) {
+  const { t } = useTranslation()
   const fields = line.fields ? Object.entries(line.fields) : []
   return (
     <li className="border-b px-3 py-2 last:border-b-0" data-level={line.level}>
@@ -77,7 +83,10 @@ function LogLineRow({ line }: { line: RunTaskLogLine }) {
         <time dateTime={line.ts} title={line.ts} className="tabular-nums">
           {lineTime(line.ts)}
         </time>
-        <TonePill tone={logLevelTone(line.level)} label={line.level ?? 'info'} />
+        <TonePill
+          tone={logLevelTone(line.level)}
+          label={t(`scans.logs.level.${line.level ?? 'info'}`, line.level)}
+        />
         {line.source && <span className="font-mono">{toDisplayText(line.source, 64)}</span>}
       </div>
       {/* Sensor output: React text in a <pre>, never markup; hidden characters shown as escapes. */}
@@ -90,7 +99,9 @@ function LogLineRow({ line }: { line: RunTaskLogLine }) {
       {fields.length > 0 && (
         <details className="mt-1 text-xs">
           <summary className="cursor-pointer text-muted-foreground">
-            {fields.length} field{fields.length === 1 ? '' : 's'}
+            {fields.length === 1
+              ? t('scans.logs.fieldOne')
+              : t('scans.logs.fieldMany', undefined, { count: fields.length })}
           </summary>
           <dl className="mt-1 grid grid-cols-[minmax(0,max-content)_1fr] gap-x-3 gap-y-0.5 font-mono">
             {fields.map(([k, v]) => (
@@ -129,22 +140,25 @@ export function RunTaskLogsDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation()
   const { data, error, isLoading } = useSWR<RunTaskLogs>(
     open ? scanRunEndpoints.taskLogs(runId, taskId) : null,
     (url: string) => get<RunTaskLogs>(url),
     { revalidateOnFocus: false }
   )
   const lines = data?.lines ?? []
-  const empty = logsEmptyState(task)
+  const empty = logsEmptyState(task, t)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl">
         <DialogHeader>
-          <DialogTitle>Task logs{tool ? `: ${toDisplayText(tool, 64)}` : ''}</DialogTitle>
-          <DialogDescription>
-            What the sensor logged while it ran this task. Kept 14 days.
-          </DialogDescription>
+          <DialogTitle>
+            {tool
+              ? t('scans.logs.titleTool', undefined, { tool: toDisplayText(tool, 64) })
+              : t('scans.logs.title')}
+          </DialogTitle>
+          <DialogDescription>{t('scans.logs.description')}</DialogDescription>
         </DialogHeader>
         <DialogBody className="p-0">
           {isLoading && (
@@ -153,11 +167,11 @@ export function RunTaskLogsDialog({
               aria-busy="true"
             >
               <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
-              Loading logs…
+              {t('scans.logs.loading')}
             </div>
           )}
           {error && !isLoading && (
-            <p className="p-6 text-sm text-destructive">Could not load the logs of this task.</p>
+            <p className="p-6 text-sm text-destructive">{t('scans.logs.loadFailed')}</p>
           )}
           {!isLoading && !error && lines.length === 0 && (
             <EmptyState
@@ -168,7 +182,7 @@ export function RunTaskLogsDialog({
             />
           )}
           {lines.length > 0 && (
-            <ol aria-label="Log lines" className="text-sm">
+            <ol aria-label={t('scans.logs.lines')} className="text-sm">
               {lines.map((l, i) => (
                 <LogLineRow key={i} line={l} />
               ))}
@@ -176,8 +190,7 @@ export function RunTaskLogsDialog({
           )}
           {data?.truncated && (
             <p className="border-t p-3 text-xs text-muted-foreground" role="note">
-              Some lines are not shown: the task reached its log limit, or there are more than 5,000
-              lines.
+              {t('scans.logs.truncated')}
             </p>
           )}
         </DialogBody>

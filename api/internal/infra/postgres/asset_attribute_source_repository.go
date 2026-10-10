@@ -253,7 +253,7 @@ func changeReason(in asset.AttributeApply, w asset.AttributeObservation, fresh, 
 		return asset.ChangeReasonNewerObservation
 	case released:
 		return asset.ChangeReasonLockReleased
-	case prev != nil && !in.Policy.Trusts(prev.Attribute, prev.Kind):
+	case prev != nil && !in.Policy.Trusts(prev.Attribute, prev.Kind, prev.Name):
 		return asset.ChangeReasonPolicyChange
 	case prev != nil && in.Policy.Stale(*prev, now):
 		return asset.ChangeReasonTTLExpiry
@@ -572,4 +572,87 @@ func (r *AssetAttributeSourceRepository) ListForAsset(ctx context.Context, tenan
 		return nil, err
 	}
 	return m[assetID], nil
+}
+
+// SourceSummaries lists the sources that reported an attribute of the
+// tenant's assets (people excluded), with when each last reported and on
+// how many assets, newest first.
+func (r *AssetAttributeSourceRepository) SourceSummaries(ctx context.Context, tenantID shared.ID) ([]asset.SourceSummary, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT source_kind, source_name, max(ingested_at), count(DISTINCT asset_id)
+		  FROM asset_attribute_sources
+		 WHERE tenant_id = $1 AND source_kind <> 'manual'
+		 GROUP BY source_kind, source_name
+		 ORDER BY max(ingested_at) DESC
+		 LIMIT $2`, tenantID.String(), asset.MaxSourceSummaries)
+	if err != nil {
+		return nil, fmt.Errorf("source summaries: %w", err)
+	}
+	defer rows.Close()
+	var out []asset.SourceSummary
+	for rows.Next() {
+		var s asset.SourceSummary
+		var kind string
+		if err := rows.Scan(&kind, &s.Name, &s.LastSeen, &s.Assets); err != nil {
+			return nil, fmt.Errorf("source summaries: %w", err)
+		}
+		s.Kind = asset.SourceKind(kind)
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// Snapshot returns, for the tenant's assets among ids, the asset (name and
+// current tracked values) and every recorded observation. Read only.
+func (r *AssetAttributeSourceRepository) Snapshot(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]asset.AttributeSnapshot, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	strs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		strs = append(strs, id.String())
+	}
+	out, err := r.snapshotAssets(ctx, tenantID, strs)
+	if err != nil {
+		return nil, err
+	}
+	obs, err := loadAttributeObservations(ctx, r.db, tenantID, strs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Observations = obs[out[i].AssetID]
+	}
+	return out, nil
+}
+
+func (r *AssetAttributeSourceRepository) snapshotAssets(ctx context.Context, tenantID shared.ID, ids []string) ([]asset.AttributeSnapshot, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, name, criticality, COALESCE(owner_ref, ''), exposure, COALESCE(data_classification, '')
+		  FROM assets
+		 WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
+		 ORDER BY id`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("snapshot assets: %w", err)
+	}
+	defer rows.Close()
+	var out []asset.AttributeSnapshot
+	for rows.Next() {
+		var id, name, crit, owner, exposure, dc string
+		if err := rows.Scan(&id, &name, &crit, &owner, &exposure, &dc); err != nil {
+			return nil, fmt.Errorf("snapshot assets: %w", err)
+		}
+		aid, err := shared.IDFromString(id)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot assets: %w", err)
+		}
+		out = append(out, asset.AttributeSnapshot{AssetID: aid, Name: name, Current: map[asset.TrackedAttribute]string{
+			asset.AttrCriticality: crit, asset.AttrOwnerRef: owner,
+			asset.AttrExposure: exposure, asset.AttrDataClassification: dc,
+		}})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("snapshot assets: %w", err)
+	}
+	return out, nil
 }

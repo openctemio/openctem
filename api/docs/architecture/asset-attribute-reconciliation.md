@@ -9,16 +9,16 @@ seen. A person's change is a lock.
 
 ## Tracked attributes
 
-| Attribute | Column | Default precedence (after a person's lock) |
-|---|---|---|
-| `criticality` | `assets.criticality` | integration, import |
-| `owner_ref` | `assets.owner_ref` | integration, import |
-| `data_classification` | `assets.data_classification` | integration, import |
-| `exposure` | `assets.exposure` | scan, integration, import |
+| Attribute | Column | Class | Default precedence (after a person's lock) |
+|---|---|---|---|
+| `criticality` | `assets.criticality` | ownership | integration, import |
+| `owner_ref` | `assets.owner_ref` | ownership | integration, import |
+| `data_classification` | `assets.data_classification` | ownership | integration, import |
+| `exposure` | `assets.exposure` | network | scan, integration, import, feed |
 
-A kind left out of a list is **untrusted** for that attribute: by default a
-scanner never decides criticality, owner or classification. Default TTLs:
-integration 30 days, import 90 days, scan 30 days, a lock never.
+A source without a trusted rule is **untrusted** for that class: by default
+a scanner or feed never decides criticality, owner or classification.
+Default TTLs: 30 days, import 90 days, a lock never (see Precedence).
 
 ## Source kind
 
@@ -30,6 +30,7 @@ Decided by the route the data came through, never by the report:
 | DefectDojo sync (future cloud / inventory connectors) | `integration` |
 | finding import (a person's file) | `import` |
 | every sensor report, CI run, platform scanner, accepted quarantined report, any other server-side ingest | `scan` |
+| a subscribed feed applied by a server-side importer (program feed, passive data) | `feed` |
 
 Code: `ingest.reportSource` (`internal/app/ingest/attributes.go`); only a
 trusted binding may set `ingest.Options.SourceKind`.
@@ -88,6 +89,32 @@ then records `asset_state_history` (source and "decided by …" reason),
 re-scores criticality/exposure changes and syncs the owner derived from
 `owner_ref`.
 
+## Precedence
+
+Attributes are grouped in classes: `identity`, `network` (exposure),
+`software`, `ownership` (criticality, owner_ref, data_classification),
+`cloud_tags`, `lifecycle`. Each class has a ranked list of source rules or
+inherits the organization's default list. A rule names a kind
+(`integration`, `scan`, `import`, `feed`) or one source (`scan:nmap`), with
+a TTL and a trust flag; an observation takes the rank of the rule naming
+its source, else of its kind's rule; no rule or an untrusted rule: it does
+not decide. A lock always ranks first.
+
+Built-in defaults (`asset.DefaultReconciliationPolicy`): default list
+integration, scan, import, feed; `ownership` integration, import (scan and
+feed listed, not trusted); `network` scan, integration, import, feed. TTL
+30 days, import 90.
+
+A save that demotes a connector (an integration rule loses trust or its
+row, or a source ranks above it that did not before; `DemotesAuthoritative`)
+needs step-up re-authentication. After a save the organization's assets are
+re-resolved in the background in batches of 200 (`AssetPolicyChanged`);
+only values that change get a timeline event (`policy_change`).
+
+`feed` is the kind for passive and published feeds (program feeds, passive
+DNS) that a trusted server-side ingest names (`ingest.Options.SourceKind`),
+with the bundle sequence as `source_run`.
+
 ## Change timeline
 
 `asset_change_events`, partitioned by month on `at` (plus a default
@@ -141,8 +168,14 @@ untrusted for.
 - `GET /api/v1/assets/changes` (`assets:read`): the organization feed, only
   assets in the caller's data scope; adds the `tag` filter.
 - `GET/PUT /api/v1/organization/settings/asset-reconciliation` (owner/admin):
-  `{"precedence": {"criticality": ["integration","import"]}, "ttl_days": {"scan": 30}}`;
-  attributes and kinds left out keep the defaults; `manual` cannot be listed.
+  `{"default": [{"source": "integration", "ttl_days": 30, "trusted": true}, …],
+  "classes": {"ownership": […]}}` (see Precedence); `GET` adds the effective
+  policy, the built-in defaults, the classes with their attributes and the
+  sources seen (kind, name, last seen, assets). A save that demotes a
+  connector needs step-up re-authentication (403 `STEP_UP_REQUIRED`).
+- `POST /api/v1/organization/settings/asset-reconciliation/preview`
+  (owner/admin): the same body (+ `asset_id`); what it would change, writing
+  nothing.
 
 Out-of-scope or another tenant's asset answers 404.
 
