@@ -1,15 +1,18 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	outboxapp "github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -21,6 +24,97 @@ type OutboxHandler struct {
 	configAuditor
 	repo   outbox.OutboxRepository
 	logger *logger.Logger
+
+	// Private program names (RFC-065 §15.4): integration admins who are
+	// neither an owner nor a member of a private program read its events
+	// with the program scrubbed. Nil shows entries unchanged.
+	delivery bp.DeliveryResolver
+	readable ProgramReader
+}
+
+// ProgramReader returns which private programs the caller may read the
+// names of (bountyprogram.Service.ReadablePrograms).
+type ProgramReader interface {
+	ReadablePrograms(ctx context.Context, tenantID, actor shared.ID, ids []shared.ID) (map[shared.ID]bool, error)
+}
+
+// SetProgramScrub wires the private program resolver and reader. Both or
+// neither: an outbox handler without them shows entries unchanged.
+func (h *OutboxHandler) SetProgramScrub(d bp.DeliveryResolver, r ProgramReader) {
+	h.delivery, h.readable = d, r
+}
+
+// scrubPrograms removes, from the title, body and metadata of each entry,
+// the names, handles and tags of private programs linked to its subject
+// that the caller is neither an owner nor a member of. An unknown decision
+// is an error: the caller answers 500 rather than show the entry.
+func (h *OutboxHandler) scrubPrograms(ctx context.Context, tenantID shared.ID, entries []*outbox.Outbox, items []OutboxEntryResponse) error {
+	if h.delivery == nil || h.readable == nil {
+		return nil
+	}
+	actor, _ := shared.IDFromString(middleware.GetUserID(ctx))
+	for i, e := range entries {
+		d, err := h.delivery.Resolve(ctx, tenantID, outboxapp.DeliverySubject(e.AggregateType(), e.AggregateID(), e.Metadata()))
+		if err != nil {
+			return err
+		}
+		if len(d.Programs) == 0 {
+			continue
+		}
+		ids := make([]shared.ID, 0, len(d.Programs))
+		for _, p := range d.Programs {
+			ids = append(ids, p.ID)
+		}
+		allowed, err := h.readable.ReadablePrograms(ctx, tenantID, actor, ids)
+		if err != nil {
+			return err
+		}
+		if len(allowed) == len(ids) {
+			continue
+		}
+		items[i].Title = d.ScrubFor(allowed, items[i].Title)
+		items[i].Body = d.ScrubFor(allowed, items[i].Body)
+		items[i].LastError = d.ScrubFor(allowed, items[i].LastError)
+		if items[i].Metadata != nil {
+			items[i].Metadata, _ = scrubValue(d, allowed, items[i].Metadata).(map[string]any)
+		}
+	}
+	return nil
+}
+
+// scrubValue returns a copy of a decoded JSON value with every string
+// scrubbed (the stored metadata is never modified).
+func scrubValue(d bp.Delivery, allowed map[shared.ID]bool, v any) any {
+	switch t := v.(type) {
+	case string:
+		return d.ScrubFor(allowed, t)
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			out[k] = scrubValue(d, allowed, x)
+		}
+		return out
+	case []map[string]any:
+		out := make([]any, 0, len(t))
+		for _, x := range t {
+			out = append(out, scrubValue(d, allowed, x))
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, x := range t {
+			out = append(out, scrubValue(d, allowed, x))
+		}
+		return out
+	case []string:
+		out := make([]any, 0, len(t))
+		for _, x := range t {
+			out = append(out, d.ScrubFor(allowed, x))
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // NewOutboxHandler creates a new OutboxHandler.
@@ -158,6 +252,11 @@ func (h *OutboxHandler) List(w http.ResponseWriter, r *http.Request) {
 	for _, o := range result.Data {
 		items = append(items, outboxToResponse(o))
 	}
+	if err := h.scrubPrograms(ctx, tenantID, result.Data, items); err != nil {
+		h.logger.Error("failed to scrub outbox entries", "error", err, "tenant_id", tenantIDStr)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(pagination.Result[OutboxEntryResponse]{
@@ -265,8 +364,7 @@ func (h *OutboxHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(outboxToResponse(entry))
+	h.writeEntry(w, r, tenantID, entry)
 }
 
 // Retry godoc
@@ -340,8 +438,7 @@ func (h *OutboxHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("outbox entry reset for retry", "id", id, "tenant_id", tenantIDStr)
 	h.recordChange(r, h.logger, auditdom.ActionNotificationOutboxRetried, auditdom.ResourceTypeNotificationOutbox, id, "",
 		nil, nil, auditdom.SeverityLow, "Notification delivery retried")
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(outboxToResponse(entry))
+	h.writeEntry(w, r, tenantID, entry)
 }
 
 // Delete godoc
@@ -412,4 +509,17 @@ func (h *OutboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	h.recordChange(r, h.logger, auditdom.ActionNotificationOutboxDeleted, auditdom.ResourceTypeNotificationOutbox, id, "",
 		nil, nil, auditdom.SeverityMedium, "Pending notification deleted")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeEntry writes one entry, with private programs the caller may not
+// read scrubbed.
+func (h *OutboxHandler) writeEntry(w http.ResponseWriter, r *http.Request, tenantID shared.ID, entry *outbox.Outbox) {
+	items := []OutboxEntryResponse{outboxToResponse(entry)}
+	if err := h.scrubPrograms(r.Context(), tenantID, []*outbox.Outbox{entry}, items); err != nil {
+		h.logger.Error("failed to scrub outbox entry", "error", err, "id", entry.ID().String())
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(items[0])
 }
