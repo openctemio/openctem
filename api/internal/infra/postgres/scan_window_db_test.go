@@ -13,7 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Scan window storage against a real schema (RFC-067; migration 001660):
+// Scan window storage against a real schema (RFC-067; migration 001760):
 // policies and overrides are tenant-scoped, selector ids must be the
 // tenant's own, the assets behind targets are matched in one query, and the
 // claim's and the closing-window controller's writes apply only to the

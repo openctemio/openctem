@@ -16,5 +16,5 @@
 
 ### Removed: scan freeze windows
 
-- `/api/v1/scan-freeze-windows`, the `override_freeze` trigger field, `commands.freeze_override`, `scan_runs.freeze_override` and `PROGRAM_OUTSIDE_WINDOW` are gone. Migration `001660` copies every freeze window into a blackout policy (active and intrusive tools, its zone as the selector); migration `001661` renames `scans:freeze:override` to `scans:windows:override` in every role and API key.
+- `/api/v1/scan-freeze-windows`, the `override_freeze` trigger field, `commands.freeze_override`, `scan_runs.freeze_override` and `PROGRAM_OUTSIDE_WINDOW` are gone. Migration `001760` copies every freeze window into a blackout policy (active and intrusive tools, its zone as the selector); migration `001761` renames `scans:freeze:override` to `scans:windows:override` in every role and API key.
 - **Upgrade note:** run the migrations; nothing else to do. Settings › Scan freeze windows becomes Settings › Scan windows. A run started with a freeze override before the upgrade loses the override and waits for the window.

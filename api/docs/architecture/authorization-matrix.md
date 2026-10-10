@@ -330,8 +330,8 @@ create's target validator, exclusions, zone routing) in one call.
 | `GET /api/v1/scan-window-overrides` | `scans:read` |
 | `POST /api/v1/scan-window-overrides` · `DELETE /{id}` | `scans:windows:override`; creating also needs a current code from the caller's authenticator app in the body |
 
-> `scans:windows:manage` (migration `001660`) and `scans:windows:override`
-> (migration `001661`, renamed from `scans:freeze:override`) are granted to
+> `scans:windows:manage` (migration `001760`) and `scans:windows:override`
+> (migration `001761`, renamed from `scans:freeze:override`) are granted to
 > owner and admin and may be put on custom roles. Object level: every query
 > carries `tenant_id`; a selector id must be the organization's own (422
 > otherwise, the same answer whether it exists elsewhere or not); an
