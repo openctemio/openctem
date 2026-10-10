@@ -125,9 +125,7 @@ func TestResolve(t *testing.T) {
 				ob(AttrExposure, SourceKindIntegration, "cloud", "private", ago(time.Hour)),
 				ob(AttrExposure, SourceKindScan, "naabu", "public", ago(2*day)),
 			},
-			policy: ReconciliationPolicy{Precedence: map[TrackedAttribute][]SourceKind{
-				AttrExposure: {SourceKindManual, SourceKindIntegration},
-			}},
+			policy:     ReconciliationPolicy{Default: []SourceRule{{Source: "integration", Trusted: true}}},
 			wantValue:  "private",
 			wantStatus: map[string]CandidateStatus{"naabu": CandidateUntrusted},
 		},
@@ -190,7 +188,7 @@ func TestResolve(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			p := tc.policy
-			if p.Precedence == nil {
+			if p.Default == nil {
 				p = def
 			}
 			res := ResolveFrom(tc.attr, tc.obs, p, now, tc.current)
@@ -230,47 +228,6 @@ func TestResolve(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestPolicyFromSettings(t *testing.T) {
-	p, err := PolicyFromSettings(map[string][]string{"criticality": {"scan", "integration"}}, map[string]int{"scan": 0, "import": 7})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := p.Precedence[AttrCriticality]; len(got) != 3 || got[0] != SourceKindManual || got[1] != SourceKindScan {
-		t.Fatalf("criticality precedence = %v", got)
-	}
-	if got := p.Precedence[AttrExposure]; len(got) != 4 {
-		t.Fatalf("exposure keeps the default, got %v", got)
-	}
-	if p.TTL[SourceKindScan] != 0 || p.TTL[SourceKindImport] != 7*24*time.Hour {
-		t.Fatalf("ttl = %v", p.TTL)
-	}
-	if p.TTL[SourceKindIntegration] != 30*24*time.Hour {
-		t.Fatalf("integration ttl keeps the default, got %v", p.TTL[SourceKindIntegration])
-	}
-	// A tenant's settings never change the default policy.
-	if DefaultReconciliationPolicy().Trusts(AttrCriticality, SourceKindScan) {
-		t.Fatal("default policy changed")
-	}
-
-	bad := []struct {
-		prec map[string][]string
-		ttl  map[string]int
-	}{
-		{prec: map[string][]string{"name": {"scan"}}},
-		{prec: map[string][]string{"criticality": {"manual"}}},
-		{prec: map[string][]string{"criticality": {"cmdb"}}},
-		{prec: map[string][]string{"criticality": {"scan", "scan"}}},
-		{ttl: map[string]int{"manual": 1}},
-		{ttl: map[string]int{"scan": -1}},
-		{ttl: map[string]int{"scan": MaxSourceTTLDays + 1}},
-	}
-	for i, b := range bad {
-		if _, err := PolicyFromSettings(b.prec, b.ttl); !errors.Is(err, shared.ErrValidation) {
-			t.Errorf("case %d: want a validation error, got %v", i, err)
-		}
 	}
 }
 

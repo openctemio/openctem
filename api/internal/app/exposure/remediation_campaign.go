@@ -239,10 +239,7 @@ func (s *RemediationCampaignService) ListCampaignFindings(ctx context.Context, t
 		if err != nil {
 			return pagination.Result[*vulnerability.Finding]{}, fmt.Errorf("resolve data scope: %w", err)
 		}
-		if scope != nil {
-			uid := scope.UserID
-			filter.DataScopeUserID = &uid
-		}
+		filter = filter.WithDataScope(scope)
 	}
 	return s.lister.List(ctx, filter, vulnerability.NewFindingListOptions(), page)
 }
@@ -310,8 +307,7 @@ func (s *RemediationCampaignService) scopedProgress(ctx context.Context, campaig
 	if !findingFilterHasScope(base) {
 		return 0, 0, nil
 	}
-	uid := scope.UserID
-	base.DataScopeUserID = &uid
+	base = base.WithDataScope(scope)
 	totalFilter := base
 	totalFilter.Statuses = nil
 	total, err := s.finding.Count(ctx, totalFilter)
