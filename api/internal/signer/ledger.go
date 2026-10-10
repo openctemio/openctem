@@ -148,19 +148,24 @@ type LedgerConfig struct {
 	// MinApprovals is SIGNER_LEDGER_MIN_APPROVALS: a floor under the
 	// organization's approval count for every widening.
 	MinApprovals int
-	Logger       *slog.Logger
+	// T2MinApprovals is SIGNER_LEDGER_T2_MIN_APPROVALS: a floor for a
+	// widening that puts an intrusive (t2) entry into the ledger (0..2,
+	// default 0: the organization's scan approval decides, RFC-072 §7).
+	T2MinApprovals int
+	Logger         *slog.Logger
 }
 
 // Ledger is the signer's scope ledger.
 type Ledger struct {
-	mu           sync.RWMutex
-	log          *chainLog
-	lock         *os.File
-	tenants      map[string]*tenantLedger
-	defaultMode  string
-	mode         string
-	minApprovals int
-	logger       *slog.Logger
+	mu             sync.RWMutex
+	log            *chainLog
+	lock           *os.File
+	tenants        map[string]*tenantLedger
+	defaultMode    string
+	mode           string
+	minApprovals   int
+	t2MinApprovals int
+	logger         *slog.Logger
 }
 
 // ParseLedgerMode reads SIGNER_LEDGER ("" is allowed: the default).
@@ -182,6 +187,9 @@ func OpenLedger(cfg LedgerConfig, now time.Time) (*Ledger, error) {
 	if cfg.MinApprovals < 0 || cfg.MinApprovals > jobsign.MaxPolicyApprovals {
 		return nil, fmt.Errorf("SIGNER_LEDGER_MIN_APPROVALS must be 0 to %d", jobsign.MaxPolicyApprovals)
 	}
+	if cfg.T2MinApprovals < 0 || cfg.T2MinApprovals > jobsign.MaxPolicyApprovals {
+		return nil, fmt.Errorf("SIGNER_LEDGER_T2_MIN_APPROVALS must be 0 to %d", jobsign.MaxPolicyApprovals)
+	}
 	lock, err := lockFile(cfg.LockPath)
 	if err != nil {
 		return nil, err
@@ -191,7 +199,7 @@ func OpenLedger(cfg LedgerConfig, now time.Time) (*Ledger, error) {
 		_ = lock.Close()
 		return nil, err
 	}
-	l.lock, l.mode, l.minApprovals, l.logger = lock, mode, cfg.MinApprovals, cfg.Logger
+	l.lock, l.mode, l.minApprovals, l.t2MinApprovals, l.logger = lock, mode, cfg.MinApprovals, cfg.T2MinApprovals, cfg.Logger
 	if l.logger == nil {
 		l.logger = slog.New(slog.DiscardHandler)
 	}
@@ -424,12 +432,12 @@ func sameTime(a, b *time.Time) bool {
 // checkApprovals counts the distinct approvers of a widening who are not
 // the requester (a self-approval under RFC-054 §12 A2 counts once) and
 // compares them with the policy's count, the operator's floor and the
-// intrusive minimum of one.
+// operator's floor for intrusive entries.
 func (l *Ledger) checkApprovals(ch jobsign.LedgerChange, now time.Time) (int, *refusal) {
 	need := max(ch.RequiredApprovals, l.minApprovals)
 	for _, op := range ch.Ops {
 		if op.Op == jobsign.OpPutEntry && op.Entry.MaxTier >= jobsign.TierIntrusive {
-			need = max(need, 1)
+			need = max(need, l.t2MinApprovals)
 		}
 	}
 	seen := map[string]bool{}
