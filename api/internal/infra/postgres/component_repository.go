@@ -268,17 +268,18 @@ func scanPackage(row rowScanner) (component.Package, error) {
 // PackageFacets returns the facet values of the filtered package set.
 func (r *ComponentRepository) PackageFacets(ctx context.Context, f component.Filter) (component.Facets, error) {
 	out := component.Facets{}
+	// Each query runs after packagesCTE (pkgs, links): fragments, not statements.
 	queries := map[string]string{
-		"ecosystem": `SELECT purl_type, count(*) FROM pkgs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 50`,
-		"license":   `SELECT lic, count(*) FROM pkgs, unnest(licenses) AS lic GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 30`,
-		"severity": `SELECT s, n FROM (SELECT 'critical' AS s, count(*) FILTER (WHERE critical > 0) AS n FROM pkgs
+		"ecosystem": `/* over the packagesCTE relations */ SELECT purl_type, count(*) FROM pkgs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 50`,
+		"license":   `/* over the packagesCTE relations */ SELECT lic, count(*) FROM pkgs, unnest(licenses) AS lic GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 30`,
+		"severity": `/* over the packagesCTE relations */ SELECT s, n FROM (SELECT 'critical' AS s, count(*) FILTER (WHERE critical > 0) AS n FROM pkgs
 			UNION ALL SELECT 'high', count(*) FILTER (WHERE high > 0) FROM pkgs
 			UNION ALL SELECT 'medium', count(*) FILTER (WHERE medium > 0) FROM pkgs
 			UNION ALL SELECT 'low', count(*) FILTER (WHERE low > 0) FROM pkgs) x WHERE n > 0`,
-		"kev":          `SELECT 'true', count(*) FROM pkgs WHERE kev > 0 HAVING count(*) > 0`,
-		"has_fix":      `SELECT 'true', count(*) FROM pkgs WHERE fix HAVING count(*) > 0`,
-		"relationship": `SELECT l.relationship, count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
-		"scope":        `SELECT COALESCE(l.dep_scope, 'runtime'), count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
+		"kev":          `/* over the packagesCTE relations */ SELECT 'true', count(*) FROM pkgs WHERE kev > 0 HAVING count(*) > 0`,
+		"has_fix":      `/* over the packagesCTE relations */ SELECT 'true', count(*) FROM pkgs WHERE fix HAVING count(*) > 0`,
+		"relationship": `/* over the packagesCTE relations */ SELECT l.relationship, count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
+		"scope":        `/* over the packagesCTE relations */ SELECT COALESCE(l.dep_scope, 'runtime'), count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
 	}
 	keys := make([]string, 0, len(queries))
 	for k := range queries {

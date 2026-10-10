@@ -174,18 +174,18 @@ type ComponentVersionResponse struct {
 	PURL        string `json:"purl"`
 }
 
-// GetVersion handles GET /api/v1/components/versions/{versionId}
+// GetVersion handles GET /api/v1/components/versions/{version_id}
 // @Summary      Get a package version
 // @Description  A package version (the id findings carry as component_id) seen through an in-scope asset or finding; 404 otherwise.
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
-// @Param        versionId  path  string  true  "Package version ID"
+// @Param        version_id  path  string  true  "Package version ID"
 // @Success      200  {object}  ComponentVersionResponse
 // @Failure      404  {object}  apierror.Error
-// @Router       /components/versions/{versionId} [get]
+// @Router       /components/versions/{version_id} [get]
 func (h *ComponentHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetVersion(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("versionId"))
+	v, err := h.service.GetVersion(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("version_id"))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
