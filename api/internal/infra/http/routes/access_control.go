@@ -54,6 +54,14 @@ func registerGroupRoutes(
 		r.PATCH("/{groupId}/members/{userId}", h.UpdateMemberAccess, middleware.Require(permission.GroupsMembers))
 		r.DELETE("/{groupId}/members/{userId}", h.RemoveMember, middleware.Require(permission.GroupsMembers))
 
+		// Team role bindings (decisions G1-G12): every active member holds the
+		// bound custom roles. Binding is a grant: the service also applies
+		// the grant ceiling, the scope cap and, for a privileged role, the
+		// owner-only rule with step-up.
+		r.GET("/{groupId}/roles", h.ListGroupRoles, middleware.RequireAll(permission.GroupsRead, permission.RolesRead))
+		r.POST("/{groupId}/roles", h.BindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
+		r.DELETE("/{groupId}/roles/{roleId}", h.UnbindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
+
 		// Group asset ownership
 		r.GET("/{groupId}/assets", h.ListGroupAssets, middleware.Require(permission.GroupsRead))
 		r.POST("/{groupId}/assets", h.AssignAsset, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
@@ -197,5 +205,27 @@ func registerRoleRoutes(
 	// of permissions).
 	router.Group("/api/v1/me/permissions", func(r Router) {
 		r.GET("/", h.GetMyPermissions)
+	}, tenantMiddlewares...)
+}
+
+// registerServiceAccountRoutes registers the service account routes:
+// organization-owned identities for integrations, managed like members.
+func registerServiceAccountRoutes(
+	router Router,
+	h *handler.ServiceAccountHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/service-accounts", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.MembersRead))
+		r.POST("/", h.Create, middleware.Require(permission.MembersWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.MembersWrite))
+		// Its API keys: each action needs both the member and the API key
+		// permission; minting and deleting need a recent sign-in, as they do
+		// for your own keys.
+		r.GET("/{id}/api-keys", h.ListKeys, middleware.RequireAll(permission.MembersRead, permission.APIKeysRead))
+		r.POST("/{id}/api-keys", h.CreateKey, middleware.RequireAll(permission.MembersWrite, permission.APIKeysWrite), requireStepUp())
+		r.DELETE("/{id}/api-keys/{key_id}", h.DeleteKey, middleware.RequireAll(permission.MembersWrite, permission.APIKeysDelete), requireStepUp())
 	}, tenantMiddlewares...)
 }

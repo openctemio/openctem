@@ -35,7 +35,7 @@ func TestTenableSCConnectorScan(t *testing.T) {
 
 	intRepo := postgres.NewIntegrationRepository(pg)
 	newConnector := func(tn, sn shared.ID) *integration.Integration {
-		i := integration.NewIntegration(shared.NewID(), tn, "sc-"+shared.NewID().String()[:6], integration.CategorySecurity,
+		i := integration.NewIntegration(shared.NewID(), tn, "sc-"+shared.NewID().String()[28:], integration.CategorySecurity,
 			integration.ProviderTenable, integration.AuthTypeAPIKey)
 		i.SetConfig(map[string]any{"engine": "tenable_sc", "execution_mode": "sensor", "sensor_id": sn.String(), "instance": "sc-prod"})
 		i.SetMetadata(map[string]any{"tenable_sync": map[string]any{"catalog": map[string]any{

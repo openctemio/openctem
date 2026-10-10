@@ -240,6 +240,25 @@ type alterScope struct {
 	// whether it created them and their stored name and type. Attribution
 	// (scan_attribution.go) reads them.
 	seen map[shared.ID]seenAsset
+	// untrusted are the tracked attributes the report's source may not
+	// decide (RFC-069): an asset it creates does not take its claims.
+	untrusted map[asset.TrackedAttribute]bool
+}
+
+// dropUntrustedClaims clears, on an asset this report creates, the tracked
+// values its source is not trusted for. Criticality and exposure keep the
+// creation value (an asset needs one); later reports of an untrusted
+// source never change them.
+func (s *alterScope) dropUntrustedClaims(a *asset.Asset) {
+	if s == nil || a == nil {
+		return
+	}
+	if s.untrusted[asset.AttrOwnerRef] {
+		a.SetOwnerRef("")
+	}
+	if s.untrusted[asset.AttrDataClassification] {
+		_ = a.SetDataClassification("")
+	}
 }
 
 // seenAsset is one asset an ingest wrote.

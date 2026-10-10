@@ -23,14 +23,14 @@ func TestFindingVEXDocument_DB(t *testing.T) {
 		t.Cleanup(func() { _, _ = f.db.ExecContext(ctx, `DELETE FROM components WHERE id = $1`, id.String()) })
 		return id
 	}
-	lodash20 := comp("pkg:npm/lodash@4.17.20-"+shared.NewID().String()[:8], "4.17.20")
+	lodash20 := comp("pkg:npm/lodash@4.17.20-"+shared.NewID().String()[28:], "4.17.20")
 	// The base of the component purl above is pkg:npm/lodash; its version is
 	// unique per run so the global purl constraint holds across runs.
 	var ver string
 	if err := f.db.QueryRowContext(ctx, `SELECT split_part(purl, '@', 2) FROM components WHERE id = $1`, lodash20.String()).Scan(&ver); err != nil {
 		t.Fatal(err)
 	}
-	other := comp("pkg:npm/express@4.0.0-"+shared.NewID().String()[:8], "4.0.0")
+	other := comp("pkg:npm/express@4.0.0-"+shared.NewID().String()[28:], "4.0.0")
 
 	insert := func(tenant, asset, component shared.ID, cve, status, source string) shared.ID {
 		id := shared.NewID()

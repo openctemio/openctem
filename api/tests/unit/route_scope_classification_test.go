@@ -67,6 +67,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/oauth/requests/{id}/approve": {classSeparate, "the caller's own MCP consent decision (RFC-062)"},
 	"/api/v1/oauth/requests/{id}/deny":    {classSeparate, "the caller's own MCP consent decision (RFC-062)"},
 	"/api/v1/version":                     {classSystem, "build identity"},
+	"/api/v1/announcements":               {classSystem, "platform operator notices (plain text); no tenant data"},
 	"/api/v1/client-errors":               {classSystem, "web error kind for operator metrics; reads and stores nothing"},
 	"/api/v1/auth":                        {classSystem, "authentication flows"},
 	"/api/v1/users":                       {classSystem, "the caller's own account"},
@@ -94,6 +95,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/tenants":                         {classConfig, "organization administration (team roles)"},
 	"/api/v1/organization":                    {classConfig, "organization settings"},
 	"/api/v1/roles":                           {classConfig, "roles"},
+	"/api/v1/service-accounts":                {classConfig, "service accounts (organization identities for integrations)"},
 	"/api/v1/groups":                          {classConfig, "access groups: membership and scope administration (D13 cap)"},
 	"/api/v1/scim-tokens":                     {classConfig, "SCIM tokens"},
 	"/api/v1/api-keys":                        {classConfig, "API keys"},
@@ -102,6 +104,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/notification-outbox":             {classConfig, "delivery queue, channel-manager only (L-03)"},
 	"/api/v1/webhooks":                        {classConfig, "inbound Jira/GitHub webhooks (HMAC); the outbound webhook API is removed"},
 	"/api/v1/scope":                           {classConfig, "scope targets, exclusions (two-person, L-07) and schedules"},
+	"/api/v1/programs":                        {classScoped, "bug-bounty programs (RFC-065): a caller sees only programs whose group has them unless full-data; another program is 404"},
 	"GET /api/v1/scope/stats":                 {classScoped, "inventory coverage counted in SQL over the caller's data scope (research/53 S-3)"},
 	"POST /api/v1/scope/targets/preview":      {classScoped, "names an entry would confirm, counted over the caller's data scope (RFC-054 §4.3)"},
 	"/api/v1/ci/settings":                     {classConfig, "CI settings: tenant configuration (RFC-051)"},
@@ -123,6 +126,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-profiles":                   {classConfig, "scan profiles"},
 	"/api/v1/scanner-templates":               {classConfig, "scanner templates"},
 	"/api/v1/template-sources":                {classConfig, "template sources"},
+	"/api/v1/platform-content-packs":          {classConfig, "platform content packs and channels (RFC-061): platform catalog, read-only, no tenant data"},
 	"/api/v1/content-packs":                   {classConfig, "content packs (RFC-061): the tenant own templates, rules and wordlists"},
 	// Not catalog data: the stats name the caller's own sensors and custom tools
 	// (tenant-filtered in SQL; platform tools are the only shared rows, 23b SC-H1).

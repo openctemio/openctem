@@ -110,6 +110,21 @@ func TestCanonicalizeIsDeterministic(t *testing.T) {
 	}
 }
 
+// A git archive (a release tarball) opens with a PAX global header: it is
+// metadata, skipped, and the files are kept.
+func TestCanonicalizeSkipsPAXGlobalHeader(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeXGlobalHeader, Name: "pax_global_header", PAXRecords: map[string]string{"comment": "abc123"}, Format: tar.FormatPAX})
+	_ = tw.WriteHeader(&tar.Header{Name: "r/a.yaml", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1})
+	_, _ = tw.Write([]byte("a"))
+	_ = tw.Close()
+	a, err := Canonicalize(bytes.NewReader(buf.Bytes()), DefaultLimits)
+	if err != nil || len(a.Files) != 1 || a.Files[0].Path != "r/a.yaml" {
+		t.Fatalf("%+v %v", a, err)
+	}
+}
+
 // SECURITY: archive tricks are refused before anything is stored.
 func TestCanonicalizeRefusesArchiveTricks(t *testing.T) {
 	small := DefaultLimits

@@ -28,14 +28,17 @@ type CreateScanInput struct {
 	Targets       []string `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
 	// AssetIDs are inventory assets to scan; each is scanned by its name,
 	// resolved on the server (tenant and creator scope checked).
-	AssetIDs       []string       `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
-	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any `json:"scanner_config"`
-	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
+	// TargetOptions tunes how each run resolves the dynamic selectors among
+	// Targets (RFC-068); nil = defaults.
+	TargetOptions  *scan.TargetOptions `json:"target_options"`
+	ScanType       string              `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string              `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string              `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any      `json:"scanner_config"`
+	TargetsPerJob  int                 `json:"targets_per_job"`
+	ScheduleType   string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string              `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
 	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
 	ScheduleDay   *int       `json:"schedule_day"`
@@ -132,12 +135,17 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 	sc.Description = input.Description
+	if input.TargetOptions != nil {
+		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
+			return nil, err
+		}
+	}
 
 	// Configure scan type (workflow or single scanner)
 	if err := s.configureScanType(ctx, sc, tenantID, scanType, input); err != nil {
 		return nil, err
 	}
-	// A wildcard pattern only for tools that take it as a root domain.
+	// A wildcard selector must be *.<domain> the platform lets anyone cover.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
 		return nil, err
 	}
@@ -694,8 +702,10 @@ type UpdateScanInput struct {
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
 	ScannerConfig  map[string]any `json:"scanner_config"`
 	TargetsPerJob  *int           `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	// TargetOptions: nil = unchanged (RFC-068).
+	TargetOptions *scan.TargetOptions `json:"target_options"`
+	ScheduleType  string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron  string              `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
 	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
 	ScheduleDay   *int       `json:"schedule_day"`
@@ -783,10 +793,14 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			return nil, err
 		}
 	}
-	// A new tool must still take the scan's targets (no wildcard pattern
-	// for an active tool).
+	// The scan's wildcard selectors must still be valid.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
 		return nil, err
+	}
+	if input.TargetOptions != nil {
+		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
+			return nil, err
+		}
 	}
 
 	// Update schedule if provided. SetSchedule refuses what the scheduler

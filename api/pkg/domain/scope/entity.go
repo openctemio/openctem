@@ -35,6 +35,12 @@ type Target struct {
 	approvedAt        *time.Time
 	rejectedBy        string
 	rejectedAt        *time.Time
+	// remindedAt: when the approvers were last reminded (approvers.go).
+	remindedAt *time.Time
+	// Attestation of a t2 entry (attestation.go).
+	attestedAt             *time.Time
+	attestedBy             string
+	attestationRequestedAt *time.Time
 
 	origin Origin
 	// discoveryOff: discovery switched off (discovery.go); the zero value
@@ -44,6 +50,7 @@ type Target struct {
 	// Authorization source (authorization.go, RFC-065).
 	authSource AuthorizationSource
 	programID  *shared.ID
+	letterID   *shared.ID
 }
 
 // NewTarget creates a new scope target: active, permanent, t1.

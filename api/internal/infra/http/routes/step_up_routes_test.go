@@ -71,10 +71,20 @@ var stepUpRoutes = []string{
 	// Widening scope (RFC-054 §6): approving an entry, the settings, and
 	// taking an exclusion out of effect.
 	"PUT /api/v1/scope/settings",
+	"PUT /api/v1/scope/settings/intrusive",
 	"POST /api/v1/scope/targets/{id}/approve",
 	"POST /api/v1/scope/exclusions/{id}/deactivate",
 	"POST /api/v1/scope/exclusions/bulk/delete",
 	"DELETE /api/v1/scope/exclusions/{id}",
+	// Bug-bounty programs (RFC-065): the attestation that puts a
+	// program's entries into effect.
+	"POST /api/v1/programs",
+	"PUT /api/v1/programs/{id}/scope",
+	"POST /api/v1/programs/{id}/reactivate",
+	"PUT /api/v1/programs/{id}/source",
+	"POST /api/v1/programs/{id}/pending/apply",
+	// Approving a custom template version for sensors (RFC-040 §11.5).
+	"POST /api/v1/scanner-templates/{id}/approve",
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
@@ -138,6 +148,8 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
+			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
+			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()

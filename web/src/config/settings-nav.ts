@@ -20,6 +20,7 @@
  * move (each move ships with a 308 in src/config/legacy-routes.ts).
  */
 import {
+  GitMerge,
   Handshake,
   Activity,
   Bell,
@@ -45,6 +46,7 @@ import {
   MessageSquare,
   Puzzle,
   Scale,
+  ServerCog,
   Settings2,
   Shield,
   ShieldCheck,
@@ -324,6 +326,15 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['stale', 'retire', 'archive'],
       },
       {
+        id: 'asset-sources',
+        title: 'Asset sources',
+        description: 'Which source decides asset criticality, owner and exposure.',
+        url: '/settings/asset-sources',
+        icon: GitMerge,
+        permission: Permission.TeamUpdate,
+        keywords: ['source', 'precedence', 'integration', 'import', 'scan', 'lock', 'conflict'],
+      },
+      {
         id: 'scope-policy',
         title: 'Scope policy',
         description: 'Who widens scope, how many approve, one-off entries and discovered names.',
@@ -499,6 +510,25 @@ export const settingsNav: SettingsNavGroup[] = [
         module: 'integrations',
         subModuleKey: 'siem',
         keywords: ['splunk', 'hec', 'events'],
+      },
+      {
+        // An organization-owned identity for an integration, with its own
+        // roles, teams and API keys. Not module gated: the API gates none of
+        // its routes on the integrations module.
+        id: 'service-accounts',
+        title: 'Service accounts',
+        description: 'Identities for integrations, with their own roles and API keys.',
+        url: '/settings/service-accounts',
+        icon: ServerCog,
+        permission: Permission.MembersRead,
+        keywords: [
+          'service account',
+          'machine',
+          'bot',
+          'integration identity',
+          'api key',
+          'non-human',
+        ],
       },
     ],
   },

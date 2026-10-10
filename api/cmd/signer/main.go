@@ -6,6 +6,8 @@
 //	openctem-signer keygen -out /keys/signer.pem   create a key (0400), print its id
 //	openctem-signer pubkey                          print the key id and public key
 //	openctem-signer verify-log                      check the signing log's chain
+//	openctem-signer ledger verify|show              check or print the scope ledger
+//	openctem-signer ledger import -file F [-replace] bootstrap or restore the ledger (signer stopped)
 //	openctem-signer [serve]                         serve on SIGNER_SOCKET
 //
 // Offline, on the machine that holds the root key (never the platform host):
@@ -16,7 +18,8 @@
 //
 // Environment: SIGNER_KEY_FILE, SIGNER_SOCKET, SIGNER_STATE_DIR,
 // SIGNER_KEYSET_FILE, SIGNER_TENANT_RATE, SIGNER_TENANT_BURST,
-// SIGNER_SENSOR_RATE, SIGNER_SENSOR_BURST.
+// SIGNER_SENSOR_RATE, SIGNER_SENSOR_BURST, SIGNER_LEDGER,
+// SIGNER_LEDGER_MIN_APPROVALS.
 package main
 
 import (
@@ -79,10 +82,12 @@ func run(args []string) error {
 			return keysetShow(args[1:])
 		}
 		return fmt.Errorf("unknown keyset command %q (sign, show)", args[0])
+	case "ledger":
+		return ledgerCmd(args, os.Stdout)
 	case "serve":
 		return serve()
 	default:
-		return fmt.Errorf("unknown command %q (keygen, pubkey, verify-log, serve, root keygen, keyset sign, keyset show)", cmd)
+		return fmt.Errorf("unknown command %q (keygen, pubkey, verify-log, ledger, serve, root keygen, keyset sign, keyset show)", cmd)
 	}
 }
 
@@ -149,6 +154,9 @@ func serve() error {
 	if cfg.SensorBurst, err = envInt("SIGNER_SENSOR_BURST"); err != nil {
 		return err
 	}
+	if err := ledgerConfig(&cfg); err != nil {
+		return err
+	}
 	svc, err := signer.New(cfg)
 	if err != nil {
 		return err
@@ -180,7 +188,7 @@ func serve() error {
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
-	logger.Info("signer listening", "socket", socket, "keyid", svc.KeyID())
+	logger.Info("signer listening", "socket", socket, "keyid", svc.KeyID(), "ledger", svc.Ledger().Mode())
 	select {
 	case err := <-errc:
 		if !errors.Is(err, http.ErrServerClosed) {
