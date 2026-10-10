@@ -39,7 +39,7 @@ const (
 )
 
 // settingsSectionTargets maps each section key to the field of s it decodes
-// into. Keys not listed here (subscribed_bundles, legacy keys) are not typed
+// into. Keys not listed here (legacy keys) are not typed
 // sections and are never rewritten by a section write.
 func settingsSectionTargets(s *Settings) map[string]any {
 	return map[string]any{
@@ -204,14 +204,6 @@ func SettingsFromMapChecked(m map[string]any) (Settings, map[string]error) {
 	}
 	if _, ok := m[SectionRiskScoring]; !ok {
 		settings.RiskScoring = LegacyRiskScoringSettings()
-	}
-	if raw, ok := m["subscribed_bundles"]; ok && raw != nil {
-		if data, err := json.Marshal(raw); err == nil {
-			var bundles []string
-			if json.Unmarshal(data, &bundles) == nil {
-				settings.SubscribedBundles = bundles
-			}
-		}
 	}
 	return settings, errs
 }

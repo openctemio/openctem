@@ -35,7 +35,7 @@ import { createTenantSchema, generateSlug, type CreateTenantInput } from '../sch
 import { createFirstTeamAction } from '@/features/auth/actions/local-auth-actions'
 import {
   useModulePresetsPublic,
-  subscribeBundlesRequest,
+  applyPresetRequest,
   type ModulePreset,
 } from '@/features/organization/api/use-tenant-modules'
 import { OnboardingBundlePicker } from './onboarding-bundle-picker'
@@ -74,12 +74,8 @@ function useBundleSelection() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const toggle = useCallback((id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    // One starting set: picking another replaces it, picking it again clears it.
+    setSelected((prev) => (prev.has(id) ? new Set() : new Set([id])))
   }, [])
 
   return {
@@ -154,9 +150,9 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
         })
 
         // createFirstTeamAction already set the access-token cookie for the new
-        // tenant, so this client-side subscribe is authorised. Non-blocking:
+        // tenant, so this client-side preset apply is authorised. Non-blocking:
         // the team exists regardless of whether this succeeds.
-        await subscribeSelectedBundles(result.tenant.id, [...selected])
+        await applySelectedPreset(result.tenant.id, [...selected][0])
 
         // Force full page reload to pick up new cookies
         window.location.href = '/'
@@ -269,7 +265,7 @@ function CreateAdditionalTeamFormInner({ showCancel }: { showCancel: boolean }) 
         // Subscribe to the chosen products now that switch-team has scoped the
         // access token to the new tenant. Non-blocking: the team exists
         // regardless of whether this succeeds.
-        await subscribeSelectedBundles(result.id, [...selected])
+        await applySelectedPreset(result.id, [...selected][0])
 
         // Force full page reload to pick up new cookies and refresh all state
         window.location.href = '/'
@@ -483,14 +479,14 @@ function CreateTeamFormUI({
  * be redirected in, so a failure here must never block. We surface a
  * non-blocking toast and let them set products later in Settings → Products.
  */
-async function subscribeSelectedBundles(tenantIdOrSlug: string, bundleIds: string[]) {
-  if (bundleIds.length === 0) return
+async function applySelectedPreset(tenantIdOrSlug: string, presetId: string | undefined) {
+  if (!presetId) return
   try {
-    await subscribeBundlesRequest(tenantIdOrSlug, bundleIds)
+    await applyPresetRequest(tenantIdOrSlug, presetId)
   } catch (error) {
-    devLog.error('[CreateTeamForm] Bundle subscription failed (non-blocking):', error)
-    toast.warning('Team created, but your product selection could not be applied', {
-      description: 'You can choose products anytime in Settings → Products.',
+    devLog.error('[CreateTeamForm] Preset apply failed (non-blocking):', error)
+    toast.warning('Team created, but your starting set could not be applied', {
+      description: 'You can switch modules on or off anytime in Settings > Modules.',
     })
   }
 }
