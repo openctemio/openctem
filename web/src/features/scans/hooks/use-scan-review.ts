@@ -8,6 +8,7 @@
  * completeness. The create request is re-validated by the API anyway.
  */
 
+import { scopeCheckTier } from '../lib/scan-intensity'
 import { useMemo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { useScopeCheck } from '@/features/scope'
@@ -47,6 +48,7 @@ export function useScanReview(
         ? form.sensorPreference
         : 'auto',
     scanner_name: form.mode === 'single' ? form.scannerName || undefined : undefined,
+    tier: scopeCheckTier(form),
   })
   const workflow = useWorkflowPreview(workflowRequest, enabled && form.mode === 'workflow')
 

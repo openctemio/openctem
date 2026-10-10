@@ -1,0 +1,19 @@
+{
+  "findings.hideInformational": "Hide informational",
+  "findings.hideInformational.hint": "Hide info findings from the list. Saved on this browser.",
+  "findings.status.new": "New",
+  "findings.status.confirmed": "Confirmed",
+  "findings.status.in_progress": "In Progress",
+  "findings.status.fix_applied": "Fix Applied",
+  "findings.status.validated_fixed": "Validated Fixed",
+  "findings.status.not_observed": "Not Observed",
+  "findings.status.resolved": "Resolved",
+  "findings.status.false_positive": "False Positive",
+  "findings.status.accepted": "Risk Accepted",
+  "findings.status.duplicate": "Duplicate",
+  "findings.status.draft": "Draft",
+  "findings.status.in_review": "In Review",
+  "findings.statusCategory.open": "Open",
+  "findings.statusCategory.in_progress": "In progress",
+  "findings.statusCategory.closed": "Closed"
+}

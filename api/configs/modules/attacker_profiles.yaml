@@ -1,0 +1,12 @@
+- id: attacker_profiles
+  const: ModuleAttackerProfiles
+  slug: "attacker-profiles"
+  name: Attacker Profiles
+  description: Threat actor profiles used to drive attack simulation + prioritisation scoring
+  icon: Swords
+  category: scoping
+  order: 9
+  user_facing: true
+  permission: "ctem:attacker_profiles:read"
+  routes:
+    - "/api/v1/attacker-profiles"

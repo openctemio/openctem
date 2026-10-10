@@ -33,6 +33,7 @@ const (
 	SectionScope          = "scope"
 	SectionMCP            = "mcp"
 	SectionVulnMatching   = "vuln_matching"
+	SectionLicensePolicy  = "license_policy"
 	// SectionAssetReconciliation is RFC-069.
 	SectionAssetReconciliation = "asset_reconciliation"
 )
@@ -58,6 +59,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionMCP:                 &s.MCP,
 		SectionAssetReconciliation: &s.AssetReconciliation,
 		SectionVulnMatching:        &s.VulnMatching,
+		SectionLicensePolicy:       &s.LicensePolicy,
 		SectionScanGovernance:      &s.ScanGovernance,
 	}
 }

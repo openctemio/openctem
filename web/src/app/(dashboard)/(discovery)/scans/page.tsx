@@ -1,5 +1,6 @@
 'use client'
 
+import { IntensityBadge } from '@/features/scans/components/intensity-badge'
 import * as React from 'react'
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from '@/components/link'
@@ -7,6 +8,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import { SensorOptInBanner } from '@/features/sensors/components/sensor-opt-in-banner'
 import { ScanWindowsBanner } from '@/features/scan-windows'
+import { ScanApprovalBadge } from '@/features/scans/components/approval/scan-approval-badge'
 import {
   MetricStrip,
   type MetricStripItem,
@@ -601,7 +603,12 @@ function ConfigurationsTab() {
         header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
         cell: ({ row }) => (
           <div className="min-w-0">
-            <p className="font-medium">{row.original.name}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{row.original.name}</p>
+              <ScanApprovalBadge
+                status={(row.original as { approval_status?: string }).approval_status}
+              />
+            </div>
             {row.original.description && (
               <p className="max-w-[300px] truncate text-xs text-muted-foreground">
                 {row.original.description}
@@ -622,7 +629,10 @@ function ConfigurationsTab() {
               <span className="max-w-[14rem] truncate text-sm" title={label}>
                 {label}
               </span>
-              <span className="text-xs text-muted-foreground">{SCAN_TYPE_LABELS[kind]}</span>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {SCAN_TYPE_LABELS[kind]}
+                <IntensityBadge intensity={row.original.intensity} />
+              </span>
             </div>
           )
         },

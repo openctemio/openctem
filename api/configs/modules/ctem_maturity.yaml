@@ -1,0 +1,13 @@
+- id: ctem_maturity
+  const: ModuleCTEMMaturity
+  slug: "ctem-maturity"
+  name: CTEM Maturity
+  description: "Per-tenant CTEM invariant health — F1-F4, B1-B7, O1-O3"
+  icon: ShieldCheck
+  category: insights
+  order: 52
+  user_facing: true
+  permission: "dashboard:read"
+  depends:
+    - {id: ctem_cycles, kind: hard, reason: "maturity is computed across CTEM cycles"}
+    - {id: findings, kind: soft, reason: "F3/B4 invariants rely on finding SLA data"}

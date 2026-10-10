@@ -1,8 +1,7 @@
 import { Undo2, User } from 'lucide-react'
 import { describe, expect, it } from 'vitest'
 
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 import type { SensorActivityItem } from '@/lib/api/sensor-types'
 
 import { describeSensorActivity, type Translate } from '../activity'

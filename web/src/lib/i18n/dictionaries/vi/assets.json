@@ -1,0 +1,9 @@
+{
+  "assets.properties.title": "Thuộc tính",
+  "assets.properties.other": "Khác",
+  "assets.programTarget.badge": "Mục tiêu chương trình",
+  "assets.programTarget.title": "Được một chương trình bug bounty liệt kê. Thẻ từ chương trình do nền tảng gán và không thể sửa.",
+  "assets.programTarget.unattested": "chưa chấp nhận điều khoản",
+  "assets.programTarget.programOnly": "không thuộc phạm vi của bạn",
+  "assets.programTarget.field": "Chương trình bug bounty"
+}
