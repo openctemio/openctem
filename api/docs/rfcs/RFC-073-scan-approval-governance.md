@@ -197,7 +197,7 @@ self-approves with a fresh authenticator code and a reason; Remind at most
 hourly; pending requests expire. An emergency run: owner or administrator,
 step-up, reason, 1-24 hours, audited critical, administrators told.
 
-Routes (migration `001950`: `scans:approve` for owners and administrators,
+Routes (migration `001921`: `scans:approve` for owners and administrators,
 `scan_approval_requests`):
 
 | Route | Gate |
@@ -220,6 +220,6 @@ the declared intensity changes the digest: it needs a new approval.
 | PR | Content |
 |---|---|
 | Setting | modes, platform policy renamed to scans, rules and presets (validation, evaluation), settings API, scope entries Strict-only, signer t2 floor, admin console and scope page texts (migration `001881`) |
-| Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge |
+| Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge (migration `001921`) |
 | Web | Settings > Scanning (mode, rule builder, presets), New Scan review "needs approval by…", Submit for approval, Approvals inbox, scan list badge |
 | Later | monitor-mode report, rule tester, the §4.1 later conditions, asset-owner approvers |
