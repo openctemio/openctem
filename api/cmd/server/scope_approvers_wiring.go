@@ -73,6 +73,13 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 			svc.ScanPolicy.SetSettings(svc.Tenant)
 		}
 		svc.Scope.SetGovernance(svc.ScanPolicy)
+		// Scope entry tier ceilings are in force only in Strict: the
+		// dispatch gate reads the mode, and a mode change that crosses
+		// Strict is recorded with the job signer's ledger.
+		svc.ScanPolicy.SetTierCeilings(svc.Scope)
+		if svc.ActiveGate != nil {
+			svc.ActiveGate.SetTierPolicy(svc.ScanPolicy)
+		}
 		wireScanGovernance(svc, repos, log)
 	}
 	var totp scopeapp.TOTPVerifier
@@ -125,6 +132,7 @@ func wireScanGovernance(svc *Services, repos *Repositories, log *logger.Logger) 
 		return
 	}
 	svc.ScanGovernance = scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log)
+	svc.ScanGovernance.SetTierCeilings(svc.Scope)
 	if repos.ScanApproval != nil {
 		svc.ScanGovernance.SetRequests(repos.ScanApproval)
 		var totp scangovapp.TOTPVerifier
