@@ -235,7 +235,7 @@ self-approves with a fresh authenticator code and a reason; Remind at most
 hourly; pending requests expire. An emergency run: owner or administrator,
 step-up, reason, 1-24 hours, audited critical, administrators told.
 
-Routes (migration `001831`: `scans:approve` for owners and administrators,
+Routes (migration `001950`: `scans:approve` for owners and administrators,
 `scan_approval_requests`):
 
 | Route | Gate |
