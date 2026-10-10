@@ -288,6 +288,38 @@ func (g *ActiveGate) TierExceeded(ctx context.Context, tenantID shared.ID, targe
 	return out, nil
 }
 
+// UncoveredTargets returns the targets naming an internet host or public
+// address that no scope authority of the tenant covers: no active scope
+// target, and no root-domain seed or verified domain at or above the name
+// (RFC-071: a passive step takes only names in scope). Private and
+// internal targets are not listed (scan zones gate them). Part of
+// scan.AttributionGate.
+func (g *ActiveGate) UncoveredTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	if len(targets) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many targets for one scope check", shared.ErrValidation)
+	}
+	var out []string
+	var auth *scopeauth.Authority
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		if _, ok := auth.Covers(t); !ok {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 // NewActiveGate wires the gate. Every dependency is required; a nil one
 // makes every check fail (fail closed).
 func NewActiveGate(records ActiveGateRecords, assets ActiveGateAssets, scope ActiveGateScope, roots ActiveGateRoots) *ActiveGate {

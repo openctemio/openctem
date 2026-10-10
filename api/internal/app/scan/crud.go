@@ -31,14 +31,17 @@ type CreateScanInput struct {
 	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
 	// TargetOptions tunes how each run resolves the dynamic selectors among
 	// Targets (RFC-068); nil = defaults.
-	TargetOptions  *scan.TargetOptions `json:"target_options"`
-	ScanType       string              `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string              `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string              `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any      `json:"scanner_config"`
-	TargetsPerJob  int                 `json:"targets_per_job"`
-	ScheduleType   string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron   string              `json:"schedule_cron" validate:"max=100"`
+	TargetOptions *scan.TargetOptions `json:"target_options"`
+	// Intensity is the probe ceiling (RFC-071): passive, active or
+	// intrusive; "" = the tier the tool or workflow probes at.
+	Intensity      string         `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any `json:"scanner_config"`
+	TargetsPerJob  int            `json:"targets_per_job"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
 	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
 	ScheduleDay   *int       `json:"schedule_day"`
@@ -162,6 +165,10 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	// A wildcard selector must be *.<domain> the platform lets anyone cover.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
+		return nil, err
+	}
+	// The probe ceiling: nothing in the scan may probe above it.
+	if err := s.applyIntensity(ctx, sc, input.Intensity); err != nil {
 		return nil, err
 	}
 
@@ -731,8 +738,10 @@ type UpdateScanInput struct {
 	TargetsPerJob  *int           `json:"targets_per_job"`
 	// TargetOptions: nil = unchanged (RFC-068).
 	TargetOptions *scan.TargetOptions `json:"target_options"`
-	ScheduleType  string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron  string              `json:"schedule_cron" validate:"max=100"`
+	// Intensity: "" = unchanged (RFC-071).
+	Intensity    string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
 	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
 	ScheduleDay   *int       `json:"schedule_day"`
@@ -823,6 +832,17 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	// The scan's wildcard selectors must still be valid.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
 		return nil, err
+	}
+	// A new intensity, workflow or scanner: everything must still fit
+	// under the ceiling.
+	if input.Intensity != "" || input.ScanWorkflowID != "" || input.ScannerName != "" {
+		requested := input.Intensity
+		if requested == "" {
+			requested = string(sc.EffectiveIntensity())
+		}
+		if err := s.applyIntensity(ctx, sc, requested); err != nil {
+			return nil, err
+		}
 	}
 	if input.TargetOptions != nil {
 		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
