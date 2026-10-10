@@ -61,6 +61,17 @@ type LedgerEntry struct {
 	// ExpiresAt is when the entry stops authorizing (nil: permanent). The
 	// signer applies it with its own clock.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Ports and Protocol are the entry's port limit (empty: none). They are
+	// part of the entry like its pattern: the ledger matches with them, so it
+	// is never wider than the entry in the database.
+	Ports    string `json:"ports,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+}
+
+// SameScope reports whether two entries authorize the same targets: type,
+// pattern and port limit.
+func (e LedgerEntry) SameScope(o LedgerEntry) bool {
+	return e.Type == o.Type && e.Pattern == o.Pattern && e.Ports == o.Ports && e.Protocol == o.Protocol
 }
 
 // LedgerExclusion is a scope exclusion in effect. Only target exclusions
@@ -92,6 +103,11 @@ const (
 	OpRemoveExclusion = "remove_exclusion"
 	OpPutTemplate     = "put_template"
 	OpRemoveTemplate  = "remove_template"
+	// OpSetTierCeilings turns the organization's entry tier ceilings on or
+	// off (RFC-073 §7): they apply only in the Strict scan approval mode.
+	// Turning them off widens (every entry then covers every tier);
+	// turning them on narrows.
+	OpSetTierCeilings = "set_tier_ceilings"
 )
 
 // LedgerTemplate is a custom template version people approved for sensors:
@@ -110,6 +126,9 @@ type LedgerOp struct {
 	Exclusion *LedgerExclusion `json:"exclusion,omitempty"`
 	Template  *LedgerTemplate  `json:"template,omitempty"`
 	ID        string           `json:"id,omitempty"`
+	// TierCeilings (set_tier_ceilings only): true enforces each entry's
+	// max_tier, false lets every entry cover every tier.
+	TierCeilings *bool `json:"tier_ceilings,omitempty"`
 }
 
 // LedgerChange is POST /v1/ledger/apply: one change to one organization's
@@ -160,6 +179,10 @@ type LedgerSnapshot struct {
 	Exclusions []LedgerExclusion `json:"exclusions"`
 	// Templates are the approved custom template versions in effect.
 	Templates []LedgerTemplate `json:"templates,omitempty"`
+	// TierCeilingsOff: the organization's entry tier ceilings are not in
+	// force (scan approval Off or On, RFC-073 §7). The zero value enforces
+	// them, so a snapshot that does not say is the stricter one.
+	TierCeilingsOff bool `json:"tier_ceilings_off,omitempty"`
 }
 
 // LedgerSyncResult answers a sync: what it narrowed, and how many items the
@@ -205,8 +228,7 @@ func EntryWidens(old *LedgerEntry, next LedgerEntry, now time.Time) bool {
 	if old == nil || Expired(old.ExpiresAt, now) {
 		return true
 	}
-	return old.Type != next.Type || old.Pattern != next.Pattern ||
-		next.MaxTier > old.MaxTier || laterEnd(old.ExpiresAt, next.ExpiresAt)
+	return !old.SameScope(next) || next.MaxTier > old.MaxTier || laterEnd(old.ExpiresAt, next.ExpiresAt)
 }
 
 // ExclusionPutWidens reports whether putting next where old is (nil: no

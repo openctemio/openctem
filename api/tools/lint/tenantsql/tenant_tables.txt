@@ -8,7 +8,6 @@ asset_access_grants
 asset_attribute_sources
 asset_attributions
 asset_change_events
-asset_components
 asset_dedup_review
 asset_groups
 asset_identifiers
@@ -18,6 +17,7 @@ asset_program_links
 asset_relationships
 asset_services
 asset_software
+asset_software_edges
 asset_state_history
 assets
 assignment_rules
@@ -34,6 +34,7 @@ authorization_letters
 automation_runs
 automations
 bounty_program_attestations
+bounty_program_channels
 bounty_program_exclusions
 bounty_programs
 business_service_assets
@@ -123,6 +124,7 @@ roles
 runtime_telemetry_events
 saml_providers
 saved_views
+scan_approval_requests
 scan_coverage_state
 scan_profiles
 scan_run_scope_snapshots
@@ -183,6 +185,7 @@ user_dashboards
 user_roles
 validation_evidence
 verified_domains
+vex_statements
 vuln_match_queue
 vulnerabilities
 web_endpoint_events

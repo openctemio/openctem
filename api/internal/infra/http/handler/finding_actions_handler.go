@@ -113,8 +113,8 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
 // @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
-// @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
-// @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
+// @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
+// @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"
@@ -264,8 +264,8 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
 // @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
-// @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
-// @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
+// @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
+// @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"

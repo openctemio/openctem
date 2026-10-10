@@ -103,6 +103,10 @@ func ImportLedger(stateDir string, raw []byte, replace bool, now time.Time) (Imp
 			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpPutTemplate, Template: &tpl})
 			res.Templates++
 		}
+		if t.TierCeilingsOff {
+			off := false
+			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpSetTierCeilings, TierCeilings: &off})
+		}
 		if err := l.log.append(&LedgerRecord{Time: now.UTC(), Kind: recordImport, TenantID: t.TenantID, Ops: ops}); err != nil {
 			return res, err
 		}
@@ -131,7 +135,8 @@ func ReadLedger(r io.Reader, now time.Time) (jobsign.LedgerExport, string, error
 		if t.empty() {
 			continue
 		}
-		s := jobsign.LedgerSnapshot{TenantID: id, Entries: []jobsign.LedgerEntry{}, Exclusions: []jobsign.LedgerExclusion{}}
+		s := jobsign.LedgerSnapshot{TenantID: id, Entries: []jobsign.LedgerEntry{}, Exclusions: []jobsign.LedgerExclusion{},
+			TierCeilingsOff: t.ceilingsOff}
 		for _, k := range sortedKeys(t.entries) {
 			s.Entries = append(s.Entries, t.entries[k])
 		}
