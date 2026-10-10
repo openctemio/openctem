@@ -54,6 +54,8 @@ import (
 //	                                            TOTP code (audited, both logs)
 //	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
 //	                                            code (audited with the reason)
+//	/admin/program-feed       any admin         local bundle switch: super_admin +
+//	                                            reason + fresh TOTP code (audited)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
@@ -213,6 +215,18 @@ func registerAdminRoutes(
 	// an upstream release by URL with a required digest), revoking and moving
 	// a channel need super_admin and are audited. A platform pack reaches the
 	// platform's sensors of every organization.
+	// Program feed sources (RFC-065 §16.6): any admin reads; switching the
+	// operator's local bundle needs super_admin, a reason and a fresh console
+	// authenticator code (checked in the handler, audited high).
+	if h.AdminProgramFeed != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		f := h.AdminProgramFeed
+		router.Group("/api/v1/admin/program-feed", func(r Router) {
+			r.GET("/", f.Status)
+			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper)
+		}, adminMiddlewares...)
+	}
+
 	if h.PlatformContentPack != nil {
 		// Writes: super_admin here; the handler adds the reason, a fresh
 		// console authenticator code (confirmAdminStepUp) and its own admin

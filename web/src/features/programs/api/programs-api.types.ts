@@ -2,7 +2,7 @@
  * Bug-bounty programs API types (RFC-065, /api/v1/programs).
  */
 
-export type ProgramStatus = 'active' | 'paused' | 'ended'
+export type ProgramStatus = 'active' | 'paused' | 'ended' | 'pending_attestation'
 
 export type ForbiddenTechnique =
   'dos' | 'automated_scanning' | 'intrusive' | 'social_engineering' | 'physical' | 'bruteforce'
@@ -31,7 +31,28 @@ export interface ProgramRules {
   testing_windows?: TestingWindow[]
 }
 
-export type ProgramScopeSource = 'paste' | 'program_api' | 'program_file'
+export type ProgramScopeSource =
+  'paste' | 'file_import' | 'program_api' | 'program_file' | 'public_feed'
+
+/** Who sees a program (RFC-065 §15): private = members and owners only. */
+export type ProgramVisibility = 'private' | 'public'
+
+export type ScopeFileFormat = 'auto' | 'platform_csv' | 'burp_json' | 'generic_csv' | 'text'
+
+/** Columns of a generic CSV: identifier required, type and in-scope optional. */
+export interface ScopeFileMapping {
+  identifier: string
+  type?: string
+  in_scope?: string
+}
+
+/** A scope file read in the browser and sent as text (at most 256 KiB). */
+export interface ScopeFileInput {
+  format: ScopeFileFormat
+  name: string
+  content: string
+  mapping?: ScopeFileMapping
+}
 
 /** Where a program's scope comes from; the API token is never returned. */
 export interface ProgramSync {
@@ -72,6 +93,10 @@ export interface Program {
   platform: string
   handle: string
   program_url: string
+  visibility: ProgramVisibility
+  terms_text: string
+  /** Private and the caller has not accepted its current terms: details hidden. */
+  locked: boolean
   status: ProgramStatus
   scope_source: string
   authoritative: boolean
@@ -97,6 +122,8 @@ export interface ProgramItem {
   pattern?: string
   asset_type?: string
   note?: string
+  /** Feed programs: published, published_by_platform or inferred. */
+  confidence?: 'published' | 'published_by_platform' | 'inferred'
 }
 
 export type PlannedEntryStatus = 'create' | 'keep' | 'already_covered' | 'refused'
@@ -137,6 +164,11 @@ export interface ProgramInput {
   handle: string
   program_url: string
   scope_text: string
+  /** Replaces scope_text when set. */
+  scope_file?: ScopeFileInput
+  terms_text: string
+  /** Read on import only. */
+  visibility?: ProgramVisibility
   rules: ProgramRules
   accept_terms_sha256?: string
 }
@@ -154,6 +186,49 @@ export interface ProgramDetail extends Program {
   items: ProgramItem[]
   entries: ProgramEntry[]
   exclusions: PlannedExclusion[]
+}
+
+/** A program of the public catalog (RFC-065 §16). */
+/** Where a feed record comes from (dataset fields for public datasets). */
+export interface FeedProvenance {
+  source: string
+  source_url: string
+  fetched_at: string
+  dataset?: string
+  dataset_commit?: string
+  original_platform?: string
+  original_url?: string
+}
+
+export interface PublicProgram {
+  id: string
+  feed_id: string
+  source: string
+  platform: string
+  handle: string
+  name: string
+  url: string
+  type: 'bounty' | 'vdp'
+  status: 'open' | 'paused' | 'closed'
+  offers_bounty: boolean
+  scope_published: boolean
+  in_scope: number
+  suggested: number
+  out_of_scope: number
+  items: ProgramItem[]
+  rules: ProgramRules
+  terms_text: string
+  terms_url?: string
+  terms_doc_sha256?: string
+  as_of: string
+  provenance: FeedProvenance
+}
+
+export interface PublicProgramPage {
+  data: PublicProgram[]
+  total: number
+  page: number
+  per_page: number
 }
 
 export interface ProgramChange {
