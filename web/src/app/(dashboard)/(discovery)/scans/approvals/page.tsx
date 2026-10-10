@@ -8,7 +8,7 @@ import {
   ScansSectionTabs,
 } from '@/features/scans/components/scans-section-tabs'
 
-/** Scans > Approvals: scan approval requests (RFC-072). */
+/** Scans > Approvals: scan approval requests (RFC-073). */
 export default function ScanApprovalsPage() {
   return (
     <Main>

@@ -36,7 +36,7 @@ interface ReviewStepProps {
   zones: ScanZone[]
   canReadZones: boolean
   zoneRequest: ScanZonePreviewRequest
-  /** Scan approval (RFC-072): what the organization's rules ask, if anything. */
+  /** Scan approval (RFC-073): what the organization's rules ask, if anything. */
   approvalBlock?: React.ReactNode
 }
 

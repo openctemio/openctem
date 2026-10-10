@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 
 /**
- * The scan list's approval badge (RFC-072): shown while the scan's newest
+ * The scan list's approval badge (RFC-073): shown while the scan's newest
  * approval request waits, or after it was rejected. Nothing otherwise.
  */
 export function ScanApprovalBadge({ status }: { status?: string | null }) {

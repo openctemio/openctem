@@ -5,7 +5,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { PageHeader } from '@/features/shared'
 import { ScanApprovalSettings } from '@/features/scans/components/approval/scan-approval-settings'
 
-/** Settings > Scan approval (RFC-072). */
+/** Settings > Scan approval (RFC-073). */
 export default function ScanApprovalSettingsPage() {
   const { t } = useTranslation()
   return (
