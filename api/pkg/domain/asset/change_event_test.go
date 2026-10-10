@@ -48,6 +48,9 @@ func TestChangeEventCoalesces(t *testing.T) {
 		return &ChangeEvent{AssetID: asset, Attribute: "exposure", Old: old, New: new, FlapCount: flaps, CreatedAt: created, Reason: ChangeReasonNewerObservation}
 	}
 	next := func(old, new string) ChangeEvent { return *ev(old, new, 1, now) }
+	setEv := func(added, removed []string, reason ChangeReason, created time.Time) *ChangeEvent {
+		return &ChangeEvent{AssetID: asset, Attribute: "open_ports", Added: added, Removed: removed, FlapCount: 1, CreatedAt: created, Reason: reason}
+	}
 	tests := []struct {
 		name   string
 		latest *ChangeEvent
@@ -65,6 +68,11 @@ func TestChangeEventCoalesces(t *testing.T) {
 		{"a person's lock never folds", &ChangeEvent{AssetID: asset, Attribute: "exposure", Old: "a", New: "b", Reason: ChangeReasonManualLock, FlapCount: 1, CreatedAt: now}, next("b", "a"), false},
 		{"a TTL expiry is its own entry", ev("a", "b", 1, now.Add(-time.Minute)), ChangeEvent{AssetID: asset, Attribute: "exposure", Old: "b", New: "a", Reason: ChangeReasonTTLExpiry, CreatedAt: now}, false},
 		{"set changes keep their diff", &ChangeEvent{AssetID: asset, Attribute: "exposure", Old: "a", New: "b", Added: []string{"x"}, FlapCount: 1, CreatedAt: now}, next("b", "a"), false},
+		{"a set element added then removed folds", setEv([]string{"x"}, nil, ChangeReasonNewerObservation, now.Add(-time.Minute)), *setEv(nil, []string{"x"}, ChangeReasonNewerObservation, now), true},
+		{"a flapping set element keeps folding", setEv(nil, []string{"x"}, ChangeReasonNewerObservation, now.Add(-time.Minute)), *setEv([]string{"x"}, nil, ChangeReasonNewerObservation, now), true},
+		{"another element is a real set change", setEv([]string{"x"}, nil, ChangeReasonNewerObservation, now.Add(-time.Minute)), *setEv(nil, []string{"y"}, ChangeReasonNewerObservation, now), false},
+		{"a set change outside the window is its own entry", setEv([]string{"x"}, nil, ChangeReasonNewerObservation, now.Add(-2*time.Hour)), *setEv(nil, []string{"x"}, ChangeReasonNewerObservation, now), false},
+		{"a set TTL expiry is its own entry", setEv([]string{"x"}, nil, ChangeReasonNewerObservation, now.Add(-time.Minute)), *setEv(nil, []string{"x"}, ChangeReasonTTLExpiry, now), false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

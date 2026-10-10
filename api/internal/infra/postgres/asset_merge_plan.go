@@ -85,6 +85,10 @@ var assetMergeRefs = []mergeRef{
 	// heard from moves.
 	{table: "asset_attribute_sources", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"attribute", "source_kind", "source_name"}}}},
+	// Per-source set elements (RFC-069): the kept asset's record of an
+	// element from a source wins; others move.
+	{table: "asset_attribute_set_elements", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"attribute", "source_kind", "source_name", "element"}}}},
 	{table: "asset_components", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{
 			{cols: []string{"component_id", "path"}},
