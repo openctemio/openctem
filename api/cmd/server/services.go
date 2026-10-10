@@ -69,6 +69,7 @@ import (
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
@@ -82,6 +83,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
@@ -539,8 +541,16 @@ type Services struct {
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
-	AttackSurface   *attack.SurfaceService
-	ThreatModel     *threatmodel.Service
+	// ProgramFeed imports the public program feed (RFC-065 §16); nil unless
+	// PROGRAMFEED_DIR and PROGRAMFEED_ROOT_KEY_ID are set.
+	ProgramFeed *programfeedapp.Importer
+	// ProgramFeedLocal imports the operator's local bundle; nil unless
+	// PROGRAMFEED_LOCAL_BUNDLE_DIR is set (and it runs only while enabled).
+	ProgramFeedLocal *programfeedapp.Importer
+	// ProgramFeedSettings holds the local bundle switch (admin console).
+	ProgramFeedSettings *postgres.PublicProgramRepository
+	AttackSurface       *attack.SurfaceService
+	ThreatModel         *threatmodel.Service
 	// ScopeLetters manages authorization letters (RFC-065 §13).
 	ScopeLetters *scope.LetterService
 
@@ -672,6 +682,8 @@ type Services struct {
 
 	// Priority Classification (RFC-004)
 	PriorityClassification *finding.PriorityClassificationService
+	// VulnMatch is inventory vulnerability matching (RFC-066).
+	VulnMatch *vulnmatch.Service
 
 	// B1/B2 reclassification pipeline — memory queue,
 	// publisher (called from control CRUD), reclassifier (consumed
@@ -909,6 +921,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetStateHistoryRepository(repos.AssetStateHistory)
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
+	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	// Business-aligned risk scoring: score an asset's EFFECTIVE criticality —
 	// MAX(own, its business unit, the business services it powers) — the SAME
 	// floor rule (and the SAME lookup adapter) that finding-priority uses, so
@@ -947,6 +960,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		programSyncAuditor(s.Audit))
 	s.BountyProgram.SetAssigner(programRepo)
 	s.ProgramAssigner = programRepo
+	// The public program catalog and the feed importer (RFC-065 §16).
+	catalogRepo := postgres.NewPublicProgramRepository(&postgres.DB{DB: deps.DB})
+	s.BountyProgram.SetCatalog(catalogRepo)
+	if cfg.Scope.ProgramFeedDir != "" && cfg.Scope.ProgramFeedRootKeyID != "" {
+		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
+			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log)
+	}
+	s.ProgramFeedSettings = catalogRepo
+	if cfg.Scope.ProgramFeedLocalBundleDir != "" {
+		s.ProgramFeedLocal = programfeedapp.NewLocalImporter(cfg.Scope.ProgramFeedLocalBundleDir, catalogRepo,
+			s.BountyProgram, catalogRepo, log)
+	}
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
 	// Program rules (RFC-065 §12) are matched against the scope entries.
@@ -1714,11 +1739,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
-	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)             // Web endpoints under their origin asset (RFC-056)
-	s.Ingest.SetSoftwareRepository(repos.Software)                   // Software inventory capture (RFC-066)
-	s.Ingest.SetAttributeReconciler(s.Asset)                         // Per-source asset attribute values (RFC-069)
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
+	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
+	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
+	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)
+	// Inventory vulnerability matching (RFC-066): told by ingest when an
+	// organization's software changes; findings go through the same
+	// priority and SLA enrichment as ingested ones.
+	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
+	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
+	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
@@ -1863,6 +1894,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
+		// A scan refused only because pending scope entries cover its
+		// targets may be saved to start once they are approved (RFC-054 §7).
+		scan.WithScopeWaits(postgres.NewScanScopeWaitRepository(&postgres.DB{DB: deps.DB}), s.Scope),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).

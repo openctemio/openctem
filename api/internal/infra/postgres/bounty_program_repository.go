@@ -34,7 +34,8 @@ func NewBountyProgramRepository(db *DB) *BountyProgramRepository {
 
 const bountyProgramColumns = `id, tenant_id, name, platform, handle, program_url, status, scope_source,
 	authoritative, rules, scope_items, terms_sha256, accepted_by, accepted_at, group_id,
-	created_by, created_at, updated_at`
+	created_by, created_at, updated_at, visibility, terms_text, public_program_id, public_synced_sha256,
+	confirmed_targets`
 
 // bountyProgramSyncColumns are read after bountyProgramColumns.
 const bountyProgramSyncColumns = `, sync_url, sync_handle, sync_username, sync_token_encrypted,
@@ -95,11 +96,16 @@ func insertProgram(ctx context.Context, tx *sql.Tx, p *bountyprogram.Program) er
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO bounty_programs (`+bountyProgramColumns+`)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
 		p.ID.String(), p.TenantID.String(), p.Name, p.Platform, p.Handle, p.ProgramURL, string(p.Status),
 		p.ScopeSource, p.Authoritative, rules, items, p.TermsSHA256, nullIDPtr(p.AcceptedBy), p.AcceptedAt,
-		nullIDPtr(p.GroupID), nullIDPtr(p.CreatedBy), p.CreatedAt, p.UpdatedAt)
+		nullIDPtr(p.GroupID), nullIDPtr(p.CreatedBy), p.CreatedAt, p.UpdatedAt, visibilityOf(p), p.TermsText,
+		nullIDPtr(p.PublicProgramID), p.PublicSyncedSHA256, pq.Array(nonNilStrings(p.ConfirmedTargets)))
 	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "uq_bounty_programs_public" {
+			return bountyprogram.ErrAlreadySubscribed
+		}
 		if isUniqueViolation(err) {
 			return bountyprogram.ErrNameTaken
 		}
@@ -148,10 +154,12 @@ func updateProgram(ctx context.Context, tx *sql.Tx, p *bountyprogram.Program) er
 	res, err := tx.ExecContext(ctx, `
 		UPDATE bounty_programs SET program_url = $3, status = $4, rules = $5, scope_items = $6,
 		       terms_sha256 = $7, accepted_by = $8, accepted_at = $9, updated_at = $10,
-		       pending_terms_sha256 = $11, pending_scope_items = $12
+		       pending_terms_sha256 = $11, pending_scope_items = $12, terms_text = $13,
+		       public_synced_sha256 = $14, confirmed_targets = $15
 		WHERE tenant_id = $1 AND id = $2`,
 		p.TenantID.String(), p.ID.String(), p.ProgramURL, string(p.Status), rules, items,
-		p.TermsSHA256, nullIDPtr(p.AcceptedBy), p.AcceptedAt, p.UpdatedAt, pendingTerms, pendingItems)
+		p.TermsSHA256, nullIDPtr(p.AcceptedBy), p.AcceptedAt, p.UpdatedAt, pendingTerms, pendingItems, p.TermsText,
+		p.PublicSyncedSHA256, pq.Array(nonNilStrings(p.ConfirmedTargets)))
 	if err != nil {
 		return fmt.Errorf("update program: %w", err)
 	}
@@ -211,7 +219,7 @@ func (r *BountyProgramRepository) SaveSync(ctx context.Context, p *bountyprogram
 func (r *BountyProgramRepository) SyncDue(ctx context.Context, olderThan time.Time, limit int) ([]bountyprogram.ProgramRef, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tenant_id::text, id::text FROM bounty_programs
-		WHERE scope_source <> 'paste' AND status = 'active'
+		WHERE scope_source IN ('program_api', 'program_file') AND status = 'active'
 		  AND (last_synced_at IS NULL OR last_synced_at < $1)
 		ORDER BY last_synced_at NULLS FIRST LIMIT $2`, olderThan, limit)
 	if err != nil {
@@ -255,6 +263,14 @@ func (r *BountyProgramRepository) ReplaceScope(ctx context.Context, w bountyprog
 		for _, t := range w.CreateEntries {
 			if err := insertScopeTarget(ctx, tx, t); err != nil {
 				return fmt.Errorf("entry %s: %w", t.Pattern(), err)
+			}
+		}
+		if w.DeactivateEntries {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE scope_targets SET status = 'inactive', updated_at = now()
+				WHERE tenant_id = $1 AND program_id = $2 AND status = 'active'`,
+				p.TenantID.String(), p.ID.String()); err != nil {
+				return fmt.Errorf("deactivate program entries: %w", err)
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -329,9 +345,10 @@ func (r *BountyProgramRepository) List(ctx context.Context, tenantID shared.ID, 
 func scanProgram(row interface{ Scan(...any) error }) (*bountyprogram.Program, error) {
 	var (
 		p                              bountyprogram.Program
-		id, tenantID, status           string
+		id, tenantID, status, vis      string
 		rules, items                   []byte
 		acceptedBy, groupID, createdBy sql.NullString
+		publicID                       sql.NullString
 		acceptedAt, syncedAt           sql.NullTime
 		syncURL, syncHandle, syncUser  sql.NullString
 		syncToken, pendingTerms        sql.NullString
@@ -339,7 +356,8 @@ func scanProgram(row interface{ Scan(...any) error }) (*bountyprogram.Program, e
 	)
 	if err := row.Scan(&id, &tenantID, &p.Name, &p.Platform, &p.Handle, &p.ProgramURL, &status, &p.ScopeSource,
 		&p.Authoritative, &rules, &items, &p.TermsSHA256, &acceptedBy, &acceptedAt, &groupID,
-		&createdBy, &p.CreatedAt, &p.UpdatedAt,
+		&createdBy, &p.CreatedAt, &p.UpdatedAt, &vis, &p.TermsText, &publicID, &p.PublicSyncedSHA256,
+		pq.Array(&p.ConfirmedTargets),
 		&syncURL, &syncHandle, &syncUser, &syncToken, &syncedAt, &p.Sync.LastError, &pendingTerms, &pendingItems); err != nil {
 		return nil, err
 	}
@@ -357,6 +375,7 @@ func scanProgram(row interface{ Scan(...any) error }) (*bountyprogram.Program, e
 	p.ID, _ = shared.IDFromString(id)
 	p.TenantID, _ = shared.IDFromString(tenantID)
 	p.Status = bountyprogram.Status(status)
+	p.Visibility = bountyprogram.Visibility(vis)
 	if err := json.Unmarshal(rules, &p.Rules); err != nil {
 		return nil, fmt.Errorf("decode program rules: %w", err)
 	}
@@ -364,6 +383,7 @@ func scanProgram(row interface{ Scan(...any) error }) (*bountyprogram.Program, e
 		return nil, fmt.Errorf("decode program items: %w", err)
 	}
 	p.AcceptedBy, p.GroupID, p.CreatedBy = idPtr(acceptedBy), idPtr(groupID), idPtr(createdBy)
+	p.PublicProgramID = idPtr(publicID)
 	if acceptedAt.Valid {
 		t := acceptedAt.Time
 		p.AcceptedAt = &t
@@ -469,6 +489,77 @@ func (r *BountyProgramRepository) MemberProgramIDs(ctx context.Context, tenantID
 		return nil, fmt.Errorf("program memberships: %w", err)
 	}
 	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		if id, err := shared.IDFromString(s); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
+}
+
+// visibilityOf is the stored visibility; a program without one is private.
+func visibilityOf(p *bountyprogram.Program) string {
+	if p.Visibility == bountyprogram.VisibilityPublic {
+		return string(bountyprogram.VisibilityPublic)
+	}
+	return string(bountyprogram.VisibilityPrivate)
+}
+
+// Attest records that a person accepted a program's terms (RFC-065 §15.3).
+func (r *BountyProgramRepository) Attest(ctx context.Context, a bountyprogram.Attestation) error {
+	res, err := r.db.ExecContext(ctx, `
+		INSERT INTO bounty_program_attestations (tenant_id, program_id, user_id, terms_sha256, accepted_at)
+		SELECT p.tenant_id, p.id, $3, $4, $5 FROM bounty_programs p WHERE p.tenant_id = $1 AND p.id = $2
+		ON CONFLICT (tenant_id, program_id, user_id)
+		DO UPDATE SET terms_sha256 = EXCLUDED.terms_sha256, accepted_at = EXCLUDED.accepted_at`,
+		a.TenantID.String(), a.ProgramID.String(), a.UserID.String(), a.TermsSHA256, a.AcceptedAt)
+	if err != nil {
+		return fmt.Errorf("record attestation: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return bountyprogram.ErrNotFound
+	}
+	return nil
+}
+
+// Attestations returns the terms hash each program of the tenant was last
+// accepted at by the user.
+func (r *BountyProgramRepository) Attestations(ctx context.Context, tenantID, userID shared.ID) (map[shared.ID]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT program_id, terms_sha256 FROM bounty_program_attestations
+		WHERE tenant_id = $1 AND user_id = $2`, tenantID.String(), userID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list attestations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[shared.ID]string{}
+	for rows.Next() {
+		var pid, sum string
+		if err := rows.Scan(&pid, &sum); err != nil {
+			return nil, err
+		}
+		id, err := shared.IDFromString(pid)
+		if err != nil {
+			continue
+		}
+		out[id] = sum
+	}
+	return out, rows.Err()
+}
+
+// PrivateProgramIDs lists the tenant's private programs.
+func (r *BountyProgramRepository) PrivateProgramIDs(ctx context.Context, tenantID shared.ID) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id FROM bounty_programs WHERE tenant_id = $1 AND visibility = 'private'`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list private programs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
 	var out []shared.ID
 	for rows.Next() {
 		var s string

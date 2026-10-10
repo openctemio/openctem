@@ -83,6 +83,8 @@ export function ScopePreview({ targets, sensorPreference, scannerName }: ScopePr
         showAllowed={showAllowed || refused === 0}
         limit={showAllowed ? 200 : 20}
         onApplied={() => void check.recheck()}
+        probeTier={check.tier}
+        sensorPreference={sensorPreference}
         className="mt-2 max-h-72 overflow-y-auto"
       />
     </section>
