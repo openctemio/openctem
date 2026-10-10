@@ -6,6 +6,7 @@ api_spec_operations
 api_specs
 asset_access_grants
 asset_attribute_sources
+asset_attribute_set_elements
 asset_attributions
 asset_change_events
 asset_dedup_review

@@ -9,6 +9,7 @@
  * Counts come from GET /api/v1/scans/overview-stats (`workflows`).
  */
 
+import { IntensityBadge } from './intensity-badge'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSWRConfig } from 'swr'
@@ -236,7 +237,10 @@ function ScanRunsTable() {
         enableSorting: false,
         cell: ({ row }) => (
           <div className="space-y-0.5">
-            <RunStatusBadge status={row.original.status} />
+            <div className="flex flex-wrap items-center gap-1">
+              <RunStatusBadge status={row.original.status} />
+              <IntensityBadge intensity={row.original.intensity} />
+            </div>
             {row.original.error_message && (
               <TruncatedText
                 value={row.original.error_message}

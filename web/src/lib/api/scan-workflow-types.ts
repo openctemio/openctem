@@ -288,6 +288,8 @@ export interface ScanRun {
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
   scan_name?: string
+  /** The probe ceiling the run started with (RFC-071); absent without one. */
+  intensity?: 'passive' | 'active' | 'intrusive'
   trigger_type: ScanWorkflowTriggerType
   triggered_by?: string
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
