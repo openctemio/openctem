@@ -10,6 +10,8 @@ import {
   LayoutDashboard,
   Megaphone,
   Radar,
+  Package,
+  ShieldCheck,
   UserCog,
   UserPlus,
   UserSearch,
@@ -68,18 +70,24 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['tenants', 'teams', 'customers'],
       },
       {
-        title: 'Access requests',
-        i18nKey: 'admin.nav.access-requests',
-        url: '/admin/organizations/access-requests',
-        icon: Inbox,
-        keywords: ['requests', 'sign-up', 'approve', 'inbox'],
-      },
-      {
         title: 'Users',
         i18nKey: 'admin.nav.users',
         url: '/admin/users',
         icon: UserSearch,
         keywords: ['accounts', 'people', 'locked', 'sessions', 'support'],
+      },
+    ],
+  },
+  {
+    title: 'Requests',
+    i18nKey: 'admin.nav.group.requests',
+    items: [
+      {
+        title: 'Access requests',
+        i18nKey: 'admin.nav.access-requests',
+        url: '/admin/requests',
+        icon: Inbox,
+        keywords: ['requests', 'sign-up', 'approve', 'inbox', 'pending'],
       },
     ],
   },
@@ -137,6 +145,13 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['registration', 'self-service', 'policy'],
       },
       {
+        title: 'Scope approvals',
+        i18nKey: 'admin.nav.scopeApprovals',
+        url: '/admin/system/scope-approvals',
+        icon: ShieldCheck,
+        keywords: ['scope', 'approval', 'widening', 'second approver', 'policy'],
+      },
+      {
         title: 'Admin sign-in',
         i18nKey: 'admin.nav.adminSignIn',
         url: '/admin/system/admin-sign-in',
@@ -150,6 +165,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/plans',
         icon: Gauge,
         keywords: ['limits', 'free', 'pro', 'enterprise', 'quotas'],
+      },
+      {
+        title: 'Content packs',
+        i18nKey: 'admin.nav.contentPacks',
+        url: '/admin/system/content-packs',
+        icon: Package,
+        keywords: ['templates', 'nuclei', 'semgrep', 'wordlists', 'channels', 'signing'],
       },
       {
         title: 'Threat intelligence',

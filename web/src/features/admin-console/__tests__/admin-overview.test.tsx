@@ -35,6 +35,7 @@ function overview(patch: {
   organizations?: Partial<AdminOverview['organizations']>
   security?: Partial<AdminOverview['security']>
   platform?: Partial<AdminOverview['platform']>
+  requests?: AdminOverview['requests']
 }): AdminOverview {
   return {
     organizations: { total: 3, without_owner: 0, without_owner_sample: [], ...patch.organizations },
@@ -57,6 +58,7 @@ function overview(patch: {
       outbox_dead: 0,
       ...patch.platform,
     },
+    requests: patch.requests,
     generated_at: '2026-10-08T10:00:00Z',
   }
 }
@@ -124,6 +126,29 @@ describe('buildAttention', () => {
     const o = overview({ security: { break_glass_tests_overdue: 1 } })
     expect(buildAttention(o, 'super_admin')[0].href).toBe('/admin/security/administrators')
     expect(buildAttention(o, 'ops_admin')[0].href).toBeUndefined()
+  })
+
+  it('sends waiting access requests to the Requests inbox, late after two days', () => {
+    const fresh = buildAttention(
+      overview({ requests: { access_pending: 2, access_oldest_pending_seconds: 3600 } }),
+      'readonly'
+    )
+    expect(fresh[0]).toMatchObject({
+      id: 'access-requests',
+      severity: 'info',
+      href: '/admin/requests',
+    })
+    const late = buildAttention(
+      overview({ requests: { access_pending: 1, access_oldest_pending_seconds: 3 * 86400 } }),
+      'readonly'
+    )
+    expect(late[0]).toMatchObject({ severity: 'warning', vars: { count: 1, days: 3 } })
+    expect(
+      buildAttention(
+        overview({ requests: { access_pending: 0, access_oldest_pending_seconds: 0 } }),
+        'readonly'
+      )
+    ).toEqual([])
   })
 
   it('links refused actions to the filtered activity log', () => {

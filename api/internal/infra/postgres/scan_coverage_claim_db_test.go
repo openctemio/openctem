@@ -56,7 +56,7 @@ func (d *countingDispatcher) DispatchTenableScan(_ context.Context, in scancover
 	for _, t := range in.Targets {
 		d.targets[t]++
 	}
-	return shared.NewID(), "session-" + shared.NewID().String()[:8], nil
+	return shared.NewID(), "session-" + shared.NewID().String()[28:], nil
 }
 
 // TestCoverageScheduler_TwoReplicasNeverDispatchAnAssetTwice: every API replica

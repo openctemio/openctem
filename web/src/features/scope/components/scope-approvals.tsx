@@ -10,10 +10,16 @@
  * Several changes can be approved at once: the server checks each one
  * (permission, not the requester, not twice) and asks for step-up on the
  * first; the re-authentication window then covers the rest.
+ *
+ * An entry also says who can still approve it (named for people who may see
+ * the members, otherwise counted), how many approvals it still needs, and
+ * offers "Remind approvers" (once an hour). When nobody else can approve it,
+ * its owner-requester may approve it with a reason and an authenticator code
+ * (RFC-054 §7).
  */
 
 import { useMemo, useState } from 'react'
-import { Check, CheckCheck, Loader2, X } from 'lucide-react'
+import { BellRing, Check, CheckCheck, Loader2, ShieldCheck, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -27,6 +33,7 @@ import {
   decideScopeExclusion,
   invalidateScopeCache,
   rejectScopeTarget,
+  remindScopeApprovers,
   useScopeExclusionsApi,
   useScopeSettingsApi,
   useScopeTargetsApi,
@@ -35,6 +42,58 @@ import type { ApiScopeExclusion, ApiScopeTarget } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { canApproveEntry, coversText, expiryText, TIER_LABEL } from '../lib/scope-entry'
 import { scopeTargetTypeLabel } from './scope-target-type'
+import { ScopeSelfApproveDialog } from './scope-self-approve-dialog'
+import { ScopeAttestations } from './scope-attestations'
+
+/** Who can still approve a pending entry, as one sentence. */
+export function approversText(entry: ApiScopeTarget): string | null {
+  const a = entry.approval
+  if (!a) return null
+  const left = a.remaining ?? 0
+  const needs = `Needs ${left} more ${left === 1 ? 'approval' : 'approvals'}`
+  const count = a.eligible_approver_count ?? 0
+  if (count === 0) {
+    return `${needs}. Nobody else in your organization can approve it.`
+  }
+  const names = (a.eligible_approvers ?? []).map((p) => p.name).filter(Boolean)
+  if (names.length > 0) {
+    return `${needs}. Can approve: ${names.join(', ')}.`
+  }
+  return `${needs}. ${count} ${count === 1 ? 'member' : 'members'} can approve it.`
+}
+
+function RemindButton({ entry }: { entry: ApiScopeTarget }) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  // The API sends can_remind_at only while the next reminder is not due yet.
+  const tooSoon = !!entry.approval?.can_remind_at
+  if ((entry.approval?.eligible_approver_count ?? 0) === 0) return null
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      disabled={busy || tooSoon}
+      title={tooSoon ? t('scope.error.REMINDER_TOO_SOON') : undefined}
+      onClick={async () => {
+        setBusy(true)
+        try {
+          const res = await remindScopeApprovers(entry.id ?? '')
+          await invalidateScopeCache()
+          toast.success(
+            `Reminded ${res?.reminded ?? 0} ${res?.reminded === 1 ? 'approver' : 'approvers'}`
+          )
+        } catch (err) {
+          toast.error(scopeErrorMessage(t, err, 'Could not send the reminder.'))
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
+      Remind approvers
+    </Button>
+  )
+}
 
 export type PendingChange =
   | { kind: 'entry'; id: string; item: ApiScopeTarget }
@@ -95,7 +154,9 @@ export function ScopeApprovals() {
     exclusions: useHasPermission(Permission.ScopeExclusionsApprove),
   }
   const { data: settings } = useScopeSettingsApi()
+  const canWrite = useHasPermission(Permission.ScopeWrite)
   const { changes, isLoading } = usePendingScopeChanges()
+  const [selfApprove, setSelfApprove] = useState<ApiScopeTarget | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
 
@@ -135,15 +196,20 @@ export function ScopeApprovals() {
   if (changes.length === 0) {
     const n = settings?.effective_widening_approvals ?? 0
     return (
-      <EmptyState
-        icon={CheckCheck}
-        title="No changes wait for approval"
-        description={
-          n > 0
-            ? `Changes that widen scope need ${n} ${n === 1 ? 'approval' : 'approvals'} (Scope policy).`
-            : 'Changes that widen scope take effect at once in your organization (Scope policy).'
-        }
-      />
+      <div className="space-y-6">
+        <ScopeAttestations />
+        <EmptyState
+          icon={CheckCheck}
+          title="No changes wait for approval"
+          description={
+            settings?.approval_policy?.mode === 'disabled'
+              ? 'Approvals are disabled by your platform administrator: changes that widen scope take effect at once.'
+              : n > 0
+                ? `Your organization requires ${n} ${n === 1 ? 'approval' : 'approvals'} for changes that widen scope (Scope policy).`
+                : 'Changes that widen scope take effect at once in your organization (Scope policy).'
+          }
+        />
+      </div>
     )
   }
 
@@ -152,6 +218,7 @@ export function ScopeApprovals() {
 
   return (
     <div className="space-y-3">
+      <ScopeAttestations />
       {decidable.length > 1 && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Checkbox
@@ -229,6 +296,22 @@ export function ScopeApprovals() {
                       </span>
                     ))}
                   </div>
+                  {isEntry && approversText(c.item) && (
+                    <p className="text-xs text-muted-foreground" data-testid="approvers-line">
+                      {approversText(c.item)}
+                    </p>
+                  )}
+                  {isEntry && (canWrite || c.item.approval?.self_approval_available) && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {canWrite && <RemindButton entry={c.item} />}
+                      {c.item.approval?.self_approval_available && (
+                        <Button size="sm" variant="outline" onClick={() => setSelfApprove(c.item)}>
+                          <ShieldCheck className="h-4 w-4" />
+                          Approve as the only owner
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {mayDecide ? (
                   <div className="flex shrink-0 flex-col gap-1 sm:items-end">
@@ -275,6 +358,9 @@ export function ScopeApprovals() {
           )
         })}
       </ul>
+      {selfApprove && (
+        <ScopeSelfApproveDialog entry={selfApprove} onOpenChange={() => setSelfApprove(null)} />
+      )}
     </div>
   )
 }

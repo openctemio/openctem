@@ -277,6 +277,9 @@ func registerScanWorkflowRoutes(
 		r.GET("/{id}/map", h.GetRunMap, middleware.Require(permission.ScansRead))
 		// What one step produced, new ones first (in the caller's data scope).
 		r.GET("/{id}/outputs", h.ListRunStepOutputs, middleware.Require(permission.ScansRead))
+		// The scope the run relied on (RFC-065 §9): scope or program readers only.
+		r.GET("/{id}/scope-snapshot", h.GetRunScopeSnapshot, middleware.Require(permission.ScansRead),
+			middleware.RequireAny(permission.ScopeRead, permission.ProgramsRead))
 
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.ScansWrite))
 	}, runMiddlewares...)
@@ -520,6 +523,9 @@ func registerScannerTemplateRoutes(
 		r.POST("/", h.Create, middleware.Require(permission.ScannerTemplatesWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.ScannerTemplatesWrite))
 		r.POST("/{id}/deprecate", h.Deprecate, middleware.Require(permission.ScannerTemplatesWrite))
+		// Approving a version for sensors is a scope widening (RFC-040
+		// §5.8, §11.5): the scope approvers, with step-up.
+		r.POST("/{id}/approve", h.ApproveForSensors, middleware.Require(permission.ScopeApprove), requireStepUp())
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScannerTemplatesDelete))

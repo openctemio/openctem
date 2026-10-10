@@ -33,6 +33,8 @@ const (
 	SectionScope          = "scope"
 	SectionMCP            = "mcp"
 	SectionVulnMatching   = "vuln_matching"
+	// SectionAssetReconciliation is RFC-069.
+	SectionAssetReconciliation = "asset_reconciliation"
 )
 
 // settingsSectionTargets maps each section key to the field of s it decodes
@@ -40,21 +42,22 @@ const (
 // sections and are never rewritten by a section write.
 func settingsSectionTargets(s *Settings) map[string]any {
 	return map[string]any{
-		SectionGeneral:        &s.General,
-		SectionSecurity:       &s.Security,
-		SectionBranding:       &s.Branding,
-		SectionBranch:         &s.Branch,
-		SectionAI:             &s.AI,
-		SectionRiskScoring:    &s.RiskScoring,
-		SectionPentest:        &s.Pentest,
-		SectionAssetIdentity:  &s.AssetIdentity,
-		SectionAssetLifecycle: &s.AssetLifecycle,
-		SectionRetest:         &s.Retest,
-		SectionEvidence:       &s.Evidence,
-		SectionEASM:           &s.EASM,
-		SectionScope:          &s.Scope,
-		SectionMCP:            &s.MCP,
-		SectionVulnMatching:   &s.VulnMatching,
+		SectionGeneral:             &s.General,
+		SectionSecurity:            &s.Security,
+		SectionBranding:            &s.Branding,
+		SectionBranch:              &s.Branch,
+		SectionAI:                  &s.AI,
+		SectionRiskScoring:         &s.RiskScoring,
+		SectionPentest:             &s.Pentest,
+		SectionAssetIdentity:       &s.AssetIdentity,
+		SectionAssetLifecycle:      &s.AssetLifecycle,
+		SectionRetest:              &s.Retest,
+		SectionEvidence:            &s.Evidence,
+		SectionEASM:                &s.EASM,
+		SectionScope:               &s.Scope,
+		SectionMCP:                 &s.MCP,
+		SectionAssetReconciliation: &s.AssetReconciliation,
+		SectionVulnMatching:        &s.VulnMatching,
 	}
 }
 

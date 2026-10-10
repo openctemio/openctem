@@ -30,6 +30,7 @@ import { TimelineSection, TechnicalDetailsSection, TagsSection } from './sheet-s
 import { AssetMergeHistory } from './asset-merge-history'
 import { AssetIdentitySections } from './asset-identity-sections'
 import { AssetAttributionSection } from './asset-attribution-section'
+import { AssetAttributeSourcesSection } from './asset-attribute-sources-section'
 import { RelationshipPreview } from './relationships'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
@@ -448,6 +449,7 @@ export function AssetDetailSheet<T extends Asset>({
               assetName={asset.name}
               assetType={asset.type}
             />
+            <AssetAttributeSourcesSection assetId={asset.id} />
             <TimelineSection
               firstSeen={asset.firstSeen}
               lastSeen={asset.lastSeen}

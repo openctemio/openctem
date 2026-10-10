@@ -304,6 +304,7 @@ type Filter struct {
 	OwnerIDs             []string
 	IDs                  []string   // Only these assets (a batch lookup by id; data scope still applies)
 	UnderDomains         []string   // Names equal to or below these DNS names (example.com, *.example.com)
+	InCIDRs              []string   // Address assets (ip_address, host named by an address) inside these ranges
 	HasOwner             *bool      // Filter assets with/without an assigned owner (asset_owners)
 	DataClassifications  []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
 	IsControlPlane       *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
@@ -516,6 +517,12 @@ func (f Filter) WithUnderDomains(names ...string) Filter {
 	return f
 }
 
+// WithInCIDRs keeps the address assets inside one of these ranges.
+func (f Filter) WithInCIDRs(cidrs ...string) Filter {
+	f.InCIDRs = cidrs
+	return f
+}
+
 // WithIDs narrows the list to these asset ids (a batch lookup).
 func (f Filter) WithIDs(ids ...string) Filter {
 	f.IDs = ids
@@ -626,6 +633,7 @@ func (f Filter) IsEmpty() bool {
 		len(f.OwnerIDs) == 0 &&
 		len(f.IDs) == 0 &&
 		len(f.UnderDomains) == 0 &&
+		len(f.InCIDRs) == 0 &&
 		f.HasOwner == nil &&
 		len(f.DataClassifications) == 0 &&
 		f.IsControlPlane == nil &&

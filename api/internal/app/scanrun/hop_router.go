@@ -46,6 +46,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -181,6 +182,11 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 		rows = append(rows, c.row(scanrun.TargetSkipped, c.reason))
 	}
 	plan.Planned = len(targets)
+	for _, reason := range []string{scanrun.ReasonOverCap, scanrun.ReasonHopLimit} {
+		if n := plan.Skipped[reason]; n > 0 {
+			metrics.ScanStageTargetsSkipped.WithLabelValues(reason).Add(float64(n))
+		}
+	}
 	if over := plan.Skipped[scanrun.ReasonOverCap]; over > 0 {
 		s.logger.Warn("chained stage fan-out capped",
 			"run_id", run.ID.String(), "step_key", step.StepKey, "planned", len(planned), "over_cap", over)

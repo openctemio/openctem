@@ -29,9 +29,11 @@ import (
 
 // ScanWorkflowHandler handles HTTP requests for scan workflows.
 type ScanWorkflowHandler struct {
-	service   *scanrun.Service
-	validator *validator.Validator
-	logger    *logger.Logger
+	// scopeSnapshots reads a run's scope snapshot (RFC-065 §9).
+	scopeSnapshots RunScopeSnapshots
+	service        *scanrun.Service
+	validator      *validator.Validator
+	logger         *logger.Logger
 	// taskLogs reads a run task's logs (nil: GET .../tasks/{task_id}/logs
 	// answers an empty log).
 	taskLogs taskLogReader
@@ -357,6 +359,19 @@ type RunDispatchResponse struct {
 	// SensorRouting is where the run's commands were queued: "tenant" or
 	// "platform" (shared platform sensors), decided at trigger time.
 	SensorRouting string `json:"sensor_routing,omitempty"`
+	// TargetExpansion is what each dynamic target selector (*.example.com,
+	// an inventory-mode CIDR) added from the inventory when the run started
+	// (RFC-068).
+	TargetExpansion []RunTargetExpansion `json:"target_expansion,omitempty"`
+}
+
+// RunTargetExpansion is what one selector added to a run.
+type RunTargetExpansion struct {
+	Selector string   `json:"selector"`
+	Kind     string   `json:"kind"` // wildcard | cidr
+	Matched  int      `json:"matched"`
+	Capped   bool     `json:"capped,omitempty"`
+	Sample   []string `json:"sample,omitempty"`
 }
 
 // RunUncoveredTarget is a target the run did not scan.
@@ -1375,7 +1390,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 // the run context. Values round-trip through JSON so the same code reads a
 // freshly built context and one loaded from the database.
 func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
-	keys := []string{"resolved_target_count", "excluded_target_count", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing"}
+	keys := []string{"resolved_target_count", "excluded_target_count", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing", "target_expansion"}
 	present := map[string]any{}
 	for _, k := range keys {
 		if v, ok := runContext[k]; ok && v != nil {
@@ -1396,6 +1411,7 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 		Uncovered []RunUncoveredTarget `json:"uncovered_targets"`
 		Routing   *RunZoneRouting      `json:"zone_routing"`
 		Sensor    string               `json:"sensor_routing"`
+		Expansion []RunTargetExpansion `json:"target_expansion"`
 	}
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil
@@ -1407,6 +1423,7 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 		UncoveredTargets: in.Uncovered,
 		ZoneRouting:      in.Routing,
 		SensorRouting:    in.Sensor,
+		TargetExpansion:  in.Expansion,
 	}
 }
 

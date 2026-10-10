@@ -5,6 +5,7 @@ api_keys
 api_spec_operations
 api_specs
 asset_access_grants
+asset_attribute_sources
 asset_attributions
 asset_components
 asset_dedup_review
@@ -28,6 +29,8 @@ audit_chain_rebaselines
 audit_log_chain
 audit_logs
 authorization_letters
+automation_runs
+automations
 bounty_program_exclusions
 bounty_programs
 business_service_assets
@@ -104,7 +107,6 @@ notifications
 pentest_campaign_members
 pentest_campaigns
 pentest_finding_templates
-pentest_findings
 pentest_reports
 pentest_retests
 priority_class_audit_log
@@ -181,5 +183,3 @@ vulnerabilities
 web_endpoint_events
 web_endpoint_params
 web_endpoints
-workflow_runs
-workflows
