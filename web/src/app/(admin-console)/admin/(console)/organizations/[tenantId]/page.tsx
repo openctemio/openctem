@@ -20,6 +20,7 @@ import { useAdmin } from '@/features/admin-console/components/admin-console-shel
 import { OrganizationAuditChainPanel } from '@/features/admin-console/components/organization-audit-chain-panel'
 import { OrganizationPlanPanel } from '@/features/admin-console/components/organization-plan-panel'
 import { OrganizationModulesPanel } from '@/features/admin-console/components/organization-modules-panel'
+import { OrganizationScopePolicyPanel } from '@/features/admin-console/components/organization-scope-policy-panel'
 import { OrganizationUsersSection } from '@/features/admin-console/components/organization-users-section'
 import { SSOEnforcementCard } from '@/features/admin-console/components/sso-enforcement-card'
 import { adminCan } from '@/features/admin-console/types'
@@ -83,7 +84,7 @@ function OrganizationActivity({ tenantId }: { tenantId: string }) {
   )
 }
 
-const TABS = ['overview', 'users', 'plan', 'sso', 'activity', 'audit-chain'] as const
+const TABS = ['overview', 'users', 'plan', 'sso', 'scope', 'activity', 'audit-chain'] as const
 
 export default function AdminOrganizationPage({
   params,
@@ -136,6 +137,7 @@ export default function AdminOrganizationPage({
                 <TabsTrigger value="users">{t('admin.org.tab.users', 'Members')}</TabsTrigger>
                 <TabsTrigger value="plan">{t('admin.org.tab.plan', 'Plan')}</TabsTrigger>
                 <TabsTrigger value="sso">{t('admin.org.tab.sso', 'Single sign-on')}</TabsTrigger>
+                <TabsTrigger value="scope">{t('admin.org.tab.scope', 'Scope')}</TabsTrigger>
                 <TabsTrigger value="activity">
                   {t('admin.org.tab.activity', 'Activity')}
                 </TabsTrigger>
@@ -193,6 +195,10 @@ export default function AdminOrganizationPage({
                 onChanged={refresh}
               />
               <VerifiedDomainsSection tenantId={org.id} canManage={canManageSSO} />
+            </TabsContent>
+
+            <TabsContent value="scope" className="mt-4">
+              <OrganizationScopePolicyPanel tenantId={org.id} canEdit={canManageSSO} />
             </TabsContent>
 
             <TabsContent value="activity" className="mt-4">

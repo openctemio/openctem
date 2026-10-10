@@ -22,7 +22,7 @@ func TestExternalMembership_SwitcherAndKindFilter(t *testing.T) {
 
 	host := createTestTenant(t, db, "ext-host")
 	other := createTestTenant(t, db, "ext-other")
-	stamp := shared.NewID().String()[:8]
+	stamp := shared.NewID().String()[28:]
 	ext := createTestUser(t, db, "ext-"+stamp+"@gmail.com", "Ext")
 	in := createTestUser(t, db, "in-"+stamp+"@host.example", "In")
 	t.Cleanup(func() {

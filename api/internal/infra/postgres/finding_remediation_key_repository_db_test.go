@@ -31,7 +31,7 @@ func TestFindingRemediationKeyRepository_RoundTrip(t *testing.T) {
 	}
 
 	tenantID := shared.NewID()
-	slug := "remgrp-" + tenantID.String()[:8]
+	slug := "remgrp-" + tenantID.String()[28:]
 	if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
 		tenantID.String(), "rem-group-test", slug); err != nil {
 		t.Fatalf("seed tenant: %v", err)

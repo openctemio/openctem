@@ -25,6 +25,9 @@ type ScanConfigExport struct {
 	// Targets
 	AssetGroupIDs []string `json:"asset_group_ids,omitempty"`
 	Targets       []string `json:"targets,omitempty"`
+	// TargetOptions tunes how each run resolves the dynamic selectors among
+	// Targets (RFC-068); omitted when every option is the default.
+	TargetOptions *scan.TargetOptions `json:"target_options,omitempty"`
 
 	// Scan Type
 	ScanType       string         `json:"scan_type"`
@@ -108,6 +111,10 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 	}
 	if opts.RedactSecrets {
 		export.ScannerConfig = scan.RedactConfigSecrets(sc.ScannerConfig)
+	}
+	if !sc.TargetOptions.IsZero() {
+		o := sc.TargetOptions
+		export.TargetOptions = &o
 	}
 
 	if sc.ProfileID != nil && !sc.ProfileID.IsZero() {
@@ -217,6 +224,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		ScannerName:         export.ScannerName,
 		ScannerConfig:       export.ScannerConfig,
 		TargetsPerJob:       export.TargetsPerJob,
+		TargetOptions:       export.TargetOptions,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
 		ScheduleRRule:       export.ScheduleRRule,
