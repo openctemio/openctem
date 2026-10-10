@@ -594,7 +594,7 @@ covers the target.
   `program_feed_state` (applied sequence, highest key-set version; the apply
   locks it and refuses an older sequence), `bounty_programs.public_program_id`
   (unique per tenant), `public_synced_sha256`, `confirmed_targets`, status
-  `pending_attestation`, source `public_feed` (migration `001724`).
+  `pending_attestation`, source `public_feed` (migration `001736`).
 - Fan-out is a reconcile: every tick, followed programs whose catalog
   content changed (or that are in effect while it is closed, paused or
   archived) are brought up to date, so a failed update is retried.
