@@ -123,6 +123,31 @@ program entries cover is never routed to platform sensors (an explicit
 tenant's sensors). Each scan run links to a hashed snapshot of the scope in
 force when it started.
 
+## Port- and path-limited entries (RFC-065 §16.8)
+
+An entry can be limited to ports and a protocol (`scope_targets.ports`,
+`protocol`, migration `001800`; part of the entry's identity, never changed
+after creation) and a URL entry with a path is limited to that path.
+`scope.EntryMatches` is the one coverage test (`Target.Matches`, the
+authority, the signer's ledger):
+
+| Entry | Covers | Does not cover |
+|---|---|---|
+| `api.x.com` ports `8443` tcp | `api.x.com:8443`, `https://api.x.com:8443/…` | `api.x.com` (the whole host), `api.x.com:22`, `https://api.x.com/` (443) |
+| `https://x.com/api*` | `https://x.com/api`, `…/api/v1?q` | `x.com`, `…/apiadmin`, `…/api/../admin`, `…/api/%2e%2e/admin`, another scheme, port or host |
+
+A bare host is never covered by a port-limited entry, so a full port scan of
+it is refused by the ordinary "no entry" path. When a job reaches the gate
+with its tool and settings (`DispatchTargetsInput.Job`, always set by the
+claim re-check), a target that only limited entries cover is refused
+(`constrained`) unless `scope.ConstrainedJobRefusal` allows it: only tools
+that stay on the target they are given (`naabu` and `httpx` for ports,
+`httpx` for paths); a port list must lie within the allowed ports, `naabu`
+needs one, and `top_ports` is refused. Crawlers, template scanners and DAST
+tools stay refused there until they take an enforced scope from the
+platform. A gate without the check fails closed. The coverage report counts
+only unlimited entries.
+
 ## What the gate checks
 
 For each target, in order:
