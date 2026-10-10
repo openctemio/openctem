@@ -1,5 +1,4 @@
-import en from './i18n/dictionaries/en.json'
-import vi from './i18n/dictionaries/vi.json'
+import { en, vi } from './i18n/dictionaries'
 
 export const rtlLocales = new Set(['ar', 'he', 'fa', 'ur'])
 export function getDirFromLocale(locale?: string): 'ltr' | 'rtl' {
