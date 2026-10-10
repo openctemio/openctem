@@ -8,6 +8,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { ScanRoutingSection, toZonePreviewRequest } from '@/features/scan-zones'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -53,6 +54,7 @@ interface EditScanDialogProps {
 const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
 
 export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: EditScanDialogProps) {
+  const { t } = useTranslation()
   const [currentStep, setCurrentStep] = useState<ScanWizardStep>('basic')
   const [formData, setFormData] = useState<NewScanFormData>(DEFAULT_NEW_SCAN)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -103,7 +105,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
   const validateCurrentStep = (): boolean => {
     switch (currentStep) {
       case 'basic': {
-        const problem = basicInfoError(formData)
+        const problem = basicInfoError(formData, t)
         if (problem) {
           toast.error(problem)
           return false
@@ -111,7 +113,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         return true
       }
       case 'targets': {
-        const problem = targetsError(formData)
+        const problem = targetsError(formData, t)
         if (problem) {
           toast.error(problem)
           return false
@@ -119,7 +121,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         return true
       }
       case 'schedule': {
-        const problem = scheduleError(formData, { requireFuture: false })
+        const problem = scheduleError(formData, { requireFuture: false }, t)
         if (problem) {
           toast.error(problem)
           return false
@@ -160,8 +162,8 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       const request = formDataToUpdateRequest(formData, scanConfig, { canSetZone: canReadZones })
       const updated = await updateScanConfig(request)
 
-      toast.success(`Scan "${formData.name}" updated successfully`)
-      notifyScannerConfigWarnings(updated)
+      toast.success(t('scans.edit.updated', undefined, { name: formData.name }))
+      notifyScannerConfigWarnings(updated, t)
       await invalidateScanConfigsCache()
       onSuccess?.()
       onOpenChange(false)
@@ -173,7 +175,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         return
       }
       console.error('Failed to update scan:', error)
-      toast.error(getErrorMessage(error, 'Failed to update scan. Please try again.'))
+      toast.error(getErrorMessage(error, t('scans.edit.updateFailed')))
     } finally {
       setIsSubmitting(false)
     }
@@ -193,8 +195,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         return (
           <div>
             <div className="mx-6 mt-4 rounded-md border border-muted bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-              Target changes require creating a new scan configuration. Targets shown here are
-              read-only.
+              {t('scans.edit.targetsReadOnly')}
             </div>
             {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-6 mt-4" />}
             <TargetsStep data={formData} onChange={handleDataChange} showCoverage={false} />
@@ -227,9 +228,9 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Edit Scan</DialogTitle>
+          <DialogTitle>{t('scans.edit.title')}</DialogTitle>
           <DialogDescription>
-            Update the configuration for &quot;{scanConfig?.name}&quot;
+            {t('scans.edit.description', undefined, { name: scanConfig?.name ?? '' })}
           </DialogDescription>
           <ScanStepper
             className="px-0 pt-2 pb-0 sm:px-0"
@@ -251,7 +252,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
                 className="w-full sm:w-auto"
               >
                 <ChevronLeft className="me-1 h-4 w-4" />
-                Back
+                {t('scans.common.back')}
               </Button>
             )}
           </div>
@@ -264,7 +265,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
               disabled={isLoading}
               className="w-full sm:w-auto order-2 sm:order-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
 
             {isLastStep ? (
@@ -277,12 +278,12 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
                 {isLoading ? (
                   <>
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    Saving...
+                    {t('scans.common.saving')}
                   </>
                 ) : (
                   <>
                     <Save className="me-2 h-4 w-4" />
-                    Save Changes
+                    {t('scans.edit.saveChanges')}
                   </>
                 )}
               </Button>
@@ -292,7 +293,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
                 onClick={handleNext}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
-                Next
+                {t('scans.common.next')}
                 <ChevronRight className="ms-1 h-4 w-4" />
               </Button>
             )}

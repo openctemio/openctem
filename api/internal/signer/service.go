@@ -47,6 +47,9 @@ type Config struct {
 	// LedgerMinApprovals is SIGNER_LEDGER_MIN_APPROVALS: the operator's
 	// floor under every widening's approval count (0..2).
 	LedgerMinApprovals int
+	// LedgerT2MinApprovals is SIGNER_LEDGER_T2_MIN_APPROVALS: the
+	// operator's floor for a widening to an intrusive entry (0..2).
+	LedgerT2MinApprovals int
 	// Now is the clock (tests replace it); nil: time.Now.
 	Now func() time.Time
 }
@@ -96,7 +99,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	ledger, err := OpenLedger(LedgerConfig{
 		Path: filepath.Join(cfg.StateDir, LedgerLogFile), LockPath: filepath.Join(cfg.StateDir, LedgerLockFile),
-		Fresh: lg.entries == 0, Mode: cfg.LedgerMode, MinApprovals: cfg.LedgerMinApprovals, Logger: cfg.Logger,
+		Fresh: lg.entries == 0, Mode: cfg.LedgerMode, MinApprovals: cfg.LedgerMinApprovals, T2MinApprovals: cfg.LedgerT2MinApprovals, Logger: cfg.Logger,
 	}, now())
 	if err != nil {
 		_ = lg.Close()

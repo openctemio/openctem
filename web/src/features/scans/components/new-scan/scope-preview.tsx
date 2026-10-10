@@ -9,6 +9,7 @@
 
 import { useState } from 'react'
 import { CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { useDebounce } from '@/hooks/use-debounce'
 import { ScopeCheckList, useScopeCheck } from '@/features/scope'
@@ -28,6 +29,7 @@ interface ScopePreviewProps {
 export const SCOPE_PREVIEW_DEBOUNCE_MS = 400
 
 export function ScopePreview({ targets, sensorPreference, scannerName }: ScopePreviewProps) {
+  const { t } = useTranslation()
   const joined = useDebounce(targets.join('\n'), SCOPE_PREVIEW_DEBOUNCE_MS)
   const list = joined ? joined.split('\n') : []
   const check = useScopeCheck(list, {
@@ -43,7 +45,7 @@ export function ScopePreview({ targets, sensorPreference, scannerName }: ScopePr
   const allowed = results.length - refused
 
   return (
-    <section aria-label="Scope check" className="rounded-lg border p-3">
+    <section aria-label={t('scans.scope.check')} className="rounded-lg border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           {check.isLoading ? (
@@ -55,10 +57,20 @@ export function ScopePreview({ targets, sensorPreference, scannerName }: ScopePr
           )}
           <span aria-live="polite">
             {check.isLoading && results.length === 0
-              ? 'Checking scope…'
+              ? t('scans.scope.checking')
               : refused > 0
-                ? `${refused} of ${results.length} ${results.length === 1 ? 'target' : 'targets'} may not be scanned`
-                : `All ${allowed} ${allowed === 1 ? 'target is' : 'targets are'} in scope`}
+                ? t(
+                    results.length === 1
+                      ? 'scans.scope.someRefusedOne'
+                      : 'scans.scope.someRefusedMany',
+                    undefined,
+                    { refused, total: results.length }
+                  )
+                : t(
+                    allowed === 1 ? 'scans.scope.allInScopeOne' : 'scans.scope.allInScopeMany',
+                    undefined,
+                    { count: allowed }
+                  )}
           </span>
         </div>
         {allowed > 0 && refused > 0 && (
@@ -69,14 +81,14 @@ export function ScopePreview({ targets, sensorPreference, scannerName }: ScopePr
             className="h-7 px-2 text-xs"
             onClick={() => setShowAllowed((v) => !v)}
           >
-            {showAllowed ? 'Hide allowed' : `Show ${allowed} allowed`}
+            {showAllowed
+              ? t('scans.scope.hideAllowed')
+              : t('scans.scope.showAllowed', undefined, { count: allowed })}
           </Button>
         )}
       </div>
       {check.error && (
-        <p className="mt-1 text-xs text-muted-foreground">
-          The scope check is not available right now; the scan is still checked when it starts.
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{t('scans.scope.unavailable')}</p>
       )}
       <ScopeCheckList
         results={results}

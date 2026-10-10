@@ -140,7 +140,11 @@ func (r *ScopeCoverageRepository) CountCoverage(ctx context.Context, tenantID sh
 			// A scope for another tenant admits nothing (fail closed).
 			return out, nil
 		}
-		user = scope.UserID.String()
+		if scope.Restricted() {
+			// Program-only assets are not the organization's coverage; an
+			// unrestricted scope counts like the whole organization.
+			user = scope.UserID.String()
+		}
 	}
 	err := r.db.QueryRowContext(ctx, scopeCoverageQuery, tenantID.String(),
 		pq.Array(scopeCoverageAssetTypes), pq.Array(scopeCoverageInventoryStates), user).
@@ -170,7 +174,9 @@ func (r *ScopeCoverageRepository) CountVisibleAssets(ctx context.Context, tenant
 		if !scope.TenantID.IsZero() && scope.TenantID != tenantID {
 			return 0, nil // a scope for another tenant admits nothing
 		}
-		user = scope.UserID.String()
+		if scope.Restricted() {
+			user = scope.UserID.String()
+		}
 	}
 	var n int
 	err := r.db.QueryRowContext(ctx, `
