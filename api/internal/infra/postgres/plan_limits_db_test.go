@@ -71,7 +71,7 @@ func TestPlanLimitsRefuseAtTheInsert(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
 	db := &DB{DB: sqlDB}
-	suffix := shared.NewID().String()[:8]
+	suffix := shared.NewID().String()[28:]
 	tid := planTestTenant(t, sqlDB, "limits-"+suffix)
 	user := planTestUser(t, sqlDB, "limits-"+suffix+"@example.test")
 

@@ -35,7 +35,7 @@ func TestAITriagePriorityLookupRepo_GetFalsePositiveVerdicts(t *testing.T) {
 
 	tenantID := shared.NewID()
 	mustExec(t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`,
-		tenantID.String(), "aitriage-fp-test", "aitfp-"+tenantID.String()[:8])
+		tenantID.String(), "aitriage-fp-test", "aitfp-"+tenantID.String()[28:])
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID.String()) })
 
 	// Asset.

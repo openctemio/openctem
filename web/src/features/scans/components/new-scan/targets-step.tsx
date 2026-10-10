@@ -2,7 +2,8 @@
  * Targets Step
  *
  * One target picker with three sources (inventory assets, asset groups,
- * pasted targets), the coverage level for typed and picked domains, and a
+ * pasted targets), the coverage level for typed and picked domains, the
+ * dynamic targets (`*.x`, CIDRs, re-resolved at every run: RFC-068), and a
  * selection summary pinned under them with the server's scope check.
  * Research: research/85-new-scan.md §4.3-4.4.
  */
@@ -16,10 +17,10 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { NewScanFormData } from '../../types'
 import { COVERAGE_LEVELS, type CoverageLevel } from '../../lib/coverage-expansion'
 import { useCoverageExpansion } from '../../hooks/use-coverage-expansion'
-import { firstWildcard, scannerTakesWildcard } from '../../lib/wildcard-targets'
 import { parsePastedTargets } from '../../lib/target-format'
 import { directTargets } from '../../lib/scan-form'
-import { WildcardTargetHint } from './wildcard-target-hint'
+import { isWildcardTarget } from '../../lib/dynamic-targets'
+import { DynamicTargetsPanel } from './dynamic-targets-panel'
 import { AssetSource, type PickedAsset } from '../target-picker/asset-source'
 import { GroupSource } from '../target-picker/group-source'
 import { PasteSource } from '../target-picker/paste-source'
@@ -86,13 +87,6 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
   }
   const setTyped = (lines: string[]) => onChange({ targets: { ...targets, customTargets: lines } })
 
-  // A wildcard pattern for an active single scanner: offer discovery of the
-  // root, or the known assets that match (the API would refuse the pattern).
-  const wildcard =
-    data.mode === 'single' && !scannerTakesWildcard(data.scannerName)
-      ? firstWildcard(pasted.targets)
-      : null
-
   // Typed and picked names: what the coverage level expands.
   const typedTargets = useMemo(
     () => [
@@ -144,7 +138,12 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
           targets.customTargets.filter((line) => line.trim().toLowerCase() !== t.toLowerCase())
         ),
     })),
-    ...(coverage === 'host' ? [] : expansion.added).map((t) => ({
+    // The *.domain targets the coverage level made of typed or picked
+    // domains, and the addresses of `subdomains_ips`.
+    ...sent
+      .filter((t) => isWildcardTarget(t) && !pasted.targets.includes(t))
+      .map((t) => ({ key: `w:${t}`, label: t, kind: 'expanded' as const })),
+    ...(coverage === 'subdomains_ips' ? expansion.added : []).map((t) => ({
       key: `e:${t}`,
       label: t,
       kind: 'expanded' as const,
@@ -181,22 +180,7 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
           <GroupSource selected={pickedGroups} onToggle={toggleGroup} />
         </TabsContent>
         <TabsContent value="paste" className="pt-3">
-          <PasteSource value={targets.customTargets} onChange={setTyped}>
-            {wildcard && (
-              <WildcardTargetHint
-                pattern={wildcard}
-                targets={targets.customTargets}
-                onDiscover={(scannerName, next) =>
-                  onChange({
-                    mode: 'single',
-                    scannerName,
-                    targets: { ...targets, customTargets: next },
-                  })
-                }
-                onUseAssets={(next) => onChange({ targets: { ...targets, customTargets: next } })}
-              />
-            )}
-          </PasteSource>
+          <PasteSource value={targets.customTargets} onChange={setTyped} />
         </TabsContent>
       </Tabs>
 
@@ -226,17 +210,26 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
           </RadioGroup>
           {coverage !== 'host' && (
             <p className="text-xs text-muted-foreground" aria-live="polite">
-              {expansion.isLoading
-                ? 'Looking up your inventory…'
-                : expansion.roots.length === 0
-                  ? 'No domain names to expand: enter or pick a domain.'
-                  : expansion.added.length === 0
-                    ? `Nothing in your inventory below ${expansion.roots.join(', ')} yet.`
-                    : `Adds ${expansion.added.length} ${expansion.added.length === 1 ? 'target' : 'targets'} from your inventory below ${expansion.roots.join(', ')}.`}
+              {expansion.roots.length === 0
+                ? 'No domain names to expand: enter or pick a domain.'
+                : coverage === 'subdomains'
+                  ? `Scans ${expansion.roots.map((r) => `*.${r}`).join(', ')}: every run takes the subdomains your inventory holds at that time.`
+                  : expansion.isLoading
+                    ? 'Looking up your inventory…'
+                    : expansion.added.length === 0
+                      ? `Scans ${expansion.roots.map((r) => `*.${r}`).join(', ')}; no recorded addresses below them yet.`
+                      : `Scans ${expansion.roots.map((r) => `*.${r}`).join(', ')} and adds ${expansion.added.length} recorded ${expansion.added.length === 1 ? 'address' : 'addresses'}.`}
             </p>
           )}
         </fieldset>
       )}
+
+      <DynamicTargetsPanel
+        targets={sent}
+        options={targets.targetOptions}
+        onChange={(targetOptions) => onChange({ targets: { ...targets, targetOptions } })}
+        workflow={data.mode === 'workflow'}
+      />
 
       <SelectionSummary
         targets={sent}

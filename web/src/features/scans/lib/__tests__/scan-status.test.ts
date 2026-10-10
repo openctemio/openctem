@@ -47,7 +47,7 @@ describe('lastRunReason', () => {
         refusal_code: 'WILDCARD_TARGET',
         error_message: 'Target "*.x" is a pattern',
       })
-    ).toBe('Wildcard pattern given to an active scanner: Target "*.x" is a pattern')
+    ).toBe('Wildcard target not allowed: Target "*.x" is a pattern')
   })
 
   it('shows an unknown code as sent, and escapes control characters', () => {

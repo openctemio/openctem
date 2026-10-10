@@ -27,6 +27,7 @@ import {
   tenableScanConfigError,
   tenableScanConfigToApi,
 } from '@/features/integrations/lib/tenable-sc'
+import { apiTargetOptions, isWildcardTarget, toWildcards } from './dynamic-targets'
 
 /** Form schedule frequency -> API schedule type. */
 export function frequencyToScheduleType(frequency: ScheduleFrequency | undefined): ScheduleType {
@@ -128,11 +129,20 @@ function dedupe(all: string[]): string[] {
   return [...new Map(all.map((t) => [t.trim().toLowerCase(), t.trim()])).values()].filter(Boolean)
 }
 
-/** Typed targets as sent: valid lines, normalized, without repeats, plus the coverage additions. */
+/**
+ * Typed targets as sent: valid lines, normalized, without repeats. With a
+ * coverage level above `host`, each typed or picked domain becomes
+ * `*.domain`, which the API resolves to the domain and its known subdomains
+ * at every run (RFC-068); `subdomains_ips` also adds today's addresses.
+ */
 function typedAndExpanded(form: NewScanFormData): string[] {
   const { targets } = form
-  const all = [...parsePastedTargets(targets.customTargets).targets]
-  if (targets.coverage && targets.coverage !== 'host') all.push(...(targets.expandedTargets ?? []))
+  const typed = parsePastedTargets(targets.customTargets).targets
+  if (!targets.coverage || targets.coverage === 'host') return dedupe(typed)
+  const picked = targets.assetIds.map((id) => targets.assetNames?.[id]).filter(Boolean) as string[]
+  const wildcards = toWildcards(picked).filter(isWildcardTarget)
+  const all = [...toWildcards(typed), ...wildcards]
+  if (targets.coverage === 'subdomains_ips') all.push(...(targets.expandedTargets ?? []))
   return dedupe(all)
 }
 
@@ -185,6 +195,8 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   }
   if (form.profileId) request.profile_id = form.profileId
   if (form.scanZoneId) request.scan_zone_id = form.scanZoneId
+  const targetOptions = apiTargetOptions(targets.targetOptions)
+  if (targetOptions) request.target_options = targetOptions
 
   if (targets.assetGroupIds.length > 0) {
     request.asset_group_ids = targets.assetGroupIds
@@ -246,6 +258,7 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
       assetIds: [],
       assetNames: {},
       customTargets: config.targets ?? [],
+      targetOptions: config.target_options,
     },
     maxConcurrent: config.targets_per_job || 10,
     timeoutSeconds: config.timeout_seconds || 3600,
@@ -284,6 +297,8 @@ export function formDataToUpdateRequest(
   // Only someone who can see the zones may change the zone: otherwise an
   // empty picker would reset a restricted scan to Automatic.
   if (opts.canSetZone) request.scan_zone_id = form.scanZoneId ?? ''
+  // Sent whole: {} resets every option to its default (RFC-068).
+  request.target_options = apiTargetOptions(form.targets.targetOptions) ?? {}
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'single' && form.scannerName) request.scanner_name = form.scannerName

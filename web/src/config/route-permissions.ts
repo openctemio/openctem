@@ -167,6 +167,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.ScopeConfig,
   },
+  // Letters of authorization (RFC-065 §13).
+  '/scope/letters': {
+    permission: Permission.ScopeRead,
+    module: Module.ScopeConfig,
+  },
   // Bug-bounty programs (RFC-065); the API filters what each caller sees.
   '/programs': {
     permission: Permission.ProgramsRead,
@@ -678,6 +683,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/scim': {
     permission: Permission.MembersRead,
   },
+  // Service accounts: listed with team:members:read, like members (api
+  // routes/access_control.go registerServiceAccountRoutes).
+  '/settings/service-accounts': {
+    permission: Permission.MembersRead,
+  },
 
   // ========================================
   // Settings - Integrations (Module: integrations)
@@ -740,6 +750,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
   },
   '/settings/asset-lifecycle/**': {
+    permission: Permission.TeamUpdate,
+  },
+
+  // Asset source precedence (RFC-069): owner/admin on the API.
+  '/settings/asset-sources': {
     permission: Permission.TeamUpdate,
   },
 }

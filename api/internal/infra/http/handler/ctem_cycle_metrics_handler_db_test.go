@@ -40,7 +40,7 @@ func TestCTEMCycleMetricsHandler_LazyAndTrend(t *testing.T) {
 	}
 
 	tenantID := shared.NewID()
-	slug := "ctemx-" + tenantID.String()[:8]
+	slug := "ctemx-" + tenantID.String()[28:]
 	if _, err := raw.ExecContext(ctx,
 		`INSERT INTO tenants (id, name, slug) VALUES ($1,'ctem-metrics-http',$2)`,
 		tenantID.String(), slug); err != nil {

@@ -330,6 +330,11 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
+	// Program rules (RFC-065 §12): conflicting programs, or outside a
+	// program's testing windows, refuse the run.
+	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
+		return nil, err
+	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 	targets := resolved.Targets
 	zones, err := s.loadZones(ctx, sc.TenantID)
@@ -390,6 +395,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {
 		return nil, err // Error already includes proper domain error for limit exceeded
 	}
+	s.recordScopeSnapshot(ctx, run, targets)
 
 	// Create step runs
 	for _, step := range steps {
@@ -460,6 +466,11 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		return nil, err
 	}
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
+		return nil, err
+	}
+	// Program rules (RFC-065 §12): conflicting programs, or outside a
+	// program's testing windows, refuse the run.
+	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
 		return nil, err
 	}
 	// Proof can be lost after the scan was saved: re-check at every run.
@@ -550,6 +561,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {
 		return nil, err // Error already includes proper domain error for limit exceeded
 	}
+	s.recordScopeSnapshot(ctx, run, resolved.Targets)
 
 	// A single scan still needs a step run. The completion machinery
 	// (OnStepCompleted / OnStepFailed) works by looking the step up on the run
@@ -1323,6 +1335,12 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	}
 	if len(r.TargetTypes) > 0 {
 		runContext[RunContextKeyTargetTypes] = r.TargetTypes
+	}
+	if len(r.Expansion) > 0 {
+		runContext[RunContextKeyTargetExpansion] = r.Expansion
+	}
+	if len(r.SelectorRoots) > 0 {
+		runContext[RunContextKeySelectorRoots] = r.SelectorRoots
 	}
 	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeNoCompatibleTargets,

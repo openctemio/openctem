@@ -44,7 +44,10 @@ type LogEntry struct {
 	Seq             uint64    `json:"seq,omitempty"`
 	KeyID           string    `json:"keyid,omitempty"`
 	StatementSHA256 string    `json:"statement_sha256,omitempty"`
-	Prev            string    `json:"prev"`
+	// LedgerAudit is the ledger refusal a signature was given despite
+	// (SIGNER_LEDGER=audit): what enforce mode would have refused.
+	LedgerAudit string `json:"ledger_audit,omitempty"`
+	Prev        string `json:"prev"`
 }
 
 // SigningLog is the signer's append-only, hash-chained JSONL record of every
@@ -58,6 +61,8 @@ type SigningLog struct {
 	// so nothing more is appended (and nothing more signed) until restart
 	// verifies it.
 	broken bool
+	// entries is the number of lines the log held when it was opened.
+	entries int
 }
 
 // OpenSigningLog opens (creating it 0600) the log at path and verifies the
@@ -73,12 +78,12 @@ func OpenSigningLog(path string) (*SigningLog, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("signing log: %w", err)
 	}
-	last, _, err := VerifyLog(f)
+	last, n, err := VerifyLog(f)
 	if err != nil {
 		_ = f.Close()
 		return nil, err
 	}
-	return &SigningLog{f: f, prev: last}, nil
+	return &SigningLog{f: f, prev: last, entries: n}, nil
 }
 
 // Append writes e (its Prev set here) and fsyncs it.

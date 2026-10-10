@@ -189,7 +189,7 @@ func TestRefuseUnownedTargets_AuditBounded(t *testing.T) {
 	blocked := map[string]attribution.State{}
 	targets := make([]string, 0, 120)
 	for i := range 120 {
-		name := "h" + strings.Repeat("x", i%7) + "-" + string(rune('a'+i%26)) + shared.NewID().String()[:8] + ".example.com"
+		name := "h" + strings.Repeat("x", i%7) + "-" + string(rune('a'+i%26)) + shared.NewID().String()[28:] + ".example.com"
 		blocked[name] = attribution.StateUnattributed
 		targets = append(targets, name)
 	}

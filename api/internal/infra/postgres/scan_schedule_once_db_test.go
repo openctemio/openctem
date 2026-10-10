@@ -1,6 +1,6 @@
 package postgres
 
-// One-off scheduled scans (schedule_type once, migration 001551): the run time
+// One-off scheduled scans (schedule_type once, migration 001670): the run time
 // is stored and read back, the scan is due at it, and once claimed it has no
 // next run and is not reported as an inert schedule.
 
