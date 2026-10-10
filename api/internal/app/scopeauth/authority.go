@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -332,6 +333,32 @@ func (a *Authority) Limits(name string, tier scopedom.Tier) (free bool, ports []
 		}
 	}
 	return false, ports, path, covered
+}
+
+// EntryLimits are the limits of the entries that cover name at tier when
+// only port- or path-limited entries do (scopedom.LimitOfEntry); free is
+// true when an entry without a limit covers it, covered false when none
+// does.
+func (a *Authority) EntryLimits(name string, tier scopedom.Tier) (free, covered bool, limits []scopedom.EntryLimit) {
+	if a == nil {
+		return false, false, nil
+	}
+	for _, f := range MatchForms(name) {
+		for _, t := range a.targets {
+			if t == nil || t.MaxTier() < tier || !a.coversForm(t, f) {
+				continue
+			}
+			covered = true
+			l, limited := scopedom.LimitOfEntry(t.TargetType(), t.Pattern(), t.Constraint())
+			if !limited {
+				return true, true, nil
+			}
+			if !slices.Contains(limits, l) {
+				limits = append(limits, l)
+			}
+		}
+	}
+	return false, covered, limits
 }
 
 // Verified reports whether name is at or under one of the tenant's verified

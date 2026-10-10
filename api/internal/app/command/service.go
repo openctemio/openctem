@@ -49,6 +49,9 @@ type Service struct {
 	// command the re-check failed.
 	scopeGate ScopeGate
 	failures  FailureObserver
+	// limits computes the scope limits a signed job carries for an
+	// enforcing sensor (scope_limits.go); nil: none.
+	limits ScopeLimitSource
 	// now is the clock (tests replace it).
 	now func() time.Time
 	// programRules applies bug-bounty program rules at delivery
