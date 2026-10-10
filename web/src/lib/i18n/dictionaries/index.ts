@@ -19,6 +19,7 @@ import en_components from './en/components.json'
 import en_criticality from './en/criticality.json'
 import en_findings from './en/findings.json'
 import en_help from './en/help.json'
+import en_licensePolicy from './en/licensePolicy.json'
 import en_nav from './en/nav.json'
 import en_org from './en/org.json'
 import en_plan from './en/plan.json'
@@ -43,6 +44,7 @@ import vi_components from './vi/components.json'
 import vi_criticality from './vi/criticality.json'
 import vi_findings from './vi/findings.json'
 import vi_help from './vi/help.json'
+import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_nav from './vi/nav.json'
 import vi_org from './vi/org.json'
 import vi_plan from './vi/plan.json'
@@ -72,6 +74,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   criticality: en_criticality,
   findings: en_findings,
   help: en_help,
+  licensePolicy: en_licensePolicy,
   nav: en_nav,
   org: en_org,
   plan: en_plan,
@@ -99,6 +102,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   criticality: vi_criticality,
   findings: vi_findings,
   help: vi_help,
+  licensePolicy: vi_licensePolicy,
   nav: vi_nav,
   org: vi_org,
   plan: vi_plan,

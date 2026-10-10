@@ -68,6 +68,7 @@ type Service struct {
 	webEndpoints webendpoint.Repository
 	software     *softwareRecorder
 	attributes   AttributeReconciler
+	sets         SetReconciler
 	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
@@ -211,12 +212,6 @@ func (s *Service) SetRepositoryExtensionRepository(repo asset.RepositoryExtensio
 // subdomain-to-domain relationships during asset ingestion.
 func (s *Service) SetRelationshipRepository(repo asset.RelationshipRepository) {
 	s.assetProcessor.SetRelationshipRepository(repo)
-}
-
-// SetPortReconciler wires port-closed detection for port-scan reports
-// (research/22 P0-6). Optional: unwired, ports are only ever added.
-func (s *Service) SetPortReconciler(r PortReconciler) {
-	s.assetProcessor.SetPortReconciler(r)
 }
 
 // SetAssetStateHistoryRepository wires the asset state-history store so the
@@ -516,7 +511,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// The tracked values this report states (RFC-069), before findings are
 	// prioritized on the assets' criticality and exposure.
-	s.recordAttributes(ctx, tenantID, scope, attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}, observedAt, report, assetMap)
+	src := attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}
+	s.recordAttributes(ctx, tenantID, scope, src, observedAt, report, assetMap)
+	s.recordSets(ctx, tenantID, scope, src, observedAt, report, binding, assetMap)
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
