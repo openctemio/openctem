@@ -13,8 +13,10 @@ import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -32,8 +34,8 @@ import {
   basicInfoError,
   formDataToUpdateRequest,
   scanConfigToFormData,
-  scheduleError,
   targetsError,
+  scheduleError,
 } from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
@@ -223,24 +225,22 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] overflow-hidden p-0 w-full sm:max-w-[600px]">
-        <DialogHeader className="border-b px-6 py-4">
+      <DialogContent size="lg">
+        <DialogHeader>
           <DialogTitle>Edit Scan</DialogTitle>
           <DialogDescription>
             Update the configuration for &quot;{scanConfig?.name}&quot;
           </DialogDescription>
+          <ScanStepper
+            className="px-0 pt-2 pb-0 sm:px-0"
+            currentStep={currentStep}
+            onStepClick={handleStepClick}
+          />
         </DialogHeader>
 
-        {/* Stepper */}
-        <div className="min-w-0 border-b">
-          <ScanStepper currentStep={currentStep} onStepClick={handleStepClick} />
-        </div>
+        <DialogBody className="px-0 py-0 sm:px-0">{renderStep()}</DialogBody>
 
-        {/* Step Content */}
-        <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden">{renderStep()}</div>
-
-        {/* Footer */}
-        <div className="flex flex-col-reverse gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <DialogFooter className="sm:items-center sm:justify-between">
           <div className="flex justify-center sm:justify-start">
             {!isFirstStep && (
               <Button
@@ -297,7 +297,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
               </Button>
             )}
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

@@ -34,24 +34,12 @@ import {
   readinessLabel,
   type WorkflowReadiness,
 } from '@/features/scan-workflows/lib/readiness'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import {
-  Radar,
-  GitBranch,
-  Layers,
-  ChevronRight,
-  ChevronDown,
-  Sparkles,
-  Server,
-  Cloud,
-} from 'lucide-react'
-import { useMemo, useState } from 'react'
-import type { SensorPreference, NewScanFormData } from '../../types'
-import { SENSOR_PREFERENCE_CONFIG } from '../../types'
+import { Radar, GitBranch, Layers, ChevronRight } from 'lucide-react'
+import { useMemo } from 'react'
+import type { NewScanFormData } from '../../types'
 import { useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
 import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
 import { planStages } from '@/features/scan-workflows/lib/workflow-stages'
-import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { ScannerSelect } from '../scanner-select'
 import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
 import { TENABLE_SC_TOOL } from '@/features/integrations/lib/tenable-sc'
@@ -70,9 +58,6 @@ interface BasicInfoStepProps {
 }
 
 export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoStepProps) {
-  const [advancedOpen, setAdvancedOpen] = useState(false)
-  // Platform scanning is a choice only where the organization may use it.
-  const { offered: platformOffered } = usePlatformScanning()
   // Workflow scans are a module: when it is off for the organization the
   // API refuses them, so none is offered (an existing workflow scan being
   // edited keeps showing its workflow).
@@ -292,57 +277,6 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
           )}
         </div>
       )}
-
-      {/* Advanced Options - Collapsible */}
-      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-        <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full py-2 border-t">
-          <ChevronDown
-            className={`h-4 w-4 transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
-          />
-          <span>Advanced Options</span>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="space-y-4 pt-3">
-          {/* Sensor Preference - Compact */}
-          <div className="space-y-2">
-            <Label className="text-sm">Sensor Preference</Label>
-            <RadioGroup
-              value={data.sensorPreference}
-              onValueChange={(value: SensorPreference) => onChange({ sensorPreference: value })}
-              className="flex flex-wrap gap-3"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="auto" id="sensor-auto" />
-                <Label htmlFor="sensor-auto" className="cursor-pointer text-sm font-normal">
-                  <span className="flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {SENSOR_PREFERENCE_CONFIG.auto.label}
-                  </span>
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="tenant" id="sensor-tenant" />
-                <Label htmlFor="sensor-tenant" className="cursor-pointer text-sm font-normal">
-                  <span className="flex items-center gap-1.5">
-                    <Server className="h-3.5 w-3.5" />
-                    {SENSOR_PREFERENCE_CONFIG.tenant.label}
-                  </span>
-                </Label>
-              </div>
-              {(platformOffered || data.sensorPreference === 'platform') && (
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="platform" id="sensor-platform" />
-                  <Label htmlFor="sensor-platform" className="cursor-pointer text-sm font-normal">
-                    <span className="flex items-center gap-1.5">
-                      <Cloud className="h-3.5 w-3.5" />
-                      {SENSOR_PREFERENCE_CONFIG.platform.label}
-                    </span>
-                  </Label>
-                </div>
-              )}
-            </RadioGroup>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
     </div>
   )
 }
