@@ -1,0 +1,16 @@
+- id: compliance
+  const: ModuleCompliance
+  slug: compliance
+  name: Compliance
+  description: "Compliance frameworks, controls and audit-readiness mappings"
+  icon: ClipboardCheck
+  category: compliance
+  order: 90
+  user_facing: true
+  permission: "compliance:frameworks:read"
+  depends:
+    - {id: findings, kind: soft, reason: "compliance reports aggregate findings against frameworks"}
+  routes:
+    - /api/v1/compliance
+  mcp:
+    - compliance_posture

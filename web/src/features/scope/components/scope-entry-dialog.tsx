@@ -216,6 +216,8 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     tier,
     entriesNeedApproval: settings?.approval_policy?.entries_need_approval,
   })
+  // Entry tier ceilings apply only in Strict scan approval (RFC-073 §6).
+  const tierCeilings = settings?.approval_policy?.tier_ceilings ?? true
 
   const expiresOn = expiring ? formatDay(expiryDateFor(expiryDays), locale) : ''
   const summary = [
@@ -469,7 +471,15 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                 </fieldset>
               )}
 
-              <div className="space-y-2">
+              {!tierCeilings && (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'scope.entry.noTierCeiling',
+                    'An entry covers every probe: the scan intensity and the approval rules decide how hard its targets are scanned.'
+                  )}
+                </p>
+              )}
+              <div className={tierCeilings ? 'space-y-2' : 'hidden'}>
                 <Label htmlFor={`${formId}-tier`}>
                   {t('scope.entry.tierLabel', 'Deepest probe allowed')}
                 </Label>
