@@ -113,6 +113,12 @@ var v1ChangeKinds = map[string]bool{"program_added": true, "program_reopened": t
 
 // v1Label is the asset type label the classifier honors for a feed target
 // type ("" for an unknown type).
+// Classifier labels used more than once.
+const (
+	labelURL       = "url"
+	labelIPAddress = "ip_address"
+)
+
 func v1Label(feedType string) string {
 	switch feedType {
 	case "domain", "wildcard", "cidr", "url", "mobile_app", "other":
@@ -120,7 +126,7 @@ func v1Label(feedType string) string {
 	case "source_repo":
 		return "source_code"
 	case "ip":
-		return "ip_address"
+		return labelIPAddress
 	}
 	return ""
 }
@@ -158,11 +164,11 @@ func v1AssetLabel(assetType string) string {
 	case "domain", "subdomain", "wildcard":
 		return "domain"
 	case "ip_address", "ip":
-		return "ip_address"
+		return labelIPAddress
 	case "cidr", "ip_range":
 		return "cidr"
 	case "url", "web_application", "website", "api":
-		return "url"
+		return labelURL
 	}
 	return ""
 }
