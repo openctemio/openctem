@@ -528,3 +528,43 @@ func TestActiveGate_AssetTargets(t *testing.T) {
 		t.Fatal("an unwired gate must refuse")
 	}
 }
+
+type tierPolicyByTenant map[shared.ID]bool
+
+func (p tierPolicyByTenant) TierCeilingsEnforced(_ context.Context, id shared.ID) bool {
+	enforced, ok := p[id]
+	return !ok || enforced
+}
+
+// Outside the Strict scan approval mode a scope entry covers its targets at
+// every tier (RFC-073 §6); the tenant whose mode is Strict keeps its
+// ceilings, and coverage itself is unchanged.
+func TestActiveGate_TierCeilingsFollowTheMode(t *testing.T) {
+	f := newGateFixture(t)
+	low, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "*.low.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	low.SetMaxTier(scopedom.TierPassive, time.Now())
+	f.targets = append(f.targets, low)
+	g := NewActiveGate(f, f, f, f)
+	ctx := context.Background()
+	targets := []string{"app.low.example", "app.scoped.com"}
+
+	g.SetTierPolicy(tierPolicyByTenant{f.tenant: false})
+	if got, err := g.TierExceeded(ctx, f.tenant, targets, scopedom.TierIntrusive); err != nil || len(got) != 0 {
+		t.Fatalf("ceilings off: %v %v, want nothing exceeded", got, err)
+	}
+	g.SetTierPolicy(tierPolicyByTenant{f.tenant: true})
+	if got, _ := g.TierExceeded(ctx, f.tenant, targets, scopedom.TierIntrusive); len(got) != 2 {
+		t.Fatalf("Strict: %v, want both exceeded", got)
+	}
+	// Another tenant with ceilings off gains nothing over this one.
+	g.SetTierPolicy(tierPolicyByTenant{shared.NewID(): false})
+	if got, _ := g.TierExceeded(ctx, f.tenant, targets, scopedom.TierIntrusive); len(got) != 2 {
+		t.Fatalf("another tenant turned these ceilings off: %v", got)
+	}
+	if _, err := (&ActiveGate{tiers: tierPolicyByTenant{}}).TierExceeded(ctx, f.tenant, targets, scopedom.TierActive); err == nil {
+		t.Error("an unwired gate must refuse even with ceilings off")
+	}
+}

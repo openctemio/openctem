@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
@@ -160,6 +161,7 @@ func (s *Service) commitEntry(ctx context.Context, before *jobsign.LedgerEntry, 
 			mode, _ := s.governance.ScanGovernanceMode(ctx, t.TenantID())
 			ch.PlatformPolicy = "scan_approval:" + string(mode)
 		}
+		ch.Ops = append(ch.Ops, s.ceilingsOp(ctx, t.TenantID().String()))
 		for _, a := range t.Approvals() {
 			if id := userRef(a.UserID); id != "" {
 				ch.Approvals = append(ch.Approvals, jobsign.LedgerApproval{UserID: id, ApprovedAt: a.ApprovedAt.UTC(), SelfApproved: a.Self})
@@ -206,6 +208,7 @@ func (s *Service) commitExclusion(ctx context.Context, before *jobsign.LedgerExc
 		if id := userRef(reviewer); id != "" {
 			ch.Approvals = append(ch.Approvals, jobsign.LedgerApproval{UserID: id, ApprovedAt: now})
 		}
+		ch.Ops = append(ch.Ops, s.ceilingsOp(ctx, e.TenantID().String()))
 	}
 	return s.commitLedger(ctx, ch, widens, save)
 }
@@ -230,6 +233,46 @@ func (s *Service) commitLedger(ctx context.Context, ch jobsign.LedgerChange, wid
 			"tenant_id", ch.TenantID, "change_id", ch.ChangeID, "error", logger.SanitizeError(err))
 	}
 	return nil
+}
+
+// CommitTierCeilings is the same hook for the organization's entry tier
+// ceilings (RFC-073 §7): they are in force only in the Strict scan
+// approval mode. Turning them off widens (every entry then covers every
+// tier): the signer accepts it before save runs, or the change fails.
+// Turning them on narrows: save runs first and the signer is told after,
+// best effort (the periodic sync narrows it otherwise). requester is who
+// changed the mode ("" for a platform administrator), mode labels the
+// record.
+func (s *Service) CommitTierCeilings(ctx context.Context, tenantID shared.ID, enforced bool, requester string,
+	mode scangov.Mode, save func() error,
+) error {
+	if s.ledger == nil {
+		return save()
+	}
+	on := enforced
+	ch := jobsign.LedgerChange{TenantID: tenantID.String(), ChangeID: uuid.NewString(), Requester: userRef(requester),
+		Approvals: []jobsign.LedgerApproval{}, PlatformPolicy: "scan_approval:" + string(mode),
+		Ops: []jobsign.LedgerOp{{Op: jobsign.OpSetTierCeilings, TierCeilings: &on}}}
+	return s.commitLedger(ctx, ch, !enforced, save)
+}
+
+// ceilingsOp is the operation that sets the tenant's tier ceilings in the
+// ledger as the database has them. Every widening carries it, so a
+// tenant's ledger follows its scan approval mode from its first scope
+// change on (and catches up on the next widening after a mode change the
+// signer did not receive). A sync never sends it widening: the ledger
+// never takes a wider state from the database alone.
+func (s *Service) ceilingsOp(ctx context.Context, tenantID string) jobsign.LedgerOp {
+	on := s.tierCeilingsEnforced(ctx, tenantID)
+	return jobsign.LedgerOp{Op: jobsign.OpSetTierCeilings, TierCeilings: &on}
+}
+
+// tierCeilingsEnforced reports whether the tenant's entry tier ceilings
+// are in force: only in Strict. Without governance, or when the mode
+// cannot be read, they are (fail closed).
+func (s *Service) tierCeilingsEnforced(ctx context.Context, tenantID string) bool {
+	m, _ := s.ApprovalPolicy(ctx, tenantID)
+	return scangov.TierCeilingsEnforced(m)
 }
 
 // ProgramAttestation labels a widening approved by a program importer's
@@ -265,10 +308,11 @@ func (s *Service) CommitEntries(ctx context.Context, tenantID shared.ID, request
 		narrow.Ops = append(narrow.Ops, jobsign.LedgerOp{Op: jobsign.OpRemoveEntry, ID: id.String()})
 	}
 	if len(widen.Ops) > 0 {
-		for start := 0; start < len(widen.Ops); start += jobsign.MaxLedgerOps {
+		ceilings := s.ceilingsOp(ctx, tenantID.String())
+		for start := 0; start < len(widen.Ops); start += jobsign.MaxLedgerOps - 1 {
 			part := widen
 			part.ChangeID = uuid.NewString()
-			part.Ops = widen.Ops[start:min(start+jobsign.MaxLedgerOps, len(widen.Ops))]
+			part.Ops = append(append([]jobsign.LedgerOp(nil), widen.Ops[start:min(start+jobsign.MaxLedgerOps-1, len(widen.Ops))]...), ceilings)
 			if err := s.applyLedger(ctx, part, jobsign.ChangeWiden); err != nil {
 				return err
 			}
@@ -327,7 +371,8 @@ func sameExpiry(a, b *time.Time) bool {
 // LedgerSnapshot is the tenant's scope in effect in the ledger's form: the
 // body of a sync and one organization of `server -signer-ledger-export`.
 func (s *Service) LedgerSnapshot(ctx context.Context, tenantID string) (jobsign.LedgerSnapshot, error) {
-	snap := jobsign.LedgerSnapshot{TenantID: tenantID, Entries: []jobsign.LedgerEntry{}, Exclusions: []jobsign.LedgerExclusion{}}
+	snap := jobsign.LedgerSnapshot{TenantID: tenantID, Entries: []jobsign.LedgerEntry{}, Exclusions: []jobsign.LedgerExclusion{},
+		TierCeilingsOff: !s.tierCeilingsEnforced(ctx, tenantID)}
 	targets, err := s.ListActiveTargets(ctx, tenantID)
 	if err != nil {
 		return snap, err

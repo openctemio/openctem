@@ -70,7 +70,7 @@ Signer (`openctem-signer serve`):
 | `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
 | `SIGNER_LEDGER` | scope ledger mode: `enforce`, `audit` or `off` ([Scope ledger](#scope-ledger)) | the recorded default: `enforce` on a signer that had never signed, `audit` on one upgraded to the ledger |
 | `SIGNER_LEDGER_MIN_APPROVALS` | the operator's floor under every widening's approval count (0, 1 or 2) | 0 |
-| `SIGNER_LEDGER_T2_MIN_APPROVALS` | the operator's floor for a widening that puts an intrusive (t2) entry into the ledger (0, 1 or 2; RFC-073 §7) | 0 |
+| `SIGNER_LEDGER_T2_MIN_APPROVALS` | the operator's floor for a widening that puts an intrusive (t2) entry into the ledger or turns an organization's tier ceilings off (0, 1 or 2; RFC-073 §7) | 0 |
 
 API:
 
@@ -381,6 +381,7 @@ API process that asks for anything, gets a refusal.
 |---|---|---|
 | entry | `id`, `type` (scope target type), `pattern`, `max_tier` (0, 1, 2), `expires_at` | a scope entry in effect (active, unexpired) |
 | exclusion | `id`, `type` (domain, subdomain, ip_address, ip_range, cidr, url, repository), `pattern`, `expires_at` | a target exclusion in effect (approved, active) |
+| tier ceilings | on (default) or off, per organization (`set_tier_ceilings`, snapshot `tier_ceilings_off`) | the scan approval mode: on only in Strict (RFC-073 §7); off widens and needs the intrusive floor, on narrows; a sync turns them on, never off |
 
 At sign time, for every target of the statement, with the API's matching
 (`pkg/domain/scope`: `*.x` covers `x` and every name below it, CIDR and
@@ -394,7 +395,8 @@ and `NeedsAuthority` the API's authority check uses):
    entry, and neither do internal names and private, loopback, link-local or
    CGNAT addresses (zones gate them), as in RFC-054 §4.2;
 3. otherwise an unexpired entry covering the target with `max_tier` at or
-   above the tier: covered only below it is `tier_exceeds_ledger`, not at all
+   above the tier (any covering entry when the organization's tier ceilings
+   are off): covered only below it is `tier_exceeds_ledger`, not at all
    `out_of_ledger`.
 
 Expiry is applied with the signer's clock: an expired entry stops
