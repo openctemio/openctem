@@ -70,14 +70,14 @@ tool_repository.go:ToolRepository.BulkUpdateVersions:tools  D-11 baseline: add t
 tool_repository.go:ToolRepository.Delete:tools  D-11 baseline: add the tenant predicate
 tool_repository.go:ToolRepository.GetByID:tools  D-11 baseline: add the tenant predicate
 tool_repository.go:ToolRepository.Update:tools  D-11 baseline: add the tenant predicate
-workflow_repository.go:WorkflowRepository.Delete:workflows  D-11 baseline: add the tenant predicate
-workflow_repository.go:WorkflowRepository.GetByID:workflows  D-11 baseline: add the tenant predicate
-workflow_repository.go:WorkflowRepository.Update:workflows  D-11 baseline: add the tenant predicate
-workflow_run_repository.go:WorkflowRunRepository.Delete:workflow_runs  D-11 baseline: add the tenant predicate
-workflow_run_repository.go:WorkflowRunRepository.GetByID:workflow_runs  D-11 baseline: add the tenant predicate
-workflow_run_repository.go:WorkflowRunRepository.UpdateStats:workflow_runs  D-11 baseline: add the tenant predicate
-workflow_run_repository.go:WorkflowRunRepository.UpdateStatus:workflow_runs  D-11 baseline: add the tenant predicate
-workflow_run_repository.go:WorkflowRunRepository.Update:workflow_runs  D-11 baseline: add the tenant predicate
+automation_repository.go:AutomationRepository.Delete:automations  D-11 baseline: add the tenant predicate
+automation_repository.go:AutomationRepository.GetByID:automations  D-11 baseline: add the tenant predicate
+automation_repository.go:AutomationRepository.Update:automations  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.Delete:automation_runs  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.GetByID:automation_runs  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.UpdateStats:automation_runs  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.UpdateStatus:automation_runs  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.Update:automation_runs  D-11 baseline: add the tenant predicate
 mcp_oauth_repository.go:MCPOAuthRepository.GetRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
 mcp_oauth_repository.go:MCPOAuthRepository.ClaimRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
 mcp_oauth_repository.go:MCPOAuthRepository.DenyRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user

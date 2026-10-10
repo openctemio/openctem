@@ -69,6 +69,10 @@ var (
 
 	sensorUpgradeCheck = flag.Bool("sensor-upgrade-check", false,
 		"Report data and schema still carrying the pre-sensor 'agent' vocabulary after migration 000230, then exit (0 = clean, 1 = leftovers)")
+
+	signerLedgerExport = flag.String("signer-ledger-export", "",
+		"Write every organization's scope in effect as a job-signer ledger snapshot to this new file (0600), then exit; "+
+			"the operator imports it with `openctem-signer ledger import` (RFC-040 P2)")
 )
 
 func main() {
@@ -124,6 +128,9 @@ func run() int {
 
 	if *sensorUpgradeCheck {
 		return runSensorUpgradeCheck(ctx, db.DB, os.Stdout)
+	}
+	if *signerLedgerExport != "" {
+		return runSignerLedgerExport(ctx, db, *signerLedgerExport, os.Stdout, log)
 	}
 	logSensorUpgradeLeftovers(ctx, db.DB, log)
 	registerOpsMetrics(db.DB, cfg, log)

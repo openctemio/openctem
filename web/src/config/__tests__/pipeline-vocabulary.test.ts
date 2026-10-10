@@ -47,10 +47,6 @@ const ALLOWED: { path: RegExp; why: string }[] = [
     why: 'SCM CI pipeline feature',
   },
   {
-    path: /^src\/features\/access-control\/api\/use-tenant-permissions\.ts$/,
-    why: 'integrations.pipelines (CI) module',
-  },
-  {
     path: /^src\/config\/__tests__\/settings-route-guards\.test\.ts$/,
     why: 'pipelines_int (CI) module slug',
   },

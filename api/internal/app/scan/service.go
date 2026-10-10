@@ -183,10 +183,18 @@ type TemplateSyncResult struct {
 
 // Service handles scan business operations.
 type Service struct {
-	scanRepo            scan.Repository
-	ownerActivity       OwnerActivity
-	templateRepo        scanworkflow.Repository
-	assetGroupRepo      assetgroup.Repository
+	// programRules refuses runs a bug-bounty program's rules forbid
+	// (program_rules.go); nil: not checked.
+	programRules ProgramRuleChecker
+	// scopeSnapshots records the scope each run relied on (RFC-065 §9).
+	scopeSnapshots ScopeSnapshotRecorder
+	scanRepo       scan.Repository
+	ownerActivity  OwnerActivity
+	templateRepo   scanworkflow.Repository
+	assetGroupRepo assetgroup.Repository
+	// selectorAssets reads the inventory behind dynamic target selectors
+	// (target_selectors.go); nil refuses a run that has one.
+	selectorAssets      SelectorAssets
 	runRepo             scanrun.RunRepository
 	stepRepo            scanworkflow.StepRepository
 	stepRunRepo         scanrun.StepRunRepository

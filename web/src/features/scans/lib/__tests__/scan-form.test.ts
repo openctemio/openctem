@@ -368,3 +368,78 @@ describe('direct target limit', () => {
     ).toBeNull()
   })
 })
+
+describe('dynamic targets (RFC-068)', () => {
+  it('stores *.domain for "host and its subdomains", never a frozen list of names', () => {
+    const req = formDataToCreateRequest(
+      form({
+        targets: {
+          ...DEFAULT_NEW_SCAN.targets,
+          customTargets: ['example.com', '203.0.113.7'],
+          coverage: 'subdomains',
+          expandedTargets: ['stale-list.example.com'],
+        },
+      })
+    )
+    expect(req.targets).toEqual(['*.example.com', '203.0.113.7'])
+  })
+
+  it('adds the wildcard of a picked domain asset, and the recorded addresses for subdomains_ips', () => {
+    const req = formDataToCreateRequest(
+      form({
+        targets: {
+          ...DEFAULT_NEW_SCAN.targets,
+          customTargets: [],
+          assetIds: ['a1'],
+          assetNames: { a1: 'shop.example.org' },
+          coverage: 'subdomains_ips',
+          expandedTargets: ['198.51.100.4'],
+        },
+      })
+    )
+    expect(req.asset_ids).toEqual(['a1'])
+    expect(req.targets).toEqual(['*.shop.example.org', '198.51.100.4'])
+  })
+
+  it('sends target options only when they differ from the defaults', () => {
+    expect(formDataToCreateRequest(form()).target_options).toBeUndefined()
+    const req = formDataToCreateRequest(
+      form({
+        targets: {
+          ...DEFAULT_NEW_SCAN.targets,
+          customTargets: ['203.0.113.0/24'],
+          targetOptions: { cidr_mode: 'inventory', seen_within_days: 30 },
+        },
+      })
+    )
+    expect(req.target_options).toEqual({ cidr_mode: 'inventory', seen_within_days: 30 })
+  })
+
+  it('edit loads the options and sends them whole ({} resets)', () => {
+    const loaded = scanConfigToFormData(config({ target_options: { include_stale: true } }))
+    expect(loaded.targets.targetOptions).toEqual({ include_stale: true })
+    expect(formDataToUpdateRequest(loaded, config(), { canSetZone: false }).target_options).toEqual(
+      {
+        include_stale: true,
+      }
+    )
+    const cleared = { ...loaded, targets: { ...loaded.targets, targetOptions: {} } }
+    expect(
+      formDataToUpdateRequest(cleared, config(), { canSetZone: false }).target_options
+    ).toEqual({})
+  })
+
+  it('counts a wildcard as one direct target', () => {
+    expect(
+      directTargets(
+        form({
+          targets: {
+            ...DEFAULT_NEW_SCAN.targets,
+            customTargets: ['a.io', 'b.io'],
+            coverage: 'subdomains',
+          },
+        })
+      )
+    ).toEqual(['*.a.io', '*.b.io'])
+  })
+})

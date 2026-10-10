@@ -77,6 +77,29 @@ var (
 		},
 		[]string{},
 	)
+
+	// ScanTargetSelectorExpansions counts the dynamic target selectors a run
+	// start expanded from the inventory (RFC-068), by kind (wildcard, cidr)
+	// and outcome (expanded, empty, capped: more assets than one selector
+	// may add).
+	ScanTargetSelectorExpansions = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scan_target_selector_expansions_total",
+			Help: "Dynamic scan target selectors expanded at run start, by kind and outcome",
+		},
+		[]string{"kind", "outcome"},
+	)
+
+	// ScanStageTargetsSkipped counts targets a chained workflow stage left
+	// out because a run-wide limit was reached (over_cap, hop_limit): the
+	// signal of a runaway in-run expansion.
+	ScanStageTargetsSkipped = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scan_stage_targets_skipped_total",
+			Help: "Targets a chained scan stage left out at a run limit, by reason",
+		},
+		[]string{"reason"},
+	)
 )
 
 // Finding lifecycle metrics
@@ -315,5 +338,29 @@ var (
 			Help: "Claimed commands sent to the job signer, by outcome (signed, refused, unavailable)",
 		},
 		[]string{"outcome"},
+	)
+
+	// SignerRefusalsTotal counts the job signer's refusals by reason
+	// (out_of_ledger, tier_exceeds_ledger, target_excluded, rate limits,
+	// malformed statements; RFC-040 §5.11 detection A10). The signer's own
+	// signing log is the record a compromised API cannot rewrite; this is
+	// the alerting signal.
+	SignerRefusalsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_signer_refusals_total",
+			Help: "Job statements the job signer refused, by reason",
+		},
+		[]string{"reason"},
+	)
+
+	// SignerLedgerFeedTotal counts scope changes sent to the job signer's
+	// ledger, by kind (widen, narrow, sync) and outcome (applied, refused,
+	// unavailable).
+	SignerLedgerFeedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_signer_ledger_feed_total",
+			Help: "Scope changes sent to the job signer's ledger, by kind and outcome",
+		},
+		[]string{"kind", "outcome"},
 	)
 )
