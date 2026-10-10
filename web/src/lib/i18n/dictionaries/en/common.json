@@ -1,0 +1,11 @@
+{
+  "common.cancel": "Cancel",
+  "common.confirm": "Confirm",
+  "common.export": "Export",
+  "common.language": "Language",
+  "common.loading": "Loading…",
+  "common.noData": "No data",
+  "common.rowsExported": "Exported {count} rows",
+  "common.save": "Save",
+  "common.search": "Search"
+}

@@ -15,6 +15,13 @@
 #      highest version, provided it is the lowest version left in the tree
 #      (every migration it replaces was removed in the same change).
 #
+#      MIGRATION_BELOW_BASE=warning reports check 2 as a warning annotation
+#      and passes. CI uses it on pull_request only: the merge queue renumbers a
+#      PR's migrations above develop when it enqueues it, and tests find
+#      migrations by name, so a stale number on an open PR is not a defect yet.
+#      merge_group and push keep the default (error), which is what guards
+#      develop.
+#
 # Base commit: the PR's base branch on pull_request, merge_group.base_sha in the
 # merge queue (so a queued PR is re-checked against what is actually ahead of
 # it), none on push (only check 1). Run from the repository root.
@@ -26,7 +33,9 @@ dir="${MIGRATIONS_DIR:-api/migrations}"
 base="${1:-}"
 pattern='^([0-9]+)_(.+)\.(up|down)\.sql$'
 fail=0
+below_base="${MIGRATION_BELOW_BASE:-error}"
 err() { echo "::error::$*"; fail=1; }
+warn() { echo "::warning::$*"; }
 
 # versions <listing> -> "version name" per migration file, numerically sorted.
 versions() {
@@ -61,7 +70,12 @@ if [[ -n "$base" ]]; then
     fi
     if (( v <= base_max )); then
       next=$((base_max + 1))
-      err "$dir/${raw}_${name} is version $v, but the base already has migrations up to $base_max. golang-migrate would silently skip it on every database already at $base_max. Renumber it to $(printf '%0*d' "${#raw}" "$next")."
+      msg="$dir/${raw}_${name} is version $v, but the base already has migrations up to $base_max. golang-migrate would silently skip it on every database already at $base_max. Renumber it to $(printf '%0*d' "${#raw}" "$next")."
+      if [[ "$below_base" == warning ]]; then
+        warn "$msg (The merge queue renumbers it when it enqueues this PR.)"
+      else
+        err "$msg"
+      fi
     fi
   done <<<"$added"
   echo "base $base: highest migration version $base_max; added: $(awk '{printf "%s ", $3}' <<<"$added")"

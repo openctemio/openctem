@@ -238,6 +238,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
@@ -385,6 +386,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Assets & Components
 		Component:     handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
+		VEXStatement:  handler.NewVEXStatementHandler(svc.VEX, log),
 		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
@@ -657,6 +659,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.AssignmentRule.SetAuditService(svc.Audit)
 	handlers.ScopeRule.SetAuditService(svc.Audit)
 	handlers.Outbox.SetAuditService(svc.Audit)
+	// Integration admins read private program events scrubbed unless they
+	// own the tenant or are a member of the program (RFC-065 §15.4).
+	handlers.Outbox.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
+	handlers.Integration.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
@@ -734,9 +740,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
 	}
-	// The platform policy for scope-widening approvals (RFC-054 §12.6).
-	if svc.ScopePolicy != nil {
-		handlers.AdminScopePolicy = handler.NewAdminScopePolicyHandler(svc.ScopePolicy, adminConsoleSvc, log)
+	// The platform policy for scan approval (RFC-073).
+	if svc.ScanPolicy != nil {
+		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
+	}
+	// Scan approval governance (RFC-073): settings, requests, the inbox and
+	// the scan list badge.
+	if svc.ScanGovernance != nil {
+		handlers.ScanGovernance = handler.NewScanGovernanceHandler(svc.ScanGovernance, log)
+		if handlers.Scan != nil {
+			handlers.Scan.SetApprovals(handler.NewScanApprovalHandler(svc.ScanGovernance, log))
+		}
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -38,8 +39,12 @@ type Settings struct {
 	MCP MCPSettings `json:"mcp,omitempty"`
 	// VulnMatching is the policy of inventory vulnerability matching (RFC-066 §9).
 	VulnMatching VulnMatchingSettings `json:"vuln_matching,omitempty"`
+	// LicensePolicy is the organization's license policy (RFC-070 §9).
+	LicensePolicy licensepolicy.Policy `json:"license_policy,omitempty"`
 	// AssetReconciliation is which source decides an asset attribute (RFC-069).
 	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
+	// ScanGovernance is scan approval governance (RFC-073).
+	ScanGovernance ScanGovernanceSettings `json:"scan_governance,omitempty"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.
@@ -771,6 +776,9 @@ func (s *Settings) Validate() error {
 	if err := s.Retest.Validate(); err != nil {
 		return fmt.Errorf("retest settings: %w", err)
 	}
+	if err := s.LicensePolicy.Normalize(); err != nil {
+		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
 	if err := s.VulnMatching.Validate(); err != nil {
 		return fmt.Errorf("vuln_matching settings: %w", err)
 	}
@@ -1145,7 +1153,16 @@ func (t *Tenant) UpdateRiskScoringSettings(rs RiskScoringSettings) error {
 	return t.UpdateSettings(settings)
 }
 
-// UpdateRetestSettings updates only the auto-retest settings (RFC-039).
+// UpdateLicensePolicySettings updates only the license policy.
+func (t *Tenant) UpdateLicensePolicySettings(p licensepolicy.Policy) error {
+	if err := p.Normalize(); err != nil {
+		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
+	settings := t.TypedSettings()
+	settings.LicensePolicy = p
+	return t.UpdateSettings(settings)
+}
+
 // UpdateVulnMatchingSettings updates only the vulnerability matching policy.
 func (t *Tenant) UpdateVulnMatchingSettings(vm VulnMatchingSettings) error {
 	if err := vm.Validate(); err != nil {
@@ -1156,6 +1173,7 @@ func (t *Tenant) UpdateVulnMatchingSettings(vm VulnMatchingSettings) error {
 	return t.UpdateSettings(settings)
 }
 
+// UpdateRetestSettings updates only the auto-retest settings (RFC-039).
 func (t *Tenant) UpdateRetestSettings(rs RetestSettings) error {
 	if err := rs.Validate(); err != nil {
 		return err

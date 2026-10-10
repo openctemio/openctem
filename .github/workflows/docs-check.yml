@@ -25,6 +25,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Links, language and private addresses
         run: python3 scripts/docs_check.py .
+      # api/docs/rfcs/README.md index table is generated from the RFC headers.
+      - name: RFC index is current
+        run: |
+          python3 scripts/rfc_index_test.py
+          python3 scripts/rfc_index.py --check
 
   # docs.openctem.io links (page and anchor) and github.com/openctemio file
   # links in code, against the docs site source (openctemio/docs main) and
@@ -44,4 +49,4 @@ jobs:
           path: .docs-site
           persist-credentials: false
       - name: Documentation links in code
-        run: python3 scripts/check_docs_links.py --docs .docs-site --fetch-other .
+        run: python3 scripts/check_docs_links.py --docs .docs-site --fetch-other --live .

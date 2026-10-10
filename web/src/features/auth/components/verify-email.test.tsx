@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi_ from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi as vi_ } from '@/lib/i18n/dictionaries'
 import { PUBLIC_ROUTES } from '@/lib/middleware/config'
 import { verifyEmailAction } from '../actions/local-auth-actions'
 import { VerifyEmail } from './verify-email'
