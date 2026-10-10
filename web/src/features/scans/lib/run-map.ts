@@ -5,6 +5,7 @@
  * failed) and edge labels with what flowed from one step to the next.
  */
 import type { ScanWorkflowStep } from '@/lib/api'
+import { enTranslate, type Translate } from './translate'
 import type { RunMap, RunMapNode } from '@/lib/api/generated'
 import type { StepStatusTone } from '@/features/scan-workflows/components/workflow-stages'
 
@@ -61,29 +62,29 @@ export function compactCount(n: number): string {
   return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
 }
 
-const STATE_LABEL: Record<RunMapState, string> = {
-  pending: 'Not started',
-  waiting: 'Waiting for a sensor',
-  running: 'Running',
-  succeeded: 'Done',
-  partial: 'Partly done',
-  failed: 'Failed',
-  skipped: 'Skipped',
-  canceled: 'Canceled',
-}
+const MAP_STATES = new Set<string>([
+  'pending',
+  'waiting',
+  'running',
+  'succeeded',
+  'partial',
+  'failed',
+  'skipped',
+  'canceled',
+])
 
 /** A map state as a person reads it. */
-export function mapStateLabel(state: string): string {
-  return STATE_LABEL[state as RunMapState] ?? state
+export function mapStateLabel(state: string, t: Translate = enTranslate): string {
+  return MAP_STATES.has(state) ? t(`scans.map.state.${state}`) : state
 }
 
 /**
  * The badge lines of a node: its state (with why it waits or failed), its
  * chunks while it has any, and what it produced and found.
  */
-export function nodeBadgeLines(n: RunMapNode): string[] {
+export function nodeBadgeLines(n: RunMapNode, t: Translate = enTranslate): string[] {
   const lines: string[] = []
-  let state = mapStateLabel(n.state ?? 'pending')
+  let state = mapStateLabel(n.state ?? 'pending', t)
   if ((n.state === 'failed' || n.state === 'partial' || n.state === 'skipped') && n.reason) {
     state += ` (${n.reason.toLowerCase().replace(/_/g, ' ')})`
   }
@@ -92,17 +93,21 @@ export function nodeBadgeLines(n: RunMapNode): string[] {
   const failed = n.chunks?.failed ?? 0
   const done = (n.chunks?.completed ?? 0) + failed
   if (total > 0) {
-    lines.push(`${done}/${total} chunks` + (failed ? `, ${failed} failed` : ''))
+    lines.push(
+      t('scans.map.chunks', undefined, { done, total }) +
+        (failed ? t('scans.map.chunksFailed', undefined, { count: failed }) : '')
+    )
   }
   const produced = n.outputs?.total ?? 0
   const parts: string[] = []
-  if (produced > 0) parts.push(`${compactCount(produced)} outputs`)
+  if (produced > 0) parts.push(t('scans.map.outputs', undefined, { count: compactCount(produced) }))
   const findings = n.findings ?? 0
-  if (findings > 0) parts.push(`${compactCount(findings)} findings`)
+  if (findings > 0)
+    parts.push(t('scans.map.findings', undefined, { count: compactCount(findings) }))
   if (parts.length) lines.push(parts.join(', '))
-  const delta = outputsDeltaLabel(n)
+  const delta = outputsDeltaLabel(n, t)
   if (delta) lines.push(delta)
-  if (producedNothing(n)) lines.push('No output')
+  if (producedNothing(n)) lines.push(t('scans.map.noOutput'))
   return lines
 }
 
@@ -111,17 +116,17 @@ export function nodeBadgeLines(n: RunMapNode): string[] {
  * "+3 new, 1 gone", "same as last run", or null without a previous run (or
  * when neither run produced anything).
  */
-export function outputsDeltaLabel(n: RunMapNode): string | null {
+export function outputsDeltaLabel(n: RunMapNode, t: Translate = enTranslate): string | null {
   const o = n.outputs
   if (o?.previous === undefined) return null
   const added = o.added ?? 0
   const gone = o.gone ?? 0
   if (added === 0 && gone === 0) {
-    return (o.total ?? 0) > 0 ? 'Same as last run' : null
+    return (o.total ?? 0) > 0 ? t('scans.map.sameAsLast') : null
   }
   const parts: string[] = []
-  if (added > 0) parts.push(`+${compactCount(added)} new`)
-  if (gone > 0) parts.push(`${compactCount(gone)} gone`)
+  if (added > 0) parts.push(t('scans.map.newCount', undefined, { count: compactCount(added) }))
+  if (gone > 0) parts.push(t('scans.map.goneCount', undefined, { count: compactCount(gone) }))
   return parts.join(', ')
 }
 
@@ -136,7 +141,10 @@ export function producedNothing(n: RunMapNode): boolean {
 }
 
 /** The finished steps that produced nothing, and the warning to show for each. */
-export function zeroOutputWarnings(map: RunMap | undefined): { key: string; text: string }[] {
+export function zeroOutputWarnings(
+  map: RunMap | undefined,
+  t: Translate = enTranslate
+): { key: string; text: string }[] {
   return (map?.nodes ?? []).filter(producedNothing).map((n) => {
     const name = n.name || n.step_key || ''
     const before = n.outputs?.previous ?? 0
@@ -144,8 +152,11 @@ export function zeroOutputWarnings(map: RunMap | undefined): { key: string; text
       key: n.step_key ?? '',
       text:
         before > 0
-          ? `${name} produced nothing, while the previous run produced ${compactCount(before)}.`
-          : `${name} produced nothing.`,
+          ? t('scans.map.producedNothingBefore', undefined, {
+              name,
+              before: compactCount(before),
+            })
+          : t('scans.map.producedNothing', undefined, { name }),
     }
   })
 }

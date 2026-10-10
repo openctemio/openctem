@@ -455,9 +455,28 @@ program records `scope_source = file_import`.
 - `GET /scope/targets` and `GET /scope/targets/{id}` leave out the entries
   of private programs the caller may not see or has not accepted (404 by
   id), so a scope reader does not learn a private program's scope.
-- Not changed by this section: assets and findings that private-program
-  entries cover follow the data scope (§7) — full-data roles still see them
-  in the inventory; §16.5 separates them from the organization's own assets.
+- Assets of a private program (owner decision, 2026-10-10): a
+  program-only asset (§16.5) linked to private programs only, and its
+  findings, are visible only to the members of one of those programs and to
+  the organization's owners. Administrators and full-data roles who are not
+  members get 404 by id and do not see them in lists, exports, counts,
+  dashboards (also with `include_program_assets=true`), the change feed or
+  the EASM overview. The rule lives in the data-scope layer: the enforcer
+  gives such a caller a scope that admits every asset but the hidden ones
+  (`DataScope.Unrestricted`; resolved only when something is hidden from
+  them), and the one predicate (`filterspec.HiddenAssetWhere`) is added to
+  every scoped read and id check; a restricted member's scope rows never
+  admit a hidden asset either. An asset the organization also owns (not
+  program-only) stays visible, but the program's tag and flags are left out
+  of its response for non-members. Acting (scans) is not narrowed by it.
+  A non-member's system tags, in responses and in the inventory's tag and
+  `program_assets=only` filters, are only those derived from programs not
+  hidden from them (`filterspec.ProgramHiddenSQL`), so the filter cannot
+  reveal that a private program covers a shared asset. The same rule
+  covers the tag suggestions (`GET /assets/tags`, data-scoped), the EASM
+  overview counts and review queue (SQL, not a page filter), and the live
+  notification push (a hidden asset's notice reaches only owners and the
+  program's members).
 
 | Threat | Control |
 |---|---|
@@ -544,6 +563,17 @@ covers the target.
   scores, SLA and CTEM metrics by default (a toggle includes them).
 - The inventory gets a "Bug bounty" filter and platform/program facets, and a
   "Program target" badge with the program and its attestation state.
+- Implementation: migration `001792` (`asset_program_links`,
+  `assets.system_tags`, `assets.program_only`); the program assignment pass
+  keeps the links of every program (entries active or not, minus its
+  exclusions; none for an ended program) and derives the tags and
+  program-only in the same transaction. Program-only = linked, added after
+  the earliest linked program was created, and no active own entry
+  (ownership, self-attestation, letter) covers it. Dashboard queries add the
+  exclusion unless the request carries `include_program_assets=true`;
+  asset lists take `program_assets=only|exclude`; tag filters match system
+  tags. Assets of followed public programs arrive through the collector
+  ingest (§16.8).
 
 ### 16.6 Implementation notes (feed importer)
 

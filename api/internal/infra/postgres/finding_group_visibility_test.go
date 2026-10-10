@@ -27,7 +27,7 @@ func TestBuildFilterWhere_VisibilityRules(t *testing.T) {
 			t.Errorf("where missing %q:\n%s", want, where)
 		}
 	}
-	if strings.Contains(where, "NOT EXISTS") {
+	if strings.Contains(where, "NOT EXISTS (SELECT 1 FROM user_accessible_assets") {
 		t.Errorf("a resolved scope must be strict:\n%s", where)
 	}
 	if len(args) != 5 || args[1] != uid.String() || args[2] != tid.String() || args[3] != uid.String() || args[4] != tid.String() {
@@ -38,7 +38,7 @@ func TestBuildFilterWhere_VisibilityRules(t *testing.T) {
 	// user with no scope row (owner decision D2).
 	bare := vulnerability.NewFindingFilter().WithDataScopeUserID(uid)
 	bare.TenantID = &tid
-	if where, _ := buildFilterWhere(bare, 2); strings.Contains(where, "NOT EXISTS") ||
+	if where, _ := buildFilterWhere(bare, 2); strings.Contains(where, "NOT EXISTS (SELECT 1 FROM user_accessible_assets") ||
 		!strings.Contains(where, "f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $2 AND uaa.tenant_id = $3)") {
 		t.Errorf("bare user scope must be strict:\n%s", where)
 	}
