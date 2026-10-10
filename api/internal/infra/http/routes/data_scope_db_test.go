@@ -79,6 +79,7 @@ var dsMemberPerms = []string{ //nolint:gochecknoglobals // test fixture
 	permission.FindingsRead.String(), permission.FindingsWrite.String(), permission.FindingsDelete.String(),
 	permission.FindingsStatus.String(), permission.FindingsTriage.String(), permission.FindingsAssign.String(),
 	permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String(),
+	permission.FindingsComment.String(), permission.FindingsSeverity.String(),
 	permission.AssetGroupsRead.String(), permission.DashboardRead.String(),
 	permission.ExposuresRead.String(), permission.ExposuresWrite.String(), permission.ExposuresTriage.String(),
 	permission.ExposuresDelete.String(),
@@ -151,6 +152,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetSvc.SetAccessControlRepository(accessRepo)
 	assetSvc.SetDataScope(enforcer)
 	assetSvc.SetRepositoryExtensionRepository(postgres.NewRepositoryExtensionRepository(db))
+	assetSvc.SetAttributeSources(postgres.NewAssetAttributeSourceRepository(db), tenantRepo)
 
 	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
@@ -705,7 +707,7 @@ func TestDataScope_AffectedAssets(t *testing.T) {
 
 	// One CVE affecting both assets.
 	vulnID := shared.NewID()
-	cve := "CVE-2099-" + vulnID.String()[:8]
+	cve := "CVE-2099-" + vulnID.String()[28:]
 	h.exec(`INSERT INTO vulnerabilities (id, cve_id, title) VALUES ($1, $2, 'ds cve')`, vulnID.String(), cve)
 	t.Cleanup(func() {
 		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM vulnerabilities WHERE id = $1`, vulnID.String())

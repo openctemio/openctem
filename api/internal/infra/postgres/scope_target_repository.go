@@ -29,7 +29,8 @@ const scopeTargetSelectQuery = `
 	SELECT id, tenant_id, target_type, pattern, description, priority, status, tags,
 	       created_by, created_at, updated_at,
 	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at, origin, discovery,
-	       authorization_source, program_id
+	       authorization_source, program_id, letter_id,
+	       approval_reminded_at, attested_at, attested_by, attestation_requested_at
 	FROM scope_targets
 `
 
@@ -57,13 +58,19 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		discovery   bool
 		authSource  string
 		programID   sql.NullString
+		letterID    sql.NullString
+		remindedAt  sql.NullTime
+		attestedAt  sql.NullTime
+		attestedBy  sql.NullString
+		attestReqAt sql.NullTime
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &targetType, &pattern, &description, &priority, &status, &tags,
 		&createdBy, &createdAt, &updatedAt,
 		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt, &origin, &discovery,
-		&authSource, &programID,
+		&authSource, &programID, &letterID,
+		&remindedAt, &attestedAt, &attestedBy, &attestReqAt,
 	)
 	if err != nil {
 		return nil, err
@@ -92,15 +99,23 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 	})
 	t.SetOrigin(scope.Origin(origin))
 	t.SetDiscovery(discovery)
+	ref := programID
+	if scope.AuthorizationSource(authSource) == scope.AuthLetter {
+		ref = letterID
+	}
 	var pid *shared.ID
-	if programID.Valid {
-		if id, err := shared.IDFromString(programID.String); err == nil {
+	if ref.Valid {
+		if id, err := shared.IDFromString(ref.String); err == nil {
 			pid = &id
 		}
 	}
 	if err := t.SetAuthorization(scope.AuthorizationSource(authSource), pid); err != nil {
 		return nil, fmt.Errorf("scope target %s: %w", id, err)
 	}
+	t.RestoreRemindedAt(scopeTimePtr(remindedAt))
+	t.RestoreAttestation(scope.AttestationState{
+		AttestedAt: scopeTimePtr(attestedAt), AttestedBy: attestedBy.String, RequestedAt: scopeTimePtr(attestReqAt),
+	})
 	return t, nil
 }
 
@@ -124,7 +139,7 @@ func (r *ScopeTargetRepository) loadApprovals(ctx context.Context, tenantID stri
 		byID[t.ID().String()] = t
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT target_id, approver_id, approved_at FROM scope_target_approvals
+		SELECT target_id, approver_id, approved_at, self_approved, reason FROM scope_target_approvals
 		WHERE tenant_id = $1 AND target_id = ANY($2::uuid[])
 		ORDER BY approved_at, approver_id`, tenantID, pq.Array(ids))
 	if err != nil {
@@ -135,7 +150,7 @@ func (r *ScopeTargetRepository) loadApprovals(ctx context.Context, tenantID stri
 	for rows.Next() {
 		var tid string
 		var a scope.Approval
-		if err := rows.Scan(&tid, &a.UserID, &a.ApprovedAt); err != nil {
+		if err := rows.Scan(&tid, &a.UserID, &a.ApprovedAt, &a.Self, &a.Reason); err != nil {
 			return err
 		}
 		got[tid] = append(got[tid], a)
@@ -161,8 +176,8 @@ func (r *ScopeTargetRepository) saveApprovals(ctx context.Context, tx *sql.Tx, t
 	}
 	for _, a := range t.Approvals() {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO scope_target_approvals (tenant_id, target_id, approver_id, approved_at)
-			VALUES ($1, $2, $3, $4)`, t.TenantID().String(), t.ID().String(), a.UserID, a.ApprovedAt); err != nil {
+			INSERT INTO scope_target_approvals (tenant_id, target_id, approver_id, approved_at, self_approved, reason)
+			VALUES ($1, $2, $3, $4, $5, $6)`, t.TenantID().String(), t.ID().String(), a.UserID, a.ApprovedAt, a.Self, a.Reason); err != nil {
 			return fmt.Errorf("save scope target approval: %w", err)
 		}
 	}
@@ -188,12 +203,15 @@ func insertScopeTarget(ctx context.Context, exec sqlExecer, target *scope.Target
 			id, tenant_id, target_type, pattern, description, priority, status, tags,
 			created_by, created_at, updated_at,
 			expires_at, reason, max_tier, approvals_required, approved_at, origin, discovery,
-			authorization_source, program_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+			authorization_source, program_id, letter_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 	`
-	var programID any
+	var programID, letterID any
 	if pid := target.ProgramID(); pid != nil {
 		programID = pid.String()
+	}
+	if lid := target.LetterID(); lid != nil {
+		letterID = lid.String()
 	}
 	_, err := exec.ExecContext(ctx, query,
 		target.ID().String(),
@@ -216,6 +234,7 @@ func insertScopeTarget(ctx context.Context, exec sqlExecer, target *scope.Target
 		target.DiscoverySetting(),
 		string(target.AuthorizationSource()),
 		programID,
+		letterID,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -262,7 +281,10 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 			approved_at = $13,
 			rejected_by = $14,
 			rejected_at = $15,
-			discovery = $16
+			discovery = $16,
+			attested_at = $17,
+			attested_by = $18,
+			attestation_requested_at = $19
 		WHERE id = $1 AND tenant_id = $7
 	`
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -288,6 +310,9 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		nullString(target.RejectedBy()),
 		target.RejectedAt(),
 		target.DiscoverySetting(),
+		target.AttestedAt(),
+		nullString(target.AttestedBy()),
+		target.AttestationRequestedAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope target: %w", err)
@@ -304,6 +329,26 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		return err
 	}
 	return tx.Commit()
+}
+
+// MarkReminded records a reminder of the approvers of a pending entry when
+// none was sent within minInterval, atomically (two clicks, two replicas:
+// one reminder). It reports false when the last reminder is too recent or
+// the entry is not pending in this tenant.
+func (r *ScopeTargetRepository) MarkReminded(ctx context.Context, tenantID, id shared.ID, now time.Time, minInterval time.Duration) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE scope_targets SET approval_reminded_at = $3
+		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+		  AND (approval_reminded_at IS NULL OR approval_reminded_at <= $4)`,
+		tenantID.String(), id.String(), now, now.Add(-minInterval))
+	if err != nil {
+		return false, fmt.Errorf("mark scope target reminded: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n == 1, nil
 }
 
 // ExpireOld marks every active or pending entry past its expiry as expired
@@ -430,7 +475,11 @@ func (r *ScopeTargetRepository) List(ctx context.Context, filter scope.TargetFil
 // past their expiry. An expired entry stops authorizing at once, before the
 // sweep marks it (RFC-054 §6.1).
 func (r *ScopeTargetRepository) ListActive(ctx context.Context, tenantID shared.ID) ([]*scope.Target, error) {
-	query := scopeTargetSelectQuery + " WHERE tenant_id = $1 AND status = 'active' AND (expires_at IS NULL OR expires_at > now()) ORDER BY priority DESC"
+	query := scopeTargetSelectQuery + " WHERE tenant_id = $1 AND status = 'active' AND (expires_at IS NULL OR expires_at > now())" +
+		// A letter entry authorizes only while its letter does (RFC-065 §13).
+		" AND (letter_id IS NULL OR EXISTS (SELECT 1 FROM authorization_letters l WHERE l.tenant_id = scope_targets.tenant_id" +
+		" AND l.id = scope_targets.letter_id AND l.revoked_at IS NULL AND l.valid_from <= now() AND l.valid_until > now()))" +
+		" ORDER BY priority DESC"
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {

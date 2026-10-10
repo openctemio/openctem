@@ -22,28 +22,26 @@ describe('coverage level expansion', () => {
     expect(expandTargets(['acme.io'], 'host', inventory)).toEqual([])
   })
 
-  it('adds the inventory names below each typed domain, never look-alikes', () => {
-    expect(expandTargets(['acme.io'], 'subdomains', inventory)).toEqual([
-      'api.acme.io',
-      'deep.dev.acme.io',
-    ])
+  it('lists no subdomains: *.domain covers them at every run (RFC-068)', () => {
+    expect(expandTargets(['acme.io'], 'subdomains', inventory)).toEqual([])
   })
 
-  it('adds the addresses those names resolved to, once each', () => {
+  it('adds the addresses those names resolved to, once each, never look-alikes', () => {
     expect(expandTargets(['https://acme.io/login'], 'subdomains_ips', inventory)).toEqual([
-      'api.acme.io',
-      'deep.dev.acme.io',
       '203.0.113.1',
       '203.0.113.2',
     ])
   })
 
   it('never repeats a typed target and caps the result', () => {
-    expect(expandTargets(['acme.io', 'api.acme.io'], 'subdomains', inventory)).toEqual([
-      'deep.dev.acme.io',
+    expect(expandTargets(['acme.io', '203.0.113.1'], 'subdomains_ips', inventory)).toEqual([
+      '203.0.113.2',
     ])
-    const many = Array.from({ length: 600 }, (_, i) => ({ name: `h${i}.acme.io` }))
-    expect(expandTargets(['acme.io'], 'subdomains', many)).toHaveLength(MAX_EXPANDED_TARGETS)
+    const many = Array.from({ length: 600 }, (_, i) => ({
+      name: `h${i}.acme.io`,
+      properties: { resolved_ips: [`10.0.${Math.floor(i / 250)}.${i % 250}`] },
+    }))
+    expect(expandTargets(['acme.io'], 'subdomains_ips', many)).toHaveLength(MAX_EXPANDED_TARGETS)
   })
 
   it('reads only DNS names as roots', () => {

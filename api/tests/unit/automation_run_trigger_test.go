@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/workflow"
+	"github.com/openctemio/openctem/api/internal/app/automation"
+	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -22,16 +22,16 @@ func TestTriggerScanAction_RunSaysAutomation(t *testing.T) {
 	deps.toolRepo.addTool("nuclei", true)
 
 	automationID, automationRun := shared.NewID(), shared.NewID()
-	ctx := workflow.WithAutomationCause(context.Background(),
-		workflow.AutomationCause{RunID: automationRun, WorkflowID: automationID, NodeKey: "rescan", ChainDepth: 1})
+	ctx := automation.WithAutomationCause(context.Background(),
+		automation.AutomationCause{RunID: automationRun, WorkflowID: automationID, NodeKey: "rescan", ChainDepth: 1})
 
-	h := workflow.NewPipelineTriggerHandler(nil, svc, logger.NewNop())
-	out, err := h.Execute(ctx, &workflow.ActionInput{
+	h := automation.NewPipelineTriggerHandler(nil, svc, logger.NewNop())
+	out, err := h.Execute(ctx, &automation.ActionInput{
 		TenantID:     tenantID,
 		WorkflowID:   automationID,
 		RunID:        automationRun,
 		NodeKey:      "rescan",
-		ActionType:   workflowdom.ActionTypeTriggerScan,
+		ActionType:   automationdom.ActionTypeTriggerScan,
 		ActionConfig: map[string]any{"scan_id": s.ID.String()},
 	})
 	if err != nil {

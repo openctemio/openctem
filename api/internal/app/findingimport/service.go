@@ -17,6 +17,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/importer"
 
@@ -314,6 +316,8 @@ func (s *Service) ingestReport(ctx context.Context, req Request, report *ctis.Re
 	report.Metadata.Branch = nil
 	in := ingest.Input{Report: report, CoverageType: ingest.CoverageTypePartial}
 	in.Options.Actor = req.Actor
+	// A person's file: an import for attribute reconciliation (RFC-069).
+	in.Options.SourceKind, in.Options.SourceName = asset.SourceKindImport, importSourceName(req.Format)
 	// The ingest service takes its tenant from a sensor record; this one
 	// carries only the tenant. The uploader's rights come from Actor.
 	tid := req.TenantID
@@ -583,4 +587,13 @@ func fileError(err error) *FileError {
 		fe.Message = "the import took too long"
 	}
 	return fe
+}
+
+// importSourceName names an upload for attribute reconciliation: its format,
+// or "file" when it was detected per file.
+func importSourceName(f importer.Format) string {
+	if f == "" {
+		return "file"
+	}
+	return string(f)
 }

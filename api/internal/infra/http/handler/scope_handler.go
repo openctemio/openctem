@@ -68,6 +68,8 @@ func (h *ScopeHandler) SetActorNamer(n MemberNamer) { h.actors = n }
 func (h *ScopeHandler) targetOut(r *http.Request, t *scopedom.Target) ScopeTargetResponse {
 	out := toScopeTargetResponse(t)
 	resolveActors(r.Context(), h.actors, h.logger, middleware.MustGetTenantID(r.Context()), targetActorRefs(&out))
+	h.addApprovalStatus(r, []*ScopeTargetResponse{&out}, []*scopedom.Target{t})
+	h.addAttestationStatus(r, []*ScopeTargetResponse{&out}, []*scopedom.Target{t})
 	return out
 }
 
@@ -263,6 +265,11 @@ type ScopeTargetResponse struct {
 	// Origin is how the entry came to exist: manual, request, import,
 	// review_rule, refusal_fix, seed, seed_migration or system.
 	Origin string `json:"origin"`
+	// AuthorizationSource: ownership, program, authorization_letter or
+	// self_attestation (RFC-065). ProgramID is set for a program entry.
+	AuthorizationSource string  `json:"authorization_source"`
+	ProgramID           *string `json:"program_id,omitempty"`
+	LetterID            *string `json:"letter_id,omitempty"`
 	// Discovery: names under the entry are discovered (Certificate
 	// Transparency) and join the inventory; only a permanent domain entry
 	// discovers.
@@ -272,6 +279,12 @@ type ScopeTargetResponse struct {
 	// Join is set on a change that came into effect or changed an entry in
 	// effect: the names waiting for review the entry confirmed.
 	Join *ScopeJoinResponse `json:"join,omitempty"`
+	// Approval is set on a pending entry: how many approvals it still
+	// needs and who can give them.
+	Approval *ScopeApprovalStatusResponse `json:"approval,omitempty"`
+	// Attestation is set on an active t2 entry that is attested
+	// (RFC-054 §12.5).
+	Attestation *ScopeAttestationResponse `json:"attestation,omitempty"`
 }
 
 // ScopeApprovalResponse is one approval of a scope entry.
@@ -279,6 +292,10 @@ type ScopeApprovalResponse struct {
 	UserID     string    `json:"user_id"`
 	Approver   *ActorRef `json:"approver"`
 	ApprovedAt time.Time `json:"approved_at"`
+	// SelfApproved: an owner approved their own entry because no other
+	// approver existed; Reason says why.
+	SelfApproved bool   `json:"self_approved,omitempty"`
+	Reason       string `json:"reason,omitempty"`
 }
 
 // ScopeExclusionResponse represents a scope exclusion in API responses.
@@ -355,8 +372,9 @@ type CreateScopeTargetRequest struct {
 	// Reason is the authority statement; required for a one-off entry, a
 	// request and a t2 entry.
 	Reason string `json:"reason" validate:"max=1000"`
-	// ExpiresInDays (1..one_off_max_days) or ExpiresAt makes a one-off entry.
-	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=30"`
+	// ExpiresInDays or ExpiresAt makes the entry expire: 1..one_off_max_days
+	// for t0/t1, 1..t2_max_days for t2 (the service checks the bound).
+	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=365"`
 	ExpiresAt     *time.Time `json:"expires_at"`
 	// MaxTier: t0, t1 or t2 (default: the organization's default_max_tier).
 	MaxTier string `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
@@ -366,6 +384,12 @@ type CreateScopeTargetRequest struct {
 	// Discovery: discover names under the entry (default true; runs only
 	// for a permanent domain entry).
 	Discovery *bool `json:"discovery"`
+	// AuthorizationSource: why the entry authorizes probes, ownership
+	// (default) or self_attestation. Program entries come from Programs
+	// (400 PROGRAM_ENTRY_VIA_PROGRAMS).
+	AuthorizationSource string `json:"authorization_source" validate:"omitempty,max=40"`
+	// LetterID names the letter of an authorization_letter entry (RFC-065 §13).
+	LetterID string `json:"letter_id" validate:"omitempty,uuid"`
 }
 
 // UpdateScopeTargetRequest represents the request to update a scope target.
@@ -375,7 +399,7 @@ type UpdateScopeTargetRequest struct {
 	Priority      *int       `json:"priority" validate:"omitempty,min=0,max=100"`
 	Tags          []string   `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 	Reason        *string    `json:"reason" validate:"omitempty,max=1000"`
-	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=30"`
+	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=365"`
 	ExpiresAt     *time.Time `json:"expires_at"`
 	ClearExpiry   bool       `json:"clear_expiry"`
 	MaxTier       *string    `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
@@ -431,37 +455,51 @@ type ScopeBulkOperationResponse struct {
 // =============================================================================
 
 func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
+	var programID *string
+	if pid := t.ProgramID(); pid != nil {
+		v := pid.String()
+		programID = &v
+	}
+	var letterID *string
+	if lid := t.LetterID(); lid != nil {
+		v := lid.String()
+		letterID = &v
+	}
 	return ScopeTargetResponse{
-		ID:                t.ID().String(),
-		TenantID:          t.TenantID().String(),
-		TargetType:        t.TargetType().String(),
-		Pattern:           t.Pattern(),
-		Covers:            t.Covers(),
-		Description:       t.Description(),
-		Reason:            t.Reason(),
-		Priority:          t.Priority(),
-		Status:            t.Status().String(),
-		InEffect:          t.InEffect(time.Now()),
-		ExpiresAt:         t.ExpiresAt(),
-		MaxTier:           t.MaxTier().String(),
-		ApprovalsRequired: t.ApprovalsRequired(),
-		Approvals:         approvalsResponse(t.Approvals()),
-		ApprovedAt:        t.ApprovedAt(),
-		RejectedBy:        actorRef(t.RejectedBy()),
-		RejectedAt:        t.RejectedAt(),
-		Tags:              t.Tags(),
-		CreatedBy:         actorRef(t.CreatedBy()),
-		Origin:            string(t.Origin()),
-		Discovery:         t.Discovery(),
-		CreatedAt:         t.CreatedAt(),
-		UpdatedAt:         t.UpdatedAt(),
+		ProgramID:           programID,
+		LetterID:            letterID,
+		ID:                  t.ID().String(),
+		TenantID:            t.TenantID().String(),
+		TargetType:          t.TargetType().String(),
+		Pattern:             t.Pattern(),
+		Covers:              t.Covers(),
+		Description:         t.Description(),
+		Reason:              t.Reason(),
+		Priority:            t.Priority(),
+		Status:              t.Status().String(),
+		InEffect:            t.InEffect(time.Now()),
+		ExpiresAt:           t.ExpiresAt(),
+		MaxTier:             t.MaxTier().String(),
+		ApprovalsRequired:   t.ApprovalsRequired(),
+		Approvals:           approvalsResponse(t.Approvals()),
+		ApprovedAt:          t.ApprovedAt(),
+		RejectedBy:          actorRef(t.RejectedBy()),
+		RejectedAt:          t.RejectedAt(),
+		Tags:                t.Tags(),
+		CreatedBy:           actorRef(t.CreatedBy()),
+		Origin:              string(t.Origin()),
+		AuthorizationSource: string(t.AuthorizationSource()),
+		Discovery:           t.Discovery(),
+		CreatedAt:           t.CreatedAt(),
+		UpdatedAt:           t.UpdatedAt(),
 	}
 }
 
 func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
 	out := make([]ScopeApprovalResponse, 0, len(list))
 	for _, a := range list {
-		out = append(out, ScopeApprovalResponse{UserID: a.UserID, Approver: actorRef(a.UserID), ApprovedAt: a.ApprovedAt})
+		out = append(out, ScopeApprovalResponse{UserID: a.UserID, Approver: actorRef(a.UserID), ApprovedAt: a.ApprovedAt,
+			SelfApproved: a.Self, Reason: a.Reason})
 	}
 	return out
 }
@@ -483,6 +521,8 @@ func writeScopeEntryError(w http.ResponseWriter, err error) bool {
 	}
 	status := http.StatusBadRequest
 	switch {
+	case errors.Is(err, scopedom.ErrReminderTooSoon):
+		status = http.StatusTooManyRequests
 	case errors.Is(err, shared.ErrForbidden):
 		status = http.StatusForbidden
 	case errors.Is(err, shared.ErrConflict):
@@ -633,6 +673,12 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 		refs = append(refs, targetActorRefs(&responses[i])...)
 	}
 	resolveActors(r.Context(), h.actors, h.logger, middleware.MustGetTenantID(r.Context()), refs)
+	outs := make([]*ScopeTargetResponse, len(responses))
+	for i := range responses {
+		outs[i] = &responses[i]
+	}
+	h.addApprovalStatus(r, outs, result.Data)
+	h.addAttestationStatus(r, outs, result.Data)
 
 	response := ListResponse[ScopeTargetResponse]{
 		Data:       responses,
@@ -690,6 +736,9 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		Actor:         scopeActor(r),
 		Origin:        scopedom.Origin(req.Origin),
 		Discovery:     req.Discovery,
+
+		AuthorizationSource: req.AuthorizationSource,
+		LetterID:            req.LetterID,
 	}
 
 	target, err := h.service.CreateTarget(r.Context(), input)

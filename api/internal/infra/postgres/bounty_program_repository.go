@@ -36,6 +36,10 @@ const bountyProgramColumns = `id, tenant_id, name, platform, handle, program_url
 	authoritative, rules, scope_items, terms_sha256, accepted_by, accepted_at, group_id,
 	created_by, created_at, updated_at`
 
+// bountyProgramSyncColumns are read after bountyProgramColumns.
+const bountyProgramSyncColumns = `, sync_url, sync_handle, sync_username, sync_token_encrypted,
+	last_synced_at, last_sync_error, pending_terms_sha256, pending_scope_items`
+
 func (r *BountyProgramRepository) inTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -137,12 +141,17 @@ func updateProgram(ctx context.Context, tx *sql.Tx, p *bountyprogram.Program) er
 	if err != nil {
 		return err
 	}
+	pendingTerms, pendingItems, err := pendingJSON(p)
+	if err != nil {
+		return err
+	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE bounty_programs SET program_url = $3, status = $4, rules = $5, scope_items = $6,
-		       terms_sha256 = $7, accepted_by = $8, accepted_at = $9, updated_at = $10
+		       terms_sha256 = $7, accepted_by = $8, accepted_at = $9, updated_at = $10,
+		       pending_terms_sha256 = $11, pending_scope_items = $12
 		WHERE tenant_id = $1 AND id = $2`,
 		p.TenantID.String(), p.ID.String(), p.ProgramURL, string(p.Status), rules, items,
-		p.TermsSHA256, nullIDPtr(p.AcceptedBy), p.AcceptedAt, p.UpdatedAt)
+		p.TermsSHA256, nullIDPtr(p.AcceptedBy), p.AcceptedAt, p.UpdatedAt, pendingTerms, pendingItems)
 	if err != nil {
 		return fmt.Errorf("update program: %w", err)
 	}
@@ -150,6 +159,78 @@ func updateProgram(ctx context.Context, tx *sql.Tx, p *bountyprogram.Program) er
 		return bountyprogram.ErrNotFound
 	}
 	return nil
+}
+
+func pendingJSON(p *bountyprogram.Program) (any, any, error) {
+	if p.Pending == nil {
+		return nil, nil, nil
+	}
+	items := p.Pending.Items
+	if items == nil {
+		items = []bountyprogram.Item{}
+	}
+	b, err := json.Marshal(items)
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode pending items: %w", err)
+	}
+	return p.Pending.TermsSHA256, b, nil
+}
+
+// SaveSync writes the program's source settings, sync state and pending
+// terms.
+func (r *BountyProgramRepository) SaveSync(ctx context.Context, p *bountyprogram.Program) error {
+	pendingTerms, pendingItems, err := pendingJSON(p)
+	if err != nil {
+		return err
+	}
+	ns := func(v string) any {
+		if v == "" {
+			return nil
+		}
+		return v
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE bounty_programs SET scope_source = $3, sync_url = $4, sync_handle = $5, sync_username = $6,
+		       sync_token_encrypted = $7, last_synced_at = $8, last_sync_error = $9,
+		       pending_terms_sha256 = $10, pending_scope_items = $11, updated_at = $12
+		WHERE tenant_id = $1 AND id = $2`,
+		p.TenantID.String(), p.ID.String(), p.ScopeSource, ns(p.Sync.URL), ns(p.Sync.Handle), ns(p.Sync.Username),
+		ns(p.Sync.TokenEncrypted), p.Sync.LastSyncedAt, bountyprogram.ClipSyncError(p.Sync.LastError),
+		pendingTerms, pendingItems, p.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("save program sync: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return bountyprogram.ErrNotFound
+	}
+	return nil
+}
+
+// SyncDue lists the active programs with a source, least recently synced
+// first (the controller).
+func (r *BountyProgramRepository) SyncDue(ctx context.Context, olderThan time.Time, limit int) ([]bountyprogram.ProgramRef, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT tenant_id::text, id::text FROM bounty_programs
+		WHERE scope_source <> 'paste' AND status = 'active'
+		  AND (last_synced_at IS NULL OR last_synced_at < $1)
+		ORDER BY last_synced_at NULLS FIRST LIMIT $2`, olderThan, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list programs to sync: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []bountyprogram.ProgramRef
+	for rows.Next() {
+		var t, p string
+		if err := rows.Scan(&t, &p); err != nil {
+			return nil, err
+		}
+		tid, e1 := shared.IDFromString(t)
+		pid, e2 := shared.IDFromString(p)
+		if e1 == nil && e2 == nil {
+			out = append(out, bountyprogram.ProgramRef{TenantID: tid, ProgramID: pid})
+		}
+	}
+	return out, rows.Err()
 }
 
 // ReplaceScope applies a re-import.
@@ -210,7 +291,7 @@ func (r *BountyProgramRepository) SetStatus(ctx context.Context, p *bountyprogra
 
 // GetByID returns one program of the tenant.
 func (r *BountyProgramRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*bountyprogram.Program, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT `+bountyProgramColumns+` FROM bounty_programs WHERE tenant_id = $1 AND id = $2`,
+	row := r.db.QueryRowContext(ctx, `SELECT `+bountyProgramColumns+bountyProgramSyncColumns+` FROM bounty_programs WHERE tenant_id = $1 AND id = $2`,
 		tenantID.String(), id.String())
 	p, err := scanProgram(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -221,7 +302,7 @@ func (r *BountyProgramRepository) GetByID(ctx context.Context, tenantID, id shar
 
 // List lists the tenant's programs (only the user's programs with memberOf).
 func (r *BountyProgramRepository) List(ctx context.Context, tenantID shared.ID, memberOf *shared.ID) ([]*bountyprogram.Program, error) {
-	q := `SELECT ` + bountyProgramColumns + ` FROM bounty_programs p WHERE p.tenant_id = $1`
+	q := `SELECT ` + bountyProgramColumns + bountyProgramSyncColumns + ` FROM bounty_programs p WHERE p.tenant_id = $1`
 	args := []any{tenantID.String()}
 	if memberOf != nil {
 		q += ` AND EXISTS (SELECT 1 FROM group_members gm JOIN groups g ON g.id = gm.group_id
@@ -251,12 +332,27 @@ func scanProgram(row interface{ Scan(...any) error }) (*bountyprogram.Program, e
 		id, tenantID, status           string
 		rules, items                   []byte
 		acceptedBy, groupID, createdBy sql.NullString
-		acceptedAt                     sql.NullTime
+		acceptedAt, syncedAt           sql.NullTime
+		syncURL, syncHandle, syncUser  sql.NullString
+		syncToken, pendingTerms        sql.NullString
+		pendingItems                   []byte
 	)
 	if err := row.Scan(&id, &tenantID, &p.Name, &p.Platform, &p.Handle, &p.ProgramURL, &status, &p.ScopeSource,
 		&p.Authoritative, &rules, &items, &p.TermsSHA256, &acceptedBy, &acceptedAt, &groupID,
-		&createdBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		&createdBy, &p.CreatedAt, &p.UpdatedAt,
+		&syncURL, &syncHandle, &syncUser, &syncToken, &syncedAt, &p.Sync.LastError, &pendingTerms, &pendingItems); err != nil {
 		return nil, err
+	}
+	p.Sync.URL, p.Sync.Handle, p.Sync.Username, p.Sync.TokenEncrypted = syncURL.String, syncHandle.String, syncUser.String, syncToken.String
+	if syncedAt.Valid {
+		t := syncedAt.Time
+		p.Sync.LastSyncedAt = &t
+	}
+	if pendingTerms.Valid {
+		p.Pending = &bountyprogram.PendingTerms{TermsSHA256: pendingTerms.String}
+		if err := json.Unmarshal(pendingItems, &p.Pending.Items); err != nil {
+			return nil, fmt.Errorf("decode pending items: %w", err)
+		}
 	}
 	p.ID, _ = shared.IDFromString(id)
 	p.TenantID, _ = shared.IDFromString(tenantID)
@@ -281,6 +377,24 @@ func (r *BountyProgramRepository) Entries(ctx context.Context, tenantID, program
 		tenantID.String(), programID.String())
 	if err != nil {
 		return nil, fmt.Errorf("list program entries: %w", err)
+	}
+	defer rows.Close()
+	var out []*scope.Target
+	for rows.Next() {
+		t, err := r.targets.scanTarget(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// TenantEntries lists every scope entry of the tenant (bounded).
+func (r *BountyProgramRepository) TenantEntries(ctx context.Context, tenantID shared.ID) ([]*scope.Target, error) {
+	rows, err := r.db.QueryContext(ctx, scopeTargetSelectQuery+` WHERE tenant_id = $1 ORDER BY created_at LIMIT 20000`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list scope entries: %w", err)
 	}
 	defer rows.Close()
 	var out []*scope.Target
