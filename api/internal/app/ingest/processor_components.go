@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/licensepolicy"
+
 	"github.com/openctemio/ctis"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -20,7 +22,18 @@ import (
 type ComponentProcessor struct {
 	writer software.PackageWriter
 	logger *slog.Logger
+	// license re-evaluates the license policy on the assets written.
+	license LicenseEvaluator
 }
+
+// LicenseEvaluator re-evaluates the organization's license policy on the
+// packages of these assets (internal/app/licensepolicy).
+type LicenseEvaluator interface {
+	EvaluateAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (licensepolicy.Result, error)
+}
+
+// SetLicenseEvaluator wires the license policy evaluation.
+func (p *ComponentProcessor) SetLicenseEvaluator(e LicenseEvaluator) { p.license = e }
 
 // NewComponentProcessor creates a new component processor.
 func NewComponentProcessor(writer software.PackageWriter, logger *slog.Logger) *ComponentProcessor {
@@ -173,6 +186,11 @@ func (p *ComponentProcessor) ProcessBatch(
 		}
 		output.ComponentsCreated += res.Versions
 		output.DependenciesLinked += res.Links
+	}
+	if p.license != nil {
+		if _, err := p.license.EvaluateAssets(ctx, tenantID, order); err != nil {
+			p.logger.Warn("license policy evaluation failed", "tenant_id", tenantID.String(), "error", sanitizeIngestLogField(err.Error()))
+		}
 	}
 	return nil
 }
