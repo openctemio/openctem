@@ -541,7 +541,7 @@ covers the target.
   scores, SLA and CTEM metrics by default (a toggle includes them).
 - The inventory gets a "Bug bounty" filter and platform/program facets, and a
   "Program target" badge with the program and its attestation state.
-- Implementation: migration `001730` (`asset_program_links`,
+- Implementation: migration `001762` (`asset_program_links`,
   `assets.system_tags`, `assets.program_only`); the program assignment pass
   keeps the links of every program (entries active or not, minus its
   exclusions; none for an ended program) and derives the tags and

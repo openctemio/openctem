@@ -44,7 +44,7 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// API descriptions (001299, RFC-056), 1 from software links (001616,
 	// RFC-066), 1 from attribute sources (001652, RFC-069), 1 from the asset
 	// change timeline (RFC-069; its monthly partitions inherit it and are
-	// not counted), 1 from program asset links (001730, RFC-065).
+	// not counted), 1 from program asset links (001762, RFC-065).
 	if n != 39 || !allValid.Bool {
 		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 39 validated", n, allValid.Bool)
 	}
