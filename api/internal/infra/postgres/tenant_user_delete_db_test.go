@@ -215,6 +215,23 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"ai_triage_budgets": func(*schemaSeeder) map[string]any {
 		return map[string]any{"period_start": "2026-01-01", "period_end": "2026-02-01"}
 	},
+	// An edge joins two package links of one asset (the scope trigger checks
+	// both ends): add a second link next to the seeded one.
+	"asset_software_edges": func(s *schemaSeeder) map[string]any {
+		first := s.rows["asset_software"]
+		var second string
+		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO asset_software (tenant_id, asset_id, product_id, software_version_id,
+				location, source, confidence)
+			SELECT tenant_id, asset_id, product_id, software_version_id, $2, 'package', 100 FROM asset_software WHERE id = $1
+			RETURNING id`, first["id"], s.uniq()).Scan(&second); err != nil {
+			s.t.Fatalf("insert second package link: %v", err)
+		}
+		return map[string]any{"parent_id": first["id"], "child_id": second, "asset_id": first["asset_id"]}
+	},
+	"vex_statements": func(*schemaSeeder) map[string]any {
+		return map[string]any{"vuln_id": "CVE-2026-0001", "status": "affected", "origin": "manual",
+			"justification": nil, "versions": "{}", "version_range": nil}
+	},
 	"asset_relationships": func(s *schemaSeeder) map[string]any {
 		var second string
 		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO assets (tenant_id, name, asset_type) VALUES ($1, $2, 'host') RETURNING id`,

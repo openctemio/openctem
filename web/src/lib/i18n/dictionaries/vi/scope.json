@@ -125,6 +125,7 @@
   "scope.entry.tierLabel": "Mức quét sâu nhất được phép",
   "scope.entry.tierTools": "Công cụ: {tools}.",
   "scope.entry.tierBelow": "Bao gồm cả các mức thấp hơn.",
+  "scope.entry.noTierCeiling": "Một mục phạm vi cho phép mọi mức quét: cường độ quét và các quy tắc phê duyệt quyết định mức độ quét các mục tiêu của nó.",
   "scope.entry.outcomeRequest": "Người phê duyệt phạm vi sẽ xem xét. Chưa được phép quét cho đến khi được phê duyệt.",
   "scope.entry.outcomeApproval1": "Cần 1 phê duyệt từ người phê duyệt khác; chưa được phép quét cho đến lúc đó.",
   "scope.entry.outcomeApprovalN": "Cần {n} phê duyệt từ những người phê duyệt khác; chưa được phép quét cho đến lúc đó.",
@@ -198,5 +199,7 @@
   "scope.settings.scanApprovalOpenHint": "Mở rộng phạm vi có hiệu lực mà không cần người thứ hai. Xác thực lại, danh sách chặn, kiểm toán và thông báo vẫn áp dụng.",
   "scope.settings.scanApprovalByPlatform": "Do quản trị viên nền tảng đặt.",
   "scope.settings.scanApprovalByOwner": "Do chủ sở hữu đặt trong Cài đặt > Phê duyệt quét.",
-  "scope.approvals.noneNeeded": "Mục phạm vi không cần phê duyệt khi phê duyệt quét không ở chế độ Nghiêm ngặt: thay đổi mở rộng phạm vi có hiệu lực ngay."
+  "scope.approvals.noneNeeded": "Mục phạm vi không cần phê duyệt khi phê duyệt quét không ở chế độ Nghiêm ngặt: thay đổi mở rộng phạm vi có hiệu lực ngay.",
+  "scope.refusal.label.constrained": "Mục giới hạn",
+  "scope.refusal.message.constrained": "Các mục phạm vi bao phủ mục tiêu này chỉ cho phép một số cổng hoặc một đường dẫn, và tác vụ này có thể chạm tới cổng hoặc đường dẫn khác."
 }

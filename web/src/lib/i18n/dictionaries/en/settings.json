@@ -93,5 +93,7 @@
   "settings.item.ci-pipelines": "CI/CD integration",
   "settings.desc.ci-pipelines": "Which CI/CD pipelines may send results, and what fails them.",
   "settings.item.scan-windows": "Scan windows",
-  "settings.desc.scan-windows": "When scans may touch which targets: testing windows and blackouts."
+  "settings.desc.scan-windows": "When scans may touch which targets: testing windows and blackouts.",
+  "settings.item.scan-approval": "Scan approval",
+  "settings.desc.scan-approval": "Which scans need a person’s approval before they run: off by default."
 }

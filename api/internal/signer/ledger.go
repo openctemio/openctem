@@ -86,6 +86,10 @@ type tenantLedger struct {
 	exclusions map[string]jobsign.LedgerExclusion
 	// templates are the approved custom template versions, by template id.
 	templates map[string]jobsign.LedgerTemplate
+	// ceilingsOff: the entries' max_tier is not enforced (scan approval
+	// Off or On, RFC-073 §7); every entry covers every tier. The zero value
+	// enforces the ceilings.
+	ceilingsOff bool
 }
 
 func newTenantLedger() *tenantLedger {
@@ -94,7 +98,7 @@ func newTenantLedger() *tenantLedger {
 }
 
 func (t *tenantLedger) empty() bool {
-	return len(t.entries) == 0 && len(t.exclusions) == 0 && len(t.templates) == 0
+	return len(t.entries) == 0 && len(t.exclusions) == 0 && len(t.templates) == 0 && !t.ceilingsOff
 }
 
 func (t *tenantLedger) clone() *tenantLedger {
@@ -108,6 +112,7 @@ func (t *tenantLedger) clone() *tenantLedger {
 	for k, v := range t.templates {
 		c.templates[k] = v
 	}
+	c.ceilingsOff = t.ceilingsOff
 	return c
 }
 
@@ -131,6 +136,8 @@ func (t *tenantLedger) apply(ops []jobsign.LedgerOp, now time.Time) {
 			t.templates[op.Template.ID] = *op.Template
 		case jobsign.OpRemoveTemplate:
 			delete(t.templates, op.ID)
+		case jobsign.OpSetTierCeilings:
+			t.ceilingsOff = !*op.TierCeilings
 		}
 	}
 }
@@ -336,7 +343,7 @@ func (l *Ledger) Apply(ch jobsign.LedgerChange, now time.Time) (jobsign.LedgerAp
 	counted := 0
 	if kind == jobsign.ChangeWiden {
 		var r *refusal
-		if counted, r = l.checkApprovals(ch, now); r != nil {
+		if counted, r = l.checkApprovals(ch, cur, now); r != nil {
 			return jobsign.LedgerApplyResult{}, r
 		}
 	}
@@ -402,6 +409,10 @@ func classify(cur *tenantLedger, ops []jobsign.LedgerOp, now time.Time) string {
 		case jobsign.OpRemoveTemplate:
 			_, ok := t.templates[op.ID]
 			changes = changes || ok
+		case jobsign.OpSetTierCeilings:
+			off := !*op.TierCeilings
+			changes = changes || off != t.ceilingsOff
+			widens = widens || (off && !t.ceilingsOff)
 		}
 		t.apply([]jobsign.LedgerOp{op}, now)
 	}
@@ -415,7 +426,7 @@ func classify(cur *tenantLedger, ops []jobsign.LedgerOp, now time.Time) string {
 }
 
 func sameEntry(a, b jobsign.LedgerEntry) bool {
-	return a.ID == b.ID && a.Type == b.Type && a.Pattern == b.Pattern && a.MaxTier == b.MaxTier && sameTime(a.ExpiresAt, b.ExpiresAt)
+	return a.ID == b.ID && a.SameScope(b) && a.MaxTier == b.MaxTier && sameTime(a.ExpiresAt, b.ExpiresAt)
 }
 
 func sameExclusion(a, b jobsign.LedgerExclusion) bool {
@@ -432,11 +443,15 @@ func sameTime(a, b *time.Time) bool {
 // checkApprovals counts the distinct approvers of a widening who are not
 // the requester (a self-approval under RFC-054 §12 A2 counts once) and
 // compares them with the policy's count, the operator's floor and the
-// operator's floor for intrusive entries.
-func (l *Ledger) checkApprovals(ch jobsign.LedgerChange, now time.Time) (int, *refusal) {
+// operator's floor for intrusive entries (which also applies to turning
+// cur's tier ceilings off).
+func (l *Ledger) checkApprovals(ch jobsign.LedgerChange, cur *tenantLedger, now time.Time) (int, *refusal) {
 	need := max(ch.RequiredApprovals, l.minApprovals)
 	for _, op := range ch.Ops {
-		if op.Op == jobsign.OpPutEntry && op.Entry.MaxTier >= jobsign.TierIntrusive {
+		// Turning the tier ceilings off lets every entry cover intrusive
+		// probes: it needs what an intrusive entry needs.
+		if (op.Op == jobsign.OpPutEntry && op.Entry.MaxTier >= jobsign.TierIntrusive) ||
+			(op.Op == jobsign.OpSetTierCeilings && !*op.TierCeilings && !cur.ceilingsOff) {
 			need = max(need, l.t2MinApprovals)
 		}
 	}
@@ -517,7 +532,7 @@ func narrowingOps(cur *tenantLedger, snap jobsign.LedgerSnapshot, now time.Time)
 	for _, id := range sortedKeys(cur.entries) {
 		old := cur.entries[id]
 		e, ok := inSnap[id]
-		if !ok || e.Type != old.Type || e.Pattern != old.Pattern {
+		if !ok || !e.SameScope(old) {
 			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpRemoveEntry, ID: id})
 			continue
 		}
@@ -573,6 +588,13 @@ func narrowingOps(cur *tenantLedger, snap jobsign.LedgerSnapshot, now time.Time)
 		if d, ok := snapTpl[id]; !ok || d != cur.templates[id].SHA256 {
 			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpRemoveTemplate, ID: id})
 		}
+	}
+	switch {
+	case cur.ceilingsOff && !snap.TierCeilingsOff:
+		on := true
+		ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpSetTierCeilings, TierCeilings: &on})
+	case !cur.ceilingsOff && snap.TierCeilingsOff:
+		diverged++
 	}
 	return ops, diverged
 }
@@ -634,8 +656,11 @@ func (l *Ledger) Check(st *jobsign.Statement, now time.Time) *refusal {
 		if tier <= jobsign.TierPassive || !scopedom.NeedsAuthority(target) {
 			continue
 		}
-		covered, below := t.covers(target, tier, now)
+		covered, below, limited := t.covers(target, tier, now)
 		switch {
+		case covered && limited != nil && !scopedom.ConstrainedToolAllowed(st.Tool, limited.ports, limited.path):
+			return refuse(http.StatusForbidden, ReasonOutOfLedger,
+				"target %q is approved only for some ports or a path, and tool %q could reach others", clip(target, 128), clip(st.Tool, maxToolLength))
 		case covered:
 		case below:
 			return refuse(http.StatusForbidden, ReasonTierExceedsLedge,
@@ -682,25 +707,49 @@ func (t *tenantLedger) excludes(target string, now time.Time) string {
 	return ""
 }
 
+// ledgerLimits says which limits cover a target when only port- or
+// path-limited entries do.
+type ledgerLimits struct{ ports, path bool }
+
 // covers reports whether an entry in effect covers target at tier, and
-// whether one covers it only below tier.
-func (t *tenantLedger) covers(target string, tier int, now time.Time) (covered, below bool) {
+// whether one covers it only below tier. limited is nil when an entry
+// without a port or path limit covers it, else the kinds of limits of the
+// covering entries. Matching is the API's own (scopedom.EntryMatches): a
+// port-limited entry covers only a target that names an allowed port, a
+// path-limited URL entry only URLs under its path. With the tier ceilings
+// off any covering entry covers the target at every tier.
+func (t *tenantLedger) covers(target string, tier int, now time.Time) (covered, below bool, limited *ledgerLimits) {
 	forms := scopedom.AuthorityForms(target)
+	lim := &ledgerLimits{}
 	for _, e := range t.entries {
 		if jobsign.Expired(e.ExpiresAt, now) {
 			continue
 		}
+		tt := scopedom.TargetType(e.Type)
+		c := scopedom.Constraint{Ports: e.Ports, Protocol: e.Protocol}
 		for _, f := range forms {
-			if !scopedom.MatchesPattern(scopedom.TargetType(e.Type), e.Pattern, f) {
+			if !scopedom.EntryMatches(tt, e.Pattern, c, f) {
 				continue
 			}
-			if e.MaxTier >= tier {
-				return true, false
+			if !t.ceilingsOff && e.MaxTier < tier {
+				below = true
+				continue
 			}
-			below = true
+			covered = true
+			switch {
+			case scopedom.URLPathLimited(tt, e.Pattern):
+				lim.path = true
+			case !c.IsZero():
+				lim.ports = true
+			default:
+				return true, false, nil
+			}
 		}
 	}
-	return false, below
+	if covered {
+		return true, false, lim
+	}
+	return false, below, nil
 }
 
 // ledgerExclusionTypes are the exclusion types that name targets.
@@ -741,6 +790,15 @@ func validateChange(ch jobsign.LedgerChange) *refusal {
 }
 
 func validateOp(op jobsign.LedgerOp) error {
+	if op.Op == jobsign.OpSetTierCeilings {
+		if op.TierCeilings == nil || op.Entry != nil || op.Exclusion != nil || op.Template != nil || op.ID != "" {
+			return errors.New("set_tier_ceilings carries tier_ceilings only")
+		}
+		return nil
+	}
+	if op.TierCeilings != nil {
+		return errors.New("only set_tier_ceilings carries tier_ceilings")
+	}
 	switch op.Op {
 	case jobsign.OpPutEntry:
 		if op.Entry == nil || op.Exclusion != nil || op.ID != "" {
@@ -781,8 +839,25 @@ func validateEntry(e jobsign.LedgerEntry) error {
 		return errors.New("entry max_tier must be 0, 1 or 2")
 	case e.MaxTier == jobsign.TierIntrusive && e.ExpiresAt == nil:
 		return errors.New("an intrusive (t2) entry needs an expiry")
+	case !canonicalConstraint(tt, e.Ports, e.Protocol):
+		return errors.New("entry ports and protocol must be a canonical port limit for its type")
 	}
 	return nil
+}
+
+// canonicalConstraint reports whether ports and protocol are a port limit
+// in the API's canonical form (a list that normalizes to itself), so the
+// signer and the API read one limit the same way.
+func canonicalConstraint(tt scopedom.TargetType, ports, protocol string) bool {
+	if ports == "" && protocol == "" {
+		return true
+	}
+	var list []string
+	if ports != "" {
+		list = []string{ports}
+	}
+	c, err := scopedom.NormalizeConstraint(tt, list, protocol)
+	return err == nil && c.Ports == ports && c.Protocol == protocol
 }
 
 func validateTemplate(t jobsign.LedgerTemplate) error {

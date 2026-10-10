@@ -51,6 +51,9 @@ type Target struct {
 	authSource AuthorizationSource
 	programID  *shared.ID
 	letterID   *shared.ID
+
+	// constraint limits the entry to ports and a protocol (constraint.go).
+	constraint Constraint
 }
 
 // NewTarget creates a new scope target: active, permanent, t1.
@@ -143,7 +146,33 @@ func (t *Target) IsActive() bool {
 
 // Matches checks if a value matches this target's pattern.
 func (t *Target) Matches(value string) bool {
-	return MatchesPattern(t.targetType, t.pattern, value)
+	return EntryMatches(t.targetType, t.pattern, t.constraint, value)
+}
+
+// Constraint is the entry's port and protocol limit (zero: none).
+func (t *Target) Constraint() Constraint { return t.constraint }
+
+// Constrained reports whether the entry covers less than its whole pattern:
+// it is limited to ports or a protocol, or it is a URL entry limited to a
+// path.
+func (t *Target) Constrained() bool {
+	return !t.constraint.IsZero() || URLPathLimited(t.targetType, t.pattern)
+}
+
+// SetConstraint sets the entry's port and protocol limit, normalized for
+// its type. It is set when the entry is created or read, never changed
+// later: the limit is part of what was approved.
+func (t *Target) SetConstraint(c Constraint) error {
+	var ports []string
+	if c.Ports != "" {
+		ports = []string{c.Ports}
+	}
+	n, err := NormalizeConstraint(t.targetType, ports, c.Protocol)
+	if err != nil {
+		return err
+	}
+	t.constraint = n
+	return nil
 }
 
 // Update methods

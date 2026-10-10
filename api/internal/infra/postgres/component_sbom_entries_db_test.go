@@ -5,15 +5,15 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // TestComponentRepository_ListSBOMEntries pins what an SBOM export reads:
-// only the tenant's own component links and license observations (the
-// components table is shared by every tenant), one asset when asked, and
+// only the tenant's own package links and license observations (a global
+// package version is shared by every tenant), one asset when asked, and
 // only in-scope assets for a restricted user.
 //
 // DB-gated: needs DATABASE_URL pointing at app_test (never the live DB).
@@ -43,16 +43,21 @@ func TestComponentRepository_ListSBOMEntries(t *testing.T) {
 		mustExec(t, db, `INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1,$2,$3,'repository')`, id.String(), tenant.String(), name)
 		return id
 	}
-	newComponent := func(name, version string) shared.ID {
-		id := shared.NewID()
-		mustExec(t, db, `INSERT INTO components (id, purl, name, version, ecosystem, vulnerability_count) VALUES ($1,$2,$3,$4,'npm',1)`,
-			id.String(), "pkg:npm/"+name+"@"+version+"-"+id.String()[28:], name, version)
-		t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM components WHERE id=$1`, id.String()) })
+	// Global package versions (the feed's), so both tenants link the same row.
+	products := map[string]string{}
+	newComponent := func(name, version string) string {
+		product, id := testdb.SeedPackageVersion(t, db, "", "pkg:npm/"+name+"-"+shared.NewID().String()[28:]+"@"+version)
+		products[id] = product
+		t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM software_products WHERE id=$1`, product) })
 		return id
 	}
-	link := func(tenant, assetID, comp shared.ID, license string) {
-		mustExec(t, db, `INSERT INTO asset_components (tenant_id, asset_id, component_id, name, ecosystem, license) VALUES ($1,$2,$3,'x','npm',NULLIF($4,''))`,
-			tenant.String(), assetID.String(), comp.String(), license)
+	link := func(tenant, assetID shared.ID, version, license string) {
+		lic := []string{}
+		if license != "" {
+			lic = append(lic, license)
+		}
+		mustExec(t, db, `INSERT INTO asset_software (tenant_id, asset_id, product_id, software_version_id, source, confidence, relationship, licenses)
+			VALUES ($1,$2,$3,$4,'package',100,'direct',$5)`, tenant.String(), assetID.String(), products[version], version, pq.Array(lic))
 	}
 
 	tenant := newTenant("sbom-a")
@@ -90,7 +95,7 @@ func TestComponentRepository_ListSBOMEntries(t *testing.T) {
 		if !lic["MIT"] || !lic["Apache-2.0"] || lic["GPL-3.0-only"] || len(got[0].Licenses) != 2 {
 			t.Fatalf("licenses must be this tenant's observations only: %v", got[0].Licenses)
 		}
-		if got[1].Licenses != nil {
+		if len(got[1].Licenses) != 0 {
 			t.Fatalf("no license observed must give none: %v", got[1].Licenses)
 		}
 	})
