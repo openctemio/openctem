@@ -719,7 +719,7 @@ covers the target.
 > Status: points 2 and 3 are built (typed scope items, port/protocol and
 > path limits on entries enforced at dispatch, claim and in the signer's
 > ledger, per-item qualifiers; migration `001910`). Point 1 is built
-> (`internal/app/programtarget`, migration `001911`
+> (`internal/app/programtarget`, migration `001963`
 > `bounty_program_target_assets`): every application of a program's scope
 > ingests its in-scope targets through the standard CTIS ingest as a
 > trusted server-side binding, source kind `feed` (`programfeed`, run
