@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { useState, useEffect } from 'react'
 import { Loader2, Copy, Calendar, Target, Settings } from 'lucide-react'
 import { toast } from 'sonner'
@@ -23,11 +24,7 @@ import { useCloneScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-h
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
 import type { ScanConfig } from '@/lib/api/scan-types'
-import {
-  SCAN_TYPE_LABELS,
-  SCHEDULE_TYPE_LABELS,
-  SCAN_CONFIG_STATUS_LABELS,
-} from '@/lib/api/scan-types'
+import { configStatusName, scanTypeName, scheduleTypeName } from '../lib/labels'
 
 interface CloneScanDialogProps {
   scan: ScanConfig | null
@@ -37,30 +34,31 @@ interface CloneScanDialogProps {
 }
 
 export function CloneScanDialog({ scan, open, onOpenChange, onSuccess }: CloneScanDialogProps) {
+  const { t } = useTranslation()
   const [newName, setNewName] = useState('')
   const { trigger: cloneScan, isMutating } = useCloneScanConfig(scan?.id ?? '')
 
   // Reset name when dialog opens with a new scan
   useEffect(() => {
     if (open && scan) {
-      setNewName(`${scan.name} (Copy)`)
+      setNewName(t('scans.clone.copySuffix', undefined, { name: scan.name }))
     }
-  }, [open, scan])
+  }, [open, scan, t])
 
   const handleClone = async () => {
     if (!scan || !newName.trim()) return
 
     try {
       const result = await cloneScan({ name: newName.trim() })
-      toast.success(`Scan "${newName}" created successfully`)
-      notifyScannerConfigWarnings(result)
+      toast.success(t('scans.clone.created', undefined, { name: newName }))
+      notifyScannerConfigWarnings(result, t)
       await invalidateScanConfigsCache()
       onOpenChange(false)
       if (onSuccess && result) {
         onSuccess(result)
       }
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to clone scan configuration'))
+      toast.error(getErrorMessage(err, t('scans.clone.failed')))
     }
   }
 
@@ -82,11 +80,10 @@ export function CloneScanDialog({ scan, open, onOpenChange, onSuccess }: CloneSc
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Copy className="h-5 w-5" />
-            Clone Scan Configuration
+            {t('scans.clone.title')}
           </DialogTitle>
           <DialogDescription>
-            Create a copy of &ldquo;{scan.name}&rdquo; with a new name. All settings will be
-            duplicated.
+            {t('scans.clone.description', undefined, { name: scan.name })}
           </DialogDescription>
         </DialogHeader>
 
@@ -94,52 +91,66 @@ export function CloneScanDialog({ scan, open, onOpenChange, onSuccess }: CloneSc
           <div className="space-y-4 py-4">
             {/* New name input */}
             <div className="space-y-2">
-              <Label htmlFor="clone-name">New Scan Name</Label>
+              <Label htmlFor="clone-name">{t('scans.clone.newName')}</Label>
               <Input
                 id="clone-name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Enter a unique name"
+                placeholder={t('scans.clone.namePlaceholder')}
                 autoFocus
               />
             </div>
 
             {/* What will be cloned summary */}
             <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-              <p className="text-sm font-medium">Configuration to clone:</p>
+              <p className="text-sm font-medium">{t('scans.clone.toClone')}</p>
 
               <div className="grid gap-2 text-sm">
                 {/* Scan Type */}
                 <div className="flex items-center gap-2">
                   <Settings className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Type:</span>
-                  <Badge variant="outline">{SCAN_TYPE_LABELS[scan.scan_type]}</Badge>
+                  <span className="text-muted-foreground">{t('scans.clone.type')}</span>
+                  <Badge variant="outline">{scanTypeName(t, scan.scan_type)}</Badge>
                 </div>
 
                 {/* Schedule */}
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Schedule:</span>
-                  <Badge variant="secondary">{SCHEDULE_TYPE_LABELS[scan.schedule_type]}</Badge>
+                  <span className="text-muted-foreground">{t('scans.clone.schedule')}</span>
+                  <Badge variant="secondary">{scheduleTypeName(t, scan.schedule_type)}</Badge>
                 </div>
 
                 {/* Targets */}
                 <div className="flex items-center gap-2">
                   <Target className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Targets:</span>
+                  <span className="text-muted-foreground">{t('scans.clone.targets')}</span>
                   <span>
                     {assetGroupCount > 0 && (
                       <Badge variant="secondary" className="me-1">
-                        {assetGroupCount} asset group{assetGroupCount > 1 ? 's' : ''}
+                        {t(
+                          assetGroupCount > 1 ? 'scans.clone.groupMany' : 'scans.clone.groupOne',
+                          undefined,
+                          {
+                            count: assetGroupCount,
+                          }
+                        )}
                       </Badge>
                     )}
                     {targetCount > 0 && (
                       <Badge variant="secondary">
-                        {targetCount} direct target{targetCount > 1 ? 's' : ''}
+                        {t(
+                          targetCount > 1 ? 'scans.clone.directMany' : 'scans.clone.directOne',
+                          undefined,
+                          {
+                            count: targetCount,
+                          }
+                        )}
                       </Badge>
                     )}
                     {assetGroupCount === 0 && targetCount === 0 && (
-                      <span className="text-muted-foreground">None configured</span>
+                      <span className="text-muted-foreground">
+                        {t('scans.clone.noneConfigured')}
+                      </span>
                     )}
                   </span>
                 </div>
@@ -155,16 +166,16 @@ export function CloneScanDialog({ scan, open, onOpenChange, onSuccess }: CloneSc
                           : 'bg-muted-foreground'
                     }`}
                   />
-                  <span className="text-muted-foreground">Status:</span>
-                  <span>{SCAN_CONFIG_STATUS_LABELS[scan.status]}</span>
-                  <span className="text-xs text-muted-foreground">(will be cloned as paused)</span>
+                  <span className="text-muted-foreground">{t('scans.clone.status')}</span>
+                  <span>{configStatusName(t, scan.status)}</span>
+                  <span className="text-xs text-muted-foreground">{t('scans.clone.asPaused')}</span>
                 </div>
               </div>
 
               {/* Tags */}
               {scan.tags && scan.tags.length > 0 && (
                 <div className="pt-2 border-t">
-                  <span className="text-xs text-muted-foreground">Tags: </span>
+                  <span className="text-xs text-muted-foreground">{t('scans.clone.tags')} </span>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {scan.tags.map((tag) => (
                       <Badge key={tag} variant="outline" className="text-xs">
@@ -177,27 +188,24 @@ export function CloneScanDialog({ scan, open, onOpenChange, onSuccess }: CloneSc
             </div>
 
             {/* Note */}
-            <p className="text-xs text-muted-foreground">
-              The cloned scan will start in &ldquo;paused&rdquo; status. You can activate it after
-              reviewing the configuration.
-            </p>
+            <p className="text-xs text-muted-foreground">{t('scans.clone.note')}</p>
           </div>
         </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isMutating}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleClone} disabled={!newName.trim() || isMutating}>
             {isMutating ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                Cloning...
+                {t('scans.clone.cloning')}
               </>
             ) : (
               <>
                 <Copy className="me-2 h-4 w-4" />
-                Clone Scan
+                {t('scans.clone.clone')}
               </>
             )}
           </Button>
