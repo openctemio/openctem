@@ -2489,5 +2489,6 @@
   "components.import.licenses": "Licenses",
   "components.import.diff": "{added} new, {unchanged} unchanged, {removed} recorded for this asset but not in the file.",
   "components.import.written": "{links} packages recorded, {edges} dependency links, {removed} removed.",
-  "components.import.skipped": "{count} entries skipped"
+  "components.import.skipped": "{count} entries skipped",
+  "components.col.vulns": "Vulnerabilities"
 }

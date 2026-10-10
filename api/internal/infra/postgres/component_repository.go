@@ -696,6 +696,11 @@ func (r *ComponentRepository) DependencyPaths(ctx context.Context, tenantID, ass
 		return nil, err
 	}
 	idPaths := component.ShortestPaths(targets, up, component.MaxGraphDepth, limit)
+	// A link of the version with no parent (declared at another manifest) is
+	// only a path of its own when nothing brings the version in.
+	if longer := slicesWithParents(idPaths); len(longer) > 0 {
+		idPaths = longer
+	}
 	need := map[string]bool{}
 	for _, p := range idPaths {
 		for _, id := range p {
@@ -721,6 +726,16 @@ func (r *ComponentRepository) DependencyPaths(ctx context.Context, tenantID, ass
 		out = append(out, path)
 	}
 	return out, nil
+}
+
+func slicesWithParents(paths [][]string) [][]string {
+	out := make([][]string, 0, len(paths))
+	for _, p := range paths {
+		if len(p) > 1 {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // DependencyGraph returns a bounded part of the asset's graph: around the

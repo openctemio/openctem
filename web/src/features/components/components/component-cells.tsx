@@ -98,13 +98,14 @@ export function KevPill({ count }: { count: number }) {
   )
 }
 
-export function FixPill({ available }: { available: boolean }) {
+export function FixPill({ available, compact = false }: { available: boolean; compact?: boolean }) {
   const { t } = useTranslation()
+  const label = t('components.fix.available', 'Fix available')
   if (!available) return <span className="text-xs text-muted-foreground">—</span>
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-success">
-      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-      {t('components.fix.available', 'Fix available')}
+    <span className="inline-flex items-center gap-1 text-xs text-success" title={label}>
+      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {compact ? <span className="sr-only">{label}</span> : label}
     </span>
   )
 }
