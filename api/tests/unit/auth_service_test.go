@@ -844,7 +844,7 @@ func mustNewTenantWithVerificationMode(
 ) *tenant.Tenant {
 	t.Helper()
 	slug := strings.ToLower(strings.ReplaceAll(name, " ", "-")) +
-		"-" + shared.NewID().String()[:8]
+		"-" + shared.NewID().String()[28:]
 	tn, err := tenant.NewTenant(name, slug, "test-creator")
 	if err != nil {
 		t.Fatalf("NewTenant: %v", err)

@@ -43,6 +43,7 @@ import { scopeErrorMessage } from '../lib/scope-codes'
 import { canApproveEntry, coversText, expiryText, TIER_LABEL } from '../lib/scope-entry'
 import { scopeTargetTypeLabel } from './scope-target-type'
 import { ScopeSelfApproveDialog } from './scope-self-approve-dialog'
+import { ScopeAttestations } from './scope-attestations'
 
 /** Who can still approve a pending entry, as one sentence. */
 export function approversText(entry: ApiScopeTarget): string | null {
@@ -195,15 +196,20 @@ export function ScopeApprovals() {
   if (changes.length === 0) {
     const n = settings?.effective_widening_approvals ?? 0
     return (
-      <EmptyState
-        icon={CheckCheck}
-        title="No changes wait for approval"
-        description={
-          n > 0
-            ? `Changes that widen scope need ${n} ${n === 1 ? 'approval' : 'approvals'} (Scope policy).`
-            : 'Changes that widen scope take effect at once in your organization (Scope policy).'
-        }
-      />
+      <div className="space-y-6">
+        <ScopeAttestations />
+        <EmptyState
+          icon={CheckCheck}
+          title="No changes wait for approval"
+          description={
+            settings?.approval_policy?.mode === 'disabled'
+              ? 'Approvals are disabled by your platform administrator: changes that widen scope take effect at once.'
+              : n > 0
+                ? `Your organization requires ${n} ${n === 1 ? 'approval' : 'approvals'} for changes that widen scope (Scope policy).`
+                : 'Changes that widen scope take effect at once in your organization (Scope policy).'
+          }
+        />
+      </div>
     )
   }
 
@@ -212,6 +218,7 @@ export function ScopeApprovals() {
 
   return (
     <div className="space-y-3">
+      <ScopeAttestations />
       {decidable.length > 1 && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Checkbox

@@ -66,6 +66,10 @@ type resolvedTargets struct {
 	// no scan zone of the tenant covers them (refuseInternalOutsideZones).
 	InternalOutsideZones int
 	Warnings             []string
+	// Expansion is what each dynamic selector added (RFC-068), and
+	// SelectorRoots the apexes of the wildcard selectors.
+	Expansion     []TargetExpansion
+	SelectorRoots []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
@@ -131,8 +135,31 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		}
 	}
 
-	for _, t := range sc.Targets {
+	// Dynamic selectors (wildcard domains, inventory-mode CIDRs) are
+	// expanded from the inventory as it is now; what they add is dispatched
+	// by asset id, like a group member, and gated like one.
+	exp, err := s.expandSelectors(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range exp.Literal {
 		add(t)
+	}
+	for _, m := range exp.Members {
+		if !gate.admits(m.Type) {
+			continue
+		}
+		if add(m.Name) {
+			name := names[len(names)-1]
+			assets[name] = DispatchAsset{IDs: []string{m.ID.String()}}
+			types[name] = m.Type
+		}
+		alsoMatch(m.Name, m.MatchValues)
+	}
+	warnings = append(warnings, expansionWarnings(exp.Report)...)
+	if len(names) > 2*maxResolvedTargets {
+		return nil, fmt.Errorf("%w: scan resolves to more than %d targets, more than the %d allowed per run",
+			shared.ErrValidation, len(names), maxResolvedTargets)
 	}
 	// Group members, by asset id, for the ownership and act-scope checks. A
 	// member whose name is also a direct target was added as the direct
@@ -204,6 +231,8 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		ExcludedNames: gated.Excluded,
 		Archived:      archived,
 		Warnings:      warnings,
+		Expansion:     exp.Report,
+		SelectorRoots: exp.Roots,
 	}
 	if n := gate.total(); n > 0 {
 		out.Incompatible = n
