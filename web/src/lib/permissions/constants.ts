@@ -99,7 +99,6 @@ export const Permission = {
   // Note: Components (SBOM) is a separate module with its own permissions
   ComponentsRead: 'assets:components:read',
   ComponentsWrite: 'assets:components:write',
-  ComponentsDelete: 'assets:components:delete',
 
   // Note: Repositories and Branches use general assets:* permissions
   // as they are just asset types, not separate security boundaries
@@ -536,7 +535,6 @@ export const PermissionGroups = {
   AllDelete: [
     Permission.AssetsDelete,
     Permission.AssetGroupsDelete,
-    Permission.ComponentsDelete,
     Permission.FindingsDelete,
     Permission.ExposuresDelete,
     Permission.SuppressionsDelete,
@@ -621,7 +619,6 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.AssetGroupsDelete]: 'Delete Asset Groups',
   [Permission.ComponentsRead]: 'View Components',
   [Permission.ComponentsWrite]: 'Edit Components',
-  [Permission.ComponentsDelete]: 'Delete Components',
 
   // Findings
   [Permission.FindingsRead]: 'View Findings',
@@ -828,7 +825,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.AssetGroupsDelete,
     Permission.ComponentsRead,
     Permission.ComponentsWrite,
-    Permission.ComponentsDelete,
     // Findings
     Permission.FindingsRead,
     Permission.FindingsWrite,
@@ -993,7 +989,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.AssetGroupsDelete,
     Permission.ComponentsRead,
     Permission.ComponentsWrite,
-    Permission.ComponentsDelete,
     // Findings
     Permission.FindingsRead,
     Permission.FindingsWrite,
