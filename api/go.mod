@@ -106,7 +106,7 @@ require (
 	connectrpc.com/connect v1.21.0
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
-	github.com/openctemio/ctis v1.2.1-0.20261010104255-e73d19f7eb79
+	github.com/openctemio/ctis v1.2.1-0.20261010105554-cd662a8cd894
 	// sdk-go main at 17ba39a (pkg/transfer, chunked feed transfer): replace with the next tag.
 	github.com/openctemio/sdk-go v0.18.1-0.20261010083220-17ba39a04836
 	github.com/pires/go-proxyproto v0.15.0
