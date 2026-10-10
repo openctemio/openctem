@@ -576,7 +576,8 @@ func Register(
 
 	// Relationship Suggestion routes (auto-generated relationship recommendations)
 	if h.RelationshipSuggestion != nil {
-		registerRelationshipSuggestionRoutes(router, h.RelationshipSuggestion, authMiddleware, userSync)
+		registerRelationshipSuggestionRoutes(router, h.RelationshipSuggestion, authMiddleware, userSync,
+			h.ModuleGate.RequireModule(moduledom.ModuleRelationships))
 	}
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
