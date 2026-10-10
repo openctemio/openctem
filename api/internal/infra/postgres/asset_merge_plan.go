@@ -66,6 +66,8 @@ var assetMergeRefs = []mergeRef{
 	{table: "ci_pipelines", column: "repository_asset_id", tenantCol: "tenant_id"},
 	{table: "web_endpoint_events", column: "origin_asset_id", tenantCol: "tenant_id"},
 	{table: "api_specs", column: "origin_asset_id", tenantCol: "tenant_id"},
+	// The merged asset's change timeline (RFC-069) joins the kept asset's.
+	{table: "asset_change_events", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
@@ -78,6 +80,11 @@ var assetMergeRefs = []mergeRef{
 	// same location is dropped.
 	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
+	// Per-source attribute values (RFC-069): the kept asset's own value of a
+	// source wins; a merged asset's value from a source the kept one never
+	// heard from moves.
+	{table: "asset_attribute_sources", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"attribute", "source_kind", "source_name"}}}},
 	{table: "asset_components", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{
 			{cols: []string{"component_id", "path"}},

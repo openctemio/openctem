@@ -1335,6 +1335,12 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if len(r.TargetTypes) > 0 {
 		runContext[RunContextKeyTargetTypes] = r.TargetTypes
 	}
+	if len(r.Expansion) > 0 {
+		runContext[RunContextKeyTargetExpansion] = r.Expansion
+	}
+	if len(r.SelectorRoots) > 0 {
+		runContext[RunContextKeySelectorRoots] = r.SelectorRoots
+	}
 	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeNoCompatibleTargets,
 			fmt.Sprintf("Scan %q has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", sc.Name, r.IncompatibleReason),

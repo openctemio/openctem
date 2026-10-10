@@ -77,6 +77,29 @@ var (
 		},
 		[]string{},
 	)
+
+	// ScanTargetSelectorExpansions counts the dynamic target selectors a run
+	// start expanded from the inventory (RFC-068), by kind (wildcard, cidr)
+	// and outcome (expanded, empty, capped: more assets than one selector
+	// may add).
+	ScanTargetSelectorExpansions = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scan_target_selector_expansions_total",
+			Help: "Dynamic scan target selectors expanded at run start, by kind and outcome",
+		},
+		[]string{"kind", "outcome"},
+	)
+
+	// ScanStageTargetsSkipped counts targets a chained workflow stage left
+	// out because a run-wide limit was reached (over_cap, hop_limit): the
+	// signal of a runaway in-run expansion.
+	ScanStageTargetsSkipped = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scan_stage_targets_skipped_total",
+			Help: "Targets a chained scan stage left out at a run limit, by reason",
+		},
+		[]string{"reason"},
+	)
 )
 
 // Finding lifecycle metrics

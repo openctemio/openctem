@@ -311,6 +311,10 @@ what makes chained outputs trustworthy.
 `internal/app/scanrun/hop_router.go`; tables `scan_step_outputs`,
 `scan_run_stage_plans`, `scan_run_targets` (migrations 001048, 001049).
 
+- **Seeds** are the run's targets as resolved at its start, including what a
+  wildcard or inventory-mode CIDR selector expanded to from the inventory
+  ([scan-targets.md](scan-targets.md)); a `discover.subdomains` step takes
+  only the apex of a wildcard selector.
 - **E6.** A step used to receive the run's seeds whatever came before it. Now,
   when a step's direct predecessors produce asset types its stage takes (and
   produced results: `completed` or `partial`), its targets are the seeds plus

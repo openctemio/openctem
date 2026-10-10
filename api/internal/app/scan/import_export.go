@@ -25,6 +25,9 @@ type ScanConfigExport struct {
 	// Targets
 	AssetGroupIDs []string `json:"asset_group_ids,omitempty"`
 	Targets       []string `json:"targets,omitempty"`
+	// TargetOptions tunes how each run resolves the dynamic selectors among
+	// Targets (RFC-068); omitted when every option is the default.
+	TargetOptions *scan.TargetOptions `json:"target_options,omitempty"`
 
 	// Scan Type
 	ScanType       string         `json:"scan_type"`
@@ -40,6 +43,8 @@ type ScanConfigExport struct {
 	ScheduleDay      *int    `json:"schedule_day,omitempty"`
 	ScheduleTime     *string `json:"schedule_time,omitempty"`
 	ScheduleTimezone string  `json:"schedule_timezone"`
+	// ScheduleRunAt is the one run of a once schedule (RFC 3339).
+	ScheduleRunAt *time.Time `json:"schedule_run_at,omitempty"`
 
 	// Routing
 	Tags              []string `json:"tags,omitempty"`
@@ -98,6 +103,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 		ScheduleRRule:       sc.ScheduleRRule,
 		ScheduleDay:         sc.ScheduleDay,
 		ScheduleTimezone:    sc.ScheduleTimezone,
+		ScheduleRunAt:       sc.ScheduleRunAt,
 		RunOnTenantRunner:   sc.RunOnTenantRunner,
 		SensorPreference:    string(sc.SensorPreference),
 		TimeoutSeconds:      sc.TimeoutSeconds,
@@ -108,6 +114,10 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 	}
 	if opts.RedactSecrets {
 		export.ScannerConfig = scan.RedactConfigSecrets(sc.ScannerConfig)
+	}
+	if !sc.TargetOptions.IsZero() {
+		o := sc.TargetOptions
+		export.TargetOptions = &o
 	}
 
 	if sc.ProfileID != nil && !sc.ProfileID.IsZero() {
@@ -207,6 +217,13 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 	}
 
 	// Build create input from export
+	// A one-off run is a moment, not a portable setting: one that is no
+	// longer ahead imports as a manual scan rather than failing the import.
+	if export.ScheduleType == string(scan.ScheduleOnce) &&
+		(export.ScheduleRunAt == nil || export.ScheduleRunAt.Before(time.Now().Add(scan.MinOnceLead))) {
+		export.ScheduleType = string(scan.ScheduleManual)
+		export.ScheduleRunAt = nil
+	}
 	input := CreateScanInput{
 		TenantID:            tenantID.String(),
 		Name:                export.Name,
@@ -217,11 +234,13 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		ScannerName:         export.ScannerName,
 		ScannerConfig:       export.ScannerConfig,
 		TargetsPerJob:       export.TargetsPerJob,
+		TargetOptions:       export.TargetOptions,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
 		ScheduleRRule:       export.ScheduleRRule,
 		ScheduleDay:         export.ScheduleDay,
 		ScheduleTime:        scheduleTime,
+		RunAt:               export.ScheduleRunAt,
 		Timezone:            export.ScheduleTimezone,
 		Tags:                export.Tags,
 		TenantRunner:        export.RunOnTenantRunner,

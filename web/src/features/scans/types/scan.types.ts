@@ -4,6 +4,7 @@
  * Type definitions for scan management
  */
 
+import type { ScanTargetOptions } from '@/lib/api/scan-types'
 import type { Status } from '@/features/shared/types'
 
 // ============================================
@@ -95,9 +96,18 @@ export type ScheduleFrequency = 'once' | 'daily' | 'weekly' | 'monthly'
 
 export interface ScanSchedule {
   runImmediately: boolean
+  /** New scan: save it without running or scheduling it (started later, by hand). */
+  saveOnly?: boolean
   frequency?: ScheduleFrequency
   dayOfWeek?: number // 0 = Sunday, 1 = Monday, etc.
+  /** Monthly: day of the month, 1-31 (a shorter month runs on its last day). */
+  dayOfMonth?: number
   time?: string // "02:00" format
+  /** Once: the run's date (YYYY-MM-DD) and time (HH:MM) in `timezone`. */
+  runAtDate?: string
+  runAtTime?: string
+  /** IANA zone the schedule is in; empty = the viewer's zone. */
+  timezone?: string
 }
 
 export const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
@@ -156,8 +166,10 @@ export interface ScanTargets {
    * their inventory subdomains, plus the addresses those resolved to.
    */
   coverage?: 'host' | 'subdomains' | 'subdomains_ips'
-  /** Targets the coverage level added (sent with the others; each one is gated). */
+  /** Addresses the "subdomains and their IPs" level added (sent with the others; each one is gated). */
   expandedTargets?: string[]
+  /** How each run resolves `*.x` and CIDR targets from the inventory (RFC-068). */
+  targetOptions?: ScanTargetOptions
 }
 
 export const DEFAULT_TARGETS: ScanTargets = {

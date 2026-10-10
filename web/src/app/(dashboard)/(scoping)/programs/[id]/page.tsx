@@ -32,6 +32,7 @@ import {
   PROGRAM_STATUS_LABEL,
   ProgramExclusionsTable,
   ProgramForm,
+  ProgramLocked,
   ProgramPendingTerms,
   ProgramSource,
   endProgram,
@@ -66,6 +67,8 @@ function formFromProgram(p: ProgramDetail): ProgramFormValues {
     forbidden: p.rules.forbidden ?? [],
     notes: p.rules.notes ?? '',
     windows: (p.rules.testing_windows ?? []).map(formatWindow).join('\n'),
+    termsText: p.terms_text ?? '',
+    visibility: p.visibility,
   }
 }
 
@@ -86,6 +89,17 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
     )
   }
   if (!p) return <Main />
+  if (p.locked) {
+    return (
+      <Main>
+        <PageHeader title={p.name} description={p.platform || undefined} />
+        <ProgramLocked
+          program={p}
+          onAccepted={() => Promise.all([mutate(), invalidatePrograms()])}
+        />
+      </Main>
+    )
+  }
 
   const act = async (fn: () => Promise<unknown>, done: string) => {
     setBusy(true)

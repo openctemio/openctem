@@ -1001,3 +1001,41 @@ organization requires N approvals"; the widening warning adapts.
 | T2 duration | A3: `t2_max_duration`, owner-only `PUT /scope/settings/intrusive`, server-side bound, entry dialogs |
 | Attestation | A4: attestation timestamps, `POST /attest`, the attestation and downgrade job |
 | Platform policy | A5: platform default and per-organization override, console section, effective policy on the tenant settings |
+| Start when approved | §12.8: a scan saved to start once the pending entries covering its targets are approved (migration `001727`) |
+
+**Job signer ledger** (RFC-040 §5.6). Every write above goes through the
+scope ledger hook (`scope.Service.commitEntry`): an owner's own approval is
+sent with the approval marked `self_approved` before it is saved (a refusal
+saves nothing); a confirmation (`/attest`) changes nothing the ledger holds;
+the T2 → T1 downgrade is a narrowing, saved with its conditional update and
+then sent; every widening carries `platform_policy` (the A5 mode in force).
+The reminder and attestation-request timestamps are the only scope writes
+outside the hook: they change nothing that authorizes probes (listed in the
+ledger guard with that reason).
+
+### 12.8 Start a scan when its scope is approved
+
+A requester who pastes a target that only a pending entry covers would
+otherwise have to come back after the approval and build the scan again.
+`POST /scans` takes `start_when_scope_approved`: when every direct target the
+ownership gate refuses is covered by a pending entry of the tenant (the
+explainer answers `entry_pending`), the scan is saved without a run and a row
+in `scan_scope_waits` records who asked. Any other refusal (no entry, a
+rejected asset, the deny list) still refuses the request; the act-scope,
+tier and proof checks of the create run as usual. The response says
+`starts_when_scope_approved`.
+
+When an entry of the tenant comes into effect (created active, approved,
+self-approved or activated), the waiting scans whose targets now all pass
+the ownership gate are claimed (the row is deleted, so a scan starts once)
+and triggered as the person who asked. The trigger runs every gate again
+(act scope of that person, ownership, tier, proof, zones, freeze windows) and
+skips anything refused with a run warning; a paused or disabled scan does
+not start. A scan still refused keeps waiting; one run by hand since it was
+saved stops waiting; a wait lapses after 30 days.
+
+Threat model: the wait authorizes nothing. Only the approval of the entry,
+under the approval rules above, puts the targets in scope, and the start is
+checked as if the person who asked had pressed Run then. Waits are
+tenant-scoped (every query carries the tenant; a wait can only name the
+tenant's own scan) and removed with their scan.

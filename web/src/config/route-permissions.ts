@@ -752,6 +752,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/asset-lifecycle/**': {
     permission: Permission.TeamUpdate,
   },
+
+  // Asset source precedence (RFC-069): owner/admin on the API.
+  '/settings/asset-sources': {
+    permission: Permission.TeamUpdate,
+  },
 }
 
 /**

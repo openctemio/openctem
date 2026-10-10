@@ -15,12 +15,14 @@ type fakeRepo struct {
 	programs map[shared.ID]*bp.Program
 	entries  map[shared.ID]*scopedom.Target
 	excl     map[shared.ID][]bp.Exclusion
-	members  map[shared.ID]map[shared.ID]bool // program -> users
+	members  map[shared.ID]map[shared.ID]bool   // program -> users
+	attest   map[shared.ID]map[shared.ID]string // program -> user -> terms
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{programs: map[shared.ID]*bp.Program{}, entries: map[shared.ID]*scopedom.Target{},
-		excl: map[shared.ID][]bp.Exclusion{}, members: map[shared.ID]map[shared.ID]bool{}}
+		excl: map[shared.ID][]bp.Exclusion{}, members: map[shared.ID]map[shared.ID]bool{},
+		attest: map[shared.ID]map[shared.ID]string{}}
 }
 
 func (f *fakeRepo) Import(_ context.Context, w bp.ImportWrite) error {
@@ -121,8 +123,46 @@ func (f *fakeRepo) IsMember(_ context.Context, tenantID, programID, userID share
 	return p != nil && p.TenantID.Equals(tenantID) && f.members[programID][userID], nil
 }
 
-func (f *fakeRepo) MemberProgramIDs(context.Context, shared.ID, shared.ID) ([]shared.ID, error) {
-	return nil, nil
+func (f *fakeRepo) MemberProgramIDs(_ context.Context, tenantID, userID shared.ID) ([]shared.ID, error) {
+	var out []shared.ID
+	for id, p := range f.programs {
+		if p.TenantID.Equals(tenantID) && f.members[id][userID] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) Attest(_ context.Context, a bp.Attestation) error {
+	p := f.programs[a.ProgramID]
+	if p == nil || !p.TenantID.Equals(a.TenantID) {
+		return bp.ErrNotFound
+	}
+	if f.attest[a.ProgramID] == nil {
+		f.attest[a.ProgramID] = map[shared.ID]string{}
+	}
+	f.attest[a.ProgramID][a.UserID] = a.TermsSHA256
+	return nil
+}
+
+func (f *fakeRepo) Attestations(_ context.Context, tenantID, userID shared.ID) (map[shared.ID]string, error) {
+	out := map[shared.ID]string{}
+	for id, users := range f.attest {
+		if p := f.programs[id]; p != nil && p.TenantID.Equals(tenantID) && users[userID] != "" {
+			out[id] = users[userID]
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) PrivateProgramIDs(_ context.Context, tenantID shared.ID) ([]shared.ID, error) {
+	var out []shared.ID
+	for id, p := range f.programs {
+		if p.TenantID.Equals(tenantID) && p.IsPrivate() {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 type fullData bool
@@ -137,7 +177,7 @@ const paste = "*.acme.example\nshop.other.example\n-admin.acme.example\ncom\n"
 
 func input() Input {
 	return Input{Name: "Acme", Platform: "self", Handle: "jdoe", ProgramURL: "https://acme.example/security",
-		ScopeText: paste, Rules: bp.Rules{RateLimitRPS: 5}}
+		ScopeText: paste, Rules: bp.Rules{RateLimitRPS: 5}, Visibility: "public"}
 }
 
 func TestPreviewAndImport(t *testing.T) {

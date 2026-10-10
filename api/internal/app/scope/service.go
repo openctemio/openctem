@@ -35,6 +35,8 @@ type Service struct {
 	webBaseURL string
 	// auditor records the system decisions (attestation.go).
 	auditor SystemAuditor
+	// approvalPolicy is the platform approval policy (entries.go).
+	approvalPolicy ApprovalPolicySource
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
 	// programExcl lists program exclusions for the authority check (RFC-065).
@@ -450,6 +452,8 @@ type ListTargetsInput struct {
 	Search      string   `validate:"max=255"`
 	Page        int      `validate:"min=0"`
 	PerPage     int      `validate:"min=0,max=100"`
+	// ExcludeProgramIDs: entries of these programs are not listed.
+	ExcludeProgramIDs []string
 }
 
 // ListTargets retrieves scope targets with filtering and pagination.
@@ -485,6 +489,7 @@ func (s *Service) ListTargets(ctx context.Context, input ListTargetsInput) (pagi
 	if input.Search != "" {
 		filter.Search = &input.Search
 	}
+	filter.ExcludeProgramIDs = input.ExcludeProgramIDs
 
 	page := pagination.New(input.Page, input.PerPage)
 	return s.targetRepo.List(ctx, filter, page)

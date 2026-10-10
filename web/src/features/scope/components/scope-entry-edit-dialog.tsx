@@ -39,13 +39,16 @@ import { scopeErrorMessage } from '../lib/scope-codes'
 import {
   coversText,
   daysUntil,
-  expiryBoundFor,
+  durationPolicy,
   expiryText,
+  resolveDuration,
   TIER_HINT,
   TIER_LABEL,
+  TIER_TOOLS,
+  type DurationChoice,
+  type DurationPolicy,
 } from '../lib/scope-entry'
-
-type ExpiryChoice = 'keep' | 'days' | 'permanent'
+import { ScopeDurationField } from './scope-duration-field'
 
 const TIER_RANK: Record<string, number> = { t0: 0, t1: 1, t2: 2 }
 
@@ -74,8 +77,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
   const [description, setDescription] = useState('')
   const [reason, setReason] = useState('')
   const [tier, setTier] = useState<ScopeTier>('t1')
-  const [expiry, setExpiry] = useState<ExpiryChoice>('keep')
-  const [days, setDays] = useState(7)
+  const [expiry, setExpiry] = useState<DurationChoice>({ kind: 'keep' })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -84,38 +86,41 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
     setDescription(entry.description ?? '')
     setReason(entry.reason ?? '')
     setTier((entry.max_tier as ScopeTier) || 't1')
-    setExpiry('keep')
-    setDays(7)
+    setExpiry({ kind: 'keep' })
     setError(null)
   }, [entry])
 
   if (!entry) return null
 
   // Intrusive (T2) entries follow the owner's limit; others the one-off one.
-  const { maxDays, permanent: permanentAllowed } = expiryBoundFor(tier, settings)
+  // Only what the policy allows can be picked: a permanent entry raised to
+  // T2 where T2 must expire gets the longest allowed expiry by default.
+  const base = durationPolicy(tier, settings, { isRequest: false })
+  const durPolicy: DurationPolicy =
+    !entry.expires_at && base.permanent === 'allowed' ? { ...base, permanent: 'hidden' } : base
+  const keepAllowed = !!entry.expires_at || base.permanent === 'allowed'
+  const duration = resolveDuration(
+    expiry.kind === 'keep' && !keepAllowed ? null : expiry,
+    durPolicy
+  )
 
   const change: UpdateScopeTargetInput = {
     description: description.trim(),
     reason: reason.trim(),
     ...(tier !== (entry.max_tier || 't1') ? { max_tier: tier } : {}),
-    ...(expiry === 'days' ? { expires_in_days: Math.min(Math.max(1, days || 1), maxDays) } : {}),
-    ...(expiry === 'permanent' ? { clear_expiry: true } : {}),
+    ...(duration.kind === 'days' ? { expires_in_days: duration.days } : {}),
+    ...(duration.kind === 'permanent' && entry.expires_at ? { clear_expiry: true } : {}),
   }
   const widening = isWideningChange(entry, change)
-  const needsApprovals = (settings?.effective_widening_approvals ?? 0) > 0 || tier === 't2'
+  // The platform policy decides whether t2 always needs an approval.
+  const policy = settings?.approval_policy?.mode ?? 'required'
+  const needsApprovals =
+    (settings?.effective_widening_approvals ?? 0) > 0 || (tier === 't2' && policy === 'required')
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (widening && !canApprove) {
       setError(t('scope.error.WIDENING_NEEDS_APPROVER'))
-      return
-    }
-    if (
-      tier === 't2' &&
-      !permanentAllowed &&
-      (expiry === 'permanent' || (!entry.expires_at && expiry === 'keep'))
-    ) {
-      setError(t('scope.error.INTRUSIVE_NEEDS_EXPIRY'))
       return
     }
     setSaving(true)
@@ -125,12 +130,16 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
       await invalidateScopeCache()
       toast.success(
         updated?.status === 'pending'
-          ? `${updated.pattern} is waiting for approval again`
-          : 'Scope entry saved'
+          ? t('scope.edit.pendingAgain', '{pattern} is waiting for approval again', {
+              pattern: updated.pattern ?? '',
+            })
+          : t('scope.edit.saved', 'Scope entry saved')
       )
       onOpenChange(false)
     } catch (err) {
-      setError(scopeErrorMessage(t, err, 'Could not save the scope entry.'))
+      setError(
+        scopeErrorMessage(t, err, t('scope.entry.errSave', 'Could not save the scope entry.'))
+      )
     } finally {
       setSaving(false)
     }
@@ -140,10 +149,13 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit scope entry</DialogTitle>
+          <DialogTitle>{t('scope.edit.title', 'Edit scope entry')}</DialogTitle>
           <DialogDescription>
-            <code className="break-all">{entry.pattern}</code>: {coversText(entry)}. Type and
-            pattern cannot change; remove the entry and add a new one instead.
+            <code className="break-all">{entry.pattern}</code>: {coversText(entry)}.{' '}
+            {t(
+              'scope.edit.desc',
+              'Type and pattern cannot change; remove the entry and add a new one instead.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -158,61 +170,45 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor={`${formId}-expiry`}>Expiry</Label>
-              <Select value={expiry} onValueChange={(v) => setExpiry(v as ExpiryChoice)}>
-                <SelectTrigger id={`${formId}-expiry`} className="w-full sm:w-64">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="keep">Keep ({expiryText(entry.expires_at)})</SelectItem>
-                  <SelectItem value="days">Expire in a number of days</SelectItem>
-                  {entry.expires_at && permanentAllowed && (
-                    <SelectItem value="permanent">Make permanent</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              {expiry === 'days' && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={maxDays}
-                    value={days}
-                    onChange={(e) => setDays(Number(e.target.value))}
-                    className="w-24"
-                    aria-label="Days from now"
-                  />
-                  <span className="text-sm text-muted-foreground">
-                    days from now (1 to {maxDays})
-                  </span>
-                </div>
-              )}
-              {tier === 't2' && (
-                <p className="text-xs text-muted-foreground">
-                  {permanentAllowed
-                    ? 'Intrusive (T2) entries may be permanent in your organization; they are confirmed again periodically.'
-                    : `Intrusive (T2) entries last at most ${maxDays} days in your organization (set by an owner).`}
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor={`${formId}-tier`}>Deepest probe allowed</Label>
-              <Select value={tier} onValueChange={(v) => setTier(v as ScopeTier)}>
+              <Label htmlFor={`${formId}-tier`}>
+                {t('scope.entry.tierLabel', 'Deepest probe allowed')}
+              </Label>
+              <Select
+                value={tier}
+                onValueChange={(v) => {
+                  setTier(v as ScopeTier)
+                  setError(null)
+                }}
+              >
                 <SelectTrigger id={`${formId}-tier`} className="w-full sm:w-56">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {['t0', 't1', 't2'].map((k) => (
                     <SelectItem key={k} value={k}>
-                      {TIER_LABEL[k]}
+                      {t(`scope.tier.label.${k}`, TIER_LABEL[k])}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{TIER_HINT[tier]}</p>
+              <p className="text-xs text-muted-foreground">
+                {t(`scope.tier.hint.${tier}`, TIER_HINT[tier])}{' '}
+                {t('scope.entry.tierTools', 'Runs: {tools}.', {
+                  tools: t(`scope.tier.tools.${tier}`, TIER_TOOLS[tier]),
+                })}
+              </p>
             </div>
+            <ScopeDurationField
+              policy={durPolicy}
+              value={duration}
+              keepHint={keepAllowed ? expiryText(entry.expires_at) : undefined}
+              onChange={(c) => {
+                setExpiry(c)
+                setError(null)
+              }}
+            />
             <div className="space-y-2">
-              <Label htmlFor={`${formId}-reason`}>Reason</Label>
+              <Label htmlFor={`${formId}-reason`}>{t('scope.entry.reason', 'Reason')}</Label>
               <Textarea
                 id={`${formId}-reason`}
                 rows={2}
@@ -222,7 +218,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`${formId}-desc`}>Description</Label>
+              <Label htmlFor={`${formId}-desc`}>{t('scope.edit.description', 'Description')}</Label>
               <Input
                 id={`${formId}-desc`}
                 maxLength={1000}
@@ -232,23 +228,34 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
             </div>
             {widening && (
               <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
-                This widens the entry.{' '}
+                {t('scope.edit.widens', 'This widens the entry.')}{' '}
                 {canApprove
                   ? needsApprovals
-                    ? 'It goes back to pending and authorizes nothing until another approver approves it.'
-                    : 'You may be asked to confirm your identity.'
-                  : 'Only a scope approver can make this change.'}
+                    ? t(
+                        'scope.edit.widensPending',
+                        'It goes back to pending and authorizes nothing until another approver approves it.'
+                      )
+                    : policy === 'disabled'
+                      ? t(
+                          'scope.edit.widensDisabled',
+                          'Approvals are disabled by your platform administrator: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                        )
+                      : t(
+                          'scope.edit.widensNow',
+                          'It takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                        )
+                  : t('scope.edit.widensApprover', 'Only a scope approver can make this change.')}
               </p>
             )}
           </form>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button type="submit" form={formId} disabled={saving}>
             {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Save
+            {t('common.save', 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>

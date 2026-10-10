@@ -11,6 +11,7 @@ import {
   formDataToUpdateRequest,
   frequencyToScheduleType,
   scanConfigToFormData,
+  scheduleError,
   scheduleTypeToFrequency,
 } from '../scan-form'
 
@@ -48,11 +49,95 @@ describe('schedule mapping', () => {
       expect(scheduleTypeToFrequency(f)).toBe(f)
       expect(frequencyToScheduleType(f)).toBe(f)
     }
-    expect(scheduleTypeToFrequency('manual')).toBe('once')
-    expect(scheduleTypeToFrequency(undefined)).toBe('once')
-    expect(scheduleTypeToFrequency('nonsense')).toBe('once')
-    expect(frequencyToScheduleType('once')).toBe('manual')
+    // "Once" is a real one-off schedule now: it used to be saved as manual,
+    // so a scan "scheduled for later, once" never ran.
+    expect(scheduleTypeToFrequency('once')).toBe('once')
+    expect(frequencyToScheduleType('once')).toBe('once')
+    expect(scheduleTypeToFrequency('manual')).toBe('weekly')
+    expect(scheduleTypeToFrequency(undefined)).toBe('weekly')
     expect(frequencyToScheduleType(undefined)).toBe('manual')
+  })
+})
+
+describe('one-off and timezone schedules', () => {
+  const later = (schedule: Partial<NewScanFormData['schedule']>) =>
+    form({ schedule: { ...DEFAULT_NEW_SCAN.schedule, runImmediately: false, ...schedule } })
+
+  it('sends a once schedule with run_at as the instant in the chosen zone', () => {
+    const req = formDataToCreateRequest(
+      later({
+        frequency: 'once',
+        runAtDate: '2030-03-04',
+        runAtTime: '22:30',
+        timezone: 'Asia/Ho_Chi_Minh',
+      })
+    )
+    expect(req.schedule_type).toBe('once')
+    expect(req.run_at).toBe('2030-03-04T15:30:00Z')
+    expect(req.timezone).toBe('Asia/Ho_Chi_Minh')
+    expect(req.schedule_time).toBeUndefined()
+  })
+
+  it('sends the timezone with a recurring schedule (it used to be UTC)', () => {
+    const req = formDataToCreateRequest(
+      later({ frequency: 'daily', time: '02:00', timezone: 'Europe/Paris' })
+    )
+    expect(req).toMatchObject({
+      schedule_type: 'daily',
+      schedule_time: '02:00',
+      timezone: 'Europe/Paris',
+    })
+  })
+
+  it('sends the chosen day of the month (it was always the 1st)', () => {
+    const req = formDataToCreateRequest(
+      later({ frequency: 'monthly', dayOfMonth: 15, time: '03:00' })
+    )
+    expect(req.schedule_day).toBe(15)
+  })
+
+  it('needs a date and time for a once schedule, at least a minute ahead', () => {
+    const now = new Date('2030-03-04T15:00:00Z')
+    expect(scheduleError(later({ frequency: 'once' }), { now })).toMatch(/date and time/)
+    const past = later({
+      frequency: 'once',
+      runAtDate: '2030-03-04',
+      runAtTime: '14:00',
+      timezone: 'UTC',
+    })
+    expect(scheduleError(past, { now })).toMatch(/minute from now/)
+    expect(scheduleError(past, { now, requireFuture: false })).toBeNull()
+    const ok = later({
+      frequency: 'once',
+      runAtDate: '2030-03-04',
+      runAtTime: '16:00',
+      timezone: 'UTC',
+    })
+    expect(scheduleError(ok, { now })).toBeNull()
+    expect(scheduleError(form(), { now })).toBeNull() // runs now
+  })
+
+  it('reads a saved once schedule back in its own zone', () => {
+    const data = scanConfigToFormData({
+      ...config(),
+      schedule_type: 'once',
+      schedule_run_at: '2030-03-04T15:30:00Z',
+      schedule_timezone: 'Asia/Ho_Chi_Minh',
+    })
+    expect(data.schedule).toMatchObject({
+      runImmediately: false,
+      frequency: 'once',
+      runAtDate: '2030-03-04',
+      runAtTime: '22:30',
+      timezone: 'Asia/Ho_Chi_Minh',
+    })
+    // Sent back unchanged with other edits, the run is the same instant.
+    const req = formDataToUpdateRequest(
+      data,
+      { ...config(), schedule_type: 'once' },
+      { canSetZone: false }
+    )
+    expect(req.run_at).toBe('2030-03-04T15:30:00Z')
   })
 })
 
@@ -281,5 +366,80 @@ describe('direct target limit', () => {
         form({ targets: { ...DEFAULT_NEW_SCAN.targets, assetGroupIds: ['g1'], customTargets: [] } })
       )
     ).toBeNull()
+  })
+})
+
+describe('dynamic targets (RFC-068)', () => {
+  it('stores *.domain for "host and its subdomains", never a frozen list of names', () => {
+    const req = formDataToCreateRequest(
+      form({
+        targets: {
+          ...DEFAULT_NEW_SCAN.targets,
+          customTargets: ['example.com', '203.0.113.7'],
+          coverage: 'subdomains',
+          expandedTargets: ['stale-list.example.com'],
+        },
+      })
+    )
+    expect(req.targets).toEqual(['*.example.com', '203.0.113.7'])
+  })
+
+  it('adds the wildcard of a picked domain asset, and the recorded addresses for subdomains_ips', () => {
+    const req = formDataToCreateRequest(
+      form({
+        targets: {
+          ...DEFAULT_NEW_SCAN.targets,
+          customTargets: [],
+          assetIds: ['a1'],
+          assetNames: { a1: 'shop.example.org' },
+          coverage: 'subdomains_ips',
+          expandedTargets: ['198.51.100.4'],
+        },
+      })
+    )
+    expect(req.asset_ids).toEqual(['a1'])
+    expect(req.targets).toEqual(['*.shop.example.org', '198.51.100.4'])
+  })
+
+  it('sends target options only when they differ from the defaults', () => {
+    expect(formDataToCreateRequest(form()).target_options).toBeUndefined()
+    const req = formDataToCreateRequest(
+      form({
+        targets: {
+          ...DEFAULT_NEW_SCAN.targets,
+          customTargets: ['203.0.113.0/24'],
+          targetOptions: { cidr_mode: 'inventory', seen_within_days: 30 },
+        },
+      })
+    )
+    expect(req.target_options).toEqual({ cidr_mode: 'inventory', seen_within_days: 30 })
+  })
+
+  it('edit loads the options and sends them whole ({} resets)', () => {
+    const loaded = scanConfigToFormData(config({ target_options: { include_stale: true } }))
+    expect(loaded.targets.targetOptions).toEqual({ include_stale: true })
+    expect(formDataToUpdateRequest(loaded, config(), { canSetZone: false }).target_options).toEqual(
+      {
+        include_stale: true,
+      }
+    )
+    const cleared = { ...loaded, targets: { ...loaded.targets, targetOptions: {} } }
+    expect(
+      formDataToUpdateRequest(cleared, config(), { canSetZone: false }).target_options
+    ).toEqual({})
+  })
+
+  it('counts a wildcard as one direct target', () => {
+    expect(
+      directTargets(
+        form({
+          targets: {
+            ...DEFAULT_NEW_SCAN.targets,
+            customTargets: ['a.io', 'b.io'],
+            coverage: 'subdomains',
+          },
+        })
+      )
+    ).toEqual(['*.a.io', '*.b.io'])
   })
 })

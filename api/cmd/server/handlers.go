@@ -626,13 +626,21 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Scope.SetActorNamer(scopeActors)
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
-	wireScopeApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
+	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
 	if svc.EASMSweep != nil {
 		handlers.Scope.SetSweeper(svc.EASMSweep)
 	}
+	if svc.Scan != nil {
+		handlers.Scope.SetScopeWaitStarter(svc.Scan)
+	}
 	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
+	// Private programs (RFC-065 §15.3): owners see every private program;
+	// the scope views leave out the entries of private programs the caller
+	// may not see.
+	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
+	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {
 		handlers.Scope.SetDryRun(svc.Scan, svc.ActiveGate)
 	}
@@ -647,6 +655,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
+	handlers.AssetOwner.SetAttributeLocker(svc.Asset)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {
@@ -719,6 +728,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
+	}
+	// The platform policy for scope-widening approvals (RFC-054 §12.6).
+	if svc.ScopePolicy != nil {
+		handlers.AdminScopePolicy = handler.NewAdminScopePolicyHandler(svc.ScopePolicy, adminConsoleSvc, log)
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-09); P0 in review; P1 designed (§12–§14, owner delegated 2026-10-09) |
+| Status | Proposed (2026-10-09); P0 in review; P1 designed (§12–§14, owner delegated 2026-10-09); private programs and the public program monitor added 2026-10-10 (§15–§16, owner direction), §15 in implementation |
 | Scope | api (`pkg/domain/bountyprogram`, `pkg/domain/scope`, `internal/app/bountyprogram`, `internal/app/scopeauth`, `internal/app/actscope`, `internal/app/scan`, handlers, migrations), web (Programs area) |
 | Architecture | [bounty-programs.md](../architecture/bounty-programs.md), [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-054 (scope model: one authority check, guardrails, approvals), RFC-050 (data scope), RFC-040 (platform-sensor distrust), RFC-060 (tool overrides: headers, User-Agent, rate) |
@@ -384,3 +384,171 @@ A program can keep its scope in sync with a source the program controls:
   suspended automatically.
 - `authoritative` stays false in P1: a synced scope still never reaches
   platform sensors (§8); P2 decides with quotas and the abuse workflow.
+
+## 15. Private programs (addendum, 2026-10-10)
+
+Most programs a researcher works on are private or invite-only. Their page,
+scope table and terms sit behind the platform's login, and the link itself
+can be confidential: asking for a fetchable link (§5, §14 `program_file`) does
+not fit them. A private program is the organization's own CTEM work under
+someone else's rules: scope entries, assets, scans, findings and approvals as
+for any scope, plus only what a program adds.
+
+### 15.1 Decisions
+
+| # | Decision |
+|---|---|
+| P1 | `/programs/new` starts from a source: **Enter manually** (paste the scope list and fill the rules) or **Import file** (§15.2). Neither needs a link or a credential; `program_url` is optional |
+| P2 | Never a browser session, a cookie or a scraped logged-in page: a session cookie is a whole-account credential the platform cannot scope or revoke for us, using it breaks the platforms' terms, and it breaks whenever the page changes |
+| P3 | A program has a `visibility`: `private` (default for new programs) or `public`. Programs that existed before keep today's behaviour (`public`) |
+| P4 | A private program, its scope entries, rules, terms and link are visible only to members of its group and to the organization's **owners**. Administrators and full-data roles who are not members get 404, like another tenant |
+| P5 | Each person accepts a private program's terms and confidentiality before seeing its details; the acceptance is bound to the program's `terms_sha256`, so a change of terms asks everyone again |
+| P6 | Every view of a private program is audited (`bounty_program.viewed`); audit events of a private program never carry its link |
+| P7 | A per-user researcher API connector (the person's own API token for the platform that runs the program) is a later option, not P0 |
+
+### 15.2 Import file
+
+`POST /programs/preview` and `POST /programs` take `scope_file` instead of
+`scope_text`:
+
+```json
+{ "format": "auto | platform_csv | burp_json | generic_csv | text",
+  "name": "scope.json",
+  "content": "<file text>",
+  "mapping": { "identifier": "Target", "type": "Kind", "in_scope": "Eligible" } }
+```
+
+| Format | Read as |
+|---|---|
+| `platform_csv` | the CSV export a platform offers for a program's scope (§5.2 columns) |
+| `burp_json` | a Burp Suite target scope: `target.scope.include` in scope, `exclude` out of scope, disabled rules dropped; `prefix` rules are URLs; a `host` expression becomes an entry only when it names exactly one host (`^www\.example\.com$`) or every subdomain of one name (`^.*\.example\.com$`, `^(.*\.)?example\.com$`). Any other expression (`.*`, alternations, character classes, address patterns) is kept as a not-scannable item: a translation never covers more than the file says |
+| `generic_csv` | any CSV with a header; `mapping` names the identifier column (required) and optionally a type and an in-scope column; a missing column is refused |
+| `text` | the paste format of §5.2 |
+| `auto` | `{…}` is `burp_json`, a header with `identifier`/`asset_identifier` is `platform_csv`, anything else `text` |
+
+The bounds of a paste apply (256 KiB, 2 000 items, at least one in-scope
+item); the request body allows for JSON escaping. Items then go through the
+same preview, guardrails (public suffixes such as `*.com`, the deny list, the
+CIDR caps refuse an entry), terms hash and attestation as a paste. The
+program records `scope_source = file_import`.
+
+### 15.3 Confidentiality
+
+- `bounty_programs.visibility` (`private`, `public`) and `terms_text`
+  (the program's own terms as pasted, at most 20 000 characters; part of the
+  terms hash when set, so programs without one keep their hash).
+- `bounty_program_attestations (tenant_id, program_id, user_id,
+  terms_sha256, accepted_at)`: one row per person, replaced on each
+  acceptance; tenant-composite key to the program, deleted with it or with
+  the user. The importer's, the acceptor's of new terms and the resumer's
+  acceptances are recorded by those actions; the attestation in force before
+  this change is carried over by the migration.
+- `POST /programs/{id}/attest {accept_terms_sha256}` (`programs:read`,
+  member or owner): records the caller's acceptance of the current terms.
+  It changes no authorization.
+- Until the caller has accepted the current terms, `GET /programs` and
+  `GET /programs/{id}` show a private program **locked**: name, platform,
+  visibility, status, terms text and hash only (no scope, rules, link, sync
+  or pending terms). Re-import, sync, source, pending terms and applying them
+  answer `409 PROGRAM_ATTESTATION_REQUIRED`. Pause and end (narrowing) need
+  membership only.
+- `GET /scope/targets` and `GET /scope/targets/{id}` leave out the entries
+  of private programs the caller may not see or has not accepted (404 by
+  id), so a scope reader does not learn a private program's scope.
+- Not changed by this section: assets and findings that private-program
+  entries cover follow the data scope (§7) — full-data roles still see them
+  in the inventory; §16.5 separates them from the organization's own assets.
+
+| Threat | Control |
+|---|---|
+| Administrator browses a private program's terms | 404 unless member or owner; owner views audited |
+| Member reads changed terms without re-accepting | acceptance bound to `terms_sha256`; changed terms lock the program again |
+| Scope reader enumerates a private program's targets | private program entries filtered from the scope views |
+| Hostile file widens scope (`.*`, `*.com`, a /8) | exact-only Burp translation; guardrails refuse public suffixes, deny list, CIDR caps; preview before commit |
+| Oversized or malformed file | 256 KiB / 2 000 items, strict format errors (`PROGRAM_FILE_INVALID`) |
+| Another tenant | every query tenant-scoped; attestation insert joins the program in the caller's tenant |
+
+## 16. Public program monitor (addendum, 2026-10-10)
+
+Public programs publish their scope. Instead of every organization pasting
+it, the platform imports a signed feed of public programs, and an
+organization **subscribes** to the programs it works on.
+
+### 16.1 Feed
+
+The collector is a separate repository, `openctemio/programfeed`, built like
+the vulnerability feed of RFC-066 §5.5: a scheduled job reads public sources,
+normalises each program (identity, platform, link, in-scope and out-of-scope
+items, rules, terms text and their hash, `source`, `as_of`), validates and
+publishes a DSSE-signed snapshot and delta with a monotonic sequence under an
+offline root and an expiring key set. Installations never call the
+platforms; air-gapped installations upload a bundle. The sources, their terms
+and attribution are listed in the manifest (the collector's README is the
+reference).
+
+### 16.2 Importer
+
+The platform verifies the key set against the pinned root (refusing a lower
+key-set version than one accepted before), the pointer and the manifest
+against the key set, refuses an unknown schema, a sequence not newer than the
+applied one, a delta whose base is not the applied sequence and an expired
+bundle, checks every file's size and SHA-256, re-validates every record with
+the program parser (a bundle with an invalid record is refused whole) and
+applies it to a platform catalog: `public_programs` (global: identity,
+platform, link, items, rules, terms text and hash, source, `as_of`, removed
+flag). The parser sits behind an interface so it follows the collector's
+published schema. Every change to a program (items added or removed, rules
+or terms changed, program closed) is recorded and fans out to the
+subscriptions.
+
+### 16.3 Subscriptions
+
+- `POST /programs/subscriptions {public_program_id}` (`programs:write`)
+  creates a program in the tenant with `scope_source = public_feed`,
+  `visibility = public`, its group (the subscriber joins) and its entries
+  **inactive**: status `pending_attestation`. Nothing is scanned actively.
+- A member accepts the program's terms (the same attestation as an import,
+  step-up): entries come into effect through `CommitEntries`
+  (`program_attestation`), within the program's rules (`forbidden:
+  automated_scanning` keeps them at `t0`).
+- Each feed change is applied like a sync (§14): narrowing at once, widening
+  as pending terms; members are notified ("new in-scope asset in program X",
+  "program X changed its terms; accept them again"). A program the feed marks
+  closed is suspended.
+- Program-only targets never reach platform sensors (§8, unchanged).
+
+### 16.4 Passive by default
+
+Before acceptance, and whenever a program forbids automated scanning, only
+passive work runs on its targets: Certificate Transparency and DNS
+observation by the platform, and inventory vulnerability matching
+(RFC-066). The active-probe gate refuses active work because no active entry
+covers the target.
+
+### 16.5 Program assets are kept apart
+
+- A program target becomes an asset with structural provenance:
+  `asset_program_links (tenant_id, asset_id, program_id, source, attested)`
+  with `source` `programfeed`, `program_manual` or `program_import`.
+- System tags derived from it — `bug-bounty`, `source:<source>`,
+  `platform:<platform>`, `program:<platform>:<slug>` — are written by the
+  platform only: the asset update paths keep them and refuse to add or remove
+  them; the web shows them in a distinct style.
+- One asset per name, never a silent merge: when the organization already
+  owns a name that a program also lists, the asset keeps its own provenance
+  and gains the program link; it stays an organization asset. An asset is
+  **program-only** while it has a program link and no other provenance; only
+  program-only assets are left out of the organization's dashboards, risk
+  scores, SLA and CTEM metrics by default (a toggle includes them).
+- The inventory gets a "Bug bounty" filter and platform/program facets, and a
+  "Program target" badge with the program and its attestation state.
+
+### 16.6 Plan
+
+| PR | Content |
+|---|---|
+| Private programs (API) | §15: migration `001700`, file import, visibility, ACL, attestation, scope view filter |
+| Private programs (web) | `/programs/new` source picker (Enter manually / Import file), visibility, locked view and acceptance |
+| Feed importer | §16.2–16.3: catalog, verification, sequence and freshness, subscriptions, fan-out, notifications (fixture bundles; no network in CI) |
+| Program assets | §16.5: provenance links, system tags, inventory filter, default exclusion from organization metrics |
+| Later | per-user researcher API connector (P7), passive sweep of unaccepted program targets (§16.4) |

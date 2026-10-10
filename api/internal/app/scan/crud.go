@@ -28,18 +28,23 @@ type CreateScanInput struct {
 	Targets       []string `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
 	// AssetIDs are inventory assets to scan; each is scanned by its name,
 	// resolved on the server (tenant and creator scope checked).
-	AssetIDs       []string       `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
-	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any `json:"scanner_config"`
-	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
+	// TargetOptions tunes how each run resolves the dynamic selectors among
+	// Targets (RFC-068); nil = defaults.
+	TargetOptions  *scan.TargetOptions `json:"target_options"`
+	ScanType       string              `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string              `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string              `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any      `json:"scanner_config"`
+	TargetsPerJob  int                 `json:"targets_per_job"`
+	ScheduleType   string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string              `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
-	ScheduleRRule    string     `json:"schedule_rrule" validate:"max=500"`
-	ScheduleDay      *int       `json:"schedule_day"`
-	ScheduleTime     *time.Time `json:"schedule_time"`
+	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay   *int       `json:"schedule_day"`
+	ScheduleTime  *time.Time `json:"schedule_time"`
+	// RunAt is the one run of a once schedule.
+	RunAt            *time.Time `json:"run_at"`
 	Timezone         string     `json:"timezone" validate:"max=50"`
 	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner     bool       `json:"run_on_tenant_runner"`
@@ -51,6 +56,10 @@ type CreateScanInput struct {
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
 	CreatedBy           string `json:"created_by" validate:"omitempty,uuid"`
+	// StartWhenScopeApproved saves a scan whose direct targets are refused
+	// only because pending scope entries cover them; it starts once those
+	// entries are approved (scope_wait.go). Ignored when nothing waits.
+	StartWhenScopeApproved bool `json:"start_when_scope_approved"`
 }
 
 // CreateScanResult represents the result of creating a scan.
@@ -97,13 +106,24 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 
+	// Saved to start when its scope is approved: the targets refused only
+	// because a pending entry covers them (nil = not eligible).
+	var awaiting map[string]bool
+	if input.StartWhenScopeApproved {
+		awaiting = s.awaitingScopeTargets(ctx, tenantID, validatedTargets)
+	}
+	waitForScope := awaiting != nil
 	// The creator may scan only targets in their act scope (D9).
-	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), validatedTargets); err != nil {
+	if err := s.refuseOutOfActScopeAwaiting(ctx, tenantID, userIDPtr(input.CreatedBy), validatedTargets, awaiting); err != nil {
 		return nil, err
 	}
-	// Nothing the tenant has not authorized for active scanning (RFC-036).
-	if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
-		return nil, err
+	// Nothing the tenant has not authorized for active scanning (RFC-036),
+	// unless the caller saves it to start when the pending entries that
+	// cover the refused targets are approved.
+	if !waitForScope {
+		if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, validatedTargets); err != nil {
 		return nil, err
@@ -130,12 +150,17 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 	sc.Description = input.Description
+	if input.TargetOptions != nil {
+		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
+			return nil, err
+		}
+	}
 
 	// Configure scan type (workflow or single scanner)
 	if err := s.configureScanType(ctx, sc, tenantID, scanType, input); err != nil {
 		return nil, err
 	}
-	// A wildcard pattern only for tools that take it as a root domain.
+	// A wildcard selector must be *.<domain> the platform lets anyone cover.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
 		return nil, err
 	}
@@ -200,6 +225,18 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	// Save to repository
 	if err := s.scanRepo.Create(ctx, sc); err != nil {
 		return nil, err
+	}
+	if waitForScope {
+		now := time.Now().UTC()
+		if err := s.scopeWaits.Create(ctx, ScopeWait{
+			ScanID: sc.ID, TenantID: tenantID, RequestedBy: sc.CreatedBy, CreatedAt: now, ExpiresAt: now.Add(ScopeWaitTTL),
+		}); err != nil {
+			// Never keep a scan whose out-of-scope targets nothing waits on.
+			if derr := s.scanRepo.Delete(ctx, tenantID, sc.ID); derr != nil {
+				s.logger.Error("scope wait: rollback failed", "scan_id", sc.ID.String(), "error", logger.SanitizeError(derr))
+			}
+			return nil, fmt.Errorf("save scope wait: %w", err)
+		}
 	}
 
 	// Audit log: scan config created
@@ -476,6 +513,12 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 	return sc.SetSingleScanner(scannerName, scannerConfig, tpj)
 }
 
+// sameOnceRun reports whether sc already holds exactly this one-off run.
+func sameOnceRun(sc *scan.Scan, runAt *time.Time, timezone string) bool {
+	return sc.ScheduleType == scan.ScheduleOnce && sc.ScheduleRunAt != nil && runAt != nil &&
+		sc.ScheduleRunAt.Equal(runAt.UTC().Truncate(time.Second)) && sc.ScheduleTimezone == timezone
+}
+
 // configureScanSchedule validates and sets the scan schedule.
 func configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
 	scheduleType := scan.ScheduleType(input.ScheduleType)
@@ -499,6 +542,9 @@ func configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
 
 	if scheduleType == scan.ScheduleRRule {
 		return sc.SetRRuleSchedule(input.ScheduleRRule, timezone)
+	}
+	if scheduleType == scan.ScheduleOnce {
+		return sc.SetOnceSchedule(input.RunAt, timezone, time.Now())
 	}
 	return sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone)
 }
@@ -592,7 +638,7 @@ type ListScansInput struct {
 	AssetGroupID   string   `json:"asset_group_id" validate:"omitempty,uuid"`
 	ScanWorkflowID string   `json:"scan_workflow_id" validate:"omitempty,uuid"`
 	ScanType       string   `json:"scan_type" validate:"omitempty,oneof=workflow single"`
-	ScheduleType   string   `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleType   string   `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	Status         string   `json:"status" validate:"omitempty,oneof=active paused disabled"`
 	Tags           []string `json:"tags"`
 	Search         string   `json:"search" validate:"max=255"`
@@ -683,12 +729,16 @@ type UpdateScanInput struct {
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
 	ScannerConfig  map[string]any `json:"scanner_config"`
 	TargetsPerJob  *int           `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	// TargetOptions: nil = unchanged (RFC-068).
+	TargetOptions *scan.TargetOptions `json:"target_options"`
+	ScheduleType  string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron  string              `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
-	ScheduleRRule    string     `json:"schedule_rrule" validate:"max=500"`
-	ScheduleDay      *int       `json:"schedule_day"`
-	ScheduleTime     *time.Time `json:"schedule_time"`
+	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay   *int       `json:"schedule_day"`
+	ScheduleTime  *time.Time `json:"schedule_time"`
+	// RunAt is the one run of a once schedule.
+	RunAt            *time.Time `json:"run_at"`
 	Timezone         string     `json:"timezone" validate:"max=50"`
 	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner     *bool      `json:"run_on_tenant_runner"`
@@ -770,10 +820,14 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			return nil, err
 		}
 	}
-	// A new tool must still take the scan's targets (no wildcard pattern
-	// for an active tool).
+	// The scan's wildcard selectors must still be valid.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
 		return nil, err
+	}
+	if input.TargetOptions != nil {
+		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
+			return nil, err
+		}
 	}
 
 	// Update schedule if provided. SetSchedule refuses what the scheduler
@@ -791,9 +845,15 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			timezone = sc.ScheduleTimezone
 		}
 		var err error
-		if scheduleType == scan.ScheduleRRule {
+		switch {
+		case scheduleType == scan.ScheduleRRule:
 			err = sc.SetRRuleSchedule(input.ScheduleRRule, timezone)
-		} else {
+		case scheduleType == scan.ScheduleOnce && sameOnceRun(sc, input.RunAt, timezone):
+			// The stored one-off run, sent back unchanged with other edits:
+			// kept as is, even once it has run (its time is then past).
+		case scheduleType == scan.ScheduleOnce:
+			err = sc.SetOnceSchedule(input.RunAt, timezone, time.Now())
+		default:
 			err = sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone)
 		}
 		if err != nil {

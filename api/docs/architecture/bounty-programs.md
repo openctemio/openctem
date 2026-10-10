@@ -113,6 +113,37 @@ and keeps widening as pending terms: nothing new authorizes until a member
 accepts the pending terms hash (`/pending/apply`, step-up, audited). Every
 sync write goes through the job signer's ledger hook (`CommitEntries`).
 
+## Private programs
+
+A program is `private` (default for new programs) or `public` (RFC-065 §15).
+`/programs/new` starts from a source: entered by hand or imported from a file
+(the platform's CSV export, a Burp Suite target scope, any CSV with a column
+mapping); no link or credential is needed. A Burp host expression becomes an
+entry only when it names exactly one host or one name's subdomains.
+
+```
+caller ──► canSee (access.go)
+             public : full-data caller or program member
+             private: owner or program member          (else 404, like another tenant)
+        ──► attested? (bounty_program_attestations.terms_sha256 == program.terms_sha256)
+             no : locked view (name, platform, terms text) ; details 409 PROGRAM_ATTESTATION_REQUIRED
+             yes: details ; every view of a private program audited (bounty_program.viewed)
+scope views (GET /scope/targets[/{id}]) leave out private program entries the caller may not see
+```
+
+A change of terms locks the program again for everyone until they accept the
+new hash (`POST /programs/{id}/attest`).
+
+## Public program monitor (designed)
+
+Public programs come from a signed feed (`openctemio/programfeed`, built like
+the vulnerability feed of RFC-066 §5.5). The platform verifies and imports it
+into a catalog; an organization subscribes to a program, whose entries stay
+inactive (passive monitoring only) until a member accepts its terms. Feed
+changes apply like a sync: narrowing at once, widening as pending terms.
+Program assets carry provenance and system tags and are left out of the
+organization's own metrics by default (RFC-065 §16).
+
 ## Evidence
 
 Every scan run links to a scope snapshot: the entry that covered each of its
@@ -138,3 +169,6 @@ the run and hold `scope:read` or `programs:read`.
 | `pkg/domain/scope/letter.go`, `internal/app/scope/letters.go` | letters of authorization |
 | `pkg/domain/bountyprogram/sync.go`, `internal/app/bountyprogram/sync.go`, `internal/infra/bountysource/` | scope sync |
 | `migrations/001549_authorization_letters.*`, `migrations/001610_bounty_program_sync.*` | letters, sync state |
+| `pkg/domain/bountyprogram/scope_file.go` | scope files: platform CSV, Burp scope JSON, CSV with a column mapping |
+| `internal/app/bountyprogram/access.go` | visibility, per-person attestation, hidden program entries |
+| `migrations/001700_private_programs.*` | visibility, terms text, optional link, attestations |
