@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/software"
+
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -162,7 +164,19 @@ func TestDeleteCascade_RepositoryComponentAndBranchCounts(t *testing.T) {
 		t.Fatalf("insert asset: %v", err)
 	}
 	exec(`INSERT INTO asset_repositories (asset_id) VALUES ($1)`, assetID)
-	exec(`INSERT INTO asset_components (tenant_id, asset_id, name, ecosystem) VALUES ($1,$2,'a','npm'), ($1,$2,'b','npm')`, tenantID, assetID)
+	// Package links: the writer keeps the repository counter.
+	nodes := make([]software.PackageNode, 0, 2)
+	for _, n := range []string{"a", "b"} {
+		p, err := software.ParsePURL("pkg:npm/count-" + n + "-" + tenantID[:8] + "@1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		nodes = append(nodes, software.PackageNode{Ref: n, PURL: p, Relationship: software.RelationshipDirect})
+	}
+	if _, err := NewSoftwarePackageWriter(&DB{DB: db}).WritePackages(ctx, shared.MustIDFromString(tenantID),
+		software.PackageSnapshot{AssetID: shared.MustIDFromString(assetID), Packages: nodes, Replace: true}); err != nil {
+		t.Fatalf("write packages: %v", err)
+	}
 	exec(`INSERT INTO repository_branches (repository_id, name, is_protected) VALUES ($1,'main',true), ($1,'dev',false)`, assetID)
 
 	// The counters still work for a repository that is not being deleted.
@@ -181,7 +195,7 @@ func TestDeleteCascade_RepositoryComponentAndBranchCounts(t *testing.T) {
 	}
 	for _, q := range []string{
 		`SELECT count(*) FROM assets WHERE tenant_id=$1`,
-		`SELECT count(*) FROM asset_components WHERE tenant_id=$1`,
+		`SELECT count(*) FROM asset_software WHERE tenant_id=$1`,
 	} {
 		var n int
 		if err := db.QueryRowContext(ctx, q, tenantID).Scan(&n); err != nil {

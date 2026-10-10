@@ -17,7 +17,7 @@
       "id": "ai-triage-agent-module",
       "files": "^src/config/modules\\.generated\\.ts$",
       "pattern": "ai_triage\\.agent|Agent Mode",
-      "reason": "The AI-triage 'agent' sub-module id and name, generated from the module registry (api/configs/modules.yaml): an LLM agent, not a sensor."
+      "reason": "The AI-triage 'agent' sub-module id and name, generated from the module registry (api/configs/modules/): an LLM agent, not a sensor."
     },
     {
       "id": "endpoint-agent-role",

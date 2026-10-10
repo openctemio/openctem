@@ -3,14 +3,19 @@
 A module is a feature an organization can have on or off: pentest,
 compliance, EASM (`attack_surface`), automations (`workflows`), and so on.
 Design and roadmap: [RFC-064](../rfcs/RFC-064-modules-entitlements-preferences.md).
-Code: `configs/modules.yaml` (the registry: every module, its dependencies
+Code: `configs/modules/<id>.yaml` (the registry: every module, its dependencies
 and the routes, MCP tools and jobs it owns), `pkg/domain/module` (generated
 catalog, presets, toggle rules), `internal/app/module` (state, toggles,
 bundles), `internal/infra/http/middleware/module_gate.go` (gate).
 
 ## The registry
 
-`configs/modules.yaml` is the one declaration. `make generate-modules`
+`configs/modules/` is the one declaration: one file per top-level module,
+`configs/modules/<id>.yaml`, holding that module and its sub-modules
+(`<id>.<name>`), so changes to different modules never touch the same file.
+The generator merges them in a fixed order (top-level modules by `order`, then
+id; each followed by its sub-modules by `order`, then id). The field reference
+is in the `cmd/gen-modules` package comment. `make generate-modules`
 (`go run ./cmd/gen-modules`) writes:
 
 - `pkg/domain/module/registry_generated.go`: the `Module*` constants and
@@ -93,7 +98,7 @@ Deliberately not gated:
 
 ## Adding a module
 
-1. Add it to `configs/modules.yaml` (id, const, presentation, read
+1. Add `configs/modules/<id>.yaml` (a sub-module goes in its parent's file) (id, const, presentation, read
    permission, dependencies with a reason), run `make generate-modules`, and
    add a migration whose body is `make modules-sql`.
 2. Gate every surface it owns and list it in the registry: the route groups

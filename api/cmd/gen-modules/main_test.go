@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -11,9 +12,9 @@ func TestTheRegistryIsValid(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir("cmd/gen-modules") })
-	mods, err := load(yamlPath)
+	mods, err := load(yamlDir)
 	if err != nil {
-		t.Fatalf("configs/modules.yaml: %v", err)
+		t.Fatalf("configs/modules: %v", err)
 	}
 	if len(mods) < 40 {
 		t.Fatalf("only %d modules loaded", len(mods))
@@ -60,5 +61,53 @@ func TestRenderSQLRetiresUndeclaredRows(t *testing.T) {
 		if !strings.Contains(sql, want) {
 			t.Errorf("SQL lacks %q:\n%s", want, sql)
 		}
+	}
+}
+
+func writeModuleFile(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestLoadFileHoldsOneModuleAndItsSubModules(t *testing.T) {
+	dir := t.TempDir()
+	ok := writeModuleFile(t, dir, "pentest.yaml", "- {id: pentest, const: ModulePentest, slug: p, name: P, category: c}\n"+
+		"- {id: pentest.reports, const: ModulePentestReports, slug: r, name: R, category: c, parent: pentest}\n")
+	if mods, err := loadFile(ok); err != nil || len(mods) != 2 {
+		t.Fatalf("loadFile = %d, %v", len(mods), err)
+	}
+	for name, body := range map[string]string{
+		"foreign module": "- {id: pentest, const: ModulePentest, slug: p, name: P, category: c}\n- {id: findings, const: ModuleFindings, slug: f, name: F, category: c}\n",
+		"missing top":    "- {id: pentest.reports, const: ModulePentestReports, slug: r, name: R, category: c, parent: pentest}\n",
+		"foreign sub":    "- {id: pentest, const: ModulePentest, slug: p, name: P, category: c}\n- {id: scans.x, const: ModuleScansX, slug: x, name: X, category: c, parent: scans}\n",
+		"unknown field":  "- {id: pentest, const: ModulePentest, slug: p, name: P, category: c, flavor: red}\n",
+	} {
+		p := writeModuleFile(t, dir, "pentest.yaml", body)
+		if _, err := loadFile(p); err == nil {
+			t.Errorf("%s: loadFile accepted it", name)
+		}
+	}
+}
+
+func TestSortRegistryOrdersTopLevelThenSubModules(t *testing.T) {
+	mods := []module{
+		{ID: "b.y", Parent: "b", Order: 2},
+		{ID: "c", Order: 10},
+		{ID: "b", Order: 10},
+		{ID: "b.x", Parent: "b", Order: 1},
+		{ID: "a", Order: 20},
+		{ID: "b.w", Parent: "b", Order: 2},
+	}
+	sortRegistry(mods)
+	var got []string
+	for _, m := range mods {
+		got = append(got, m.ID)
+	}
+	if want := "b b.x b.w b.y c a"; strings.Join(got, " ") != want {
+		t.Fatalf("order = %q, want %q", strings.Join(got, " "), want)
 	}
 }

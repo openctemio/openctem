@@ -1,0 +1,10 @@
+- id: notification_settings
+  const: ModuleNotificationSettings
+  slug: notification_settings
+  name: Notifications
+  description: Notification channel settings and delivery configuration
+  icon: Bell
+  category: settings
+  order: 68
+  core: true
+  permission: "integrations:notifications:read"
