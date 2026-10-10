@@ -871,10 +871,13 @@ type SensorConfig struct {
 	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
 	// (VULNFEED_ROOT_KEY_ID; empty = no import), the release base URL
 	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
-	// holding a release's files (VULNFEED_BUNDLE_DIR).
+	// holding a release's files (VULNFEED_BUNDLE_DIR). VulnFeedMirrors
+	// (VULNFEED_MIRRORS, comma separated, https) are tried after the
+	// release for chunked (v2) bundles.
 	VulnFeedRootKeyID string
 	VulnFeedBaseURL   string
 	VulnFeedBundleDir string
+	VulnFeedMirrors   []string
 
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
@@ -1368,6 +1371,7 @@ func Load() (*Config, error) {
 			VulnFeedRootKeyID:           getEnv("VULNFEED_ROOT_KEY_ID", ""),
 			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
 			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
+			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
 			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
@@ -1557,6 +1561,12 @@ func (c *Config) validateBasic() error {
 		pu, err := url.Parse(u)
 		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
 			return errors.New("PROGRAMFEED_URL and PROGRAMFEED_MIRRORS must be https URLs without credentials, query or fragment")
+		}
+	}
+	for _, u := range c.Worker.VulnFeedMirrors {
+		pu, err := url.Parse(u)
+		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+			return errors.New("VULNFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
 	if c.Scope.ActiveProof == "" {
