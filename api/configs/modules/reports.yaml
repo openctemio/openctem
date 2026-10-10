@@ -1,0 +1,16 @@
+- id: reports
+  const: ModuleReports
+  slug: reports
+  name: Reports
+  description: Security reports and analytics
+  icon: FileText
+  category: insights
+  order: 50
+  user_facing: true
+  permission: "reports:read"
+  depends:
+    - {id: findings, kind: soft, reason: "most report types render finding data"}
+  routes:
+    - /api/v1/reports/schedules
+  jobs:
+    - ReportScheduler
