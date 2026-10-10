@@ -6,6 +6,7 @@
 
 import { cn } from '@/lib/utils'
 import { Check } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 
 export type ScanWizardStep = 'basic' | 'targets' | 'options' | 'schedule' | 'review'
 
@@ -17,12 +18,12 @@ interface ScanStepperProps {
   className?: string
 }
 
-const LABELS: Record<ScanWizardStep, string> = {
-  basic: 'What',
-  targets: 'Targets',
-  options: 'Options',
-  schedule: 'Schedule',
-  review: 'Review',
+const LABEL_KEYS: Record<ScanWizardStep, string> = {
+  basic: 'scans.step.what',
+  targets: 'scans.step.targets',
+  options: 'scans.step.options',
+  schedule: 'scans.step.schedule',
+  review: 'scans.step.review',
 }
 
 const DEFAULT_STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
@@ -33,7 +34,8 @@ export function ScanStepper({
   steps = DEFAULT_STEPS,
   className,
 }: ScanStepperProps) {
-  const STEPS = steps.map((id) => ({ id, label: LABELS[id] }))
+  const { t } = useTranslation()
+  const STEPS = steps.map((id) => ({ id, label: t(LABEL_KEYS[id]) }))
   const currentIndex = STEPS.findIndex((s) => s.id === currentStep)
 
   return (

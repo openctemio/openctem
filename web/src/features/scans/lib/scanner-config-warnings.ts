@@ -1,11 +1,12 @@
 import { toast } from 'sonner'
 
 import type { ScanConfig, ScannerConfigWarning } from '@/lib/api/scan-types'
+import { enTranslate, type Translate } from './translate'
 
-const REASON_TEXT: Record<string, string> = {
-  key_name: 'named like a credential',
-  known_format: 'looks like a token or key',
-  high_entropy: 'looks like a random secret',
+const REASON_KEYS: Record<string, string> = {
+  key_name: 'scans.secretWarn.keyName',
+  known_format: 'scans.secretWarn.knownFormat',
+  high_entropy: 'scans.secretWarn.highEntropy',
 }
 
 /**
@@ -13,10 +14,13 @@ const REASON_TEXT: Record<string, string> = {
  * (api RFC-032 Phase 0). The value itself is never in the response.
  */
 export function describeScannerConfigWarnings(
-  warnings: ScannerConfigWarning[] | undefined
+  warnings: ScannerConfigWarning[] | undefined,
+  t: Translate = enTranslate
 ): string[] {
   if (!warnings?.length) return []
-  return warnings.map((w) => `${w.path}: ${REASON_TEXT[w.reason] ?? w.reason}`)
+  return warnings.map(
+    (w) => `${w.path}: ${REASON_KEYS[w.reason] ? t(REASON_KEYS[w.reason]) : w.reason}`
+  )
 }
 
 /**
@@ -25,12 +29,13 @@ export function describeScannerConfigWarnings(
  * command. Never blocks; the scan is already saved.
  */
 export function notifyScannerConfigWarnings(
-  scan: Pick<ScanConfig, 'name' | 'scanner_config_warnings'> | undefined
+  scan: Pick<ScanConfig, 'name' | 'scanner_config_warnings'> | undefined,
+  t: Translate = enTranslate
 ) {
-  const lines = describeScannerConfigWarnings(scan?.scanner_config_warnings)
+  const lines = describeScannerConfigWarnings(scan?.scanner_config_warnings, t)
   if (!lines.length) return
-  toast.warning(`Scan "${scan?.name ?? ''}" has secret-looking scanner settings`, {
-    description: `${lines.join('; ')}. Scanner settings are sent to the sensor in clear with every scan; keep credentials on the sensor instead.`,
+  toast.warning(t('scans.secretWarn.title', undefined, { name: scan?.name ?? '' }), {
+    description: t('scans.secretWarn.detail', undefined, { lines: lines.join('; ') }),
     duration: 10000,
   })
 }

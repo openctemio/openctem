@@ -11,11 +11,8 @@ package vulnbundle
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
-	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,9 +25,8 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/api/pkg/feedsign"
 )
 
 // Format constants (must match the collector).
@@ -49,14 +45,13 @@ const (
 
 // Caps.
 const (
-	MaxKeySetValidity    = 180 * 24 * time.Hour
+	MaxKeySetValidity    = feedsign.MaxKeySetValidity
 	MaxBundleValidity    = 7 * 24 * time.Hour
 	MaxKeySetBytes       = 64 << 10
 	MaxManifestBytes     = 1 << 20
 	MaxFileBytes         = 512 << 20
 	MaxDecompressedBytes = 2 << 30
 	MaxRecordBytes       = 1 << 20
-	maxClockSkew         = 5 * time.Minute
 )
 
 var recordFiles = []string{"products", "vulns", "ranges"}
@@ -70,16 +65,9 @@ func ManifestName(kind string) string { return kind + ".manifest.dsse.json" }
 // Tag is the release tag of a sequence.
 func Tag(sequence uint64) string { return fmt.Sprintf("v1-%d", sequence) }
 
-// KeySet lists the online keys an offline root allows.
-type KeySet struct {
-	Kind          string              `json:"kind"`
-	Version       uint64              `json:"version"`
-	IssuedAt      time.Time           `json:"issued_at"`
-	NotAfter      time.Time           `json:"not_after"`
-	Keys          []jobsign.PublicKey `json:"keys"`
-	RootKeyID     string              `json:"root_keyid"`
-	RootPublicKey string              `json:"root_public_key"`
-}
+// KeySet lists the online keys an offline root allows (the shared signed
+// feed key set, pkg/feedsign).
+type KeySet = feedsign.KeySet
 
 // Source is one upstream source of a bundle.
 type Source struct {
@@ -133,94 +121,16 @@ type Latest struct {
 }
 
 // VerifyKeySet checks a key set envelope: signed by its root, the root is
-// the pinned one, valid at now, version not below minVersion.
+// the pinned one, valid at now, version not below minVersion
+// (feedsign.VerifyKeySet with this feed's payload type and kind).
 func VerifyKeySet(envelope []byte, pinnedRoot string, minVersion uint64, now time.Time) (*KeySet, error) {
-	env, err := open(envelope, KeySetPayloadType, MaxKeySetBytes)
-	if err != nil {
-		return nil, err
-	}
-	var ks KeySet
-	if err := decodeStrict(env.Payload, &ks); err != nil {
-		return nil, fmt.Errorf("key set: %w", err)
-	}
-	switch {
-	case ks.Kind != KeySetKind:
-		return nil, fmt.Errorf("key set: kind %q", ks.Kind)
-	case ks.Version == 0 || ks.Version < minVersion:
-		return nil, fmt.Errorf("key set: version %d is below %d (rolled back)", ks.Version, minVersion)
-	case pinnedRoot == "" || ks.RootKeyID != pinnedRoot:
-		return nil, fmt.Errorf("key set: signed by root %s, the pinned root is %q", ks.RootKeyID, pinnedRoot)
-	case ks.IssuedAt.IsZero() || !ks.NotAfter.After(ks.IssuedAt) || ks.NotAfter.Sub(ks.IssuedAt) > MaxKeySetValidity:
-		return nil, errors.New("key set: validity")
-	case ks.IssuedAt.After(now.Add(maxClockSkew)) || !ks.NotAfter.After(now.Add(-maxClockSkew)):
-		return nil, fmt.Errorf("key set: not valid at %s", now.UTC().Format(time.RFC3339))
-	case len(ks.Keys) == 0 || len(ks.Keys) > 8:
-		return nil, errors.New("key set: 1 to 8 keys")
-	}
-	root, err := base64.StdEncoding.DecodeString(ks.RootPublicKey)
-	if err != nil || len(root) != ed25519.PublicKeySize || jobsign.KeyID(root) != ks.RootKeyID {
-		return nil, errors.New("key set: root_public_key is not the key of root_keyid")
-	}
-	if !verifiedBy(env, root) {
-		return nil, errors.New("key set: bad root signature")
-	}
-	for _, k := range ks.Keys {
-		if _, err := k.Decode(); err != nil || k.KeyID == ks.RootKeyID {
-			return nil, fmt.Errorf("key set: key %s", k.KeyID)
-		}
-	}
-	return &ks, nil
-}
-
-func open(envelope []byte, payloadType string, max int) (*scannertemplate.Envelope, error) {
-	if len(envelope) == 0 || len(envelope) > max {
-		return nil, fmt.Errorf("envelope empty or over %d bytes", max)
-	}
-	var env scannertemplate.Envelope
-	if err := json.Unmarshal(envelope, &env); err != nil {
-		return nil, fmt.Errorf("envelope: %w", err)
-	}
-	if env.PayloadType != payloadType {
-		return nil, fmt.Errorf("payload type %q, want %q", env.PayloadType, payloadType)
-	}
-	return &env, nil
-}
-
-func verifiedBy(env *scannertemplate.Envelope, pub ed25519.PublicKey) bool {
-	id := jobsign.KeyID(pub)
-	pae := scannertemplate.PreAuthEncoding(env.PayloadType, env.Payload)
-	for _, s := range env.Signatures {
-		if s.KeyID == id && ed25519.Verify(pub, pae, s.Sig) {
-			return true
-		}
-	}
-	return false
-}
-
-func decodeStrict(data []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return errors.New("trailing data")
-	}
-	return nil
+	return feedsign.VerifyKeySet(envelope, feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind},
+		pinnedRoot, minVersion, now)
 }
 
 // verifyWith checks an envelope against the key set and decodes it.
 func verifyWith(ks *KeySet, raw []byte, payloadType string, v any) error {
-	env, err := open(raw, payloadType, MaxManifestBytes)
-	if err != nil {
-		return err
-	}
-	for _, k := range ks.Keys {
-		if pub, err := k.Decode(); err == nil && verifiedBy(env, pub) {
-			return decodeStrict(env.Payload, v)
-		}
-	}
-	return errors.New("not signed by a key of the key set")
+	return feedsign.VerifyWith(ks, raw, payloadType, MaxManifestBytes, v)
 }
 
 // Verified is a bundle whose envelopes and files checked out.
@@ -443,24 +353,16 @@ func (v *Verified) Read(m Manifest) (*Records, error) {
 			n++
 			switch kind {
 			case "products":
-				var p product
-				if err := decodeStrict(line, &p); err != nil {
+				key, c, err := ParseProduct(line)
+				if err != nil {
 					return err
 				}
-				c, err := productCPE(p.Key)
-				if err != nil || p.Part != c.Part || p.CPEVendor != c.Vendor || p.CPEProduct != c.Product {
-					return fmt.Errorf("product %q", p.Key)
+				if _, dup := products[key]; dup {
+					return fmt.Errorf("product %s listed twice", key)
 				}
-				if _, dup := products[p.Key]; dup {
-					return fmt.Errorf("product %s listed twice", p.Key)
-				}
-				products[p.Key] = c
+				products[key] = c
 			case "vulns":
-				var r vuln
-				if err := decodeStrict(line, &r); err != nil {
-					return err
-				}
-				c, err := toCVE(r)
+				c, err := ParseVuln(line)
 				if err != nil {
 					return err
 				}
@@ -470,19 +372,22 @@ func (v *Verified) Read(m Manifest) (*Records, error) {
 				byID[c.ID] = len(out.CVEs)
 				out.CVEs = append(out.CVEs, c)
 			case "ranges":
-				var r rng
-				if err := decodeStrict(line, &r); err != nil {
-					return err
-				}
-				idx, ok := byID[r.Vuln]
-				if !ok {
-					return fmt.Errorf("range of %s, which is not in the bundle", r.Vuln)
-				}
-				cr, err := toRange(r, products)
+				r, err := ParseRange(line)
 				if err != nil {
 					return err
 				}
-				out.CVEs[idx].Ranges = append(out.CVEs[idx].Ranges, cr)
+				vid := r.Range.Range.VulnID
+				idx, ok := byID[vid]
+				if !ok {
+					return fmt.Errorf("range of %s, which is not in the bundle", vid)
+				}
+				if _, ok := products[r.ProductKey]; !ok {
+					return fmt.Errorf("range of %s: product %s is not in the bundle", vid, r.ProductKey)
+				}
+				if _, ok := products[r.ConditionKey]; r.ConditionKey != "" && !ok {
+					return fmt.Errorf("range of %s: condition %s is not in the bundle", vid, r.ConditionKey)
+				}
+				out.CVEs[idx].Ranges = append(out.CVEs[idx].Ranges, r.Range)
 			}
 			return nil
 		})
@@ -495,6 +400,59 @@ func (v *Verified) Read(m Manifest) (*Records, error) {
 	}
 	out.Products = len(products)
 	return out, nil
+}
+
+// ParseProduct decodes and validates one products record: its key and the
+// CPE product it names.
+func ParseProduct(line []byte) (string, vulnmatch.CPE, error) {
+	var p product
+	if err := feedsign.DecodeStrict(line, &p); err != nil {
+		return "", vulnmatch.CPE{}, err
+	}
+	c, err := productCPE(p.Key)
+	if err != nil || p.Part != c.Part || p.CPEVendor != c.Vendor || p.CPEProduct != c.Product {
+		return "", vulnmatch.CPE{}, fmt.Errorf("product %q", p.Key)
+	}
+	return p.Key, c, nil
+}
+
+// ParseVuln decodes and validates one vulns record (without ranges).
+func ParseVuln(line []byte) (cvecorpus.CVE, error) {
+	var r vuln
+	if err := feedsign.DecodeStrict(line, &r); err != nil {
+		return cvecorpus.CVE{}, err
+	}
+	return toCVE(r)
+}
+
+// KeyedRange is one validated ranges record: its record id in a chunked
+// bundle ("<vuln>#<digest>"), the product keys it names and the range.
+type KeyedRange = cvecorpus.KeyedRange
+
+// ParseRange decodes and validates one ranges record. Whether its
+// vulnerability and products are in the same bundle is the caller's check.
+func ParseRange(line []byte) (KeyedRange, error) {
+	var r rng
+	if err := feedsign.DecodeStrict(line, &r); err != nil {
+		return KeyedRange{}, err
+	}
+	if !cveIDRE.MatchString(r.Vuln) {
+		return KeyedRange{}, fmt.Errorf("range of vuln %q", r.Vuln)
+	}
+	cr, err := toRange(r)
+	if err != nil {
+		return KeyedRange{}, err
+	}
+	return KeyedRange{Key: rangeID(r), ProductKey: r.Product, ConditionKey: r.Condition, Range: cr}, nil
+}
+
+// rangeID is the record id the collector gives a range in a chunked
+// bundle: the vulnerability id, "#", and the first 8 bytes of the SHA-256
+// of the range's JSON encoding, hex.
+func rangeID(r rng) string {
+	b, _ := json.Marshal(r)
+	sum := sha256.Sum256(b)
+	return r.Vuln + "#" + hex.EncodeToString(sum[:8])
 }
 
 func productCPE(key string) (vulnmatch.CPE, error) {
@@ -537,13 +495,13 @@ func toCVE(r vuln) (cvecorpus.CVE, error) {
 	return c, nil
 }
 
-func toRange(r rng, products map[string]vulnmatch.CPE) (cvecorpus.Range, error) {
+func toRange(r rng) (cvecorpus.Range, error) {
 	bad := func(what string) (cvecorpus.Range, error) {
 		return cvecorpus.Range{}, fmt.Errorf("range of %s: %s", r.Vuln, what)
 	}
-	p, ok := products[r.Product]
-	if !ok {
-		return bad("product " + r.Product + " is not in the bundle")
+	p, err := productCPE(r.Product)
+	if err != nil {
+		return bad("product " + r.Product)
 	}
 	if r.Scheme != string(vulnmatch.SchemeGeneric) {
 		return bad("scheme " + r.Scheme)
@@ -575,9 +533,9 @@ func toRange(r rng, products map[string]vulnmatch.CPE) (cvecorpus.Range, error) 
 	out := cvecorpus.Range{Product: p, Source: r.Source, Range: vulnmatch.Range{VulnID: r.Vuln, Scheme: vulnmatch.SchemeGeneric,
 		Exact: r.Exact, Start: r.Start, StartIncl: r.StartIncl, End: r.End, EndIncl: r.EndIncl, Edition: r.Edition, Target: r.Target}}
 	if r.Condition != "" {
-		c, ok := products[r.Condition]
-		if !ok {
-			return bad("condition " + r.Condition + " is not in the bundle")
+		c, err := productCPE(r.Condition)
+		if err != nil {
+			return bad("condition " + r.Condition)
 		}
 		out.Condition = &c
 	}
