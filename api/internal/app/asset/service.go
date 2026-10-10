@@ -1511,6 +1511,7 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		return pagination.Result[*assetdom.Asset]{}, err
 	}
 	filter.DataScopeUserID = access.DataScopeUserID
+	filter.DataScopeUnrestricted = access.DataScopeUnrestricted
 
 	// Build list options with sorting
 	opts := assetdom.NewListOptions()
@@ -1529,16 +1530,31 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 // narrowed. An acting user id that does not parse is refused (fail closed)
 // instead of silently dropping the scope.
 func (s *AssetService) listAccessScope(ctx context.Context, tenantID, actingUserID string, isAdmin bool) (assetdom.AccessScope, error) {
-	if isAdmin || actingUserID == "" {
+	if actingUserID == "" {
 		return assetdom.AccessScope{}, nil
 	}
 	userID, err := shared.IDFromString(actingUserID)
 	if err != nil {
 		return assetdom.AccessScope{}, fmt.Errorf("%w: invalid acting user id", shared.ErrForbidden)
 	}
-	if full, ferr := s.fullDataCaller(ctx, tenantID, actingUserID); ferr != nil {
-		return assetdom.AccessScope{}, ferr
-	} else if full {
+	if s.dataScope != nil {
+		// One decision for every caller (RFC-065 §15.3): an administrator
+		// or full-data role is not narrowed to scope rows, but private
+		// program assets of programs they are not a member of stay hidden.
+		tid, terr := shared.IDFromString(tenantID)
+		if terr != nil {
+			return assetdom.AccessScope{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		}
+		scope, rerr := s.dataScope.ResolveActing(ctx, tid, actingUserID, isAdmin)
+		if rerr != nil {
+			return assetdom.AccessScope{}, rerr
+		}
+		if scope == nil {
+			return assetdom.AccessScope{}, nil
+		}
+		return assetdom.AccessScope{DataScopeUserID: &scope.UserID, DataScopeUnrestricted: scope.Unrestricted}, nil
+	}
+	if isAdmin {
 		return assetdom.AccessScope{}, nil
 	}
 	return assetdom.AccessScope{DataScopeUserID: &userID}, nil

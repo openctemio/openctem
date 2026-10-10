@@ -170,6 +170,15 @@ Its programs are local-only: every target is a suggestion until confirmed;
 the signed stream's record wins on the same id. Program assets will carry provenance and system tags and be
 left out of the organization's own metrics by default (RFC-065 §16.5).
 
+## Confidentiality of private program assets
+
+Program-only assets of private programs, and their findings, are visible to
+the programs' members and the organization's owners only: the data-scope
+layer leaves them out for everyone else, administrators included (404 by
+id, absent from lists, exports, counts and dashboards). Shared assets stay
+visible without the private program's tag. Details:
+[authorization-matrix.md](authorization-matrix.md#data-scope-layer-2-access-groups).
+
 ## Evidence
 
 Every scan run links to a scope snapshot: the entry that covered each of its

@@ -455,9 +455,22 @@ program records `scope_source = file_import`.
 - `GET /scope/targets` and `GET /scope/targets/{id}` leave out the entries
   of private programs the caller may not see or has not accepted (404 by
   id), so a scope reader does not learn a private program's scope.
-- Not changed by this section: assets and findings that private-program
-  entries cover follow the data scope (§7) — full-data roles still see them
-  in the inventory; §16.5 separates them from the organization's own assets.
+- Assets of a private program (owner decision, 2026-10-10): a
+  program-only asset (§16.5) linked to private programs only, and its
+  findings, are visible only to the members of one of those programs and to
+  the organization's owners. Administrators and full-data roles who are not
+  members get 404 by id and do not see them in lists, exports, counts,
+  dashboards (also with `include_program_assets=true`), the change feed or
+  the EASM overview. The rule lives in the data-scope layer: the enforcer
+  gives such a caller a scope that admits every asset but the hidden ones
+  (`DataScope.Unrestricted`; resolved only when something is hidden from
+  them), and the one predicate (`filterspec.HiddenAssetWhere`) is added to
+  every scoped read and id check; a restricted member's scope rows never
+  admit a hidden asset either. An asset the organization also owns (not
+  program-only) stays visible, but the program's tag and flags are left out
+  of its response for non-members. Acting (scans) is not narrowed by it.
+  Residual: the inventory's tag filter still matches a private program's
+  system tag on a shared asset.
 
 | Threat | Control |
 |---|---|

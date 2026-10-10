@@ -252,3 +252,15 @@ func TestDecide_RunsEffectsForDecidedOnly(t *testing.T) {
 		t.Fatalf("resolver calls %v", res.calls)
 	}
 }
+
+func (*scopeRepo) HasHiddenAssets(context.Context, shared.ID, shared.ID) (bool, error) {
+	return false, nil
+}
+
+func (*scopeRepo) AssetIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}
+
+func (*scopeRepo) FindingIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}

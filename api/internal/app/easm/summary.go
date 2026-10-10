@@ -143,12 +143,14 @@ type MonitoringBlock struct {
 // Summary returns the overview for the caller, narrowed to its data scope.
 func (s *Service) Summary(ctx context.Context, tenantID shared.ID) (*Summary, error) {
 	var scopeUser *shared.ID
+	var scope *shared.DataScope
 	if s.dataScope != nil {
-		scope, err := s.dataScope.Resolve(ctx, tenantID)
+		var err error
+		scope, err = s.dataScope.Resolve(ctx, tenantID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve data scope: %w", err)
 		}
-		if scope != nil {
+		if scope.Restricted() {
 			id := scope.UserID
 			scopeUser = &id
 		}
@@ -158,7 +160,41 @@ func (s *Service) Summary(ctx context.Context, tenantID shared.ID) (*Summary, er
 	if err != nil {
 		return nil, err
 	}
+	if scope != nil && scope.Unrestricted {
+		// The rows naming an asset hidden from the viewer (a private
+		// program asset, RFC-065 §15.3) are left out.
+		if d.TopRisks, err = s.visibleRisks(ctx, tenantID, scope, d.TopRisks); err != nil {
+			return nil, err
+		}
+	}
 	return build(d, now), nil
+}
+
+// visibleRisks drops the risk rows whose asset the scope does not admit.
+func (s *Service) visibleRisks(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, rows []RiskRow) ([]RiskRow, error) {
+	ids := make([]shared.ID, 0, len(rows))
+	for _, r := range rows {
+		if r.AssetID != nil {
+			if id, err := shared.IDFromString(*r.AssetID); err == nil {
+				ids = append(ids, id)
+			}
+		}
+	}
+	admit, err := s.dataScope.Filter(ctx, scope, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := rows[:0]
+	for _, r := range rows {
+		if r.AssetID != nil {
+			id, err := shared.IDFromString(*r.AssetID)
+			if err != nil || !admit(id) {
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 func build(d *SummaryData, now time.Time) *Summary {

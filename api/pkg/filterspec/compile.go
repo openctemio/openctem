@@ -143,13 +143,57 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 }
 
 // ScopeSQL is the data-scope predicate "assetExpr is in the user's scope",
-// with placeholders $first and $first+1. It must stay identical to
-// postgres.dataScopeCondAt (a test there pins them together).
+// with placeholders $first (user) and $first+1 (tenant). A restricted scope
+// admits the user's scope rows; every scope leaves out the assets hidden
+// from the user (NotHiddenSQL). postgres.dataScopeCondAt is this function.
 func ScopeSQL(assetExpr string, scope *shared.DataScope, first int) (string, []any) {
+	args := []any{scope.UserID.String(), scope.TenantID.String()}
+	notHidden := NotHiddenSQL(assetExpr, first, first+1)
+	if scope.Unrestricted {
+		return notHidden, args
+	}
 	return fmt.Sprintf(
-			"%s IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $%d AND uaa.tenant_id = $%d)",
-			assetExpr, first, first+1),
-		[]any{scope.UserID.String(), scope.TenantID.String()}
+		"(%s IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $%d AND uaa.tenant_id = $%d) AND %s)",
+		assetExpr, first, first+1, notHidden), args
+}
+
+// HiddenAssetWhere is the condition "asset ph is hidden from user $userArg
+// in tenant $tenantArg" (RFC-065 §15.3), for a query that binds ph
+// ("FROM assets ph WHERE ..."): the asset is program-only, linked to a
+// private program, and none of its programs is public or has the user in
+// its active group. Owners never get a scope that applies it.
+func HiddenAssetWhere(userArg, tenantArg int) string {
+	return HiddenAssetWhereExpr(fmt.Sprintf("$%d", userArg), fmt.Sprintf("$%d", tenantArg))
+}
+
+// HiddenAssetWhereExpr is HiddenAssetWhere with SQL expressions for the
+// user and the tenant (a placeholder, or a literal the caller built from a
+// typed id).
+func HiddenAssetWhereExpr(userExpr, tenantExpr string) string {
+	return fmt.Sprintf(`ph.tenant_id = %[2]s AND ph.program_only
+		AND EXISTS (SELECT 1 FROM asset_program_links pl
+		            JOIN bounty_programs pp ON pp.tenant_id = pl.tenant_id AND pp.id = pl.program_id
+		            WHERE pl.tenant_id = ph.tenant_id AND pl.asset_id = ph.id AND pp.visibility = 'private')
+		AND NOT EXISTS (SELECT 1 FROM asset_program_links pl
+		            JOIN bounty_programs pp ON pp.tenant_id = pl.tenant_id AND pp.id = pl.program_id
+		            WHERE pl.tenant_id = ph.tenant_id AND pl.asset_id = ph.id
+		              AND (pp.visibility <> 'private' OR EXISTS (
+		                    SELECT 1 FROM groups pg JOIN group_members pgm ON pgm.group_id = pg.id
+		                    WHERE pg.tenant_id = pp.tenant_id AND pg.id = pp.group_id AND pg.is_active
+		                      AND pgm.user_id = %[1]s)))`, userExpr, tenantExpr)
+}
+
+// NotHiddenForViewer is NotHiddenSQL for a user given as a typed id (the
+// id is rendered as a uuid literal, never as caller text).
+func NotHiddenForViewer(assetExpr, tenantExpr string, userID shared.ID) string {
+	return fmt.Sprintf("NOT EXISTS (SELECT 1 FROM assets ph WHERE ph.id = %s AND %s)", assetExpr,
+		HiddenAssetWhereExpr("'"+userID.String()+"'::uuid", tenantExpr))
+}
+
+// NotHiddenSQL is the predicate "assetExpr is not hidden from user
+// $userArg"; NULL-safe (a row with no asset is not hidden).
+func NotHiddenSQL(assetExpr string, userArg, tenantArg int) string {
+	return fmt.Sprintf("NOT EXISTS (SELECT 1 FROM assets ph WHERE ph.id = %s AND %s)", assetExpr, HiddenAssetWhere(userArg, tenantArg))
 }
 
 // EscapeLike escapes LIKE metacharacters for a pattern used with ESCAPE '\'.

@@ -306,6 +306,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 	return datascope.Caller{
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
+		IsOwner: middleware.IsOwner(ctx),
 		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
 	}
 }
@@ -974,6 +975,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
+	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
 	s.Asset.SetScoringConfigProvider(asset.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)

@@ -1447,9 +1447,12 @@ func dataScopeCondition(access asset.AccessScope, tenantID string, argIndex int)
 		// A user scope without a tenant cannot be matched: admit nothing.
 		return "FALSE", nil
 	}
-	return fmt.Sprintf(
-		`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-		argIndex, argIndex+1), []any{access.DataScopeUserID.String(), tenantID}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return "FALSE", nil
+	}
+	return dataScopeCondAt("a.id", &shared.DataScope{TenantID: tid, UserID: *access.DataScopeUserID,
+		Unrestricted: access.DataScopeUnrestricted}, argIndex)
 }
 
 // =============================================================================

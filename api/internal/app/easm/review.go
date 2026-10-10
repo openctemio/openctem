@@ -174,8 +174,14 @@ func (s *ReviewService) Queue(ctx context.Context, tenantID shared.ID, q ReviewQ
 		return nil, err
 	}
 	page, err := s.store.ListForReview(ctx, tenantID, scopeUser, q)
-	if err != nil || s.coverage == nil || len(page.Items) == 0 {
+	if err != nil {
 		return page, err
+	}
+	if err := s.dropHidden(ctx, tenantID, page); err != nil {
+		return nil, err
+	}
+	if s.coverage == nil || len(page.Items) == 0 {
+		return page, nil
 	}
 	names := make([]string, 0, len(page.Items))
 	for _, it := range page.Items {
@@ -284,9 +290,43 @@ func (s *ReviewService) scopeUser(ctx context.Context, tenantID shared.ID) (*sha
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
-	if scope == nil {
+	if !scope.Restricted() {
 		return nil, nil
 	}
 	id := scope.UserID
 	return &id, nil
+}
+
+// dropHidden leaves out of a page the assets hidden from an unrestricted
+// caller (private program assets, RFC-065 §15.3).
+func (s *ReviewService) dropHidden(ctx context.Context, tenantID shared.ID, page *ReviewPage) error {
+	if s.dataScope == nil || page == nil || len(page.Items) == 0 {
+		return nil
+	}
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope == nil || !scope.Unrestricted {
+		return nil
+	}
+	ids := make([]shared.ID, 0, len(page.Items))
+	for _, it := range page.Items {
+		if id, err := shared.IDFromString(it.AssetID); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	admit, err := s.dataScope.Filter(ctx, scope, ids)
+	if err != nil {
+		return err
+	}
+	kept := page.Items[:0]
+	for _, it := range page.Items {
+		if id, err := shared.IDFromString(it.AssetID); err == nil && admit(id) {
+			kept = append(kept, it)
+		}
+	}
+	page.Total -= len(page.Items) - len(kept)
+	page.Items = kept
+	return nil
 }

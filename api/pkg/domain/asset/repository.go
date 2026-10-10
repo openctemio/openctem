@@ -340,6 +340,9 @@ type Filter struct {
 	// Layer 2: Data Scope. When set, only the assets in this user's scope
 	// rows (user_accessible_assets) are returned; a user with none sees none.
 	DataScopeUserID *shared.ID
+	// DataScopeUnrestricted: DataScopeUserID sees every asset except the
+	// ones hidden from them (private program assets, RFC-065 §15.3).
+	DataScopeUnrestricted bool
 }
 
 // ListOptions contains options for listing assets (sorting).
@@ -487,11 +490,14 @@ func (f Filter) WithParentID(parentID string) Filter {
 // caller with no user such as an API key), exactly like an unset Filter.
 type AccessScope struct {
 	DataScopeUserID *shared.ID
+	// DataScopeUnrestricted: DataScopeUserID sees every asset except the
+	// ones hidden from them (private program assets, RFC-065 §15.3).
+	DataScopeUnrestricted bool
 }
 
 // AccessScope returns the data-scope part of the filter.
 func (f Filter) AccessScope() AccessScope {
-	return AccessScope{DataScopeUserID: f.DataScopeUserID}
+	return AccessScope{DataScopeUserID: f.DataScopeUserID, DataScopeUnrestricted: f.DataScopeUnrestricted}
 }
 
 // WithDataScopeUserID adds a data scope filter by user's group membership.
@@ -505,6 +511,7 @@ func (f Filter) WithDataScope(scope *shared.DataScope) Filter {
 	if scope != nil {
 		id := scope.UserID
 		f.DataScopeUserID = &id
+		f.DataScopeUnrestricted = scope.Unrestricted
 	}
 	return f
 }
