@@ -31,8 +31,10 @@ import { ScheduleStep } from './schedule-step'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
 import {
   basicInfoError,
-  directTargets,
   formDataToCreateRequest,
+  onceRunAt,
+  scheduleError,
+  directTargets,
   targetsError,
 } from '../../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -112,8 +114,14 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       }
       case 'options':
         return true
-      case 'schedule':
+      case 'schedule': {
+        const problem = scheduleError(formData)
+        if (problem) {
+          toast.error(problem)
+          return false
+        }
         return true
+      }
       default:
         return true
     }
@@ -211,7 +219,12 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           return
         }
       } else {
-        toast.success(`Scan "${formData.name}" scheduled successfully`)
+        const at = formData.schedule.frequency === 'once' ? onceRunAt(formData) : null
+        toast.success(
+          at
+            ? `Scan "${formData.name}" will run on ${at.toLocaleString()}`
+            : `Scan "${formData.name}" scheduled successfully`
+        )
       }
 
       // Invalidate caches to refresh lists

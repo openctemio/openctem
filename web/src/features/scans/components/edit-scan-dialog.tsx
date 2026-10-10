@@ -32,6 +32,7 @@ import {
   basicInfoError,
   formDataToUpdateRequest,
   scanConfigToFormData,
+  scheduleError,
   targetsError,
 } from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -109,6 +110,14 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       }
       case 'targets': {
         const problem = targetsError(formData)
+        if (problem) {
+          toast.error(problem)
+          return false
+        }
+        return true
+      }
+      case 'schedule': {
+        const problem = scheduleError(formData, { requireFuture: false })
         if (problem) {
           toast.error(problem)
           return false
@@ -194,7 +203,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       case 'schedule':
         return (
           <>
-            <ScheduleStep data={formData} onChange={handleDataChange} />
+            <ScheduleStep data={formData} onChange={handleDataChange} requireFutureRun={false} />
             {canReadZones && zones.length > 0 && (
               <ScanRoutingSection
                 zones={zones}
