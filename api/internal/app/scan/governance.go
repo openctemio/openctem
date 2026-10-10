@@ -63,10 +63,14 @@ func (s *Service) GovernanceSubject(ctx context.Context, tenantID, scanID shared
 // GovernanceSubjectOf is the definition an approval of sc covers and the
 // facts the rules read. sc may be unsaved (the New Scan preview).
 func (s *Service) GovernanceSubjectOf(ctx context.Context, sc *scan.Scan) (scangov.Definition, scangov.Facts, error) {
-	tools, steps, tier, err := s.governanceTools(ctx, sc)
+	tools, steps, toolTier, err := s.governanceTools(ctx, sc)
 	if err != nil {
 		return scangov.Definition{}, scangov.Facts{}, err
 	}
+	// The intensity rules read and approvers approve is the scan's declared
+	// intensity (RFC-071), never below what its tools probe (a run above the
+	// declared intensity is refused anyway).
+	tier := max(sc.EffectiveIntensity().MaxTier(), toolTier)
 	def := scangov.Definition{
 		Targets:           append([]string(nil), sc.Targets...),
 		ScanType:          string(sc.ScanType),
