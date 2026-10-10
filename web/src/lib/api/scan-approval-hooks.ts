@@ -25,6 +25,20 @@ export interface ScanApprovalConditions {
   recurring?: boolean
   sensor_placement?: 'platform' | 'tenant'
   zone_ids?: string[]
+  requester_roles?: string[]
+  requester_group_ids?: string[]
+  origins?: ScanApprovalOrigin[]
+  trusted_service_account_ids?: string[]
+  hours?: ScanApprovalHours
+}
+
+export type ScanApprovalOrigin = 'ui' | 'api_key' | 'service_account' | 'mcp' | 'ci' | 'system'
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+
+export interface ScanApprovalHours {
+  match?: 'outside' | 'inside'
+  timezone?: string
+  windows: { days: Weekday[]; start: string; end: string }[]
 }
 
 export interface ScanApprovalRequirement {
@@ -160,6 +174,23 @@ export interface ScanApprovalPreviewInput {
   scan_zone_id?: string
 }
 
+export interface ScanRuleTestResult {
+  mode: ScanApprovalMode
+  tested: number
+  caught: number
+  monitored: number
+  total: number
+  truncated: boolean
+  scans: {
+    scan_id: string
+    name: string
+    intensity: string
+    schedule_type?: string
+    evaluation: ScanApprovalEvaluation
+  }[]
+  per_rule: Record<string, number>
+}
+
 const SETTINGS = '/api/v1/organization/settings/scan-governance'
 const APPROVALS = '/api/v1/scan-approvals'
 
@@ -195,6 +226,11 @@ export function saveScanGovernanceRules(
     pending_expiry_days: pendingExpiryDays,
     reason,
   })
+}
+
+/** Owner or administrator: which saved scans the rules would catch (writes nothing). */
+export function testScanGovernanceRules(rules: ScanApprovalRule[]) {
+  return post<ScanRuleTestResult>(`${SETTINGS}/test`, { rules })
 }
 
 /** Which rules an unsaved scan would need (the New Scan review). */
