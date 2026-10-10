@@ -17,9 +17,9 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
-	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -40,7 +40,7 @@ type FindingProcessor struct {
 	dataFlowRepo vulnerability.DataFlowRepository
 	branchRepo   branch.Repository
 	assetRepo    asset.Repository
-	compRepo     component.Repository
+	compRepo     software.PackageWriter
 	logger       *logger.Logger
 
 	// findingCreatedCallback is called after findings are successfully created
@@ -73,6 +73,10 @@ type FindingProcessor struct {
 	// group key (RFC-015). Runs POST-insert (needs persisted finding IDs).
 	// Nil-safe: when unwired, findings simply aren't grouped.
 	remediationKeyApplier RemediationKeyApplier
+
+	// vexStatements applies the organization's VEX statements to the
+	// findings of the batch (sticky statements). Nil: not applied.
+	vexStatements VEXStatementApplier
 
 	// exposureBridge promotes secret-scan findings into the exposure/credential
 	// store (labeled discovery_source=secret_scan). Runs POST-insert (needs the
@@ -132,6 +136,13 @@ type activityRecorder interface {
 // RemediationKeyApplier derives and persists each finding's remediation group
 // key. Runs POST-insert (needs persisted finding IDs). Implemented by
 // *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
+// VEXStatementApplier applies the organization's VEX statements to the
+// findings with these fingerprints (internal/app/vex). Returns how many
+// findings changed status.
+type VEXStatementApplier interface {
+	ApplyToFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (int, error)
+}
+
 type RemediationKeyApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
@@ -156,7 +167,7 @@ func NewFindingProcessor(repo vulnerability.FindingRepository, branchRepo branch
 }
 
 // SetComponentRepository sets the component repository for linking findings to components.
-func (p *FindingProcessor) SetComponentRepository(repo component.Repository) {
+func (p *FindingProcessor) SetComponentRepository(repo software.PackageWriter) {
 	p.compRepo = repo
 }
 
@@ -197,6 +208,11 @@ func (p *FindingProcessor) SetSLAApplier(applier SLAApplier) {
 // when unwired, scanner findings are not auto-routed to groups.
 func (p *FindingProcessor) SetAssignmentApplier(applier AssignmentApplier) {
 	p.assignmentApplier = applier
+}
+
+// SetVEXStatementApplier wires the organization's VEX statements.
+func (p *FindingProcessor) SetVEXStatementApplier(a VEXStatementApplier) {
+	p.vexStatements = a
 }
 
 // SetRemediationKeyApplier wires remediation-group key derivation (RFC-015).
@@ -762,6 +778,16 @@ func (p *FindingProcessor) processBatch(
 	}
 	p.storeInterop(ctx, tenantID, interop)
 	p.applyVEX(ctx, tenantID, vexNotAffectedItems(vexSightings), scope, output)
+
+	// Step 7c: the organization's VEX statements cover findings reported
+	// after the statement was made. Best-effort, like 7b.
+	if p.vexStatements != nil {
+		fps := make([]string, 0, len(validFindings))
+		for i := range validFindings {
+			fps = append(fps, validFindings[i].fingerprint)
+		}
+		p.applyVEXStatements(ctx, tenantID, fps)
+	}
 
 	// Step 8: the template content each finding was matched with
 	// (research/18 O6): its new baseline for retests and later scans. A
@@ -2137,42 +2163,24 @@ func isValidFingerprint(fp string) bool {
 	return true
 }
 
-// linkFindingToComponent looks up a component by PURL and links it to the finding.
-// This is used for SCA findings where the vulnerability is in a specific package.
+// linkFindingToComponent sets the finding's package version from the package
+// URL of an SCA finding (the tenant's version, created tenant-private when the
+// package is new).
 func (p *FindingProcessor) linkFindingToComponent(ctx context.Context, f *vulnerability.Finding, ctisFinding *ctis.Finding) {
-	// Skip if no component repository configured
-	if p.compRepo == nil {
+	if p.compRepo == nil || ctisFinding.Vulnerability == nil || ctisFinding.Vulnerability.PURL == "" {
 		return
 	}
-
-	// Get PURL from vulnerability details
-	var purl string
-	if ctisFinding.Vulnerability != nil && ctisFinding.Vulnerability.PURL != "" {
-		purl = ctisFinding.Vulnerability.PURL
-	}
-
-	if purl == "" {
-		return
-	}
-
-	// Lookup component by PURL
-	comp, err := p.compRepo.GetByPURL(ctx, purl)
+	purl, err := software.ParsePURL(ctisFinding.Vulnerability.PURL)
 	if err != nil {
-		p.logger.Debug("component not found for PURL",
-			"purl", purl,
-			"error", err,
-		)
+		p.logger.Debug("finding package URL does not parse", "error", err)
 		return
 	}
-
-	if comp != nil {
-		f.SetComponentID(comp.ID())
-		p.logger.Debug("linked finding to component",
-			"finding_id", f.ID().String(),
-			"component_id", comp.ID().String(),
-			"purl", purl,
-		)
+	versionID, err := p.compRepo.EnsurePackageVersion(ctx, f.TenantID(), purl)
+	if err != nil {
+		p.logger.Debug("finding package version not resolved", "purl", sanitizeIngestLogField(purl.String()), "error", sanitizeIngestLogField(err.Error()))
+		return
 	}
+	f.SetComponentID(versionID)
 }
 
 // normalizeEnumToken maps a producer-supplied enum label onto the stored
@@ -2443,5 +2451,16 @@ func (p *FindingProcessor) afterCreate(
 		if err := p.exposureBridge.ApplyBatch(ctx, tenantID, created); err != nil {
 			p.logger.Warn("failed to bridge secret findings into exposure store", "error", err, "count", len(created))
 		}
+	}
+}
+
+// applyVEXStatements applies the organization's VEX statements to the
+// package findings of the batch.
+func (p *FindingProcessor) applyVEXStatements(ctx context.Context, tenantID shared.ID, fps []string) {
+	if p.vexStatements == nil || len(fps) == 0 {
+		return
+	}
+	if _, err := p.vexStatements.ApplyToFingerprints(ctx, tenantID, fps); err != nil {
+		p.logger.Warn("applying vex statements failed", "tenant_id", tenantID.String(), "error", err)
 	}
 }
