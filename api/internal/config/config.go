@@ -2,9 +2,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -103,6 +105,13 @@ type ScopeConfig struct {
 	// `programfeed build --local-only`); read only while a platform
 	// administrator has the source enabled. Never set from the UI.
 	ProgramFeedLocalBundleDir string
+	// ProgramFeedURLs are the release URL and mirrors of the chunked (v2)
+	// program feed (PROGRAMFEED_URL, then PROGRAMFEED_MIRRORS, comma
+	// separated), tried in order before ProgramFeedDir. https only.
+	ProgramFeedURLs []string
+	// FeedCacheDir holds verified feed chunks between imports
+	// (FEED_CACHE_DIR; default a directory under the system temp dir).
+	FeedCacheDir string
 }
 
 // ScanZoneResolverSystem routes hostnames with the platform's own resolver.
@@ -859,6 +868,17 @@ type SensorConfig struct {
 	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
 	CTEMIDFeedURL string
 
+	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
+	// (VULNFEED_ROOT_KEY_ID; empty = no import), the release base URL
+	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
+	// holding a release's files (VULNFEED_BUNDLE_DIR). VulnFeedMirrors
+	// (VULNFEED_MIRRORS, comma separated, https) are tried after the
+	// release for chunked (v2) bundles.
+	VulnFeedRootKeyID string
+	VulnFeedBaseURL   string
+	VulnFeedBundleDir string
+	VulnFeedMirrors   []string
+
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
 	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
@@ -1348,6 +1368,10 @@ func Load() (*Config, error) {
 			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			VulnFeedRootKeyID:           getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
+			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
 			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
@@ -1416,6 +1440,8 @@ func Load() (*Config, error) {
 			ProgramFeedDir:            getEnv("PROGRAMFEED_DIR", ""),
 			ProgramFeedRootKeyID:      getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
 			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
+			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
+			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
@@ -1531,6 +1557,18 @@ func (c *Config) validateStorage() error {
 
 // validateBasic validates basic configuration regardless of environment.
 func (c *Config) validateBasic() error {
+	for _, u := range c.Scope.ProgramFeedURLs {
+		pu, err := url.Parse(u)
+		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+			return errors.New("PROGRAMFEED_URL and PROGRAMFEED_MIRRORS must be https URLs without credentials, query or fragment")
+		}
+	}
+	for _, u := range c.Worker.VulnFeedMirrors {
+		pu, err := url.Parse(u)
+		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+			return errors.New("VULNFEED_MIRRORS must be https URLs without credentials, query or fragment")
+		}
+	}
 	if c.Scope.ActiveProof == "" {
 		c.Scope.ActiveProof = ScopeProofOff
 		if c.Auth.SelfServiceTenantCreation() {
@@ -2193,4 +2231,15 @@ func splitAndTrim(s, sep string) []string {
 		}
 	}
 	return parts
+}
+
+// feedURLs joins a feed's release URL and its comma-separated mirrors.
+func feedURLs(primary, mirrors string) []string {
+	var out []string
+	for _, u := range append([]string{primary}, strings.Split(mirrors, ",")...) {
+		if u = strings.TrimSpace(u); u != "" {
+			out = append(out, strings.TrimRight(u, "/"))
+		}
+	}
+	return out
 }

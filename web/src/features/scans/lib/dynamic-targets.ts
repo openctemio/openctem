@@ -13,6 +13,7 @@
  */
 
 import type { ScanTargetOptions } from '@/lib/api/scan-types'
+import { enTranslate, type Translate } from './translate'
 import { classifyTarget } from './target-format'
 
 export type CidrMode = 'sweep' | 'inventory'
@@ -141,19 +142,21 @@ export function selectorPreviewURL(
 /** How a run resolves the scan's dynamic targets, in words (scan detail). */
 export function describeTargetOptions(
   targets: readonly string[],
-  o: ScanTargetOptions | undefined
+  o: ScanTargetOptions | undefined,
+  t: Translate = enTranslate
 ): string[] {
   const out: string[] = []
   if (hasCidrTarget(targets)) {
     out.push(
       o?.cidr_mode === 'inventory'
-        ? 'Ranges: only the hosts in the inventory'
-        : 'Ranges: swept whole'
+        ? t('scans.targetOptions.rangesInventory')
+        : t('scans.targetOptions.rangesSweep')
     )
   }
   if (selectorsOf(targets, o).length > 0) {
-    if (o?.seen_within_days) out.push(`Only assets seen in the last ${o.seen_within_days} days`)
-    if (o?.include_stale) out.push('Includes stale assets')
+    if (o?.seen_within_days)
+      out.push(t('scans.targetOptions.seenWithin', undefined, { days: o.seen_within_days }))
+    if (o?.include_stale) out.push(t('scans.targetOptions.includesStale'))
   }
   return out
 }
