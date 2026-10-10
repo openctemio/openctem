@@ -193,25 +193,37 @@ func registerScanZoneRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerScanFreezeWindowRoutes registers the scan freeze window API.
-// Everyone who reads scans reads the windows (the console shows a banner
-// while one is active); creating and changing them needs
-// sensors:zones:write and deleting sensors:zones:delete, the scan zone
-// administration permissions (owner and admin).
-func registerScanFreezeWindowRoutes(
+// registerScanWindowRoutes registers the scan window API (RFC-067).
+// Everyone who reads scans reads the policies and evaluates targets (the
+// console explains why work waits); managing policies needs
+// scans:windows:manage and overriding them scans:windows:override (owner and
+// admin by default; the override also needs a fresh authenticator code in
+// the body).
+func registerScanWindowRoutes(
 	router Router,
-	h *handler.ScanFreezeWindowHandler,
+	h *handler.ScanWindowHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	router.Group("/api/v1/scan-freeze-windows", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.ScansRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.ScansRead))
-		r.POST("/", h.Create, middleware.Require(permission.ScanZonesWrite))
-		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScanZonesWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScanZonesDelete))
+	router.Group("/api/v1/scan-window-policies", func(r Router) {
+		r.GET("/", h.ListPolicies, middleware.Require(permission.ScansRead))
+		r.POST("/preview", h.PreviewPolicy, middleware.Require(permission.ScansRead))
+		r.GET("/{id}", h.GetPolicy, middleware.Require(permission.ScansRead))
+		r.POST("/", h.CreatePolicy, middleware.Require(permission.ScanWindowsManage))
+		r.PATCH("/{id}", h.UpdatePolicy, middleware.Require(permission.ScanWindowsManage))
+		r.DELETE("/{id}", h.DeletePolicy, middleware.Require(permission.ScanWindowsManage))
+	}, tenantMiddlewares...)
+
+	router.Group("/api/v1/scan-windows", func(r Router) {
+		r.POST("/preview", h.Evaluate, middleware.Require(permission.ScansRead))
+	}, tenantMiddlewares...)
+
+	router.Group("/api/v1/scan-window-overrides", func(r Router) {
+		r.GET("/", h.ListOverrides, middleware.Require(permission.ScansRead))
+		r.POST("/", h.CreateOverride, middleware.Require(permission.ScanWindowsOverride))
+		r.DELETE("/{id}", h.RevokeOverride, middleware.Require(permission.ScanWindowsOverride))
 	}, tenantMiddlewares...)
 }
 

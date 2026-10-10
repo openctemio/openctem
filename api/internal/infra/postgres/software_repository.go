@@ -314,3 +314,34 @@ func clipStr(s string, n int) string {
 	s = s[:n]
 	return strings.ToValidUTF8(s, "")
 }
+
+// ListAssetLinks (see software.Repository). The catalog rows come only
+// through the tenant's own links.
+func (r *SoftwareRepository) ListAssetLinks(ctx context.Context, tenantID, assetID shared.ID) ([]software.AssetLink, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT s.id, p.id, p.name, p.vendor, COALESCE(p.cpe_vendor || ':' || p.cpe_product, ''), p.tenant_id IS NULL,
+			v.id, v.raw, v.qualifier, s.location, COALESCE(s.port, 0), COALESCE(s.transport, ''),
+			s.source, s.evidence, s.confidence, s.first_seen_at, s.last_seen_at
+		FROM asset_software s
+		JOIN software_products p ON p.id = s.product_id
+		JOIN software_versions v ON v.id = s.software_version_id
+		WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL
+		ORDER BY s.last_seen_at DESC, p.name
+		LIMIT $3`, tenantID.String(), assetID.String(), software.MaxAssetLinks)
+	if err != nil {
+		return nil, fmt.Errorf("asset software: %w", err)
+	}
+	defer rows.Close()
+	var out []software.AssetLink
+	for rows.Next() {
+		var l software.AssetLink
+		var id, pid, vid string
+		if err := rows.Scan(&id, &pid, &l.Product, &l.Vendor, &l.CPE, &l.Global, &vid, &l.Version, &l.Qualifier,
+			&l.Location, &l.Port, &l.Transport, &l.Source, &l.Evidence, &l.Confidence, &l.FirstSeen, &l.LastSeen); err != nil {
+			return nil, fmt.Errorf("asset software: %w", err)
+		}
+		l.ID, l.ProductID, l.VersionID = shared.MustIDFromString(id), shared.MustIDFromString(pid), shared.MustIDFromString(vid)
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}

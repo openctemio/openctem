@@ -55,8 +55,10 @@ Pure Go, no I/O.
   `ClosesAt` and the caps of the governing allow sources.
 - Windows are occurrences built from local dates with `time.Date`, so the
   open test and the next-opening search use the same intervals. Daylight
-  saving: a slot inside the skipped hour starts at the first instant after
-  it; a slot over the repeated hour lasts the longer real time.
+  saving: a wall-clock time the clocks skip is moved forward by the gap
+  (02:30 reads as 03:30), a time they repeat reads as the later pass; a slot
+  over the skipped hour is an hour shorter, one over the repeated hour an
+  hour longer.
 - The tz database is embedded (`time/tzdata`). A source whose zone does not
   load fails closed (allow never open, blackout always active).
 
@@ -142,7 +144,7 @@ switch.
 | `GET /api/v1/scan-window-policies`, `GET /{id}` | `scans:read` |
 | `POST /api/v1/scan-window-policies`, `PATCH /{id}`, `DELETE /{id}` | `scans:windows:manage` |
 | `POST /api/v1/scan-window-policies/preview` | `scans:read` |
-| `POST /api/v1/scan-windows/evaluate` | `scans:read` |
+| `POST /api/v1/scan-windows/preview` | `scans:read` |
 | `GET /api/v1/scan-window-overrides` | `scans:read` |
 | `POST /api/v1/scan-window-overrides`, `DELETE /{id}` | `scans:windows:override` |
 

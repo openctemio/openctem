@@ -859,6 +859,14 @@ type SensorConfig struct {
 	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
 	CTEMIDFeedURL string
 
+	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
+	// (VULNFEED_ROOT_KEY_ID; empty = no import), the release base URL
+	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
+	// holding a release's files (VULNFEED_BUNDLE_DIR).
+	VulnFeedRootKeyID string
+	VulnFeedBaseURL   string
+	VulnFeedBundleDir string
+
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
 	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
@@ -1348,6 +1356,9 @@ func Load() (*Config, error) {
 			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			VulnFeedRootKeyID:           getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
 			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
