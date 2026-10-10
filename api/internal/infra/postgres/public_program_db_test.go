@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// The public program catalog (migration 001724): snapshot apply with change
+// The public program catalog (migration 001736): snapshot apply with change
 // kinds, refusal of an older sequence, subscriptions unique per tenant, and
 // stale subscriptions across tenants. Requires DATABASE_URL.
 func TestPublicProgramRepository(t *testing.T) {
