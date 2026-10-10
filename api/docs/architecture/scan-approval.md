@@ -35,6 +35,16 @@ run is refused.
 
 ## Rules
 
+Conditions read the definition (intensity, tools, targets, schedule,
+placement, zone), the inventory (tags, criticality, crown jewels) and the
+caller: requester role and group, origin (`ui`, `api_key`,
+`service_account`, `mcp`, `ci`, `system`, set by the authentication
+middleware with `scangov.WithOrigin`), trusted service accounts, and
+business hours in the organization's timezone
+(`internal/app/scangov/requester.go`, directory
+`ScanApprovalRepository.RequesterProfile`). Unknown caller or time is
+caught (fail closed).
+
 Conditions inside a rule are AND'ed, rules are OR'ed. Every matched rule
 is listed; the matched rule with the most approvals decides the approvers;
 evidence requirements add up; the shortest validity wins; Strict raises
