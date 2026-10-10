@@ -155,6 +155,19 @@ two); OT zone scans (zone condition, named plant engineers); wide blast
 radius (> 500 targets or wildcard/CIDR selectors, security lead);
 credentialed or brute-force tools (tool condition, security lead).
 
+### 4.3 Rule tester
+
+`POST /api/v1/organization/settings/scan-governance/test` `{"rules": [...]}`
+(owner or administrator; no step-up, it writes nothing): the rule set is
+validated as a save would validate it, then evaluated against the
+organization's saved scans (at most 200, newest first), each as a run its
+creator starts from the console at its next scheduled time (else now). Off
+is evaluated as On (what turning it on would do), Strict as Strict. The
+answer lists the scans it would hold for approval (with the matched rules
+and the merged requirement), those only monitor rules catch, how many
+scans each rule catches, and whether the organization has more scans than
+were tested. Only the caller's organization's scans are read.
+
 ## 5. Platform policy
 
 `GET/PUT /api/v1/admin/settings/scan-approval-policy` (platform default)
@@ -260,4 +273,5 @@ steps probe at; when RFC-071 lands it is the scan's declared intensity.
 | Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge (migration `001831`) |
 | Web | Settings > Scanning (mode, rule builder, presets), New Scan review "needs approval by…", Submit for approval, Approvals inbox, scan list badge |
 | Requester conditions | requester role and group, origin with trusted service accounts, business hours (§4.1) |
-| Later | monitor-mode report, rule tester, the §4.1 later conditions, asset-owner approvers |
+| Rule tester | `POST .../scan-governance/test` (§4.3) |
+| Later | monitor-mode report, the §4.1 later conditions, asset-owner approvers |
