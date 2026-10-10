@@ -83,6 +83,14 @@ const (
 	// ActionBountyProgramSubscribed: an organization follows a public program
 	// (RFC-065 §16).
 	ActionBountyProgramSubscribed Action = "bounty_program.subscribed"
+	// ActionBountyProgramChannelAttached / Detached: a notification
+	// integration receives (or stops receiving) events about a private
+	// program's assets; ActionBountyProgramOrgChannelsChanged: an owner let
+	// them reach every organization-wide integration, or stopped it, with a
+	// reason (RFC-065 §15.4).
+	ActionBountyProgramChannelAttached    Action = "bounty_program.channel_attached"
+	ActionBountyProgramChannelDetached    Action = "bounty_program.channel_detached"
+	ActionBountyProgramOrgChannelsChanged Action = "bounty_program.org_channels_changed"
 	// Authorization letters (RFC-065 §13).
 	ActionScopeLetterUploaded Action = "scope_letter.uploaded"
 	ActionScopeLetterRevoked  Action = "scope_letter.revoked"
@@ -619,6 +627,7 @@ func (a Action) IsValid() bool {
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
 		ActionBountyProgramSourceSet, ActionBountyProgramSynced, ActionBountyProgramViewed, ActionBountyProgramSubscribed,
+		ActionBountyProgramChannelAttached, ActionBountyProgramChannelDetached, ActionBountyProgramOrgChannelsChanged,
 		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,

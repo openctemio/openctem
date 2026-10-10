@@ -244,6 +244,44 @@ func (g *ActiveGate) UnverifiedTargets(ctx context.Context, tenantID shared.ID, 
 	return out, nil
 }
 
+// ConstraintRefused returns the targets that only port- or path-limited
+// entries cover at tier and that the job may not probe within those limits
+// (scopedom.ConstrainedJobRefusal), with the refusal reason. Targets nothing
+// covers, and internal ones, are left to the other checks. Part of
+// scan.ConstraintGate.
+func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier, job scopedom.JobShape) (map[string]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	if tier <= scopedom.TierPassive || len(targets) == 0 {
+		return out, nil
+	}
+	if len(targets) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many targets for one constraint check", shared.ErrValidation)
+	}
+	var auth *scopeauth.Authority
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		free, ports, path, covered := auth.Limits(t, tier)
+		if !covered || free {
+			continue
+		}
+		if reason := scopedom.ConstrainedJobRefusal(job.Tool, ports, path, job.Ports, job.TopPorts); reason != "" {
+			out[t] = reason
+		}
+	}
+	return out, nil
+}
+
 // TierExceeded returns the targets the tenant's scope authority covers, but
 // not at tier (RFC-054 §4.2 step 6, refusal tier_exceeds): every covering
 // scope target has a lower max_tier, or only a seed or verified domain
