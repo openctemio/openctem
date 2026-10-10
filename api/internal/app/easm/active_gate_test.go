@@ -558,3 +558,54 @@ func TestActiveGate_UncoveredTargets(t *testing.T) {
 		t.Error("an unwired gate must refuse")
 	}
 }
+
+// A target only a port-limited entry covers goes to a job only within the
+// limit: no full port scan, no tool that could reach other ports; an entry
+// without a limit lifts it (RFC-065 §16.8).
+func TestActiveGate_ConstraintRefused(t *testing.T) {
+	f := newGateFixture(t)
+	svc, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "api.limited.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetConstraint(scopedom.Constraint{Ports: "8443", Protocol: "tcp"}); err != nil {
+		t.Fatal(err)
+	}
+	path, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeURL, "https://shop.limited.example/api*", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = append(f.targets, svc, path)
+	g := NewActiveGate(f, f, f, f)
+	ctx := context.Background()
+	targets := []string{"api.limited.example:8443", "https://shop.limited.example/api/v1", "app.scoped.com", "10.0.0.5"}
+
+	full, err := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, scopedom.JobShape{Tool: "naabu", Ports: "1-65535"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full["api.limited.example:8443"] != scopedom.ConstrainedPortsOutside || full["https://shop.limited.example/api/v1"] != scopedom.ConstrainedToolRefused ||
+		len(full) != 2 {
+		t.Fatalf("full port scan: %v", full)
+	}
+	ok, err := g.ConstraintRefused(ctx, f.tenant, targets[:1], scopedom.TierActive, scopedom.JobShape{Tool: "naabu", Ports: "8443"})
+	if err != nil || len(ok) != 0 {
+		t.Fatalf("allowed port: %v %v", ok, err)
+	}
+	crawl, err := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, scopedom.JobShape{Tool: "katana"})
+	if err != nil || crawl["https://shop.limited.example/api/v1"] != scopedom.ConstrainedToolRefused {
+		t.Fatalf("crawler on a path-limited entry: %v %v", crawl, err)
+	}
+	// Passive work is never limited; another tenant has no entries here.
+	if p, _ := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierPassive, scopedom.JobShape{Tool: "katana"}); len(p) != 0 {
+		t.Fatalf("passive: %v", p)
+	}
+	whole, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "api.limited.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = append(f.targets, whole)
+	if got, _ := g.ConstraintRefused(ctx, f.tenant, targets[:1], scopedom.TierActive, scopedom.JobShape{Tool: "naabu", Ports: "1-65535"}); len(got) != 0 {
+		t.Fatalf("an unlimited entry covers the host: %v", got)
+	}
+}

@@ -115,6 +115,11 @@ type DispatchTargetsInput struct {
 	MaxTargets int
 	// Path names the dispatch path in refusal logs ("" = dispatch_gate).
 	Path string
+	// Job is the job the targets go to (its tool and port settings). Set,
+	// a target that only port- or path-limited scope entries cover is
+	// refused when the job could reach other ports or paths (constrained;
+	// RFC-065 §16.8). The claim-time re-check always sets it.
+	Job *scopedom.JobShape
 }
 
 // ReasonInternalOutsideZones is the reason an internal address is refused
@@ -302,6 +307,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		s.refuseOutOfActScopeTargets,
 		s.refuseInternalOutsideZones,
 		s.refuseOverTier,
+		s.refuseConstrained,
 	} {
 		var err error
 		if kept, err = check(ctx, in, kept, out); err != nil {
@@ -512,6 +518,50 @@ func rejectedState(assets map[string]DispatchAsset, target string, blocked map[s
 		}
 	}
 	return false
+}
+
+// ConstraintGate is the part of the ownership gate that checks a job
+// against port- and path-limited scope entries (*easm.ActiveGate).
+type ConstraintGate interface {
+	ConstraintRefused(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier, job scopedom.JobShape) (map[string]string, error)
+}
+
+// refuseConstrained moves to Refused (constrained) every kept target that
+// only limited entries cover and that the input's job could probe beyond
+// the limits. Without a job, or for a passive dispatch, nothing is checked;
+// a gate that cannot check fails closed.
+func (s *Service) refuseConstrained(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) ([]string, error) {
+	if in.Job == nil || in.PassiveOnly || len(kept) == 0 {
+		return kept, nil
+	}
+	tier := scopedom.TierActive
+	if in.Tier != nil {
+		tier = *in.Tier
+	}
+	if tier <= scopedom.TierPassive {
+		return kept, nil
+	}
+	cg, ok := s.attributionGate.(ConstraintGate)
+	if !ok {
+		return nil, fmt.Errorf("%w: the port and path limit check is not wired", ErrDispatchGateUnavailable)
+	}
+	refused, err := cg.ConstraintRefused(ctx, in.TenantID, kept, tier, *in.Job)
+	if err != nil {
+		return nil, fmt.Errorf("port and path limit check failed, nothing dispatched: %w", err)
+	}
+	if len(refused) == 0 {
+		return kept, nil
+	}
+	allowed := make([]string, 0, len(kept))
+	for _, t := range kept {
+		if _, no := refused[t]; no {
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Code: scopedom.RefusalConstrained,
+				Reason: scopedom.RefusalMessages[scopedom.RefusalConstrained]})
+			continue
+		}
+		allowed = append(allowed, t)
+	}
+	return allowed, nil
 }
 
 // refuseOverTier moves every kept target the scope authority covers only

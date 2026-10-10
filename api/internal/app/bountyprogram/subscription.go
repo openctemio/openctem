@@ -213,14 +213,14 @@ func (s *Service) replaceAwaitingAcceptance(ctx context.Context, p *bp.Program, 
 	keep := map[string]bool{}
 	for _, e := range pv.Entries {
 		if e.Status == PlanKeep {
-			keep[entryKey(e.TargetType, e.Pattern)] = true
+			keep[entryKey(e.TargetType, e.Pattern, e.Constraint)] = true
 		}
 	}
 	var drop []shared.ID
 	stopped := make([]shared.ID, 0, len(current))
 	for _, e := range current {
 		stopped = append(stopped, e.ID())
-		if !keep[entryKey(e.TargetType(), e.Pattern())] {
+		if !keep[entryKey(e.TargetType(), e.Pattern(), e.Constraint())] {
 			drop = append(drop, e.ID())
 		}
 	}
