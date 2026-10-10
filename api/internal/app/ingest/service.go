@@ -15,11 +15,11 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
-	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
@@ -64,7 +64,7 @@ type Service struct {
 	assetRepo    asset.Repository
 	findingRepo  vulnerability.FindingRepository
 	vulnRepo     vulnerability.VulnerabilityRepository
-	compRepo     component.Repository
+	compRepo     software.PackageWriter
 	webEndpoints webendpoint.Repository
 	software     *softwareRecorder
 	attributes   AttributeReconciler
@@ -149,7 +149,7 @@ func NewService(
 	assetRepo asset.Repository,
 	findingRepo vulnerability.FindingRepository,
 	vulnRepo vulnerability.VulnerabilityRepository,
-	compRepo component.Repository,
+	compRepo software.PackageWriter,
 	sensorRepo sensor.Repository,
 	branchRepo branch.Repository,
 	tenantRepo tenant.Repository,
@@ -197,7 +197,7 @@ func (s *Service) SetDataFlowRepository(repo vulnerability.DataFlowRepository) {
 }
 
 // SetComponentRepository sets the component repository for linking findings to components.
-func (s *Service) SetComponentRepository(repo component.Repository) {
+func (s *Service) SetComponentRepository(repo software.PackageWriter) {
 	s.findingProcessor.SetComponentRepository(repo)
 }
 
@@ -540,7 +540,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 2: Process dependencies/components (SBOM)
 	if s.compRepo != nil && s.componentProcessor != nil && len(report.Dependencies) > 0 {
-		if err := s.componentProcessor.ProcessBatch(ctx, tenantID, report, assetMap, output); err != nil {
+		if err := s.componentProcessor.ProcessBatch(ctx, tenantID, report, assetMap,
+			PackageChannel(!agt.ID.IsZero() && binding.Kind != BindingCIRun, report.Metadata.SourceType), output); err != nil {
 			s.logger.Error("failed to process components batch", "error", err)
 			// Continue with partial results
 		}

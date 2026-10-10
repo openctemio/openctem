@@ -34,12 +34,29 @@ scanner findings that name a package) goes through one writer:
    tenant-private row);
 3. ensure versions (scheme from the purl type; `normalized = raw`);
 4. upsert links per asset and location, with relationship, scope, licenses
-   and channel; mark an older version of the same package at the same location
-   superseded;
+   and channel (a re-report without a license keeps the recorded one);
 5. replace the edges of the reported locations, then recompute `depth`
    breadth-first from the direct links (cycles are tolerated).
 
-An SBOM is a snapshot of its location; a scanner finding only adds.
+An SBOM or a sensor or CI report is a snapshot of the locations it names:
+links at those locations that it does not list are removed (with their
+edges). A scanner finding that names a package only resolves the version for
+the finding's `component_id`.
+
+The repository counters (`asset_repositories.component_count`,
+`vulnerable_component_count`) are recomputed by the writer once per snapshot.
+
+## Migration from the legacy tables
+
+`components_on_software_catalog` copies every (tenant, legacy component)
+pair found in `asset_components` or `findings` into tenant-private products
+and versions (package URL parsed in SQL, `%40` decoded, PyPI names
+normalised), copies `asset_components` into package links (location = the
+manifest path, relationship from `is_direct`/`dependency_type`, scope from
+`dependency_type`, licenses split from the license string), turns
+`parent_component_id` into edges, repoints `findings.component_id` to the
+finding tenant's version, and drops both legacy tables. The down migration
+rebuilds them (one global row per package URL).
 
 ## Reading
 

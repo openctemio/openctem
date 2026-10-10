@@ -170,11 +170,11 @@ asset_software (RFC-066) gains:
 
 - Confidence is 100 for a version read from a lock file or SBOM with a purl,
   80 for a name and version without a purl.
-- `superseded_at` works as in RFC-066: a newer version of the same package at
-  the same location marks the old link superseded (upgrade detected).
-- A link not reported by a full snapshot of the same asset and location for
-  the retention window is removed (the SBOM is the truth for that location);
-  partial reports (a single tool's findings) only add or refresh.
+- `superseded_at` is not used for packages: several versions of one package
+  legitimately coexist in one lock file. A full snapshot (a sensor or CI
+  report, an SBOM) replaces the links at the locations it names, so an
+  upgrade shows as the old version's link going away; partial reports (a
+  finding that names a package) only add or refresh.
 
 ### 5.4 Dependency graph: `asset_software_edges`
 
@@ -286,13 +286,13 @@ the parser is isolated so a format adds a reader, not a writer.
   pep440 epoch or major). Source: `findings.fixed_versions` now, corpus ranges
   after OSV import. When no single version fixes everything, the advice lists
   the minimum per CVE.
-- **Risk score** (0–100) per version link, rolled up to the product as the
-  maximum:
-  `base = max over open findings of (cvss or severity floor) × 10`,
-  `+15 KEV`, `+10 if EPSS ≥ 0.1`, `+5 direct dependency`, `−10 development or
-  test scope`, `× asset criticality factor (critical 1.0, high 0.9, medium 0.75,
-  low 0.6)`, clamped to 0–100. Findings closed by VEX do not count. Reachability
-  adds a factor when a producer supplies it.
+- **Risk score** (0–100) of a package: the maximum over its open in-scope
+  findings of `(severity floor + 15 if known exploited + 10 if EPSS ≥ 0.1) ×
+  asset criticality factor`, with the floors critical 90, high 70, medium 40,
+  low 10 and the factors critical 1.0, high 0.9, medium 0.75, low 0.6 (0.75
+  when unset), clamped to 0–100. Closed findings (including those closed by
+  VEX) do not count. Dependency scope and reachability add factors when the
+  data supports them (P1).
 
 ## 8. VEX
 
@@ -381,7 +381,9 @@ problem is, i18n (en, vi) for every string.
   (All, Vulnerable, License issues, Outdated) that only change filters; facet
   sidebar on desktop, a filter sheet on phones (ecosystem, severity, KEV, fix
   available, relationship, scope, license category and verdict, asset,
-  owner); saved views; columns: package (name, namespace, purl copy), ecosystem,
+  owner); every filter in the URL (shareable, bookmarkable); saved views once
+  the list adopts the RFC-048 filter document (P1); columns: package (name,
+  namespace, purl copy), ecosystem,
   versions in use, assets, severity counts, KEV, fix, license, risk; server
   pagination; row selection with bulk actions (create remediation group, VEX
   statement, export CSV).
@@ -418,7 +420,8 @@ problem is, i18n (en, vi) for every string.
 4. Web: list, detail, graph and path view, import wizard, export dialog, empty
    states, en and vi.
 
-**P1:** VEX statements (table, CRUD, sticky application, expiry controller,
+**P1:** saved views for the list (RFC-048 filter document, `savedview`
+page `components`); VEX statements (table, CRUD, sticky application, expiry controller,
 OpenVEX and CycloneDX export, finding-import documents stored as statements);
 license policy and license findings; upgrade advice from corpus ranges; OSV
 package matching (RFC-066 P1) and relinking of private products; SPDX 3.0

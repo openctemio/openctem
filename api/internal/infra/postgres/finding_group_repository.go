@@ -643,13 +643,14 @@ func (r *FindingRepository) groupByComponent(
 	query := fmt.Sprintf(`
 		SELECT
 			c.id::text as group_key,
-			c.name || '@' || c.version as label,
-			c.ecosystem as ecosystem,
+			p.name || '@' || c.raw as label,
+			p.purl_type as ecosystem,
 			%s
 		FROM findings f
-		JOIN components c ON c.id = f.component_id
+		JOIN software_versions c ON c.id = f.component_id
+		JOIN software_products p ON p.id = c.product_id
 		WHERE f.tenant_id = $1 AND f.component_id IS NOT NULL AND f.source != 'pentest' %s
-		GROUP BY c.id, c.name, c.version, c.ecosystem
+		GROUP BY c.id, p.name, c.raw, p.purl_type
 		ORDER BY COUNT(*) DESC
 		LIMIT $%d OFFSET $%d
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)

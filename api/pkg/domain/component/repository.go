@@ -7,179 +7,64 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// Repository defines the interface for component persistence.
-type Repository interface {
-	// Global Component Operations
-	Upsert(ctx context.Context, comp *Component) (shared.ID, error)
-	GetByPURL(ctx context.Context, purl string) (*Component, error)
-	GetByID(ctx context.Context, id shared.ID) (*Component, error)
+// Graph and path bounds.
+const (
+	MaxGraphDepth = 10
+	MaxGraphNodes = 500
+	MaxPaths      = 20
+)
 
-	// License Operations
-	// EnsureLicenses validates license identifiers, makes sure each exists in
-	// the license dictionary (an unknown one is added with category and risk
-	// "unknown"; an existing entry is never changed) and returns the valid
-	// ones. It does not attach licenses to anything: a tenant's licenses go on
-	// its own asset dependency (AssetDependency.SetLicense).
-	EnsureLicenses(ctx context.Context, licenses []string) ([]string, error)
-
-	// Asset Dependency Operations (Links)
-	LinkAsset(ctx context.Context, dep *AssetDependency) error
-	// GetDependency, UpdateDependency (by dep.TenantID()) and DeleteDependency
-	// only see the tenant's own rows; another tenant's id is not found.
-	GetDependency(ctx context.Context, tenantID, id shared.ID) (*AssetDependency, error)
-	UpdateDependency(ctx context.Context, dep *AssetDependency) error
-	DeleteDependency(ctx context.Context, tenantID, id shared.ID) error
-	DeleteByAssetID(ctx context.Context, assetID shared.ID) error
-
-	// GetExistingDependencyByPURL retrieves an existing asset_component by asset and component PURL.
-	// Used for parent lookup during rescan when parent component exists from previous scan.
-	// Returns nil, nil if not found.
-	GetExistingDependencyByPURL(ctx context.Context, assetID shared.ID, purl string) (*AssetDependency, error)
-
-	// GetExistingDependencyByComponentID retrieves an existing asset_component by asset, component, and path.
-	// Used for duplicate detection during ingestion.
-	// Returns nil, nil if not found.
-	GetExistingDependencyByComponentID(ctx context.Context, assetID shared.ID, componentID shared.ID, path string) (*AssetDependency, error)
-
-	// GetAssetDependency returns how a tenant's asset uses a component: the
-	// shallowest asset_components row (direct before transitive) for the
-	// (tenant, asset, component) triple, with the component attached. Used to
-	// show a finding's manifest file and dependency type. Returns nil, nil if
-	// the asset does not list the component.
-	GetAssetDependency(ctx context.Context, tenantID, assetID, componentID shared.ID) (*AssetDependency, error)
-
-	// UpdateAssetDependencyParent updates the parent_component_id and depth of an asset_component.
-	// Used in three-pass ingestion to set parent references after all components are inserted.
-	UpdateAssetDependencyParent(ctx context.Context, tenantID, id shared.ID, parentID shared.ID, depth int) error
-
-	// ListComponents retrieves global components (optionally filtered by usage).
-	ListComponents(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*Component], error)
-
-	// ListDependencies retrieves dependencies for an asset (joined with component details).
-	ListDependencies(ctx context.Context, assetID shared.ID, page pagination.Pagination) (pagination.Result[*AssetDependency], error)
-
-	// GetStats retrieves aggregated component statistics.
-	GetStats(ctx context.Context, tenantID shared.ID) (*ComponentStats, error)
-
-	// GetEcosystemStats retrieves per-ecosystem statistics.
-	GetEcosystemStats(ctx context.Context, tenantID shared.ID) ([]EcosystemStats, error)
-
-	// GetVulnerableComponents retrieves paginated vulnerable components with severity breakdown.
-	GetVulnerableComponents(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[VulnerableComponent], error)
-
-	// GetLicenseStats retrieves license statistics for a tenant.
-	GetLicenseStats(ctx context.Context, tenantID shared.ID) ([]LicenseStats, error)
-
-	// ListSBOMEntries returns the components the tenant's assets use (one
-	// asset when assetID is set), each with the license strings the tenant
-	// observed for it, ordered by name and version. A non-nil scope keeps
-	// only components used by an asset in the user's data scope. At most
-	// limit entries are returned.
-	ListSBOMEntries(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope, limit int) ([]SBOMEntry, error)
-
-	// ListAssetUsage retrieves the assets that use a given global component
-	// (blast-radius reverse lookup). Joins asset_components × assets,
-	// scoped to the tenant. Returns empty result when the component is not
-	// used by any asset of this tenant.
-	//
-	// When atRiskOnly is true, only assets that have at least one open
-	// finding (status in new/confirmed/in_progress) for this component are
-	// returned. Default false → returns every asset using the component
-	// regardless of vulnerability status (full SBOM view).
-	//
-	// scope limits the assets to the caller's data scope (nil: all).
-	ListAssetUsage(
-		ctx context.Context,
-		tenantID shared.ID,
-		componentID shared.ID,
-		atRiskOnly bool,
-		scope *shared.DataScope,
-		page pagination.Pagination,
-	) (pagination.Result[ComponentAssetUsage], error)
-
-	// ListVulnerabilities returns the CVEs that affect a global component
-	// within the given tenant. Aggregates findings GROUP BY vulnerability_id
-	// so a CVE appearing on multiple assets returns one row with
-	// affected_assets_count rolled up. When includeResolved is false, only
-	// open-status findings (new/confirmed/in_progress) count toward the row
-	// but the CVE is still included if at least one open finding exists.
-	ListVulnerabilities(
-		ctx context.Context,
-		tenantID, componentID shared.ID,
-		includeResolved bool,
-		page pagination.Pagination,
-	) (pagination.Result[ComponentVulnerability], error)
+// Sort keys of the package list ("-" prefix: descending).
+var SortKeys = map[string]bool{
+	"name": true, "assets": true, "versions": true, "risk": true, "vulns": true, "last_seen": true,
 }
 
-// Filter defines criteria for filtering components.
+// Filter selects packages. Every query is limited to TenantID and, when
+// Scope is set, to links of assets in the caller's data scope.
 type Filter struct {
-	TenantID           *shared.ID // Filter components used by tenant
-	AssetID            *shared.ID // Filter components used by asset
-	Name               *string
-	PURL               *string
-	Ecosystems         []Ecosystem
-	DependencyTypes    []DependencyType
-	Statuses           []Status
-	Licenses           []string
-	HasVulnerabilities *bool
-	// DataScope limits the components to those used by assets in the
-	// caller's data scope. Nil means unrestricted.
-	DataScope *shared.DataScope
+	TenantID     shared.ID
+	Scope        *shared.DataScope
+	Query        string
+	PURLTypes    []string
+	Licenses     []string
+	Severities   []string
+	KEV          *bool
+	HasFix       *bool
+	HasVulns     *bool
+	Relationship []string
+	Scopes       []string
+	AssetID      *shared.ID
+	OwnerID      *shared.ID
+	Sort         string
 }
 
-// NewFilter creates a new empty filter.
-func NewFilter() Filter {
-	return Filter{}
+// UsageFilter narrows where-used rows of one package.
+type UsageFilter struct {
+	VersionID    *shared.ID
+	Relationship []string
+	Scopes       []string
 }
 
-func (f Filter) WithTenantID(id shared.ID) Filter {
-	f.TenantID = &id
-	return f
-}
-
-func (f Filter) WithAssetID(id shared.ID) Filter {
-	f.AssetID = &id
-	return f
-}
-
-func (f Filter) WithName(name string) Filter {
-	f.Name = &name
-	return f
-}
-
-func (f Filter) WithEcosystems(ecosystems ...Ecosystem) Filter {
-	f.Ecosystems = ecosystems
-	return f
-}
-
-func (f Filter) WithStatuses(statuses ...Status) Filter {
-	f.Statuses = statuses
-	return f
-}
-
-func (f Filter) WithDependencyTypes(types ...DependencyType) Filter {
-	f.DependencyTypes = types
-	return f
-}
-
-func (f Filter) WithHasVulnerabilities(has bool) Filter {
-	f.HasVulnerabilities = &has
-	return f
-}
-
-func (f Filter) WithLicenses(licenses ...string) Filter {
-	f.Licenses = licenses
-	return f
-}
-
-// SBOMEntry is one component of a software bill of materials export.
-type SBOMEntry struct {
-	ID        shared.ID
-	Name      string
-	Version   string
-	Ecosystem Ecosystem
-	PURL      string
-	// Licenses are the license strings the tenant's assets report for it.
-	Licenses           []string
-	VulnerabilityCount int
+// Repository reads the inventory. Writes go through software.PackageWriter.
+type Repository interface {
+	ListPackages(ctx context.Context, f Filter, page pagination.Pagination) (pagination.Result[Package], error)
+	PackageFacets(ctx context.Context, f Filter) (Facets, error)
+	Summary(ctx context.Context, f Filter) (Summary, error)
+	// GetPackage returns shared.ErrNotFound unless the package has a link in
+	// the caller's scope.
+	GetPackage(ctx context.Context, tenantID, productID shared.ID, scope *shared.DataScope) (*PackageDetail, error)
+	ListVersions(ctx context.Context, tenantID, productID shared.ID, scope *shared.DataScope) ([]Version, error)
+	ListUsages(ctx context.Context, tenantID, productID shared.ID, f UsageFilter, scope *shared.DataScope,
+		page pagination.Pagination) (pagination.Result[Usage], error)
+	ListVulnerabilities(ctx context.Context, tenantID, productID shared.ID, includeResolved bool,
+		scope *shared.DataScope, page pagination.Pagination) (pagination.Result[Vulnerability], error)
+	// ListAssetPackages lists one asset's package links (the caller checks
+	// the asset is in scope).
+	ListAssetPackages(ctx context.Context, tenantID, assetID shared.ID, page pagination.Pagination) (pagination.Result[Usage], error)
+	DependencyPaths(ctx context.Context, tenantID, assetID, versionID shared.ID, limit int) ([]Path, error)
+	DependencyGraph(ctx context.Context, tenantID, assetID shared.ID, focus *shared.ID, depth, limit int) (*Graph, error)
+	ListSBOMEntries(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope, limit int) ([]SBOMEntry, error)
+	// GetFindingComponent returns the version a finding names (global or
+	// the tenant's own) and, when assetID is set, how that asset uses it.
+	GetFindingComponent(ctx context.Context, tenantID, versionID shared.ID, assetID *shared.ID) (*FindingComponent, error)
 }
