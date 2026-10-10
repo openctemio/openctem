@@ -51,3 +51,11 @@ export type { AssetRename } from './use-asset-identity'
 
 // Asset attribution (RFC-036): state, evidence and a person's decision
 export { useAssetAttribution, useDecideAttribution } from './use-asset-attribution'
+
+// Where asset values come from (RFC-069)
+export {
+  useAttributeSources,
+  useAttributeLock,
+  useReconciliationSettings,
+  saveReconciliationSettings,
+} from './use-attribute-sources'

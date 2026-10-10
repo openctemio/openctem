@@ -1001,3 +1001,13 @@ organization requires N approvals"; the widening warning adapts.
 | T2 duration | A3: `t2_max_duration`, owner-only `PUT /scope/settings/intrusive`, server-side bound, entry dialogs |
 | Attestation | A4: attestation timestamps, `POST /attest`, the attestation and downgrade job |
 | Platform policy | A5: platform default and per-organization override, console section, effective policy on the tenant settings |
+
+**Job signer ledger** (RFC-040 §5.6). Every write above goes through the
+scope ledger hook (`scope.Service.commitEntry`): an owner's own approval is
+sent with the approval marked `self_approved` before it is saved (a refusal
+saves nothing); a confirmation (`/attest`) changes nothing the ledger holds;
+the T2 → T1 downgrade is a narrowing, saved with its conditional update and
+then sent; every widening carries `platform_policy` (the A5 mode in force).
+The reminder and attestation-request timestamps are the only scope writes
+outside the hook: they change nothing that authorizes probes (listed in the
+ledger guard with that reason).

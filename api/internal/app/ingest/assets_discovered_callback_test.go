@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/openctemio/ctis"
 
@@ -288,7 +289,7 @@ func TestExposureTransitions_RecordedOnRescan(t *testing.T) {
 	var recovered []shared.ID
 	var exposed []*asset.Asset
 
-	changes := p.mergeTrackingExposure(tenant, a, &ctis.Asset{IsInternetAccessible: true}, nil, &recovered, &exposed)
+	changes := p.mergeTrackingExposure(tenant, a, &ctis.Asset{IsInternetAccessible: true}, nil, time.Time{}, &recovered, &exposed)
 	if len(exposed) != 1 || exposed[0] != a {
 		t.Fatalf("asset that became internet-facing not reported (got %d)", len(exposed))
 	}
@@ -307,7 +308,7 @@ func TestExposureTransitions_RecordedOnRescan(t *testing.T) {
 	}
 
 	// Same signal again: no transition, no rows.
-	if again := p.mergeTrackingExposure(tenant, a, &ctis.Asset{IsInternetAccessible: true}, nil, &recovered, &exposed); len(again) != 0 {
+	if again := p.mergeTrackingExposure(tenant, a, &ctis.Asset{IsInternetAccessible: true}, nil, time.Time{}, &recovered, &exposed); len(again) != 0 {
 		t.Fatalf("unchanged exposure produced %d rows", len(again))
 	}
 	if len(exposed) != 1 {

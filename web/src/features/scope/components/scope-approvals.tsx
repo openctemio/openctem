@@ -202,9 +202,11 @@ export function ScopeApprovals() {
           icon={CheckCheck}
           title="No changes wait for approval"
           description={
-            n > 0
-              ? `Changes that widen scope need ${n} ${n === 1 ? 'approval' : 'approvals'} (Scope policy).`
-              : 'Changes that widen scope take effect at once in your organization (Scope policy).'
+            settings?.approval_policy?.mode === 'disabled'
+              ? 'Approvals are disabled by your platform administrator: changes that widen scope take effect at once.'
+              : n > 0
+                ? `Your organization requires ${n} ${n === 1 ? 'approval' : 'approvals'} for changes that widen scope (Scope policy).`
+                : 'Changes that widen scope take effect at once in your organization (Scope policy).'
           }
         />
       </div>
