@@ -235,3 +235,26 @@ export interface ProgramChange {
   program: Program
   preview: ProgramPreview
 }
+
+/** A notification integration attached to a program (RFC-065 §15.4). */
+export interface ProgramChannel {
+  integration_id: string
+  name: string
+  provider: string
+  created_by?: ProgramActorRef
+}
+
+/** Where events about the program private assets go. */
+export interface ProgramDelivery {
+  program_id: string
+  /** An owner let them reach every organization-wide integration. */
+  org_channels: boolean
+  channels: ProgramChannel[]
+}
+
+/** A notification integration of the organization that can be attached. */
+export interface NotificationChannelOption {
+  id: string
+  name: string
+  provider: string
+}
