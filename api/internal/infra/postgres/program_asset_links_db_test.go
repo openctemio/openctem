@@ -67,7 +67,8 @@ func TestProgramAssetLinks(t *testing.T) {
 	if _, _, err := programs.AssignProgramAssets(ctx, tenant, p.ID); err != nil {
 		t.Fatalf("assign: %v", err)
 	}
-	flags, err := programs.ProgramAssetFlags(ctx, tenant.String(), []string{ownOld.String(), newProg.String(), ownCovered.String(), otherTenant.String()})
+	flagReader := NewProgramAssetFlagRepository(pdb)
+	flags, err := flagReader.ProgramAssetFlags(ctx, tenant.String(), []string{ownOld.String(), newProg.String(), ownCovered.String(), otherTenant.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +141,7 @@ func TestProgramAssetLinks(t *testing.T) {
 	if _, _, err := programs.AssignProgramAssets(ctx, tenant, p.ID); err != nil {
 		t.Fatal(err)
 	}
-	if flags, _ = programs.ProgramAssetFlags(ctx, tenant.String(), []string{newProg.String()}); len(flags) != 0 {
+	if flags, _ = flagReader.ProgramAssetFlags(ctx, tenant.String(), []string{newProg.String()}); len(flags) != 0 {
 		t.Fatalf("flags after the program ended = %v", flags)
 	}
 }

@@ -117,9 +117,18 @@ func recomputeProgramAssetFlags(ctx context.Context, tx *sql.Tx, tenantID string
 	return nil
 }
 
+// ProgramAssetFlagRepository reads the derived program fields of assets; it
+// writes nothing (no scope access).
+type ProgramAssetFlagRepository struct{ db *DB }
+
+// NewProgramAssetFlagRepository creates the reader.
+func NewProgramAssetFlagRepository(db *DB) *ProgramAssetFlagRepository {
+	return &ProgramAssetFlagRepository{db: db}
+}
+
 // ProgramAssetFlags reads the derived program fields of assets of one
 // tenant (only the assets that have any).
-func (r *BountyProgramRepository) ProgramAssetFlags(ctx context.Context, tenantID string, assetIDs []string) (map[string]bountyprogram.AssetFlags, error) {
+func (r *ProgramAssetFlagRepository) ProgramAssetFlags(ctx context.Context, tenantID string, assetIDs []string) (map[string]bountyprogram.AssetFlags, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id::text, system_tags, program_only FROM assets
 		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND (system_tags <> '{}' OR program_only)`,
