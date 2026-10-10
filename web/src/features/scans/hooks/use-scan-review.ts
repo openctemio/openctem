@@ -37,6 +37,7 @@ export function useScanReview(
   workflowRequest: WorkflowPreviewRequest,
   enabled: boolean
 ): ScanReview {
+  const { t } = useTranslation()
   const targets = directTargets(form)
   const joined = useDebounce(targets.join('\n'), SUMMARY_SCOPE_DEBOUNCE_MS)
   const list = enabled && joined ? joined.split('\n') : []
@@ -48,15 +49,14 @@ export function useScanReview(
     scanner_name: form.mode === 'single' ? form.scannerName || undefined : undefined,
   })
   const workflow = useWorkflowPreview(workflowRequest, enabled && form.mode === 'workflow')
-  const { t } = useTranslation()
 
   return useMemo(() => {
     const blockers: string[] = []
     const warnings: string[] = []
     for (const problem of [
-      basicInfoError(form),
-      targetsError(form),
-      scheduleError(form, { requireFuture: true }),
+      basicInfoError(form, t),
+      targetsError(form, t),
+      scheduleError(form, { requireFuture: true }, t),
     ]) {
       if (problem) blockers.push(problem)
     }
@@ -64,7 +64,11 @@ export function useScanReview(
     if (refused.length > 0) {
       // Create refuses the whole request when a direct target is refused.
       blockers.push(
-        `${refused.length} ${refused.length === 1 ? 'target' : 'targets'} may not be scanned: remove ${refused.length === 1 ? 'it' : 'them'} or fix the scope first`
+        t(
+          refused.length === 1 ? 'scans.review.blockedOne' : 'scans.review.blockedMany',
+          undefined,
+          { count: refused.length }
+        )
       )
     }
     const wf = workflow.data
@@ -74,7 +78,9 @@ export function useScanReview(
         .filter((m): m is string => !!m)
       const why = reasons[0] ?? wf.targets?.error?.message
       blockers.push(
-        why ? `The workflow would not start: ${why}` : 'The workflow would not start as it is'
+        why
+          ? t('scans.review.workflowWouldNotStartWhy', undefined, { why })
+          : t('scans.review.workflowWouldNotStart')
       )
     }
     const windows = wf?.targets?.windows
@@ -98,14 +104,10 @@ export function useScanReview(
       )
     }
     if (form.targets.assetGroupIds.length > 0) {
-      warnings.push(
-        'Asset group members are resolved when the scan runs; members outside your scope are skipped then.'
-      )
+      warnings.push(t('scans.review.groupsResolved'))
     }
     if (scope.error) {
-      warnings.push(
-        'The scope check is not available right now; the scan is still checked when it starts.'
-      )
+      warnings.push(t('scans.scope.unavailable'))
     }
     return { blockers, warnings, refused, scope, workflow, targets }
   }, [form, scope, workflow, targets, t])
