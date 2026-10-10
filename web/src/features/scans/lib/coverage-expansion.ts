@@ -3,18 +3,17 @@
  * reaches.
  *
  * - `host`: the names as typed.
- * - `subdomains`: plus the names below each typed domain that are already in
- *   the inventory.
+ * - `subdomains`: each typed domain becomes `*.domain`, which the API
+ *   resolves at the start of every run to the domain and every name the
+ *   inventory then holds below it (RFC-068): names found later are scanned
+ *   by the next run.
  * - `subdomains_ips`: plus the addresses those names resolve to, as the
- *   inventory recorded them.
+ *   inventory recorded them now (a fixed list).
  *
- * The expansion only proposes targets; the scope gate decides each one like
- * any other (`POST /scope/check` in the preview, the dispatch gate on
- * trigger). A name grant never becomes an IP grant (RFC-054 §4.3): an
- * address needs its own IP scope entry, so it usually shows as refused with
- * "add to scope" until one exists. Active scanners refuse wildcard patterns
- * (`WILDCARD_TARGET`), which is why subdomains come from the inventory and
- * not as `*.x`.
+ * The scope gate decides every target like any other (`POST /scope/check` in
+ * the preview, the dispatch gate at each run). A name grant never becomes an
+ * IP grant (RFC-054 §4.3): an address needs its own IP scope entry, so it
+ * usually shows as refused with "add to scope" until one exists.
  */
 
 export type CoverageLevel = 'host' | 'subdomains' | 'subdomains_ips'
@@ -24,12 +23,12 @@ export const COVERAGE_LEVELS: { id: CoverageLevel; label: string; hint: string }
   {
     id: 'subdomains',
     label: 'Host and its subdomains',
-    hint: 'Adds the names below each domain that are already in your inventory.',
+    hint: 'Scans each domain as *.domain: every run takes the subdomains your inventory holds at that time, including ones found later.',
   },
   {
     id: 'subdomains_ips',
     label: 'Host, subdomains and their IPs',
-    hint: 'Also adds the addresses those names resolved to. Each address needs its own scope entry.',
+    hint: 'Also adds the addresses those names resolve to today. Each address needs its own scope entry.',
   },
 ]
 
@@ -88,15 +87,17 @@ export interface InventoryName {
 }
 
 /**
- * The targets a coverage level adds to `typed`, from inventory names found
- * under each root (already fetched). Never repeats a typed target; capped.
+ * The addresses the `subdomains_ips` level adds to `typed`, from inventory
+ * names found under each root (already fetched). Subdomains themselves are
+ * not listed: the `*.domain` target covers them at every run. Never repeats a
+ * typed target; capped.
  */
 export function expandTargets(
   typed: string[],
   level: CoverageLevel,
   inventory: InventoryName[]
 ): string[] {
-  if (level === 'host') return []
+  if (level !== 'subdomains_ips') return []
   const roots = domainRoots(typed)
   const seen = new Set(typed.map((t) => t.trim().toLowerCase()))
   const out: string[] = []
@@ -107,9 +108,6 @@ export function expandTargets(
     out.push(v.trim())
   }
   const under = inventory.filter((a) => roots.some((r) => isBelow(a.name, r) || a.name === r))
-  for (const a of under) if (roots.some((r) => isBelow(a.name, r))) add(a.name.toLowerCase())
-  if (level === 'subdomains_ips') {
-    for (const a of under) for (const ip of resolvedIps(a.properties)) add(ip)
-  }
+  for (const a of under) for (const ip of resolvedIps(a.properties)) add(ip)
   return out
 }

@@ -35,6 +35,8 @@ type Service struct {
 	webBaseURL string
 	// auditor records the system decisions (attestation.go).
 	auditor SystemAuditor
+	// approvalPolicy is the platform approval policy (entries.go).
+	approvalPolicy ApprovalPolicySource
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
 	// programExcl lists program exclusions for the authority check (RFC-065).
