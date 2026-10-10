@@ -3,25 +3,24 @@ package tenant
 import "github.com/openctemio/openctem/api/pkg/domain/asset"
 
 // AssetReconciliationSettings is the organization's rule for which source
-// decides an asset attribute (RFC-069). Empty: the defaults
+// decides an asset attribute (RFC-069 §12). Empty: the defaults
 // (asset.DefaultReconciliationPolicy).
 type AssetReconciliationSettings struct {
-	// Precedence lists, per attribute (criticality, owner_ref, exposure,
-	// data_classification), the source kinds trusted for it, most trusted
-	// first: integration, import, scan. A kind left out is not trusted for
-	// the attribute. A person's edit (a lock) always wins and is not listed.
-	Precedence map[string][]string `json:"precedence,omitempty"`
-	// TTLDays is, per source kind, how many days a value counts after the
-	// source last reported it; 0 = never stale.
-	TTLDays map[string]int `json:"ttl_days,omitempty"`
+	// Default is the ranked list of sources (kind, or kind:name) every
+	// attribute class without its own list uses, most trusted first. A
+	// person's lock always wins and is not listed.
+	Default []asset.SourceRuleSetting `json:"default,omitempty"`
+	// Classes are the attribute classes with their own list (identity,
+	// network, software, ownership, cloud_tags, lifecycle).
+	Classes map[string][]asset.SourceRuleSetting `json:"classes,omitempty"`
 }
 
 // Policy returns the reconciliation policy these settings describe.
 func (s AssetReconciliationSettings) Policy() (asset.ReconciliationPolicy, error) {
-	return asset.PolicyFromSettings(s.Precedence, s.TTLDays)
+	return asset.PolicyFromSettings(s.Default, s.Classes)
 }
 
-// Validate checks the attributes, kinds and TTLs.
+// Validate checks the classes, sources and TTLs.
 func (s *AssetReconciliationSettings) Validate() error {
 	_, err := s.Policy()
 	return err

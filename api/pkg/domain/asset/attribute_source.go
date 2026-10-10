@@ -45,17 +45,21 @@ const (
 	SourceKindImport SourceKind = "import"
 	// SourceKindScan is a sensor, CI run or platform scanner.
 	SourceKindScan SourceKind = "scan"
+	// SourceKindFeed is a passive or published feed the organization
+	// subscribed to (a program feed, passive DNS): signed bundles applied in
+	// sequence, never an active check of the asset.
+	SourceKindFeed SourceKind = "feed"
 )
 
 // AllSourceKinds lists the kinds in their default order of trust.
 func AllSourceKinds() []SourceKind {
-	return []SourceKind{SourceKindManual, SourceKindIntegration, SourceKindImport, SourceKindScan}
+	return []SourceKind{SourceKindManual, SourceKindIntegration, SourceKindImport, SourceKindScan, SourceKindFeed}
 }
 
 // IsValid reports whether k is a known kind.
 func (k SourceKind) IsValid() bool {
 	switch k {
-	case SourceKindManual, SourceKindIntegration, SourceKindImport, SourceKindScan:
+	case SourceKindManual, SourceKindIntegration, SourceKindImport, SourceKindScan, SourceKindFeed:
 		return true
 	}
 	return false
@@ -238,70 +242,6 @@ func ClassifyObservation(stored *AttributeObservation, in AttributeObservation, 
 // IsLock reports whether the observation is a person's lock.
 func (o AttributeObservation) IsLock() bool { return o.Kind == SourceKindManual }
 
-// ReconciliationPolicy is the tenant's rule for picking a value.
-type ReconciliationPolicy struct {
-	// Precedence lists, per attribute, the kinds trusted for it, most
-	// trusted first. A kind absent from the list is ignored for the
-	// attribute. Manual is always trusted (it is a lock).
-	Precedence map[TrackedAttribute][]SourceKind
-	// TTL is how long a kind's observation counts after the source saw it.
-	// Zero or absent: it never goes stale.
-	TTL map[SourceKind]time.Duration
-}
-
-// DefaultReconciliationPolicy is the policy of a tenant that set none:
-// business attributes come from people, then integrations, then imports, and
-// scanners are not trusted for them; exposure trusts a scan that reached the
-// asset over an inventory's claim.
-func DefaultReconciliationPolicy() ReconciliationPolicy {
-	business := []SourceKind{SourceKindManual, SourceKindIntegration, SourceKindImport}
-	return ReconciliationPolicy{
-		Precedence: map[TrackedAttribute][]SourceKind{
-			AttrCriticality:        business,
-			AttrOwnerRef:           business,
-			AttrDataClassification: business,
-			AttrExposure:           {SourceKindManual, SourceKindScan, SourceKindIntegration, SourceKindImport},
-		},
-		TTL: map[SourceKind]time.Duration{
-			SourceKindIntegration: 30 * 24 * time.Hour,
-			SourceKindImport:      90 * 24 * time.Hour,
-			SourceKindScan:        30 * 24 * time.Hour,
-		},
-	}
-}
-
-// rank is the position of kind in the attribute's precedence, or -1 when the
-// kind is not trusted for it.
-func (p ReconciliationPolicy) rank(attr TrackedAttribute, kind SourceKind) int {
-	if kind == SourceKindManual {
-		return 0
-	}
-	for i, k := range p.Precedence[attr] {
-		if k == kind {
-			return i
-		}
-	}
-	return -1
-}
-
-// Trusts reports whether kind may decide attr.
-func (p ReconciliationPolicy) Trusts(attr TrackedAttribute, kind SourceKind) bool {
-	return p.rank(attr, kind) >= 0
-}
-
-// Stale reports whether o is past its kind's TTL at now (a lock never is).
-func (p ReconciliationPolicy) Stale(o AttributeObservation, now time.Time) bool {
-	return p.stale(o, now)
-}
-
-func (p ReconciliationPolicy) stale(o AttributeObservation, now time.Time) bool {
-	if o.IsLock() {
-		return false
-	}
-	ttl := p.TTL[o.Kind]
-	return ttl > 0 && now.Sub(o.ObservedAt) > ttl
-}
-
 // CandidateStatus says why a source's value does or does not decide.
 type CandidateStatus string
 
@@ -350,7 +290,7 @@ func ResolveFrom(attr TrackedAttribute, obs []AttributeObservation, p Reconcilia
 			continue
 		}
 		switch {
-		case p.rank(attr, o.Kind) < 0:
+		case p.rank(attr, o) < 0:
 			res.Candidates = append(res.Candidates, Candidate{o, CandidateUntrusted})
 		case p.stale(o, now):
 			res.Candidates = append(res.Candidates, Candidate{o, CandidateStale})
@@ -360,7 +300,7 @@ func ResolveFrom(attr TrackedAttribute, obs []AttributeObservation, p Reconcilia
 	}
 	sort.SliceStable(eligible, func(i, j int) bool {
 		a, b := eligible[i], eligible[j]
-		if ra, rb := p.rank(attr, a.Kind), p.rank(attr, b.Kind); ra != rb {
+		if ra, rb := p.rank(attr, a), p.rank(attr, b); ra != rb {
 			return ra < rb
 		}
 		if !a.ObservedAt.Equal(b.ObservedAt) {
@@ -397,11 +337,11 @@ func keepIncumbent(attr TrackedAttribute, eligible []AttributeObservation, p Rec
 	if len(eligible) < 2 {
 		return false
 	}
-	top := p.rank(attr, eligible[0].Kind)
+	top := p.rank(attr, eligible[0])
 	values := map[string]bool{}
 	incumbent := -1
 	for i, o := range eligible {
-		if p.rank(attr, o.Kind) != top {
+		if p.rank(attr, o) != top {
 			break
 		}
 		values[o.Value] = true
@@ -482,6 +422,11 @@ type AttributeSourceRepository interface {
 	Apply(ctx context.Context, tenantID shared.ID, in AttributeApply) (ApplyResult, error)
 	// ListForAsset returns every observation of one asset of the tenant.
 	ListForAsset(ctx context.Context, tenantID, assetID shared.ID) ([]AttributeObservation, error)
+	// SourceSummaries lists the sources that reported the tenant's assets.
+	SourceSummaries(ctx context.Context, tenantID shared.ID) ([]SourceSummary, error)
+	// Snapshot reads the current values and observations of the tenant's
+	// assets among ids, without locking.
+	Snapshot(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]AttributeSnapshot, error)
 }
 
 // StateChangeFor maps a reconciled change to its state-history type, or ""
@@ -509,49 +454,8 @@ func ChangeSourceFor(kind SourceKind) ChangeSource {
 		return ChangeSourceIntegration
 	case SourceKindImport:
 		return ChangeSourceAPI
+	case SourceKindFeed:
+		return ChangeSourceIntegration
 	}
 	return ChangeSourceScan
-}
-
-// MaxSourceTTLDays bounds a configured TTL.
-const MaxSourceTTLDays = 3650
-
-// PolicyFromSettings builds the policy of a tenant from its settings
-// (attribute -> kinds, most trusted first; kind -> TTL days, 0 = never
-// stale). Attributes and kinds the settings leave out keep the defaults.
-// Manual is implied first and may not be listed; an unknown attribute or
-// kind, a repeated kind or a TTL out of range is a validation error.
-func PolicyFromSettings(precedence map[string][]string, ttlDays map[string]int) (ReconciliationPolicy, error) {
-	p := DefaultReconciliationPolicy()
-	for attrName, kinds := range precedence {
-		attr := TrackedAttribute(attrName)
-		if !attr.IsValid() {
-			return p, fmt.Errorf("%w: unknown attribute %q", shared.ErrValidation, attrName)
-		}
-		list := []SourceKind{SourceKindManual}
-		seen := map[SourceKind]bool{}
-		for _, k := range kinds {
-			kind := SourceKind(k)
-			if !kind.IsValid() || kind == SourceKindManual {
-				return p, fmt.Errorf("%w: %s: source %q is not one of integration, import, scan", shared.ErrValidation, attrName, k)
-			}
-			if seen[kind] {
-				return p, fmt.Errorf("%w: %s: source %q listed twice", shared.ErrValidation, attrName, k)
-			}
-			seen[kind] = true
-			list = append(list, kind)
-		}
-		p.Precedence[attr] = list
-	}
-	for kindName, days := range ttlDays {
-		kind := SourceKind(kindName)
-		if !kind.IsValid() || kind == SourceKindManual {
-			return p, fmt.Errorf("%w: ttl: source %q is not one of integration, import, scan", shared.ErrValidation, kindName)
-		}
-		if days < 0 || days > MaxSourceTTLDays {
-			return p, fmt.Errorf("%w: ttl: %s must be 0-%d days", shared.ErrValidation, kindName, MaxSourceTTLDays)
-		}
-		p.TTL[kind] = time.Duration(days) * 24 * time.Hour
-	}
-	return p, nil
 }
