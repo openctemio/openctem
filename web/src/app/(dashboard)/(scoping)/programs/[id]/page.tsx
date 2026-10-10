@@ -163,14 +163,20 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
       </PageHeader>
 
       <div className="space-y-6">
-        {p.status === 'paused' && canWrite && (
+        {(p.status === 'paused' || p.status === 'pending_attestation') && canWrite && (
           <section className="space-y-3 rounded-md border p-4">
             <p className="text-sm">
-              {t(
-                'programs.reactivateHint',
-                'Suspended: its entries authorize nothing. Reactivating accepts the program terms again (terms {hash}).',
-                { hash: shortHash(p.terms_sha256) }
-              )}
+              {p.status === 'pending_attestation'
+                ? t(
+                    'programs.acceptHint',
+                    'Only passive monitoring runs until someone accepts this program rules and scope (terms {hash}); its entries authorize no active scan until then.',
+                    { hash: shortHash(p.terms_sha256) }
+                  )
+                : t(
+                    'programs.reactivateHint',
+                    'Suspended: its entries authorize nothing. Reactivating accepts the program terms again (terms {hash}).',
+                    { hash: shortHash(p.terms_sha256) }
+                  )}
             </p>
             <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={reattest} onCheckedChange={(c) => setReattest(c === true)} />
@@ -185,7 +191,9 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                 )
               }
             >
-              {t('programs.reactivate', 'Reactivate')}
+              {p.status === 'pending_attestation'
+                ? t('programs.acceptStart', 'Accept and start testing')
+                : t('programs.reactivate', 'Reactivate')}
             </Button>
           </section>
         )}
