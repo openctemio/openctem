@@ -144,7 +144,9 @@ export const SCOPE_ERROR_TEXT = {
     'These targets need a verified domain of your organization for this kind of scan. Verify the domain, or run the scan on your own sensor.',
   TARGET_OUT_OF_SCOPE: 'Some targets may not be scanned. See each target for the reason.',
   WILDCARD_TARGET:
-    'A wildcard names a set of hosts, not a host. Choose the hosts to scan, or run a discovery scan on the domain.',
+    'This wildcard cannot be a scan target: write *.example.com for a domain your organization may scan (not a public suffix or a shared provider domain), in the targets rather than the scanner settings.',
+  TARGET_SELECTOR_UNAVAILABLE:
+    'The *.domain or address range targets could not be read from the inventory, so the run was not started. Try again.',
 } as const satisfies Record<string, string>
 
 export type ScopeErrorCode = keyof typeof SCOPE_ERROR_TEXT

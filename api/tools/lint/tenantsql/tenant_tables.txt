@@ -5,6 +5,7 @@ api_keys
 api_spec_operations
 api_specs
 asset_access_grants
+asset_attribute_sources
 asset_attributions
 asset_components
 asset_dedup_review
