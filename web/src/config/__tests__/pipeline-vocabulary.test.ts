@@ -60,10 +60,6 @@ const ALLOWED: { path: RegExp; why: string }[] = [
   },
   { path: /^src\/lib\/i18n\/dictionaries\//, why: 'CI/CD integration copy' },
   { path: /^src\/app\/\(dashboard\)\/settings\/api-keys\//, why: 'example key name "CI pipeline"' },
-  {
-    path: /^src\/app\/\(dashboard\)\/\(discovery\)\/components\/sbom-export\//,
-    why: 'CI/CD pipelines consume SBOMs',
-  },
   { path: /^src\/lib\/sanitize-markdown/, why: 'the markdown rendering pipeline' },
   {
     path: /^src\/components\/ui\/markdown-preview-xss\.test\.tsx$/,

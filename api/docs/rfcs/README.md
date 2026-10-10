@@ -85,7 +85,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-067](RFC-067-scan-window-policies.md) | Scan window policies | Accepted (delegated, 2026-10-09; decisions W1–W14 adopted as recommended, §11). |
 | [RFC-068](RFC-068-dynamic-scan-targets.md) | Dynamic scan targets | Implemented (P0; decisions T1–T8 adopted 2026-10-09, §10) |
 | [RFC-069](RFC-069-asset-attribute-reconciliation.md) | Asset attribute reconciliation | Accepted (2026-10-09, delegated; D1–D3 adopted as recommended, §10). |
-| [RFC-070](RFC-070-software-components-inventory.md) | Software components inventory | Accepted (2026-10-10; decisions C1–C10 adopted as recommended, §14; the owner may revise any of them). |
+| [RFC-070](RFC-070-software-components-inventory.md) | Software components inventory | Accepted (2026-10-10; decisions C1–C19 adopted as recommended, §14; the owner may revise any of them). |
 | [RFC-072](RFC-072-chunked-feed-transfer.md) | Chunked feed transfer | Accepted (2026-10-10, delegated; D1–D8 adopted as recommended, §12). |
 | [RFC-073](RFC-073-scan-approval-governance.md) | Scan approval governance (approve scans, not scope entries) | Accepted (owner decision 2026-10-10); P0 in progress |
 <!-- END RFC INDEX -->

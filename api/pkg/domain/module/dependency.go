@@ -43,7 +43,6 @@ type Dependency struct {
 	Reason   string
 }
 
-
 // ToggleBlocker describes a module that cannot be disabled because
 // another still-enabled module hard-depends on it.
 type ToggleBlocker struct {
