@@ -182,7 +182,7 @@ func (h *BountyProgramHandler) SetOrgChannels(w http.ResponseWriter, r *http.Req
 	if !h.decode(w, r, &req) {
 		return
 	}
-	p, reason, err := h.svc.SetOrgChannels(r.Context(), tenantID, actor, id, req.Enabled, req.Reason)
+	p, reason, err := h.svc.ChangeOrgChannels(r.Context(), tenantID, actor, id, req.Enabled, req.Reason)
 	if err != nil {
 		h.writeError(w, err)
 		return
