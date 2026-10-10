@@ -1186,5 +1186,10 @@
   "programs.suggestions.confirm": "Confirm selected targets",
   "programs.suggestions.done": "Targets confirmed: accept the terms again to test them",
   "programs.catalog.countsSuggested": "{in} in scope, {suggested} suggested, {out} out of scope; from {source}, {date}",
-  "programs.catalog.platformNotice": "Listed by {platform}: the data comes from that platform and stays subject to its terms."
+  "programs.catalog.platformNotice": "Listed by {platform}: the data comes from that platform and stays subject to its terms.",
+  "assets.programTarget.badge": "Program target",
+  "assets.programTarget.title": "Listed by a bug-bounty program. Tags from programs are set by the platform and cannot be edited.",
+  "assets.programTarget.unattested": "terms not accepted",
+  "assets.programTarget.programOnly": "not in your own scope",
+  "assets.programTarget.field": "Bug-bounty program"
 }

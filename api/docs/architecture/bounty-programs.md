@@ -153,6 +153,12 @@ POST /programs/{id}/reactivate (step-up, terms hash) ──► entries in effect
 Before acceptance only passive work runs: the active-probe gate finds no
 active entry.
 
+Program assets: `asset_program_links` records which program lists or covers
+an asset; `assets.system_tags` and `assets.program_only` are derived from it
+by the assignment pass (`program_asset_links.go`) and never written by a
+request. Dashboards and program metrics leave program-only assets out by
+default; the inventory filters on `program_assets`.
+
 A second stream reads the operator's own unsigned local bundle
 (`PROGRAMFEED_LOCAL_BUNDLE_DIR`, `programfeed.VerifyLocalDir`) only while a
 platform administrator has it enabled (admin console, step-up, audited).
@@ -188,6 +194,7 @@ the run and hold `scope:read` or `programs:read`.
 | `pkg/domain/bountyprogram/scope_file.go` | scope files: platform CSV, Burp scope JSON, CSV with a column mapping |
 | `internal/app/bountyprogram/access.go` | visibility, per-person attestation, hidden program entries |
 | `migrations/001700_private_programs.*` | visibility, terms text, optional link, attestations |
+| `internal/infra/postgres/program_asset_links.go`, `migrations/001730_program_assets.*` | program asset links, system tags, program-only |
 | `pkg/feedsign/` | shared verification of signed feed bundles (DSSE, root, key set) |
 | `pkg/programfeed/` | program feed bundle: verify, read records (`V1` parser) |
 | `internal/app/programfeed/`, `internal/infra/controller/program_feed.go` | importer and reconcile |
