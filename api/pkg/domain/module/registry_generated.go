@@ -104,7 +104,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "PriorityReclassifyController", "PriorityReclassifySweepController", "PriorityAuditRetentionController", "EvidenceRetentionController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController"},
+		Jobs:       []string{"ApprovalExpirationController", "PriorityReclassifyController", "PriorityReclassifySweepController", "PriorityAuditRetentionController", "EvidenceRetentionController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController", "VulnFeedImportController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -114,7 +114,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "scans:read",
-		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "StalledRunRepairController", "CIAlertsController", "CIRetentionController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController"},
+		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIRetentionController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController"},
 	},
 	{
 		ID: ModuleAttackSurface, Slug: "attack-surface", Name: "Attack Surface",

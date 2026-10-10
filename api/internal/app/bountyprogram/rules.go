@@ -2,8 +2,9 @@ package bountyprogram
 
 // The rules a job carries (RFC-065 §12): the programs whose in-effect
 // entries cover the job's targets decide the identification headers, the
-// User-Agent, the rate cap and when testing is allowed. Command delivery
-// asks here for every job before a sensor gets it.
+// User-Agent and the rate cap. Command delivery asks here for every job
+// before a sensor gets it. When testing is allowed (the programs' testing
+// windows) is decided by the scan window hold (RFC-067).
 
 import (
 	"context"
@@ -25,8 +26,7 @@ type noProof struct{}
 func (noProof) VerifiedDomainNames(context.Context, shared.ID) ([]string, error) { return nil, nil }
 
 // JobRules answers the rules a job on targets carries now: nil when no
-// program covers them; bp.ErrOutsideWindow when a covering program does not
-// allow testing now; bp.ErrRulesConflict when the programs' rules cannot be
+// program covers them; bp.ErrRulesConflict when the programs' rules cannot be
 // honored together. Any lookup error is returned (the caller withholds the
 // job: fail closed).
 func (s *Service) JobRules(ctx context.Context, tenantID shared.ID, targets []string, now time.Time) (*bp.JobRules, error) {
@@ -55,9 +55,6 @@ func (s *Service) JobRules(ctx context.Context, tenantID shared.ID, targets []st
 		p, err := s.repo.GetByID(ctx, tenantID, id)
 		if err != nil {
 			return nil, fmt.Errorf("program %s: %w", id, err)
-		}
-		if !p.Rules.TestingOpen(now) {
-			return nil, fmt.Errorf("%w: %s", bp.ErrOutsideWindow, p.Name)
 		}
 		programs = append(programs, p)
 	}

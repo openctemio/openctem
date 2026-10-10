@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
+	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
@@ -372,6 +373,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 	w.ControllerManager.Register(scanTimeout)
 
+	// Scan windows (RFC-067 §6.4): a running job whose window closed gets
+	// its grace, then goes back to the queue for the next opening.
+	if svc.Command != nil && repos.ScanWindowPolicy != nil {
+		w.ControllerManager.Register(controller.NewScanWindowClosingController(
+			svc.Command, repos.ScanWindowPolicy, time.Minute, log.With("controller", "scan-window-closing")))
+	}
+
 	// Stalled run repair (research/62 SG-10): a run whose chained step waits
 	// for a report that failed or expired, or whose plan was saved without
 	// its commands, is advanced again.
@@ -559,6 +567,20 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.ReclassifyQueue,
 		log.With("controller", "threat-intel-refresh"),
 	))
+
+	// Vulnerability bundles (RFC-066 §5.5): verified and imported into the
+	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
+	// platform admin enables the "vulnfeed" source.
+	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
+		im, err := vulnfeed.NewImporter(vulnfeed.Config{
+			RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
+		}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log.With("component", "vulnfeed"))
+		if err != nil {
+			log.Error("vulnerability bundle import disabled", "error", err)
+		} else {
+			w.ControllerManager.Register(controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import")))
+		}
+	}
 
 	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
 	// each organization's findings.

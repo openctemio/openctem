@@ -342,3 +342,27 @@ func TestAssetTimeline_PartitionsAndRetention(t *testing.T) {
 		t.Fatalf("events left = %d, want the recent one", left)
 	}
 }
+
+// A feed (program feed, passive data) is its own source kind: by default it
+// decides network exposure but never ownership or business context.
+func TestAssetTimeline_FeedSourceKind(t *testing.T) {
+	g := newReconcileRig(t)
+	const name = "tl-feed.example.com"
+	now := time.Now().UTC()
+	g.importReport(asset.SourceKindImport, "", now.Add(-time.Hour), withClaims(reconHost(name), "low", "", ""))
+	a := withClaims(reconHost(name), "critical", "", "")
+	a.IsInternetAccessible = true
+	g.importReport(asset.SourceKindFeed, "seq-42", now, a)
+	crit, _, exp, _ := g.attrs(name)
+	if crit != "low" || exp != "public" {
+		t.Fatalf("feed: criticality %s (must stay the import's), exposure %s", crit, exp)
+	}
+	var kind, run string
+	if err := g.r.db.QueryRowContext(context.Background(), `SELECT source_kind, source_run FROM asset_attribute_sources
+		WHERE tenant_id = $1 AND asset_id = $2 AND attribute = 'exposure'`, g.tn.tenant.String(), g.assetID(name)).Scan(&kind, &run); err != nil {
+		t.Fatal(err)
+	}
+	if kind != "feed" || run != "seq-42" {
+		t.Fatalf("recorded %s / %s", kind, run)
+	}
+}

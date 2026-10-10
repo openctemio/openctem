@@ -60,5 +60,6 @@ func registerAssetReconciliationSettingsRoutes(router Router, h *handler.TenantH
 	router.Group("/api/v1/organization/settings/asset-reconciliation", func(r Router) {
 		r.GET("/", h.GetAssetReconciliationSettings, middleware.RequireAdmin())
 		r.PUT("/", h.UpdateAssetReconciliationSettings, middleware.RequireAdmin())
+		r.POST("/preview", h.PreviewAssetReconciliationSettings, middleware.RequireAdmin())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
