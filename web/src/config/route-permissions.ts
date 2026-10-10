@@ -518,10 +518,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.DashboardRead,
     module: Module.CTEMMaturity,
   },
-  '/components/sbom-export': {
-    permission: Permission.ComponentsRead,
-    module: Module.SBOMExport,
-  },
 
   // ========================================
   // Settings - Sensors (Module: sensors)
