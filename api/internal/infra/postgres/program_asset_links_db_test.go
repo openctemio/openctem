@@ -15,7 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// Program assets (migration 001762): links and system tags derived from a
+// Program assets (migration 001792): links and system tags derived from a
 // program's scope, program-only only for assets that came after the program
 // and that no own entry covers, the inventory filter, the default exclusion
 // from dashboard numbers, system tags out of reach of asset updates, and
