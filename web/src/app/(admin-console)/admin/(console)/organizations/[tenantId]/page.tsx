@@ -19,7 +19,7 @@ import { useOrganization } from '@/features/admin-console/api/use-admin-organiza
 import { useAdmin } from '@/features/admin-console/components/admin-console-shell'
 import { OrganizationAuditChainPanel } from '@/features/admin-console/components/organization-audit-chain-panel'
 import { OrganizationPlanPanel } from '@/features/admin-console/components/organization-plan-panel'
-import { OrganizationScopePolicyPanel } from '@/features/admin-console/components/organization-scope-policy-panel'
+import { OrganizationScanPolicyPanel } from '@/features/admin-console/components/organization-scan-policy-panel'
 import { OrganizationUsersSection } from '@/features/admin-console/components/organization-users-section'
 import { SSOEnforcementCard } from '@/features/admin-console/components/sso-enforcement-card'
 import { adminCan } from '@/features/admin-console/types'
@@ -196,7 +196,7 @@ export default function AdminOrganizationPage({
             </TabsContent>
 
             <TabsContent value="scope" className="mt-4">
-              <OrganizationScopePolicyPanel tenantId={org.id} canEdit={canManageSSO} />
+              <OrganizationScanPolicyPanel tenantId={org.id} canEdit={canManageSSO} />
             </TabsContent>
 
             <TabsContent value="activity" className="mt-4">
