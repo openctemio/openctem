@@ -6,6 +6,7 @@
  */
 
 import { AlertTriangle, CheckCircle, Info, XCircle } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -31,17 +32,18 @@ export function AssetCompatibilityWarning({
   className,
   showDetails = true,
 }: AssetCompatibilityWarningProps) {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
+  const toolName = preview.toolName || t('scans.compat.thisTool')
   const status = getCompatibilityStatus(preview.compatibilityPercent)
   // Don't show if fully compatible
   if (status === 'full') {
     return (
       <Alert className={cn('border-success/30 bg-success/5', className)}>
         <CheckCircle className="h-4 w-4 text-success" />
-        <AlertTitle className="text-success">All assets compatible</AlertTitle>
+        <AlertTitle className="text-success">{t('scans.compat.allTitle')}</AlertTitle>
         <AlertDescription className="text-success/80">
-          All {preview.totalAssets} assets in the selected group(s) can be scanned by{' '}
-          {preview.toolName || 'this tool'}.
+          {t('scans.compat.allDesc', undefined, { total: preview.totalAssets, tool: toolName })}
         </AlertDescription>
       </Alert>
     )
@@ -58,28 +60,23 @@ export function AssetCompatibilityWarning({
         className={cn('h-4 w-4', status === 'partial' ? 'text-warning' : 'text-destructive')}
       />
       <AlertTitle className={cn(status === 'partial' ? 'text-warning' : 'text-destructive')}>
-        {status === 'partial' ? 'Some assets incompatible' : 'No compatible assets'}
+        {status === 'partial' ? t('scans.compat.someTitle') : t('scans.compat.noneTitle')}
       </AlertTitle>
       <AlertDescription className="space-y-3">
         <p className={cn(status === 'partial' ? 'text-warning/80' : 'text-destructive/80')}>
-          {status === 'partial' ? (
-            <>
-              {preview.incompatibleAssets} of {preview.totalAssets} assets will be{' '}
-              <strong>skipped</strong> because they are not compatible with{' '}
-              {preview.toolName || 'this tool'}.
-            </>
-          ) : (
-            <>
-              None of the {preview.totalAssets} assets can be scanned by{' '}
-              {preview.toolName || 'this tool'}. Consider selecting a different tool or asset group.
-            </>
-          )}
+          {status === 'partial'
+            ? t('scans.compat.someDesc', undefined, {
+                incompatible: preview.incompatibleAssets,
+                total: preview.totalAssets,
+                tool: toolName,
+              })
+            : t('scans.compat.noneDesc', undefined, { total: preview.totalAssets, tool: toolName })}
         </p>
 
         {/* Progress bar showing compatibility */}
         <div className="space-y-1">
           <div className="flex justify-between text-xs">
-            <span>Compatibility</span>
+            <span>{t('scans.compat.compatibility')}</span>
             <span>{Math.round(preview.compatibilityPercent)}%</span>
           </div>
           <Progress
@@ -99,11 +96,15 @@ export function AssetCompatibilityWarning({
               <TooltipTrigger asChild>
                 <div className="flex items-center gap-1">
                   <CheckCircle className="h-3.5 w-3.5 text-success" />
-                  <span className="text-success">{preview.compatibleAssets} compatible</span>
+                  <span className="text-success">
+                    {t('scans.compat.compatibleCount', undefined, {
+                      count: preview.compatibleAssets,
+                    })}
+                  </span>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Assets that will be scanned</p>
+                <p>{t('scans.compat.willScan')}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -114,12 +115,14 @@ export function AssetCompatibilityWarning({
                 <div className="flex items-center gap-1">
                   <XCircle className="h-3.5 w-3.5 text-destructive" />
                   <span className="text-destructive">
-                    {preview.incompatibleAssets} incompatible
+                    {t('scans.compat.incompatibleCount', undefined, {
+                      count: preview.incompatibleAssets,
+                    })}
                   </span>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Assets that will be skipped</p>
+                <p>{t('scans.compat.willSkip')}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -131,12 +134,14 @@ export function AssetCompatibilityWarning({
                   <div className="flex items-center gap-1">
                     <Info className="h-3.5 w-3.5 text-slate-500" />
                     <span className="text-slate-500">
-                      {preview.unclassifiedAssets} unclassified
+                      {t('scans.compat.unclassifiedCount', undefined, {
+                        count: preview.unclassifiedAssets,
+                      })}
                     </span>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Assets without a type cannot be matched to any scanner</p>
+                  <p>{t('scans.compat.unclassifiedHint')}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -146,7 +151,7 @@ export function AssetCompatibilityWarning({
         {/* Supported targets */}
         {preview.supportedTargets && preview.supportedTargets.length > 0 && (
           <div className="flex flex-wrap items-center gap-1 text-xs">
-            <span className="text-muted-foreground">Supported targets:</span>
+            <span className="text-muted-foreground">{t('scans.compat.supported')}</span>
             {preview.supportedTargets.map((target) => (
               <Badge key={target} variant="outline" className="text-xs">
                 {target}
@@ -163,7 +168,7 @@ export function AssetCompatibilityWarning({
                 <ChevronDown
                   className={cn('me-1 h-3 w-3 transition-transform', isOpen && 'rotate-180')}
                 />
-                {isOpen ? 'Hide' : 'Show'} breakdown by asset type
+                {isOpen ? t('scans.compat.hideBreakdown') : t('scans.compat.showBreakdown')}
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-2">
@@ -173,9 +178,9 @@ export function AssetCompatibilityWarning({
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b text-muted-foreground">
-                      <th className="pb-1 text-start font-medium">Asset type</th>
-                      <th className="pb-1 text-end font-medium">Count</th>
-                      <th className="pb-1 text-end font-medium">Status</th>
+                      <th className="pb-1 text-start font-medium">{t('scans.compat.colType')}</th>
+                      <th className="pb-1 text-end font-medium">{t('scans.compat.colCount')}</th>
+                      <th className="pb-1 text-end font-medium">{t('scans.compat.colStatus')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -192,7 +197,7 @@ export function AssetCompatibilityWarning({
                               variant="outline"
                               className="border-success/30 bg-success/10 text-success"
                             >
-                              Compatible
+                              {t('scans.compat.compatible')}
                             </Badge>
                           ) : (
                             <TooltipProvider>
@@ -202,7 +207,7 @@ export function AssetCompatibilityWarning({
                                     variant="outline"
                                     className="border-destructive/30 bg-destructive/10 text-destructive"
                                   >
-                                    Skipped
+                                    {t('scans.compat.skipped')}
                                   </Badge>
                                 </TooltipTrigger>
                                 {item.reason && (

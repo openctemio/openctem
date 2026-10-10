@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { useSWRConfig } from 'swr'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -69,16 +70,16 @@ import {
 
 /** Run statuses as the API stores them (scanrun.RunStatus). */
 export const RUN_STATUS_FILTERS = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'running', label: 'Running' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'partial', label: 'Partial' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'timeout', label: 'Timed out' },
-  { value: 'canceled', label: 'Canceled' },
+  { value: 'all' },
+  { value: 'running' },
+  { value: 'pending' },
+  { value: 'completed' },
+  { value: 'partial' },
+  { value: 'failed' },
+  { value: 'timeout' },
+  { value: 'canceled' },
   // Refused before anything was dispatched (scope, freeze, no sensor...).
-  { value: 'blocked', label: 'Blocked' },
+  { value: 'blocked' },
 ] as const
 
 type RunStatusFilterValue = (typeof RUN_STATUS_FILTERS)[number]['value']
@@ -87,12 +88,13 @@ type RunKindFilterValue = (typeof RUN_KIND_FILTERS)[number]['value']
 export const RUNS_PAGE_SIZE = DEFAULT_SCAN_PAGE_SIZE
 
 export function ScanRunsTab() {
+  const { t } = useTranslation()
   return (
     <Can
       permission={Permission.ScansRead}
       fallback={
         <p className="mt-5 rounded-md border p-6 text-sm text-muted-foreground">
-          Viewing scan runs needs the &quot;View scans&quot; permission.
+          {t('scans.runs.noPermission')}
         </p>
       }
     >
@@ -102,6 +104,7 @@ export function ScanRunsTab() {
 }
 
 function ScanRunsTable() {
+  const { t } = useTranslation()
   // One list per route (/scans/runs), so plain page / per_page / sort and
   // field-named filters: `status`, and `scan_id` from a scan's "View all runs".
   const list = useListParams({
@@ -187,7 +190,7 @@ function ScanRunsTable() {
     () => [
       {
         id: 'scan',
-        header: 'Scan',
+        header: t('scans.runs.colScan'),
         enableSorting: false,
         cell: ({ row }) => {
           const run = row.original
@@ -195,26 +198,26 @@ function ScanRunsTable() {
           if (run.kind && run.kind !== 'scan' && run.kind !== 'quick') {
             return (
               <div className="space-y-0.5">
-                <span className="font-medium">{runKindLabel(run.kind)}</span>
+                <span className="font-medium">{runKindLabel(run.kind, t)}</span>
                 {findingId && (
                   <Link
                     href={`/findings/${encodeURIComponent(findingId)}`}
                     className="block text-xs text-muted-foreground hover:underline"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    Open finding
+                    {t('scans.runs.openFinding')}
                   </Link>
                 )}
               </div>
             )
           }
           if (!run.scan_id) {
-            return <span className="text-muted-foreground">Scan run</span>
+            return <span className="text-muted-foreground">{t('scans.runs.scanRun')}</span>
           }
           // Named by the server (quick scans and every page included); a run
           // whose scan was deleted keeps its row.
           if (!run.scan_name) {
-            return <span className="text-muted-foreground">Deleted scan</span>
+            return <span className="text-muted-foreground">{t('scans.runs.deletedScan')}</span>
           }
           return (
             <Link
@@ -229,7 +232,7 @@ function ScanRunsTable() {
       },
       {
         accessorKey: 'status',
-        header: 'Status',
+        header: t('scans.runs.colStatus'),
         enableSorting: false,
         cell: ({ row }) => (
           <div className="space-y-0.5">
@@ -237,7 +240,7 @@ function ScanRunsTable() {
             {row.original.error_message && (
               <TruncatedText
                 value={row.original.error_message}
-                label="Run message"
+                label={t('scans.runs.runMessage')}
                 className="max-w-[260px] text-xs text-muted-foreground"
               />
             )}
@@ -246,18 +249,23 @@ function ScanRunsTable() {
       },
       {
         id: 'tasks',
-        header: 'Tasks',
+        header: t('scans.runs.colTasks'),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original
-          const progress = runTaskProgress(r.task_summary)
+          const progress = runTaskProgress(r.task_summary, t)
           if (!progress) {
             // No task summary (nothing dispatched yet, or an older API): steps.
             return (
               <span className="text-sm tabular-nums">
-                {r.completed_steps}/{r.total_steps} steps
+                {t('scans.runs.steps', undefined, {
+                  done: r.completed_steps,
+                  total: r.total_steps,
+                })}
                 {r.failed_steps > 0 && (
-                  <span className="ms-1 text-destructive">({r.failed_steps} failed)</span>
+                  <span className="ms-1 text-destructive">
+                    {t('scans.runs.stepsFailed', undefined, { count: r.failed_steps })}
+                  </span>
                 )}
               </span>
             )
@@ -270,7 +278,7 @@ function ScanRunsTable() {
                   {progress.details.map((d, i) => (
                     <span key={d.key} className={d.key === 'failed' ? 'text-destructive' : ''}>
                       {i > 0 && ' · '}
-                      {d.count} {d.key}
+                      {d.count} {t(`scans.taskState.${d.key}`)}
                     </span>
                   ))}
                 </p>
@@ -282,7 +290,9 @@ function ScanRunsTable() {
       {
         id: 'total_findings',
         accessorKey: 'total_findings',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.runs.colFindings')} />
+        ),
         cell: ({ row }) =>
           row.original.total_findings > 0 ? (
             <span className="tabular-nums">{row.original.total_findings}</span>
@@ -292,7 +302,7 @@ function ScanRunsTable() {
       },
       {
         id: 'duration',
-        header: 'Duration',
+        header: t('scans.runs.colDuration'),
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original
@@ -301,7 +311,7 @@ function ScanRunsTable() {
           if (ms === undefined) {
             return (
               <span className="text-xs text-muted-foreground">
-                {r.status === 'pending' ? 'Not started' : '-'}
+                {r.status === 'pending' ? t('scans.runs.notStarted') : '-'}
               </span>
             )
           }
@@ -309,14 +319,18 @@ function ScanRunsTable() {
           return finished ? (
             <span className="text-sm tabular-nums">{label}</span>
           ) : (
-            <span className="text-sm text-muted-foreground tabular-nums">{label} so far</span>
+            <span className="text-sm text-muted-foreground tabular-nums">
+              {t('scans.runs.soFar', undefined, { duration: label })}
+            </span>
           )
         },
       },
       {
         id: 'started_at',
         accessorKey: 'started_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Started" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.runs.colStarted')} />
+        ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {formatScanDate(row.original.started_at || row.original.created_at)}
@@ -325,60 +339,65 @@ function ScanRunsTable() {
       },
       {
         id: 'trigger',
-        header: 'Triggered by',
+        header: t('scans.runs.colTriggeredBy'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {runTriggeredByLabel(row.original) ?? row.original.trigger_type}
+            {runTriggeredByLabel(row.original, t) ?? row.original.trigger_type}
           </span>
         ),
       },
     ],
-    []
+    [t]
   )
 
   const metrics: MetricStripItem[] = [
     {
       key: 'all',
-      label: 'Runs',
+      label: t('scans.runs.metricRuns'),
       value: counts?.total ?? 0,
       onClick: () => setStatus('all'),
       active: statusFilter === 'all',
     },
     {
       key: 'running',
-      label: 'Running',
+      label: t('scans.runStatus.running'),
       value: counts?.running ?? 0,
       onClick: () => toggleStatus('running'),
       active: statusFilter === 'running',
     },
     {
       key: 'pending',
-      label: 'Pending',
+      label: t('scans.runStatus.pending'),
       value: counts?.pending ?? 0,
       onClick: () => toggleStatus('pending'),
       active: statusFilter === 'pending',
     },
     {
       key: 'completed',
-      label: 'Completed',
+      label: t('scans.runStatus.completed'),
       value: counts?.completed ?? 0,
       onClick: () => toggleStatus('completed'),
       active: statusFilter === 'completed',
     },
     {
       key: 'partial',
-      label: 'Partial',
+      label: t('scans.runStatus.partial'),
       value: counts?.partial ?? 0,
       onClick: () => toggleStatus('partial'),
       active: statusFilter === 'partial',
     },
     // The API counts timed-out runs as failed here; the status filter keeps
     // them apart, so this tile does not filter.
-    { key: 'failed', label: 'Failed or timed out', value: counts?.failed ?? 0, tone: 'danger' },
+    {
+      key: 'failed',
+      label: t('scans.runs.failedOrTimedOut'),
+      value: counts?.failed ?? 0,
+      tone: 'danger',
+    },
     {
       key: 'canceled',
-      label: 'Canceled',
+      label: t('scans.runStatus.canceled'),
       value: counts?.canceled ?? 0,
       onClick: () => toggleStatus('canceled'),
       active: statusFilter === 'canceled',
@@ -388,25 +407,25 @@ function ScanRunsTable() {
   const toolbarStart = (
     <div className="flex flex-wrap items-center gap-2">
       <Select value={statusFilter} onValueChange={(v) => setStatus(v as RunStatusFilterValue)}>
-        <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter runs by status">
+        <SelectTrigger className="h-9 w-auto min-w-36" aria-label={t('scans.runs.filterStatus')}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {RUN_STATUS_FILTERS.map((f) => (
             <SelectItem key={f.value} value={f.value}>
-              {f.label}
+              {t(`scans.runStatus.${f.value}`)}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
       <Select value={kindFilter} onValueChange={(v) => setFilter('kind', v)}>
-        <SelectTrigger className="h-9 w-auto min-w-32" aria-label="Filter runs by kind">
+        <SelectTrigger className="h-9 w-auto min-w-32" aria-label={t('scans.runs.filterKind')}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {RUN_KIND_FILTERS.map((f) => (
             <SelectItem key={f.value} value={f.value}>
-              {f.label}
+              {t(`scans.runKindFilter.${f.value}`)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -417,9 +436,9 @@ function ScanRunsTable() {
           size="sm"
           className="h-9"
           onClick={() => list.setFilter('scan_id', '')}
-          aria-label="Show runs of every scan"
+          aria-label={t('scans.runs.showAllScans')}
         >
-          One scan
+          {t('scans.runs.oneScan')}
           <X className="ms-1.5 h-3.5 w-3.5" aria-hidden />
         </Button>
       )}
@@ -443,12 +462,10 @@ function ScanRunsTable() {
         sort: filters.sort,
       })
       if (exportToCsv(all, RUN_EXPORT_FIELDS, 'scan-runs') && capped) {
-        toast.info(
-          `Exported the first ${RUN_EXPORT_CAP} of ${total} runs. Narrow the filter to export the rest.`
-        )
+        toast.info(t('scans.runs.exportedFirst', undefined, { cap: RUN_EXPORT_CAP, total }))
       }
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not export the runs'))
+      toast.error(getErrorMessage(err, t('scans.runs.exportFailed')))
     } finally {
       setExporting(false)
     }
@@ -468,8 +485,8 @@ function ScanRunsTable() {
       ) : (
         <Download className="h-4 w-4 sm:me-2" />
       )}
-      <span className="hidden sm:inline">Export CSV</span>
-      <span className="sr-only sm:hidden">Export CSV</span>
+      <span className="hidden sm:inline">{t('scans.runs.exportCsv')}</span>
+      <span className="sr-only sm:hidden">{t('scans.runs.exportCsv')}</span>
     </Button>
   )
 
@@ -480,9 +497,9 @@ function ScanRunsTable() {
       <div className="mt-5">
         {error ? (
           <div className="rounded-md border p-6 text-sm">
-            <p className="font-medium">Could not load scan runs.</p>
+            <p className="font-medium">{t('scans.runs.loadFailed')}</p>
             <Button variant="link" className="h-auto p-0" onClick={() => window.location.reload()}>
-              Reload
+              {t('scans.runs.reload')}
             </Button>
           </div>
         ) : (
@@ -504,13 +521,9 @@ function ScanRunsTable() {
             pageSizeOptions={[...SCAN_PAGE_SIZES]}
             sorting={sorting}
             onSortingChange={list.setSorting}
-            paginationNoun="runs"
-            emptyMessage={filtered ? 'No runs match these filters' : 'No scan runs yet'}
-            emptyDescription={
-              filtered
-                ? 'Try another status or kind.'
-                : 'Runs appear here once a scan configuration or quick scan starts.'
-            }
+            paginationNoun={t('scans.runs.noun')}
+            emptyMessage={filtered ? t('scans.runs.emptyFiltered') : t('scans.runs.empty')}
+            emptyDescription={filtered ? t('scans.runs.tryOther') : t('scans.runs.emptyHint')}
           />
         )}
       </div>

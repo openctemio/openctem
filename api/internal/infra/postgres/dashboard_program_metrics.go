@@ -17,6 +17,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // programMetricsMaxDays bounds the window so a hostile ?days= can't turn the
@@ -53,12 +54,13 @@ func (r *DashboardRepository) GetProgramMetrics(ctx context.Context, tenantID sh
 // idx_exposure_events_asset, idx_findings_tenant_asset_status). `detected` is
 // MATERIALIZED so the four stop-signal lookups run once per asset — inlined,
 // Postgres re-evaluated them for every reference to detected_at.
-const mttdInternetFacingQuery = `
+var mttdInternetFacingQuery = `
 	WITH fresh AS (
 		SELECT a.id, a.first_seen,
 			CASE WHEN a.exposure = 'public' THEN a.exposure_changed_at END AS classified_at
 		FROM assets a
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
+			AND (($3::bool AND ` + programVisibleSQL("a.id") + `) OR NOT a.program_only)
 			AND a.status <> 'archived'
 			AND (a.exposure = 'public' OR a.is_internet_accessible = true)
 			AND a.first_seen >= NOW() - make_interval(days => $2::int)
@@ -97,7 +99,7 @@ func (r *DashboardRepository) mttdInternetFacing(ctx context.Context, tenantID s
 		mean, median sql.NullFloat64
 		out          module.DurationMetric
 	)
-	if err := r.db.QueryRowContext(ctx, mttdInternetFacingQuery, tenantID.String(), days).
+	if err := r.db.QueryRowContext(ctx, mttdInternetFacingQuery, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
 		Scan(&mean, &median, &out.SampleSize, &out.Unmeasured); err != nil {
 		return out, fmt.Errorf("program metrics mttd: %w", err)
 	}
@@ -112,7 +114,7 @@ func (r *DashboardRepository) mttdInternetFacing(ctx context.Context, tenantID s
 // Plan: validation_evidence is aggregated per finding under
 // idx_validation_evidence_finding (tenant_id, finding_id, created_at), then
 // joined to findings by primary key.
-const mttrValidatedQuery = `
+var mttrValidatedQuery = `
 	WITH validated AS (
 		SELECT ve.finding_id, MIN(ve.created_at) AS validated_at
 		FROM validation_evidence ve
@@ -122,7 +124,7 @@ const mttrValidatedQuery = `
 	timed AS (
 		SELECT EXTRACT(EPOCH FROM (f.resolved_at - v.validated_at)) / 3600.0 AS hours
 		FROM validated v
-		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only
+		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
 		WHERE f.status = 'resolved'
 			AND f.resolved_at IS NOT NULL
 			AND f.resolved_at >= NOW() - make_interval(days => $2::int)
@@ -140,7 +142,7 @@ func (r *DashboardRepository) mttrValidated(ctx context.Context, tenantID shared
 		mean, median sql.NullFloat64
 		out          module.DurationMetric
 	)
-	if err := r.db.QueryRowContext(ctx, mttrValidatedQuery, tenantID.String(), days).
+	if err := r.db.QueryRowContext(ctx, mttrValidatedQuery, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
 		Scan(&mean, &median, &out.SampleSize); err != nil {
 		return out, fmt.Errorf("program metrics mttr validated: %w", err)
 	}
@@ -161,13 +163,13 @@ func (r *DashboardRepository) mttrValidated(ctx context.Context, tenantID shared
 // idx_finding_activities_tenant_finding. `judged` is MATERIALIZED because the
 // final SELECT reads it through several FILTERed aggregates: inlined, Postgres
 // re-ran the correlated lookups once per aggregate (4x the index probes).
-const ownerAcceptanceQuery = `
+var ownerAcceptanceQuery = `
 	WITH asg AS (
 		SELECT fa.id, fa.finding_id, fa.created_at AS assigned_at,
 			(fa.changes->>'assignee_id')::uuid AS assignee_id,
 			f.sla_deadline, f.resolved_at
 		FROM finding_activities fa
-		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only
+		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
 		WHERE fa.tenant_id = $1
 			AND fa.activity_type = 'assigned'
 			AND fa.created_at >= NOW() - make_interval(days => $2::int)
@@ -215,7 +217,7 @@ const ownerAcceptanceQuery = `
 
 func (r *DashboardRepository) ownerAcceptance(ctx context.Context, tenantID shared.ID, days int) (module.OwnerAcceptanceMetric, error) {
 	var out module.OwnerAcceptanceMetric
-	if err := r.db.QueryRowContext(ctx, ownerAcceptanceQuery, tenantID.String(), days).
+	if err := r.db.QueryRowContext(ctx, ownerAcceptanceQuery, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx), programViewerArg(ctx)).
 		Scan(&out.Accepted, &out.Missed, &out.Pending, &out.Excluded); err != nil {
 		return out, fmt.Errorf("program metrics owner acceptance: %w", err)
 	}
@@ -241,4 +243,22 @@ func nullFloatPtr(v sql.NullFloat64) *float64 {
 	}
 	f := v.Float64
 	return &f
+}
+
+// programVisibleSQL is "assetExpr is not a private program asset hidden
+// from the viewer $4" (RFC-065 §15.3); a NULL viewer (an owner, or an
+// internal call) hides nothing.
+func programVisibleSQL(assetExpr string) string {
+	return "($4::uuid IS NULL OR NOT EXISTS (SELECT 1 FROM assets ph WHERE ph.id = " + assetExpr + " AND " +
+		filterspec.HiddenAssetWhereExpr("$4::uuid", "$1") + "))"
+}
+
+// programViewerArg is the $4 of the program metrics: the viewer from whom
+// private program assets are hidden, or nil.
+func programViewerArg(ctx context.Context) any {
+	v, ok := shared.ProgramViewerOf(ctx)
+	if !ok || v.Owner {
+		return nil
+	}
+	return v.UserID.String()
 }

@@ -478,6 +478,10 @@ export interface Asset {
    * through PATCH /assets/{id}/crown-jewel, never through properties.
    */
   isCrownJewel?: boolean
+  /** Tags the platform derives from bug-bounty program links (read-only). */
+  systemTags?: string[]
+  /** Came with a bug-bounty program and no own scope covers it. */
+  programOnly?: boolean
   riskScore: number // 0-100, calculated from criticality, exposure, and findings
   findingCount: number
   /** Open findings per severity (assets.finding_severity_counts). */

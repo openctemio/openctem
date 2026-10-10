@@ -72,6 +72,9 @@ var stepUpRoutes = []string{
 	// taking an exclusion out of effect.
 	"PUT /api/v1/scope/settings",
 	"PUT /api/v1/scope/settings/intrusive",
+	// Scan approval governance (RFC-073): loosening it is the guarded direction.
+	"PUT /api/v1/organization/settings/scan-governance/mode",
+	"PUT /api/v1/organization/settings/scan-governance/rules",
 	"POST /api/v1/scope/targets/{id}/approve",
 	"POST /api/v1/scope/exclusions/{id}/deactivate",
 	"POST /api/v1/scope/exclusions/bulk/delete",
@@ -152,6 +155,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
+			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {

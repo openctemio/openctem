@@ -224,7 +224,8 @@ jobs:
           fi
           echo "posted"
 
-  # Quality checks and the Vitest suite in ONE job (one runner, one npm ci).
+  # Quality checks (type check, ESLint, Prettier, palette drift); the Vitest
+  # suite runs in parallel in `tests`.
   # Runs for a web change, and for an API change that changed the contract.
   # Same on a PR, in the merge queue and on push; `next build` stays push-only
   # (All-in-one CI builds the web image in the merge queue).
@@ -279,15 +280,52 @@ jobs:
           base="$(bash ../.github/scripts/effective-base.sh web "origin/${{ github.base_ref }}")"
           bash scripts/check-palette-drift.sh "$base"
 
-      # The endpoint check reads api/api/openapi/routes.txt (placed above).
-      - name: Run tests
-        run: npm test -- --run --coverage --passWithNoTests
+  # The Vitest suite, in three parallel shards (vitest --shard). Same setup as
+  # `Web checks`; the endpoint check reads api/api/openapi/routes.txt.
+  tests:
+    name: Web tests
+    needs: [changes, contract]
+    if: needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: contract
+          path: ${{ runner.temp }}/contract
+
+      - name: Place the generated contract files
+        working-directory: .
+        run: |
+          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
+          cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
+          (cd web && npm run generate:api-types)
+
+      - name: Run tests (shard ${{ matrix.shard }}/3)
+        run: npm test -- --run --coverage --passWithNoTests --shard=${{ matrix.shard }}/3
 
       - name: Upload coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           directory: web/coverage
           flags: web
+          name: web-${{ matrix.shard }}
           fail_ci_if_error: false
         continue-on-error: true
 
@@ -333,7 +371,7 @@ jobs:
   web-ok:
     name: Web CI OK
     if: always()
-    needs: [changes, contract, quality, build]
+    needs: [changes, contract, quality, tests, build]
     runs-on: ubuntu-latest
     steps:
       - name: All web jobs passed or were skipped; the checks ran where they must
@@ -350,7 +388,7 @@ jobs:
           fi
           required="changes"
           if [ "$WEB" = true ] || [ "$API" = true ]; then required="$required contract"; fi
-          if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then required="$required quality"; fi
+          if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then required="$required quality tests"; fi
           for j in $required; do
             r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
             if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi

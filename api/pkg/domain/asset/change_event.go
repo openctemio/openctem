@@ -138,6 +138,9 @@ type ChangeQuery struct {
 	// ScopeUserID restricts the feed to the assets this member may see
 	// (nil: unrestricted).
 	ScopeUserID *shared.ID
+	// ScopeUnrestricted: ScopeUserID sees every asset except the private
+	// program assets hidden from them (RFC-065 §15.3).
+	ScopeUnrestricted bool
 	// Before is the keyset cursor: events strictly older than (At, ID).
 	BeforeAt *time.Time
 	BeforeID *shared.ID

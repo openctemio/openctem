@@ -1,6 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
+import { useTranslation } from '@/context/i18n-provider'
 import { X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,11 +33,12 @@ export function RunStepPanel({
   tasksTruncated?: boolean
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const key = node.step_key ?? ''
   const mine = stepTasks(tasks, key)
   const outputs = outputsByType(node)
-  const [state, ...counts] = nodeBadgeLines(node)
-  const delta = outputsDeltaLabel(node)
+  const [state, ...counts] = nodeBadgeLines(node, t)
+  const delta = outputsDeltaLabel(node, t)
   // A sample of what the step produced, new ones first; only once it
   // produced something (in the caller's scope).
   const produced = (node.outputs?.total ?? 0) > 0
@@ -50,7 +52,7 @@ export function RunStepPanel({
 
   return (
     <section
-      aria-label={`Step ${node.name || key}`}
+      aria-label={t('scans.step.panel', undefined, { name: node.name || key })}
       className="space-y-3 rounded-md border bg-card p-3 text-sm"
     >
       <div className="flex items-start justify-between gap-2">
@@ -58,7 +60,7 @@ export function RunStepPanel({
           <h4 className="truncate font-medium">{node.name || key}</h4>
           {node.tool ? <p className="text-xs text-muted-foreground">{node.tool}</p> : null}
         </div>
-        <Button variant="ghost" size="icon" aria-label="Close the step" onClick={onClose}>
+        <Button variant="ghost" size="icon" aria-label={t('scans.step.close')} onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -74,9 +76,11 @@ export function RunStepPanel({
       </div>
 
       <div>
-        <h5 className="mb-1 text-xs font-medium uppercase text-muted-foreground">Outputs</h5>
+        <h5 className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+          {t('scans.step.outputs')}
+        </h5>
         {outputs.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Nothing produced yet.</p>
+          <p className="text-xs text-muted-foreground">{t('scans.step.nothingYet')}</p>
         ) : (
           <ul className="grid grid-cols-2 gap-x-4 text-xs">
             {outputs.map(([type, count]) => (
@@ -88,12 +92,14 @@ export function RunStepPanel({
           </ul>
         )}
         {delta ? (
-          <p className="mt-1 text-xs text-muted-foreground">Compared with the last run: {delta}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t('scans.step.compared', undefined, { delta })}
+          </p>
         ) : null}
         {previewError ? (
-          <p className="mt-1 text-xs text-muted-foreground">The outputs could not be listed.</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('scans.step.outputsFailed')}</p>
         ) : listed.length > 0 ? (
-          <ul aria-label="Outputs" className="mt-2 space-y-0.5 text-xs">
+          <ul aria-label={t('scans.step.outputs')} className="mt-2 space-y-0.5 text-xs">
             {listed.map((o) => (
               <li key={o.asset_id} className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate" title={toDisplayText(o.name)}>
@@ -102,29 +108,33 @@ export function RunStepPanel({
                 <span className="text-muted-foreground">{(o.type ?? '').replace(/_/g, ' ')}</span>
                 {o.new ? (
                   <Badge variant="secondary" className="px-1 py-0 text-[10px]">
-                    New
+                    {t('scans.step.new')}
                   </Badge>
                 ) : null}
               </li>
             ))}
-            {more > 0 ? <li className="text-muted-foreground">and {more} more</li> : null}
+            {more > 0 ? (
+              <li className="text-muted-foreground">
+                {t('scans.step.andMore', undefined, { count: more })}
+              </li>
+            ) : null}
           </ul>
         ) : null}
       </div>
 
       <div>
-        <h5 className="mb-1 text-xs font-medium uppercase text-muted-foreground">Tasks</h5>
+        <h5 className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+          {t('scans.step.tasks')}
+        </h5>
         {mine.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            {tasksTruncated ? 'Not among the run tasks loaded so far.' : 'No task yet.'}
+            {tasksTruncated ? t('scans.step.notLoaded') : t('scans.step.noTask')}
           </p>
         ) : (
           <>
             <RunTasksTable runId={runId} tasks={mine} total={mine.length} />
             {tasksTruncated ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                The run has more tasks than loaded: this step may have more.
-              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('scans.step.maybeMore')}</p>
             ) : null}
           </>
         )}
