@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	notificationclient "github.com/openctemio/openctem/api/internal/infra/notifier"
+	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -36,7 +37,17 @@ type Service struct {
 	clientFactory     *notificationclient.ClientFactory
 	credentialDecrypt func(string) (string, error)
 	log               *slog.Logger
+
+	// delivery decides where events about private program assets may go
+	// (bountyprogram.Delivery). Nil delivers every event as before.
+	delivery bountyprogram.DeliveryResolver
 }
+
+// SetDeliveryResolver wires the private program routing rule: an event
+// about an asset only private programs list reaches only the integrations
+// attached to one of them (unless an owner opted the programs in), and the
+// names of private programs are scrubbed for every other destination.
+func (s *Service) SetDeliveryResolver(r bountyprogram.DeliveryResolver) { s.delivery = r }
 
 // NewService creates a new Service.
 func NewService(
@@ -179,6 +190,17 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 		return err
 	}
 
+	// Where the event may go. An unknown decision is a failure (retried),
+	// never a delivery: an NDA-covered event must not leak on a DB error.
+	delivery, err := s.resolveDelivery(ctx, entry)
+	if err != nil {
+		entry.MarkFailed(fmt.Sprintf("failed to resolve delivery: %v", err))
+		if updateErr := s.outboxRepo.Update(ctx, entry); updateErr != nil {
+			s.log.Error("failed to update outbox entry after error", "error", updateErr)
+		}
+		return err
+	}
+
 	// Collect processing results
 	results := outboxdom.ProcessingResults{
 		IntegrationsTotal:     len(integrations),
@@ -196,11 +218,14 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 		if !s.shouldSendToIntegration(intg, entry) {
 			continue
 		}
+		if !delivery.Allows(intg.Integration.ID()) {
+			continue
+		}
 
 		results.IntegrationsMatched++
 
 		// Send notification and collect result
-		sendResult := s.sendToIntegration(ctx, intg, entry)
+		sendResult := s.sendToIntegration(ctx, intg, entry, delivery)
 		results.SendResults = append(results.SendResults, sendResult)
 
 		if sendResult.Status == "success" {
@@ -294,6 +319,58 @@ func (s *Service) alertIfDeadLettered(entry *outboxdom.Outbox) {
 	)
 }
 
+// resolveDelivery returns the routing decision for the entry's subject:
+// its aggregate (finding, asset, exposure, approval) and the assets a
+// batch notice lists in its metadata ("assets": [{"id": …}]).
+func (s *Service) resolveDelivery(ctx context.Context, entry *outboxdom.Outbox) (bountyprogram.Delivery, error) {
+	if s.delivery == nil {
+		return bountyprogram.Delivery{}, nil
+	}
+	subject := DeliverySubject(entry.AggregateType(), entry.AggregateID(), entry.Metadata())
+	return s.delivery.Resolve(ctx, entry.TenantID(), subject)
+}
+
+// DeliverySubject maps an outbox entry's aggregate and metadata to what it
+// is about. Aggregates that name no asset (sensor, scope target, workflow,
+// CI run, digest) give an empty subject.
+func DeliverySubject(aggregateType string, aggregateID *uuid.UUID, metadata map[string]any) bountyprogram.DeliverySubject {
+	var subj bountyprogram.DeliverySubject
+	if aggregateID != nil {
+		id, err := shared.IDFromString(aggregateID.String())
+		if err == nil {
+			switch aggregateType {
+			case "finding":
+				subj.FindingIDs = append(subj.FindingIDs, id)
+			case "asset":
+				subj.AssetIDs = append(subj.AssetIDs, id)
+			case "exposure":
+				subj.ExposureIDs = append(subj.ExposureIDs, id)
+			case "approval":
+				subj.ApprovalIDs = append(subj.ApprovalIDs, id)
+			}
+		}
+	}
+	// Stored metadata decodes as []any; a freshly built entry holds
+	// []map[string]any.
+	var items []map[string]any
+	switch v := metadata["assets"].(type) {
+	case []map[string]any:
+		items = v
+	case []any:
+		for _, it := range v {
+			if m, ok := it.(map[string]any); ok {
+				items = append(items, m)
+			}
+		}
+	}
+	for _, m := range items {
+		if id, err := shared.IDFromString(getStringFromMap(m, "id")); err == nil {
+			subj.AssetIDs = append(subj.AssetIDs, id)
+		}
+	}
+	return subj
+}
+
 // getNotificationIntegrationsForTenant gets all connected notification integrations for a tenant.
 func (s *Service) getNotificationIntegrationsForTenant(ctx context.Context, tenantID shared.ID) ([]*integration.IntegrationWithNotification, error) {
 	// Convert shared.ID to integration.ID
@@ -360,7 +437,7 @@ func (s *Service) shouldSendToIntegration(intg *integration.IntegrationWithNotif
 
 // sendToIntegration sends a notification to a specific integration.
 // Returns a SendResult with success/failure status for archiving.
-func (s *Service) sendToIntegration(ctx context.Context, intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox) outboxdom.SendResult {
+func (s *Service) sendToIntegration(ctx context.Context, intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox, delivery bountyprogram.Delivery) outboxdom.SendResult {
 	ext := intg.Notification
 	sentAt := time.Now()
 
@@ -400,23 +477,7 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 		return result
 	}
 
-	// Build message. F-6: include an idempotency key derived from the
-	// outbox entry ID so provider-side deduplication suppresses duplicate
-	// deliveries if the worker crashes between "provider ACK" and
-	// "UPDATE status='completed'" — a race that would otherwise re-queue
-	// the entry after UnlockStale.
-	msg := notificationclient.Message{
-		Title:          entry.Title(),
-		Body:           entry.Body(),
-		Severity:       entry.Severity().String(),
-		URL:            entry.URL(),
-		IdempotencyKey: "outbox-" + entry.ID().String(),
-	}
-
-	// Apply custom template if configured
-	if ext != nil && ext.MessageTemplate() != "" {
-		msg = s.applyTemplate(msg, ext.MessageTemplate())
-	}
+	msg := s.buildMessage(intg, entry, delivery)
 
 	// Send with timeout
 	sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -436,6 +497,27 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 	}
 
 	return result
+}
+
+// buildMessage builds the message for one integration. F-6: it carries an
+// idempotency key derived from the outbox entry ID so provider-side
+// deduplication suppresses duplicate deliveries if the worker crashes
+// between "provider ACK" and "UPDATE status='completed'" — a race that would
+// otherwise re-queue the entry after UnlockStale. The names of private
+// programs the integration is not attached to are scrubbed from the title
+// and body before any template sees them.
+func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox, delivery bountyprogram.Delivery) notificationclient.Message {
+	msg := notificationclient.Message{
+		Title:          delivery.Scrub(intg.Integration.ID(), entry.Title()),
+		Body:           delivery.Scrub(intg.Integration.ID(), entry.Body()),
+		Severity:       entry.Severity().String(),
+		URL:            entry.URL(),
+		IdempotencyKey: "outbox-" + entry.ID().String(),
+	}
+	if ext := intg.Notification; ext != nil && ext.MessageTemplate() != "" {
+		msg = s.applyTemplate(msg, ext.MessageTemplate())
+	}
+	return msg
 }
 
 // configureClientFromCredentials configures the notification client based on provider type.

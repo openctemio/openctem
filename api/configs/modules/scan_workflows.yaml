@@ -1,0 +1,15 @@
+- id: scan_workflows
+  const: ModuleScanWorkflows
+  slug: "scan-workflows"
+  name: Scan Workflows
+  description: "Scan workflows: the steps a scan runs, chained by what each step finds"
+  icon: GitBranch
+  category: settings
+  order: 12
+  user_facing: true
+  permission: "scans:workflows:read"
+  depends:
+    - {id: scans, kind: hard, reason: "scan workflows are what scans run"}
+    - {id: scanner_templates, kind: soft, reason: "scan workflow steps typically run templates"}
+  routes:
+    - "/api/v1/scan-workflows"

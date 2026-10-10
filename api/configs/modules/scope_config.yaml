@@ -1,0 +1,20 @@
+- id: scope_config
+  const: ModuleScopeConfig
+  slug: "scope-config"
+  name: Scope Config
+  description: CTEM scope — which assets are in scope for prioritisation and reporting
+  icon: Sliders
+  category: scoping
+  order: 6
+  user_facing: true
+  permission: "attack_surface:scope:read"
+  depends:
+    - {id: assets, kind: hard, reason: "scope rules select assets"}
+  routes:
+    - /api/v1/scope
+    - /api/v1/programs
+  jobs:
+    - ProgramAssignmentController
+    - ProgramFeedController
+    - ProgramSyncController
+    - ScopeAttestationController

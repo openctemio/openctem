@@ -264,6 +264,28 @@ visible without the private program's tags, and the inventory's tag
 filter matches only the tags of programs the viewer may see. Details:
 [authorization-matrix.md](authorization-matrix.md#data-scope-layer-2-access-groups).
 
+## Outbound delivery of private program events
+
+Integrations and automations are organization-wide, so an event about an
+asset only private programs list (program-only, no public program, not
+opted in) leaves the platform only through the integrations a member
+attached to one of those programs. One resolver
+(`internal/infra/postgres/program_delivery.go`, `bountyprogram.Delivery`)
+decides for every path:
+
+| Path | Rule |
+|---|---|
+| Notification outbox (Slack, Teams, Telegram, email, webhook, Splunk HEC) | restricted entry sent only to program channels; private program names scrubbed for every other destination; resolver error = retry, no send |
+| Automations | restricted findings and assets start no automation |
+| EASM alerts | restricted exposures skip the organization digest and go out on their own (then routed by the outbox) |
+| Outbox view (`GET /notification-outbox`, `/{id}`) | integration admins who are neither an owner nor a member read private program names, handles and tags scrubbed in title, body, last error and metadata; resolver error = 500 |
+
+An owner may let a private program's events reach every organization
+channel (`PUT /programs/{id}/org-channels`, reason, step-up, audited);
+program names stay scrubbed there. Members attach channels with
+`PUT /programs/{id}/notification-channels/{integration_id}` (`integrations:manage`,
+step-up, audited). Details: RFC-065 §15.4.
+
 ## Evidence
 
 Every scan run links to a scope snapshot: the entry that covered each of its
@@ -278,7 +300,8 @@ the run and hold `scope:read` or `programs:read`.
 | Path | What |
 |---|---|
 | `pkg/domain/bountyprogram/` | program entity, rules, scope parser, terms hash |
-| `internal/app/bountyprogram/` | import, re-import, lifecycle, attestation, assignment pass |
+| `internal/app/bountyprogram/` | import, re-import, lifecycle, attestation, assignment pass, delivery settings (`delivery.go`) |
+| `pkg/domain/bountyprogram/delivery.go`, `internal/infra/postgres/program_delivery.go` | outbound delivery decision, program channels, organization-channel opt-in |
 | `internal/app/scopeauth/` | program exclusions bind program entries; `ProgramOnly`, `CoveredByPrograms` |
 | `internal/app/scan/active_proof.go` | platform-sensor refusal for program-only targets |
 | `internal/app/scan/scope_snapshot.go`, `internal/app/scope/snapshot.go` | snapshot per run |
