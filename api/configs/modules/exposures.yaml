@@ -1,0 +1,14 @@
+- id: exposures
+  const: ModuleExposures
+  slug: exposures
+  name: Exposures
+  description: "Exposure management and non-CVE security issues"
+  icon: ShieldAlert
+  category: prioritization
+  order: 21
+  user_facing: true
+  permission: "findings:exposures:read"
+  depends:
+    - {id: findings, kind: hard, reason: "an exposure is a finding in a specific lifecycle state"}
+  routes:
+    - /api/v1/exposures

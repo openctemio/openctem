@@ -1,0 +1,88 @@
+- id: integrations
+  const: ModuleIntegrations
+  slug: integrations
+  name: Integrations
+  description: "Integrations (SCM, Notifications, CI/CD, Ticketing, SIEM)"
+  icon: Plug
+  category: settings
+  order: 60
+  core: true
+  user_facing: true
+  permission: "integrations:read"
+  jobs:
+    - SCMSyncController
+    - DefectDojoSyncController
+    - TenableSCSyncController
+- id: integrations.scm
+  const: ModuleIntegrationsSCM
+  slug: scm
+  name: SCM Integrations
+  description: Source code management integrations
+  icon: GitBranch
+  category: settings
+  order: 1
+  parent: integrations
+- id: integrations.notifications
+  const: ModuleIntegrationsNotifications
+  slug: notifications
+  name: Notification Channels
+  description: Notification channel integrations
+  icon: Bell
+  category: settings
+  order: 2
+  core: true
+  parent: integrations
+- id: integrations.ticketing
+  const: ModuleIntegrationsTicketing
+  slug: ticketing
+  name: Ticketing
+  description: Issue tracking integrations
+  icon: Ticket
+  category: settings
+  order: 3
+  parent: integrations
+- id: integrations.cloud
+  const: ModuleIntegrationsCloud
+  slug: cloud
+  name: Cloud Providers
+  description: Cloud provider integrations
+  icon: Cloud
+  category: settings
+  order: 4
+  parent: integrations
+- id: integrations.siem
+  const: ModuleIntegrationsSIEM
+  slug: siem
+  name: SIEM
+  description: SIEM integrations
+  icon: Shield
+  category: settings
+  order: 5
+  parent: integrations
+- id: integrations.scanners
+  const: ModuleIntegrationsScanners
+  slug: scanners
+  name: Scanners
+  description: External scanner integrations
+  icon: Search
+  category: settings
+  order: 6
+  parent: integrations
+- id: integrations.api
+  const: ModuleIntegrationsAPI
+  slug: api_int
+  name: API Integrations
+  description: API integrations
+  icon: Zap
+  category: settings
+  order: 8
+  parent: integrations
+- id: integrations.pipelines
+  const: ModuleIntegrationsPipelines
+  slug: pipelines_int
+  name: Pipeline Integrations
+  description: CI/CD pipeline integrations
+  icon: GitPullRequest
+  category: settings
+  order: 9
+  parent: integrations
