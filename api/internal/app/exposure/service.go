@@ -63,7 +63,7 @@ func (s *ExposureService) requireAssetForRestricted(ctx context.Context, tenantI
 	if err != nil {
 		return ErrExposureAssetRequired
 	}
-	if scope != nil {
+	if scope.Restricted() {
 		return ErrExposureAssetRequired
 	}
 	return nil

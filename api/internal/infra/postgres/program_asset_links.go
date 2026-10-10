@@ -21,6 +21,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // entryMatchesAsset is the scope match of program_assign.go (domain
@@ -115,6 +116,73 @@ func recomputeProgramAssetFlags(ctx context.Context, tx *sql.Tx, tenantID string
 		return fmt.Errorf("clear program asset tags: %w", err)
 	}
 	return nil
+}
+
+// ProgramAssetFlagsFor is ProgramAssetFlags as viewer may see them
+// (RFC-065 §15.3): an owner sees every flag; anyone else does not learn of
+// a private program they are not a member of. Its program tag is removed,
+// and an asset all of whose programs are such loses every program flag (it
+// is shown as an ordinary asset; a program-only one is hidden anyway).
+func (r *ProgramAssetFlagRepository) ProgramAssetFlagsFor(ctx context.Context, tenantID string, assetIDs []string, viewer shared.ProgramViewer) (map[string]bountyprogram.AssetFlags, error) {
+	flags, err := r.ProgramAssetFlags(ctx, tenantID, assetIDs)
+	if err != nil || viewer.Owner || len(flags) == 0 {
+		return flags, err
+	}
+	ids := make([]string, 0, len(flags))
+	for id := range flags {
+		ids = append(ids, id)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT l.asset_id::text,
+		       (p.visibility = 'private' AND NOT EXISTS (
+		            SELECT 1 FROM groups g JOIN group_members gm ON gm.group_id = g.id
+		            WHERE g.tenant_id = p.tenant_id AND g.id = p.group_id AND g.is_active AND gm.user_id = $3::uuid)) AS hidden,
+		       'program:' || COALESCE(NULLIF(regexp_replace(lower(p.platform), '[^a-z0-9-]+', '-', 'g'), ''), 'self') || ':' ||
+		           regexp_replace(lower(COALESCE(NULLIF(p.handle, ''), p.name)), '[^a-z0-9-]+', '-', 'g') AS tag
+		FROM asset_program_links l
+		JOIN bounty_programs p ON p.tenant_id = l.tenant_id AND p.id = l.program_id
+		WHERE l.tenant_id = $1 AND l.asset_id = ANY($2::uuid[])`,
+		tenantID, pq.Array(ids), viewer.UserID.String())
+	if err != nil {
+		return nil, fmt.Errorf("read program visibility: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	hiddenTags := map[string]map[string]bool{}
+	visible := map[string]bool{}
+	for rows.Next() {
+		var id, tag string
+		var hidden bool
+		if err := rows.Scan(&id, &hidden, &tag); err != nil {
+			return nil, err
+		}
+		if !hidden {
+			visible[id] = true
+			continue
+		}
+		if hiddenTags[id] == nil {
+			hiddenTags[id] = map[string]bool{}
+		}
+		hiddenTags[id][tag] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for id, tags := range hiddenTags {
+		if !visible[id] {
+			delete(flags, id)
+			continue
+		}
+		f := flags[id]
+		kept := make([]string, 0, len(f.SystemTags))
+		for _, t := range f.SystemTags {
+			if !tags[t] {
+				kept = append(kept, t)
+			}
+		}
+		f.SystemTags = kept
+		flags[id] = f
+	}
+	return flags, nil
 }
 
 // ProgramAssetFlagRepository reads the derived program fields of assets; it
