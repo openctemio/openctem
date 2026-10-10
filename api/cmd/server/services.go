@@ -100,6 +100,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	bountyprogramdom "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -607,7 +608,7 @@ type Services struct {
 	ProgramAssigner controller.ProgramAssignments
 	// ProgramDelivery resolves where events about private program assets
 	// may go and which program names to scrub (RFC-065 §15.4).
-	ProgramDelivery *postgres.ProgramDeliveryRepository
+	ProgramDelivery bountyprogramdom.DeliveryResolver
 	// ProgramFeed imports the public program feed (RFC-065 §16); nil unless
 	// PROGRAMFEED_DIR and PROGRAMFEED_ROOT_KEY_ID are set.
 	ProgramFeed *programfeedapp.Importer
