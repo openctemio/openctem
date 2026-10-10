@@ -1,0 +1,12 @@
+- id: groups
+  const: ModuleGroups
+  slug: groups
+  name: Groups
+  description: Data scope groups (Teams) for access control
+  icon: UsersCog
+  category: settings
+  order: 63
+  core: true
+  permission: "team:groups:read"
+  jobs:
+    - ScopeReconciliationController

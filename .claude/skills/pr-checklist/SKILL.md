@@ -19,7 +19,7 @@ Never edit `api/CHANGELOG.md`. Add one file `api/changelog.d/<short-slug>.md` wi
 migration number and any upgrade step for operators.
 
 ## Documentation, for a feature
-- the RFC in `api/docs/rfcs/` with its status, and its row in `api/docs/rfcs/README.md`;
+- the RFC in `api/docs/rfcs/` with its status (H1 `# RFC-NNN: Title` and a `Status` header field), then `python3 scripts/rfc_index.py` to regenerate the `api/docs/rfcs/README.md` index (never edit its table by hand);
 - an architecture doc in `api/docs/architecture/` (how it works, setup, shipped vs planned, key files),
   listed in `api/docs/README.md`;
 - the authorization matrix and permission tables when gates or roles change.

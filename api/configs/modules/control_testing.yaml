@@ -1,0 +1,16 @@
+- id: control_testing
+  const: ModuleControlTesting
+  slug: "control-testing"
+  name: Control Testing
+  description: "Validate security controls (firewalls, WAF, IDS/IPS) with automated test cases"
+  icon: ShieldCheck
+  category: validation
+  order: 32
+  release: beta
+  user_facing: true
+  depends:
+    - {id: compensating_controls, kind: hard, reason: "control testing validates compensating controls"}
+  routes:
+    - "/api/v1/control-tests"
+  jobs:
+    - ControlTestSchedulerController

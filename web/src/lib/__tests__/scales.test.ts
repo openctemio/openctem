@@ -23,8 +23,7 @@ import {
 } from '@/lib/criticality'
 import { SEVERITY_ORDER, severityChartData } from '@/lib/severity-colors'
 import { CRITICALITY_BADGE_SOFT, CRITICALITY_CHART_COLORS } from '@/lib/criticality-colors'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 
 describe('severity scale', () => {
   it('has info, most severe first', () => {

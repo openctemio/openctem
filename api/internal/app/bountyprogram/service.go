@@ -76,6 +76,9 @@ type Service struct {
 	catalog bp.CatalogRepository
 	// targets ingests program targets as assets (targets.go).
 	targets TargetIngester
+	// delivery keeps program channels and the organization-channel opt-in
+	// (delivery.go).
+	delivery bp.DeliveryStore
 }
 
 // NewService wires the service. Without a FullData checker every caller is

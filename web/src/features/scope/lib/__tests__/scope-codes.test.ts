@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 import { getDictionary, translate } from '@/lib/i18n'
 import {
   SCOPE_ERROR_CODES,
