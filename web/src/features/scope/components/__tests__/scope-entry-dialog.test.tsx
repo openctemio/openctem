@@ -324,3 +324,35 @@ describe('ScopeEntryDialog: duration follows the policy', () => {
     expect(screen.queryByRole('radio', { name: 'Permanent' })).toBeNull()
   })
 })
+
+describe('ScopeEntryDialog: tier ceilings follow the scan approval mode', () => {
+  it('outside Strict the entry has no tier to pick', async () => {
+    api.get.mockReset().mockResolvedValue({
+      ...settings,
+      approval_policy: {
+        scan_approval: 'on',
+        source: 'organization',
+        entries_need_approval: false,
+        tier_ceilings: false,
+      },
+    })
+    wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
+    expect(await screen.findByText(/An entry covers every probe/)).toBeInTheDocument()
+    expect(screen.getByText('Deepest probe allowed').closest('div')).toHaveClass('hidden')
+  })
+
+  it('in Strict the tier is a ceiling to pick', async () => {
+    api.get.mockReset().mockResolvedValue({
+      ...settings,
+      approval_policy: {
+        scan_approval: 'strict',
+        source: 'organization',
+        entries_need_approval: true,
+        tier_ceilings: true,
+      },
+    })
+    wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
+    expect(await screen.findByText('Deepest probe allowed')).toBeVisible()
+    expect(screen.queryByText(/An entry covers every probe/)).not.toBeInTheDocument()
+  })
+})
