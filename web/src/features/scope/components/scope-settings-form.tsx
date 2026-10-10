@@ -73,20 +73,33 @@ const ONE_OFF_TEXT: Record<ScopeOneOffPolicy, { label: string; hint: string }> =
 
 const DEFAULT_SENTINEL = 'default'
 
-/** The platform administrator's approval policy (RFC-054 §12.6). */
-export const APPROVAL_POLICY_TEXT: Record<string, { label: string; hint: string }> = {
-  required: {
-    label: 'Approvals required',
-    hint: 'Widening waits for the approvals below; intrusive (T2) entries always need one.',
-  },
-  tenant_controlled: {
-    label: 'Your organization decides',
-    hint: 'An owner sets the approval count below for every tier, intrusive (T2) included.',
-  },
-  disabled: {
-    label: 'Approvals disabled',
-    hint: 'Approvals disabled by your platform administrator: widening takes effect without a second person. Re-authentication, the deny list, audit and notifications still apply.',
-  },
+/** Scan approval as the scope page shows it (RFC-073 §6). */
+export function scanApprovalFact(
+  t: (key: string, fallback?: string) => string,
+  policy: ApiScopeSettings['approval_policy'] | undefined
+): { label: string; hint: string } {
+  const mode = policy?.scan_approval ?? 'off'
+  const label =
+    mode === 'strict'
+      ? t('scope.settings.scanApprovalStrict', 'Strict: scope entries need approval')
+      : mode === 'on'
+        ? t('scope.settings.scanApprovalOn', 'On: scans are approved, not scope entries')
+        : t('scope.settings.scanApprovalOff', 'Off: no approvals')
+  const hint =
+    mode === 'strict'
+      ? t(
+          'scope.settings.scanApprovalStrictHint',
+          'Widening waits for the approvals below; intrusive (T2) entries always need one.'
+        )
+      : t(
+          'scope.settings.scanApprovalOpenHint',
+          'Widening takes effect without a second person. Re-authentication, the deny list, audit and notifications still apply.'
+        )
+  const source =
+    policy?.source === 'platform'
+      ? t('scope.settings.scanApprovalByPlatform', 'Set by your platform administrator.')
+      : t('scope.settings.scanApprovalByOwner', 'Set by your owner in Settings > Scan approval.')
+  return { label, hint: `${hint} ${source}` }
 }
 
 export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
@@ -174,9 +187,9 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
               locked
             />
             <Fact
-              label="Approval policy"
-              value={APPROVAL_POLICY_TEXT[saved.approval_policy?.mode ?? 'required'].label}
-              hint={`${APPROVAL_POLICY_TEXT[saved.approval_policy?.mode ?? 'required'].hint} Set by your platform administrator.`}
+              label={t('scope.settings.scanApproval', 'Scan approval')}
+              value={scanApprovalFact(t, saved.approval_policy).label}
+              hint={scanApprovalFact(t, saved.approval_policy).hint}
               locked
             />
             <Fact
