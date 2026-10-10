@@ -129,9 +129,10 @@ type Repository interface {
 	// This is used after bulk finding ingestion to refresh asset statistics.
 	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
 
-	// ListDistinctTags returns distinct tags across all assets for a tenant.
-	// Supports prefix filtering for autocomplete and a limit for result size.
-	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error)
+	// ListDistinctTags returns distinct tags across the assets of a tenant
+	// that access admits (data scope; never an asset hidden from the
+	// caller). Supports prefix filtering for autocomplete and a limit.
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, access AccessScope, prefix string, types []string, limit int) ([]string, error)
 
 	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
 	// This replaces the N+1 pattern of calling Count() per type.
@@ -332,9 +333,23 @@ type Filter struct {
 	// this scope entry (matches_scope_target evidence from it).
 	CoveredByScopeTarget *shared.ID
 
+	// ProgramAssets: "only" keeps the assets a bug-bounty program lists or
+	// covers (system tag bug-bounty); "exclude" leaves out the program-only
+	// ones (RFC-065 §16.5). Empty: no filter.
+	ProgramAssets string
+	// ProgramTagViewer: when set, the tag filter and ProgramAssets "only"
+	// match only the system tags derived from programs not hidden from this
+	// user (RFC-065 §15.3), so a non-member cannot learn through the filter
+	// that a private program covers a shared asset. Nil (owners, internal
+	// calls) matches every stored system tag.
+	ProgramTagViewer *shared.ID
+
 	// Layer 2: Data Scope. When set, only the assets in this user's scope
 	// rows (user_accessible_assets) are returned; a user with none sees none.
 	DataScopeUserID *shared.ID
+	// DataScopeUnrestricted: DataScopeUserID sees every asset except the
+	// ones hidden from them (private program assets, RFC-065 §15.3).
+	DataScopeUnrestricted bool
 }
 
 // ListOptions contains options for listing assets (sorting).
@@ -482,11 +497,14 @@ func (f Filter) WithParentID(parentID string) Filter {
 // caller with no user such as an API key), exactly like an unset Filter.
 type AccessScope struct {
 	DataScopeUserID *shared.ID
+	// DataScopeUnrestricted: DataScopeUserID sees every asset except the
+	// ones hidden from them (private program assets, RFC-065 §15.3).
+	DataScopeUnrestricted bool
 }
 
 // AccessScope returns the data-scope part of the filter.
 func (f Filter) AccessScope() AccessScope {
-	return AccessScope{DataScopeUserID: f.DataScopeUserID}
+	return AccessScope{DataScopeUserID: f.DataScopeUserID, DataScopeUnrestricted: f.DataScopeUnrestricted}
 }
 
 // WithDataScopeUserID adds a data scope filter by user's group membership.
@@ -500,6 +518,7 @@ func (f Filter) WithDataScope(scope *shared.DataScope) Filter {
 	if scope != nil {
 		id := scope.UserID
 		f.DataScopeUserID = &id
+		f.DataScopeUnrestricted = scope.Unrestricted
 	}
 	return f
 }

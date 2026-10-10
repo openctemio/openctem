@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Plus, Zap } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -16,7 +17,14 @@ import { QuickScanDialog } from './quick-scan-dialog'
  * Placed directly under the page's `PageHeader`; the next block carries `mt-5`.
  */
 export function ScansSectionTabs() {
-  return <GatedSectionTabs tabs={SCANS_SECTION_TABS} label="Scans sections" className="mt-4 mb-0" />
+  const { t } = useTranslation()
+  return (
+    <GatedSectionTabs
+      tabs={SCANS_SECTION_TABS}
+      label={t('scans.header.sections')}
+      className="mt-4 mb-0"
+    />
+  )
 }
 
 /**
@@ -24,11 +32,9 @@ export function ScansSectionTabs() {
  * the actions of the current tab.
  */
 export function ScansPageHeader({ children }: { children?: ReactNode }) {
+  const { t } = useTranslation()
   return (
-    <PageHeader
-      title="Scans"
-      description="Schedule scans, follow every run they produce, and design the workflows they run."
-    >
+    <PageHeader title={t('scans.header.title')} description={t('scans.header.description')}>
       {children}
     </PageHeader>
   )
@@ -36,6 +42,7 @@ export function ScansPageHeader({ children }: { children?: ReactNode }) {
 
 /** "Quick scan" and "New scan": the actions of the Scans and Runs tabs. */
 export function ScanCreateActions() {
+  const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [quickScanOpen, setQuickScanOpen] = useState(false)
   return (
@@ -45,13 +52,13 @@ export function ScanCreateActions() {
       <Can permission={Permission.ScansWrite} mode="disable">
         <Button variant="outline" size="sm" onClick={() => setQuickScanOpen(true)}>
           <Zap className="me-2 h-4 w-4" />
-          Quick scan
+          {t('scans.header.quickScan')}
         </Button>
       </Can>
       <Can permission={Permission.ScansWrite} mode="disable">
         <Button size="sm" onClick={() => setDialogOpen(true)}>
           <Plus className="me-2 h-4 w-4" />
-          New scan
+          {t('scans.header.newScan')}
         </Button>
       </Can>
     </>

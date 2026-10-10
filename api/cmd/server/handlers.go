@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
@@ -402,6 +403,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		AssetSoftware:          handler.NewAssetSoftwareHandler(svc.VulnMatch, repos.Asset, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
@@ -451,7 +453,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		ScanFreeze:      handler.NewScanFreezeWindowHandler(svc.ScanFreeze, log),
+		ScanWindow:      newScanWindowHandler(svc, log),
 		Ingest:          ingestHandler,
 		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
 		SensorPairing:   newSensorPairingHandler(svc, log),
@@ -476,15 +478,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
-		SecretStore:         handler.NewSecretStoreHandler(svc.SecretStore, v, log),
-		Tool:                handler.NewToolHandler(svc.Tool, v, log),
-		ToolCategory:        handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
-		Capability:          handler.NewCapabilityHandler(svc.Capability, v, log),
-		Scan:                handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
-		CI:                  handler.NewCIHandler(svc.Scan, log),
-		CIAdmin:             ciAdmin,
-		CIRunner:            ciRunner,
-		ScanWorkflow:        withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
+		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
+			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
+		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
+		Tool:         handler.NewToolHandler(svc.Tool, v, log),
+		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
+		Capability:   handler.NewCapabilityHandler(svc.Capability, v, log),
+		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
+		CI:           handler.NewCIHandler(svc.Scan, log),
+		CIAdmin:      ciAdmin,
+		CIRunner:     ciRunner,
+		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -627,14 +631,21 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	// A scan window override needs a fresh authenticator code (RFC-067 §8).
+	wireScanWindowTOTP(svc)
 	if svc.EASMSweep != nil {
 		handlers.Scope.SetSweeper(svc.EASMSweep)
+	}
+	if svc.Scan != nil {
+		handlers.Scope.SetScopeWaitStarter(svc.Scan)
 	}
 	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
 	// Private programs (RFC-065 §15.3): owners see every private program;
 	// the scope views leave out the entries of private programs the caller
 	// may not see.
 	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
+	// Program asset flags on asset responses (RFC-065 §16.5).
+	handlers.Asset.SetProgramFlags(postgres.NewProgramAssetFlagRepository(deps.DB))
 	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {
 		handlers.Scope.SetDryRun(svc.Scan, svc.ActiveGate)
@@ -724,9 +735,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
 	}
-	// The platform policy for scope-widening approvals (RFC-054 §12.6).
-	if svc.ScopePolicy != nil {
-		handlers.AdminScopePolicy = handler.NewAdminScopePolicyHandler(svc.ScopePolicy, adminConsoleSvc, log)
+	// The platform policy for scan approval (RFC-073).
+	if svc.ScanPolicy != nil {
+		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
+		if svc.Tenant != nil {
+			handlers.ScanGovernance = handler.NewScanGovernanceHandler(scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log), log)
+		}
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {

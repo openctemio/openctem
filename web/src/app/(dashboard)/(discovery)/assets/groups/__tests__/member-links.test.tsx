@@ -33,6 +33,7 @@ vi.mock('@/features/repositories/components/repository-workspace', () => ({
     <div>repository workspace {repositoryId}</div>
   ),
 }))
+vi.mock('@/features/scan-windows', () => ({ AssetScanWindowCard: () => null }))
 vi.mock('@/features/assets', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   const sections = Object.keys(actual)

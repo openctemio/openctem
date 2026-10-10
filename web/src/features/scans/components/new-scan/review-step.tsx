@@ -7,6 +7,7 @@
  */
 
 import { AlertTriangle, CheckCircle2, Pencil, ShieldAlert, XCircle } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +15,7 @@ import { ScopeCheckList } from '@/features/scope'
 import { ScanRoutingSection } from '@/features/scan-zones'
 import type { ScanZone, ScanZonePreviewRequest } from '@/lib/api/scan-zone-types'
 import type { NewScanFormData } from '../../types'
+import { enTranslate, type Translate } from '../../lib/translate'
 import { SENSOR_PREFERENCE_CONFIG } from '../../types'
 import { onceRunAt } from '../../lib/scan-form'
 import { schedulePreviewRequestFromForm } from '../../lib/schedule-preview'
@@ -23,8 +25,6 @@ import { SchedulePreview } from '../schedule-preview'
 import type { ScanReview } from '../../hooks/use-scan-review'
 import type { ScanWizardStep } from './scan-stepper'
 import { WorkflowPreviewBody } from './workflow-preview'
-
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 interface ReviewStepProps {
   data: NewScanFormData
@@ -49,6 +49,7 @@ function Row({
   onEdit: (step: ScanWizardStep) => void
   children: React.ReactNode
 }) {
+  const { t } = useTranslation()
   return (
     <div className="grid gap-1 border-b py-3 last:border-b-0 sm:grid-cols-[7rem_1fr_auto] sm:gap-3">
       <dt className="text-muted-foreground text-sm">{title}</dt>
@@ -60,36 +61,48 @@ function Row({
           size="sm"
           className="h-7 justify-self-start px-2 text-xs sm:justify-self-end"
           onClick={() => onEdit(step)}
-          aria-label={`Edit ${title.toLowerCase()}`}
+          aria-label={t('scans.review.editRow', undefined, { title: title.toLowerCase() })}
         >
           <Pencil className="me-1 h-3 w-3" aria-hidden />
-          Edit
+          {t('scans.review.edit')}
         </Button>
       )}
     </div>
   )
 }
 
-export function scheduleSummary(data: NewScanFormData): string {
+export function scheduleSummary(data: NewScanFormData, t: Translate = enTranslate): string {
   const s = data.schedule
-  if (s.runImmediately) return 'Runs now, once'
-  if (s.saveOnly) return 'Saved without running: start it from the scan page'
+  if (s.runImmediately) return t('scans.review.sumNow')
+  if (s.saveOnly) return t('scans.review.sumSave')
   const zone = s.timezone || viewerTimeZone()
   switch (s.frequency) {
     case 'once': {
       const at = onceRunAt(data)
       return at
-        ? `Once, on ${s.runAtDate} at ${s.runAtTime} (${zone})`
-        : 'Once (choose the date and time)'
+        ? t('scans.review.sumOnce', undefined, {
+            date: s.runAtDate ?? '',
+            time: s.runAtTime ?? '',
+            zone,
+          })
+        : t('scans.review.sumOnceIncomplete')
     }
     case 'daily':
-      return `Daily at ${s.time ?? '00:00'} (${zone})`
+      return t('scans.review.sumDaily', undefined, { time: s.time ?? '00:00', zone })
     case 'weekly':
-      return `Weekly on ${DAY_NAMES[s.dayOfWeek ?? 1]} at ${s.time ?? '00:00'} (${zone})`
+      return t('scans.review.sumWeekly', undefined, {
+        day: t(`scans.day.${s.dayOfWeek ?? 1}`),
+        time: s.time ?? '00:00',
+        zone,
+      })
     case 'monthly':
-      return `Monthly on day ${s.dayOfMonth ?? 1} at ${s.time ?? '00:00'} (${zone})`
+      return t('scans.review.sumMonthly', undefined, {
+        day: s.dayOfMonth ?? 1,
+        time: s.time ?? '00:00',
+        zone,
+      })
     default:
-      return 'On demand'
+      return t('scans.review.sumDemand')
   }
 }
 
@@ -103,95 +116,122 @@ export function ReviewStep({
   canReadZones,
   zoneRequest,
 }: ReviewStepProps) {
-  const t = data.targets
-  const typed = parsePastedTargets(t.customTargets).targets.length
-  const expanded = t.coverage && t.coverage !== 'host' ? (t.expandedTargets ?? []).length : 0
+  const { t } = useTranslation()
+  const tgt = data.targets
+  const typed = parsePastedTargets(tgt.customTargets).targets.length
+  const expanded = tgt.coverage && tgt.coverage !== 'host' ? (tgt.expandedTargets ?? []).length : 0
   const results = review.scope.results ?? []
   const allowed = results.filter((r) => r.allowed).length
   const refused = review.refused
 
   const removeRefused = () => {
     const bad = new Set(refused.map((r) => r.toLowerCase()))
-    const keepIds = t.assetIds.filter((id) => !bad.has((t.assetNames[id] ?? '').toLowerCase()))
-    const names = Object.fromEntries(keepIds.map((id) => [id, t.assetNames[id]]))
+    const keepIds = tgt.assetIds.filter((id) => !bad.has((tgt.assetNames[id] ?? '').toLowerCase()))
+    const names = Object.fromEntries(keepIds.map((id) => [id, tgt.assetNames[id]]))
     onChange({
       targets: {
-        ...t,
+        ...tgt,
         assetIds: keepIds,
         assetNames: names,
         customTargets: [
-          ...parsePastedTargets(t.customTargets).targets.filter((x) => !bad.has(x.toLowerCase())),
-          ...parsePastedTargets(t.customTargets).invalid.map((i) => i.input),
+          ...parsePastedTargets(tgt.customTargets).targets.filter((x) => !bad.has(x.toLowerCase())),
+          ...parsePastedTargets(tgt.customTargets).invalid.map((i) => i.input),
         ],
-        expandedTargets: (t.expandedTargets ?? []).filter((e) => !bad.has(e.toLowerCase())),
+        expandedTargets: (tgt.expandedTargets ?? []).filter((e) => !bad.has(e.toLowerCase())),
       },
     })
   }
 
   const parts = [
-    t.assetIds.length > 0 && `${t.assetIds.length} ${t.assetIds.length === 1 ? 'asset' : 'assets'}`,
-    typed > 0 && `${typed} typed`,
-    expanded > 0 && `${expanded} from coverage`,
-    t.assetGroupIds.length > 0 &&
-      `${t.assetGroupIds.length} ${t.assetGroupIds.length === 1 ? 'group' : 'groups'}`,
+    tgt.assetIds.length > 0 &&
+      t(
+        tgt.assetIds.length === 1 ? 'scans.review.partAssetOne' : 'scans.review.partAssetMany',
+        undefined,
+        { count: tgt.assetIds.length }
+      ),
+    typed > 0 && t('scans.review.partTyped', undefined, { count: typed }),
+    expanded > 0 && t('scans.review.partCoverage', undefined, { count: expanded }),
+    tgt.assetGroupIds.length > 0 &&
+      t(
+        tgt.assetGroupIds.length === 1 ? 'scans.review.partGroupOne' : 'scans.review.partGroupMany',
+        undefined,
+        { count: tgt.assetGroupIds.length }
+      ),
   ].filter(Boolean)
 
   return (
     <div className="space-y-4 p-4">
       <div className="space-y-2">
         <Label htmlFor="review-name">
-          Scan name <span className="text-destructive">*</span>
+          {t('scans.review.scanName')} <span className="text-destructive">*</span>
         </Label>
         <Input
           id="review-name"
           value={data.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="e.g., Production weekly scan"
+          placeholder={t('scans.review.namePlaceholder')}
         />
       </div>
 
       <dl className="rounded-lg border px-3">
-        <Row title="What" step="basic" onEdit={onEdit}>
+        <Row title={t('scans.review.rowWhat')} step="basic" onEdit={onEdit}>
           <span className="font-medium">{whatLabel}</span>{' '}
           <span className="text-muted-foreground">
-            ({data.mode === 'workflow' ? 'workflow' : 'single check'})
+            (
+            {data.mode === 'workflow'
+              ? t('scans.review.workflowKind')
+              : t('scans.review.singleKind')}
+            )
           </span>
         </Row>
-        <Row title="Targets" step="targets" onEdit={onEdit}>
+        <Row title={t('scans.review.rowTargets')} step="targets" onEdit={onEdit}>
           <span className="font-medium">
-            {review.targets.length.toLocaleString()}{' '}
-            {review.targets.length === 1 ? 'target' : 'targets'}
+            {t(
+              review.targets.length === 1
+                ? 'scans.summary.targetsOne'
+                : 'scans.summary.targetsMany',
+              undefined,
+              { count: review.targets.length.toLocaleString() }
+            )}
           </span>
           {parts.length > 0 && <span className="text-muted-foreground"> · {parts.join(', ')}</span>}
           {review.scope.available && review.targets.length > 0 && (
             <span className="mt-1 flex items-center gap-1 text-xs">
               {review.scope.isLoading && results.length === 0 ? (
-                <span className="text-muted-foreground">Checking scope…</span>
+                <span className="text-muted-foreground">{t('scans.scope.checking')}</span>
               ) : refused.length > 0 ? (
                 <>
                   <ShieldAlert className="h-3.5 w-3.5 text-warning" aria-hidden />
-                  {allowed} in scope ·{' '}
-                  <span className="text-warning">{refused.length} may not be scanned</span>
+                  {t('scans.summary.inScope', undefined, { count: allowed })} ·{' '}
+                  <span className="text-warning">
+                    {t('scans.summary.mayNotScan', undefined, { count: refused.length })}
+                  </span>
                 </>
               ) : results.length > 0 ? (
                 <>
-                  <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden /> all in scope
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />{' '}
+                  {t('scans.summary.allInScope')}
                 </>
               ) : null}
             </span>
           )}
         </Row>
-        <Row title="Runs on" step="basic" onEdit={onEdit}>
-          {SENSOR_PREFERENCE_CONFIG[data.sensorPreference]?.label ?? 'Auto'}
+        <Row title={t('scans.review.rowRunsOn')} step="basic" onEdit={onEdit}>
+          {t(
+            `scans.sensorPref.${data.sensorPreference in SENSOR_PREFERENCE_CONFIG ? data.sensorPreference : 'auto'}.label`
+          )}
           {data.scanZoneId && (
             <span className="text-muted-foreground">
               {' '}
-              · zone {zones.find((z) => z.id === data.scanZoneId)?.name ?? data.scanZoneId}
+              ·{' '}
+              {t('scans.review.zone', undefined, {
+                name: zones.find((z) => z.id === data.scanZoneId)?.name ?? data.scanZoneId,
+              })}
             </span>
           )}
         </Row>
-        <Row title="When" step="schedule" onEdit={onEdit}>
-          {scheduleSummary(data)}
+        <Row title={t('scans.review.rowWhen')} step="schedule" onEdit={onEdit}>
+          {scheduleSummary(data, t)}
           {!data.schedule.runImmediately && !data.schedule.saveOnly && (
             <div className="mt-2">
               <SchedulePreview request={schedulePreviewRequestFromForm(data, 3)} />
@@ -202,15 +242,19 @@ export function ReviewStep({
 
       {refused.length > 0 && (
         <section
-          aria-label="Refused targets"
+          aria-label={t('scans.review.refusedLabel')}
           className="space-y-2 rounded-lg border border-warning/50 p-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">
-              {refused.length} {refused.length === 1 ? 'target' : 'targets'} may not be scanned
+              {t(
+                refused.length === 1 ? 'scans.scope.refusedOne' : 'scans.scope.refusedMany',
+                undefined,
+                { count: refused.length }
+              )}
             </p>
             <Button type="button" variant="outline" size="sm" onClick={removeRefused}>
-              Remove {refused.length === 1 ? 'it' : 'them'}
+              {refused.length === 1 ? t('scans.review.removeIt') : t('scans.review.removeThem')}
             </Button>
           </div>
           <ScopeCheckList
@@ -222,8 +266,8 @@ export function ReviewStep({
       )}
 
       {data.mode === 'workflow' && review.workflow.data && (
-        <section aria-label="Workflow" className="rounded-lg border p-3">
-          <h3 className="mb-2 text-sm font-semibold">Workflow</h3>
+        <section aria-label={t('scans.review.workflow')} className="rounded-lg border p-3">
+          <h3 className="mb-2 text-sm font-semibold">{t('scans.review.workflow')}</h3>
           <WorkflowPreviewBody preview={review.workflow.data} />
         </section>
       )}
@@ -240,7 +284,7 @@ export function ReviewStep({
       )}
 
       {(review.blockers.length > 0 || review.warnings.length > 0) && (
-        <ul className="space-y-1.5" aria-label="Before you start">
+        <ul className="space-y-1.5" aria-label={t('scans.review.beforeStart')}>
           {review.blockers.map((b) => (
             <li key={b} className="flex items-start gap-2 text-sm text-destructive">
               <XCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />

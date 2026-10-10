@@ -71,7 +71,9 @@ delivery (`command.Service` Poll, claim-N, claim by id) asks
 cover the job's targets (program exclusions applied, the command's own
 tenant only):
 
-- outside a covering program's testing windows the job stays pending;
+- outside a covering program's testing windows the job waits: the scan
+  window hold evaluates them as allow windows that cannot be overridden
+  (RFC-067, [scan-windows.md](scan-windows.md));
 - two programs with different values for one header, or two User-Agents:
   the job fails with `PROGRAM_RULES_CONFLICT`;
 - otherwise the delivered copy carries the headers and User-Agent in
@@ -80,8 +82,10 @@ tenant only):
 - headers or a User-Agent go only to a sensor whose SDK is v0.19.0 or later
   (older sensors would ignore them); a failed lookup withholds the job.
 
-The trigger refuses the same cases up front (`PROGRAM_OUTSIDE_WINDOW`,
-`PROGRAM_RULES_CONFLICT`). Programs cannot require credential or connection
+The trigger refuses conflicting rules up front (`PROGRAM_RULES_CONFLICT`);
+a run outside a testing window waits, a scheduled one is deferred to the
+next opening, and a target whose windows never open refuses the run
+(`SCAN_WINDOW_NEVER_OPENS`). Programs cannot require credential or connection
 headers.
 
 ## Letters of authorization
@@ -130,15 +134,86 @@ scope views (GET /scope/targets[/{id}]) leave out private program entries the ca
 A change of terms locks the program again for everyone until they accept the
 new hash (`POST /programs/{id}/attest`).
 
-## Public program monitor (designed)
+## Public program monitor
 
 Public programs come from a signed feed (`openctemio/programfeed`, built like
-the vulnerability feed of RFC-066 §5.5). The platform verifies and imports it
-into a catalog; an organization subscribes to a program, whose entries stay
-inactive (passive monitoring only) until a member accepts its terms. Feed
-changes apply like a sync: narrowing at once, widening as pending terms.
-Program assets carry provenance and system tags and are left out of the
-organization's own metrics by default (RFC-065 §16).
+the vulnerability feed of RFC-066 §5.5). The platform never calls the
+bug-bounty platforms.
+
+```
+PROGRAMFEED_DIR ──► programfeed.VerifyDir (pinned root, key-set version ≥ last,
+                     sequence > applied, not expired, size + SHA-256 per file)
+                 ──► ReadPrograms (RecordParser v1, every record validated)
+                 ──► public_programs + program_feed_state (one transaction)
+                 ──► reconcile: subscribed programs whose terms differ
+                        narrowing only  → applied at once, still in effect
+                        widening / rules / terms / pending → entries inactive,
+                                          pending_attestation, admins notified
+                        closed / removed → suspended
+POST /programs/subscriptions ──► tenant program (public_feed), entries inactive
+POST /programs/{id}/reactivate (step-up, terms hash) ──► entries in effect (CommitEntries)
+```
+
+Before acceptance only passive work runs: the active-probe gate finds no
+active entry.
+
+Program assets: `asset_program_links` records which program lists or covers
+an asset; `assets.system_tags` and `assets.program_only` are derived from it
+by the assignment pass (`program_asset_links.go`) and never written by a
+request. Dashboards and program metrics leave program-only assets out by
+default; the inventory filters on `program_assets`.
+
+A second stream reads the operator's own unsigned local bundle
+(`PROGRAMFEED_LOCAL_BUNDLE_DIR`, `programfeed.VerifyLocalDir`) only while a
+platform administrator has it enabled (admin console, step-up, audited).
+Its programs are local-only: every target is a suggestion until confirmed;
+the signed stream's record wins on the same id. Program assets will carry provenance and system tags and be
+left out of the organization's own metrics by default (RFC-065 §16.5).
+
+### Chunked bundles (format v2)
+
+When the source offers bundle format v2 (a `latest.v2.dsse.json` pointer in
+`PROGRAMFEED_DIR`, or `PROGRAMFEED_URL` / `PROGRAMFEED_MIRRORS` configured),
+the importer reads it through the sdk-go bundle consumer
+(`feed-transfer.md`, the chunked feed transfer design); otherwise the whole-bundle (v1)
+reader above runs, for one release.
+
+```
+origins: PROGRAMFEED_URL → PROGRAMFEED_MIRRORS → PROGRAMFEED_DIR
+  (SSRF-guarded client, retries + Retry-After, Range resume, circuit breaker,
+   verified chunk cache in FEED_CACHE_DIR)
+──► key set: feedsign.VerifyKeySet (pinned root, version ≥ last accepted)
+──► pointer + manifest: signature, pin, feed, sequence > applied (else
+    ErrRollback), delta only on its base, expiry ≤ 7 days, caps
+──► per chunk (sha256 before parse): programs then changes, every record
+    validated, ids ascending inside ordered chunk ranges; one transaction:
+    upserts (never over a newer sequence of the same stream, never over a
+    live signed record from the local stream) + feed_checkpoints advance
+──► complete: snapshot archives the stream's older rows; program_feed_state
+    and feed_checkpoints record the applied sequence (one transaction)
+```
+
+`feed_checkpoints` (one row per feed: `programfeed`, `programfeed-local`,
+`vulnfeed`) holds the applied sequence and the bundle in progress with its
+next chunk; a crash resumes at that chunk, a refused chunk leaves everything
+after it unapplied, and the row never moves back. It is platform-wide by
+design (no tenant column, no tenant data); tenant effects run afterwards in
+the tenant-scoped reconcile. A manifest whose `meta.collector.local_only` is
+set is refused on the signed stream. The local stream reads the unsigned
+`snapshot.v2.manifest.json` (and delta) of `programfeed build --local-only`
+only while the source is enabled: the importer checks the manifests, signs
+them with a key that exists only for that run in a private directory, and
+the same consumer applies them with the same chunk checks and checkpoint.
+
+## Confidentiality of private program assets
+
+Program-only assets of private programs, and their findings, are visible to
+the programs' members and the organization's owners only: the data-scope
+layer leaves them out for everyone else, administrators included (404 by
+id, absent from lists, exports, counts and dashboards). Shared assets stay
+visible without the private program's tags, and the inventory's tag
+filter matches only the tags of programs the viewer may see. Details:
+[authorization-matrix.md](authorization-matrix.md#data-scope-layer-2-access-groups).
 
 ## Evidence
 
@@ -160,7 +235,7 @@ the run and hold `scope:read` or `programs:read`.
 | `internal/app/scan/scope_snapshot.go`, `internal/app/scope/snapshot.go` | snapshot per run |
 | `internal/infra/postgres/bounty_program_assign.go` | program assignment pass (data scope) |
 | `migrations/001495_bounty_programs.*` | tables, columns, permissions, Researcher role |
-| `pkg/domain/bountyprogram/windows.go`, `internal/app/bountyprogram/rules.go` | testing windows, the rules a job carries |
+| `pkg/domain/bountyprogram/windows.go`, `internal/app/bountyprogram/rules.go` | testing window validation, the rules a job carries (windows are evaluated by `internal/app/scanwindow`) |
 | `internal/app/command/program_rules.go`, `internal/app/scan/program_rules.go` | rules at delivery and at trigger |
 | `pkg/domain/scope/letter.go`, `internal/app/scope/letters.go` | letters of authorization |
 | `pkg/domain/bountyprogram/sync.go`, `internal/app/bountyprogram/sync.go`, `internal/infra/bountysource/` | scope sync |
@@ -168,3 +243,9 @@ the run and hold `scope:read` or `programs:read`.
 | `pkg/domain/bountyprogram/scope_file.go` | scope files: platform CSV, Burp scope JSON, CSV with a column mapping |
 | `internal/app/bountyprogram/access.go` | visibility, per-person attestation, hidden program entries |
 | `migrations/001700_private_programs.*` | visibility, terms text, optional link, attestations |
+| `internal/infra/postgres/program_asset_links.go`, `migrations/001792_program_assets.*` | program asset links, system tags, program-only |
+| `pkg/feedsign/` | shared verification of signed feed bundles (DSSE, root, key set) |
+| `pkg/programfeed/` | program feed bundle: verify, read records (`V1` parser) |
+| `internal/app/programfeed/`, `internal/infra/controller/program_feed.go` | importer and reconcile |
+| `internal/app/bountyprogram/subscription.go`, `internal/infra/postgres/public_program_repository.go` | subscriptions, catalog |
+| `migrations/001736_public_program_feed.*` | catalog, feed state, subscriptions |

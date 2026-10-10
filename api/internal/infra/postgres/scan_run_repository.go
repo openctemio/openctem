@@ -52,11 +52,11 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject,
+			created_at, scheduled_for, deadline_at, refusal_code, kind, subject,
 			scan_workflow_version, spec_digest
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26, NULLIF($27, 0), NULLIF($28, ''))
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -82,7 +82,6 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 		run.RetryAttempt,
 		run.CreatedAt,
 		nullTime(run.ScheduledFor),
-		run.FreezeOverride,
 		run.RefusalCode,
 		string(run.KindOrDefault()),
 		nullJSONObject(run.Subject),
@@ -491,11 +490,11 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject,
+			created_at, scheduled_for, deadline_at, refusal_code, kind, subject,
 			scan_workflow_version, spec_digest
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26, NULLIF($27, 0), NULLIF($28, ''))
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -521,7 +520,6 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 		run.RetryAttempt,
 		run.CreatedAt,
 		nullTime(run.ScheduledFor),
-		run.FreezeOverride,
 		run.RefusalCode,
 		string(run.KindOrDefault()),
 		nullJSONObject(run.Subject),
@@ -898,7 +896,10 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			        WHERE c.tenant_id = pr.tenant_id AND c.payload->>'scan_run_id' = pr.id::text
 			          AND (c.status <> 'pending' OR c.acknowledged_at IS NOT NULL OR c.started_at IS NOT NULL
 			               -- a lease-lost requeue clears the timestamps but not the attempts
-			               OR c.dispatch_attempts > 0))
+			               OR c.dispatch_attempts > 0
+			               -- waiting for its scan window is not "no sensor picked it up";
+			               -- the run's deadline moved with the wait (RFC-067)
+			               OR c.window_hold IS NOT NULL))
 		), unclaimed AS (
 			UPDATE scan_runs pr
 			SET status = 'failed',
@@ -1102,7 +1103,7 @@ func (r *ScanRunRepository) selectQuery() string {
 		       started_at, completed_at, error_message,
 		       scan_profile_id, quality_gate_result, retry_attempt,
 		       created_at, scheduled_for,
-		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0), freeze_override,
+		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0),
 		       COALESCE(refusal_code, ''), kind, subject,
 		       COALESCE(scan_workflow_version, 0), COALESCE(spec_digest, '')
 		FROM scan_runs
@@ -1250,7 +1251,6 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 		&scheduledFor,
 		&deadlineAt,
 		&run.UnfinishedTargetCount,
-		&run.FreezeOverride,
 		&run.RefusalCode,
 		&kind,
 		&subject,
@@ -1376,7 +1376,6 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 		&scheduledFor,
 		&deadlineAt,
 		&run.UnfinishedTargetCount,
-		&run.FreezeOverride,
 		&run.RefusalCode,
 		&kind,
 		&subject,

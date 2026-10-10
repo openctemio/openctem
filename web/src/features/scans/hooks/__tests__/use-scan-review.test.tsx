@@ -62,8 +62,11 @@ describe('useScanReview', () => {
     expect(r.blockers).toContain('The workflow would not start: no sensor runs httpx')
   })
 
-  it('warns about an active freeze window and about groups resolved at run time', () => {
-    wfData = { blocking: false, freeze: { window: 'Change freeze' } }
+  it('warns about targets waiting for their windows and about groups resolved at run time', () => {
+    wfData = {
+      blocking: false,
+      targets: { windows: { waiting_count: 2, never_count: 0, waiting: [], never: [] } },
+    }
     const r = review(
       form({
         mode: 'workflow',
@@ -71,8 +74,18 @@ describe('useScanReview', () => {
         targets: { ...DEFAULT_NEW_SCAN.targets, assetGroupIds: ['g1'] },
       })
     )
-    expect(r.warnings.join(' ')).toMatch(/Change freeze/)
+    expect(r.warnings.join(' ')).toMatch(/2 targets wait for their scan windows/)
     expect(r.warnings.join(' ')).toMatch(/resolved when the scan runs/)
+    expect(r.blockers).toEqual([])
+  })
+
+  it('blocks a scan whose targets have windows that never open', () => {
+    wfData = {
+      blocking: false,
+      targets: { windows: { waiting_count: 0, never_count: 1, waiting: [], never: [] } },
+    }
+    const r = review(form({ mode: 'workflow', workflowId: 'w1' }))
+    expect(r.blockers.join(' ')).toMatch(/1 targets have scan windows that never open/)
   })
 })
 

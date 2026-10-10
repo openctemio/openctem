@@ -57,10 +57,10 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 			result, scheduled_at, schedule_id, scan_run_step_id,
 			is_platform_job, platform_sensor_id,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
-			queue_priority, queued_at, dispatch_attempts, scan_zone_id, freeze_override,
+			queue_priority, queued_at, dispatch_attempts, scan_zone_id,
 			host_keys, dispatch_gate
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -90,7 +90,6 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 		nullTime(cmd.QueuedAt),
 		cmd.DispatchAttempts,
 		nullIDString(cmd.ScanZoneID),
-		cmd.FreezeOverride,
 		hostKeysArg(cmd.HostKeys),
 		dispatchGateArg(cmd.DispatchGate),
 	)
@@ -154,8 +153,8 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 
 // pendingForSensorWhere is the poll's predicate for sensorID in tenantID:
 // pending and due, pinned to the sensor or unpinned, the zone claim
-// predicate, the tool gate, the capability gate and the freeze hold
-// (freezeHoldPredicate). Arguments: $1 tenant,
+// predicate, the tool gate and the capability gate. A job waiting for a
+// scan window is not due (scheduled_at, window_hold.go). Arguments: $1 tenant,
 // $2 sensor (when given), then the capabilities.
 func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities []string) (string, []any) {
 	where := `commands.tenant_id = $1 AND ` + pendingReadyPredicate
@@ -169,7 +168,7 @@ func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities
 		// to prove.
 		where += " AND commands.sensor_id IS NULL AND commands.scan_zone_id IS NULL AND " + commandToolSQL + " IS NULL"
 	}
-	where += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1)) + " AND " + freezeHoldPredicate
+	where += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1))
 	args = append(args, pq.Array(capabilities))
 	return where, args
 }
@@ -224,8 +223,13 @@ func fairPendingQuery(selectSQL, where string, limit int) string {
 // expired, and not scheduled for later.
 const pendingReadyPredicate = `commands.status = 'pending'
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
-		AND (commands.scheduled_at IS NULL OR commands.scheduled_at <= NOW())
+		AND ` + scheduledDuePredicate + `
 		AND ` + hostFreePredicate
+
+// scheduledDuePredicate keeps a command that is not scheduled for later: a
+// job deferred to its scan window's next opening (window_hold.go) is not
+// offered or claimable, by poll or by id, before then.
+const scheduledDuePredicate = `(commands.scheduled_at IS NULL OR commands.scheduled_at <= NOW())`
 
 // hostFreePredicate keeps a command whose hosts are free: it carries no host
 // keys, or no other acknowledged or running command of its tenant holds one
@@ -276,8 +280,7 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 		AND ` + zoneClaimPredicate("$2") + `
 		AND ` + toolClaimPredicate("$2") + `
 		AND ` + refusedByPredicate("$2") + `
-		AND ` + capabilityClaimPredicate("$3") + `
-		AND ` + freezeHoldPredicate
+		AND ` + capabilityClaimPredicate("$3")
 	query := `
 		SELECT
 			LEAST($4::int,
@@ -447,7 +450,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 	query := `
 		UPDATE commands
 		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW(),
-		    lease_epoch = lease_epoch + 1,
+		    lease_epoch = lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
 		    lease_expires_at = NOW() + make_interval(secs => $4)
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 		  AND (sensor_id IS NULL OR sensor_id = $3)
@@ -455,7 +458,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND ` + toolClaimPredicate("$3") + `
 		  AND ` + capabilityClaimPredicate(claimSensorCapabilities) + `
 		  AND ` + refusedByPredicate("$3") + `
-		  AND ` + freezeHoldPredicate + `
+		  AND ` + scheduledDuePredicate + `
 		  AND ` + hostFreePredicate + `
 	`
 	result, err := tx.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())
@@ -602,7 +605,7 @@ func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, se
 	query := `
 		UPDATE commands c
 		SET status = 'acknowledged', sensor_id = $2, acknowledged_at = NOW(),
-		    lease_epoch = c.lease_epoch + 1,
+		    lease_epoch = c.lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
 		    lease_expires_at = NOW() + make_interval(secs => ` + leaseParam + `)
 		WHERE c.id IN (
 			SELECT commands.id FROM commands

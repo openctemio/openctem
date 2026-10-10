@@ -2,6 +2,7 @@ package software
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -35,6 +36,30 @@ type LinkResult struct {
 	ChangedAssets []shared.ID
 }
 
+// AssetLink is one current software link of an asset, for display.
+type AssetLink struct {
+	ID         shared.ID
+	ProductID  shared.ID
+	Product    string
+	Vendor     string
+	CPE        string // "vendor:product", empty for a product without one
+	Global     bool
+	VersionID  shared.ID
+	Version    string
+	Qualifier  string
+	Location   string
+	Port       int
+	Transport  string
+	Source     string
+	Evidence   string
+	Confidence int
+	FirstSeen  time.Time
+	LastSeen   time.Time
+}
+
+// MaxAssetLinks bounds one asset's software list.
+const MaxAssetLinks = 1000
+
 // Repository is the catalog and the per-tenant links. Every method that
 // takes a tenant reads global rows and that tenant's private rows only, and
 // writes private rows only for that tenant.
@@ -53,4 +78,7 @@ type Repository interface {
 	// older link of the same product at the same location with another
 	// version, not written by this call, is superseded.
 	UpsertLinks(ctx context.Context, tenantID shared.ID, links []Link) (LinkResult, error)
+	// ListAssetLinks returns the asset's current links (not superseded),
+	// newest first, at most MaxAssetLinks.
+	ListAssetLinks(ctx context.Context, tenantID, assetID shared.ID) ([]AssetLink, error)
 }
