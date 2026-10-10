@@ -603,7 +603,7 @@ type Services struct {
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
 	// ProgramFeed imports the public program feed (RFC-065 §16); nil unless
-	// PROGRAM_FEED_DIR and PROGRAM_FEED_ROOT_KEY_ID are set.
+	// PROGRAMFEED_DIR and PROGRAMFEED_ROOT_KEY_ID are set.
 	ProgramFeed   *programfeedapp.Importer
 	AttackSurface *attack.SurfaceService
 	ThreatModel   *threatmodel.Service
