@@ -34,6 +34,7 @@ authorization_letters
 automation_runs
 automations
 bounty_program_attestations
+bounty_program_channels
 bounty_program_exclusions
 bounty_programs
 business_service_assets
