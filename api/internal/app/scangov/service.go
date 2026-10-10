@@ -40,11 +40,19 @@ type SettingsStore interface {
 		action audit.Action, reason string, actx auditapp.AuditContext) (*tenant.ScanGovernanceSettings, error)
 }
 
+// TierCeilings records a change of the organization's scope entry tier
+// ceilings with the job signer's ledger (*scope.Service): turning them off
+// is accepted by the signer before save, or fails.
+type TierCeilings interface {
+	CommitTierCeilings(ctx context.Context, tenantID shared.ID, enforced bool, requester string, mode scangov.Mode, save func() error) error
+}
+
 // Service is scan approval governance.
 type Service struct {
 	modes    ModeSource
 	settings SettingsStore
 	log      *logger.Logger
+	ceilings TierCeilings
 
 	// Requests and the run gate (wiring.go).
 	repo      scangov.Repository
@@ -54,6 +62,12 @@ type Service struct {
 	inApp     InAppNotifier
 	audit     AuditLogger
 	now       func() time.Time
+
+	// Requester and time facts (requester.go).
+	requesters RequesterDirectory
+	timezones  TimezoneSource
+	// lister lists the tenant's scans for the rule tester (tester.go).
+	lister ScanLister
 }
 
 // NewService creates the service.
@@ -63,6 +77,10 @@ func NewService(modes ModeSource, settings SettingsStore, log *logger.Logger) *S
 	}
 	return &Service{modes: modes, settings: settings, log: log.With("service", "scan_governance")}
 }
+
+// SetTierCeilings wires the job signer's ledger for the tier ceilings,
+// which follow the mode (in force only in Strict).
+func (s *Service) SetTierCeilings(c TierCeilings) { s.ceilings = c }
 
 // View is the organization's settings as the settings page shows them.
 type View struct {
@@ -94,20 +112,29 @@ func (s *Service) SetMode(ctx context.Context, tenantID shared.ID, m scangov.Mod
 	if !m.Valid() {
 		return nil, fmt.Errorf("%w: scan approval must be off, on or strict", shared.ErrValidation)
 	}
-	_, _, p, err := s.modes.EffectiveMode(ctx, tenantID)
+	prev, _, p, err := s.modes.EffectiveMode(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	if !scangov.TenantMayChoose(m, p) {
 		return nil, scangov.ErrModeForced
 	}
-	_, err = s.settings.UpdateScanGovernanceSettings(ctx, tenantID.String(), func(st *tenant.ScanGovernanceSettings) error {
-		st.Mode = m
-		if m != scangov.ModeOff && len(st.Rules) == 0 {
-			st.Rules = scangov.Preset(scangov.PresetLight)
-		}
-		return nil
-	}, audit.ActionScanGovernanceModeChanged, reason, actx)
+	save := func() error {
+		_, err := s.settings.UpdateScanGovernanceSettings(ctx, tenantID.String(), func(st *tenant.ScanGovernanceSettings) error {
+			st.Mode = m
+			if m != scangov.ModeOff && len(st.Rules) == 0 {
+				st.Rules = scangov.Preset(scangov.PresetLight)
+			}
+			return nil
+		}, audit.ActionScanGovernanceModeChanged, reason, actx)
+		return err
+	}
+	next, _ := scangov.Effective(m, p)
+	if changed, enforced := scangov.CeilingsChange(prev, next); changed && s.ceilings != nil {
+		err = s.ceilings.CommitTierCeilings(ctx, tenantID, enforced, actx.ActorID, next, save)
+	} else {
+		err = save()
+	}
 	if err != nil {
 		return nil, err
 	}

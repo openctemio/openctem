@@ -69,6 +69,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
@@ -102,6 +103,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	bountyprogramdom "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -607,6 +609,9 @@ type Services struct {
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
+	// ProgramDelivery resolves where events about private program assets
+	// may go and which program names to scrub (RFC-065 §15.4).
+	ProgramDelivery bountyprogramdom.DeliveryResolver
 	// ProgramFeed imports the public program feed (RFC-065 §16); nil unless
 	// PROGRAMFEED_DIR and PROGRAMFEED_ROOT_KEY_ID are set.
 	ProgramFeed *programfeedapp.Importer
@@ -647,6 +652,7 @@ type Services struct {
 	Component      *asset.ComponentService
 	SBOMImport     *asset.SBOMImportService
 	VEX            *vexapp.Service
+	LicensePolicy  *licapp.Service
 	ReportSchedule *module.ReportScheduleService
 	Branch         *asset.BranchService
 
@@ -1039,6 +1045,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Program channels and the organization-channel opt-in (RFC-065 §15.4).
 	programDelivery := postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB})
 	s.BountyProgram.SetDeliveryStore(programDelivery)
+	s.ProgramDelivery = programDelivery
 	s.ProgramAssigner = programRepo
 	// The public program catalog and the feed importer (RFC-065 §16).
 	catalogRepo := postgres.NewPublicProgramRepository(&postgres.DB{DB: deps.DB})
@@ -1106,6 +1113,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = asset.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
+	s.LicensePolicy = licapp.NewService(repos.LicensePolicy, repos.Finding, repos.Tenant, log)
+	s.SBOMImport.SetLicenseEvaluator(s.LicensePolicy)
 	s.VEX = vexapp.NewService(repos.VEXStatement, s.DataScope, s.Audit, log)
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
@@ -1842,6 +1851,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetToolContractSource(repos.Sensor)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
+	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)        // License policy on every package write
 	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)

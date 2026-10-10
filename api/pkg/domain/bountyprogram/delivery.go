@@ -92,10 +92,17 @@ func (d Delivery) Allows(integrationID shared.ID) bool {
 // Scrub removes, from text bound for the integration, the names, handles
 // and tags of the private programs it is not attached to (case-insensitive).
 func (d Delivery) Scrub(integrationID shared.ID, text string) string {
+	return d.ScrubFor(d.Channels[integrationID], text)
+}
+
+// ScrubFor removes from text the names, handles and tags of the private
+// programs not in allowed: the programs a destination is attached to, or
+// the programs a person reading the outbox may see.
+func (d Delivery) ScrubFor(allowed map[shared.ID]bool, text string) string {
 	if text == "" || len(d.Programs) == 0 {
 		return text
 	}
-	attached := d.Channels[integrationID]
+	attached := allowed
 	var terms []string
 	for _, p := range d.Programs {
 		if attached[p.ID] {

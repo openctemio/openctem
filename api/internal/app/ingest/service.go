@@ -295,6 +295,14 @@ func (s *Service) SetAssignmentApplier(applier AssignmentApplier) {
 
 // SetRemediationKeyApplier wires post-insert remediation-group key derivation
 // (RFC-015). Nil-safe: when not wired, findings are not grouped.
+// SetLicenseEvaluator wires the license policy evaluation after each write
+// of an asset's packages.
+func (s *Service) SetLicenseEvaluator(e LicenseEvaluator) {
+	if s.componentProcessor != nil {
+		s.componentProcessor.SetLicenseEvaluator(e)
+	}
+}
+
 // SetVEXStatementApplier wires the organization's VEX statements, applied
 // to the findings of every report.
 func (s *Service) SetVEXStatementApplier(a VEXStatementApplier) {
