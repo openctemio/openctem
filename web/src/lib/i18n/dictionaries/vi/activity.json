@@ -1,0 +1,9 @@
+{
+  "activity.listLabel": "Hoạt động",
+  "activity.filterLabel": "Lọc hoạt động",
+  "activity.loadMore": "Tải thêm",
+  "activity.repeated": "{count} lần",
+  "activity.repeatedLast": "{count} lần, lần cuối lúc {time}",
+  "activity.emptyFiltered": "Chưa có hoạt động loại này",
+  "activity.emptyFilteredHint": "Bỏ bộ lọc để xem tất cả."
+}

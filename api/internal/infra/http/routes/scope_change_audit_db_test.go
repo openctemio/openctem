@@ -35,6 +35,10 @@ import (
 // newChangeAuditHarness is the authorization-policy harness (real route
 // registration, auth chain and role tables) with the scope, scanner template
 // and tool handlers wired to the audit service as in cmd/server.
+// changeAuditExtraHandlers adds handlers to the next harness (set and
+// reset by a test; the route tests do not run in parallel).
+var changeAuditExtraHandlers func(*Handlers, *postgres.DB)
+
 func newChangeAuditHarness(t *testing.T, configure ...func(*scopeapp.Service, *handler.ScopeHandler, *postgres.DB)) *authzPolicyHarness {
 	t.Helper()
 	dbURL := testdb.URL()
@@ -88,7 +92,11 @@ func newChangeAuditHarness(t *testing.T, configure ...func(*scopeapp.Service, *h
 	tools.SetAuditService(auditSvc)
 
 	router := infrahttp.NewChiRouter()
-	Register(router, Handlers{Scope: scope, ScannerTemplate: templates, Tool: tools, StepUp: alwaysSteppedUp{}}, cfg, log,
+	hs := Handlers{Scope: scope, ScannerTemplate: templates, Tool: tools, StepUp: alwaysSteppedUp{}}
+	if changeAuditExtraHandlers != nil {
+		changeAuditExtraHandlers(&hs, db)
+	}
+	Register(router, hs, cfg, log,
 		AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen},
 		tenantRepo, tenant.NewUserService(postgres.NewUserRepository(db), log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())

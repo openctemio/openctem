@@ -126,3 +126,28 @@ func TestProgramDeliverySettings(t *testing.T) {
 		t.Fatalf("no store: %v", err)
 	}
 }
+
+func TestReadablePrograms(t *testing.T) {
+	svc, _, _, tenant, member, p := privateFixture(t, true)
+	ctx := context.Background()
+	stranger := shared.NewID() // a full-data integration admin, not a member
+	ids := []shared.ID{p.ID}
+
+	got, err := svc.ReadablePrograms(ctx, tenant, member, ids)
+	if err != nil || !got[p.ID] {
+		t.Fatalf("member: %v %v", got, err)
+	}
+	if got, err = svc.ReadablePrograms(ctx, tenant, stranger, ids); err != nil || got[p.ID] {
+		t.Fatalf("stranger reads the program: %v %v", got, err)
+	}
+	if got, err = svc.ReadablePrograms(ctx, tenant, shared.ID{}, ids); err != nil || got[p.ID] {
+		t.Fatalf("no actor reads the program: %v %v", got, err)
+	}
+	if got, err = svc.ReadablePrograms(asOwner(ctx), tenant, stranger, ids); err != nil || !got[p.ID] {
+		t.Fatalf("owner: %v %v", got, err)
+	}
+	// A member of the program, asked about another tenant, reads nothing.
+	if got, err = svc.ReadablePrograms(ctx, shared.NewID(), member, ids); err != nil || got[p.ID] {
+		t.Fatalf("cross-tenant: %v %v", got, err)
+	}
+}

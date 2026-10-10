@@ -1,0 +1,9 @@
+{
+  "assets.properties.title": "Properties",
+  "assets.properties.other": "Other",
+  "assets.programTarget.badge": "Program target",
+  "assets.programTarget.title": "Listed by a bug-bounty program. Tags from programs are set by the platform and cannot be edited.",
+  "assets.programTarget.unattested": "terms not accepted",
+  "assets.programTarget.programOnly": "not in your own scope",
+  "assets.programTarget.field": "Bug-bounty program"
+}

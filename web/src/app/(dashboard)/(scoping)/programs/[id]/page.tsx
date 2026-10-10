@@ -40,6 +40,8 @@ import {
   endProgram,
   formatWindow,
   invalidatePrograms,
+  portLimit,
+  ProgramTargetsTable,
   reactivateProgram,
   reimportProgram,
   shortHash,
@@ -275,6 +277,14 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
 
         <ProgramSource program={p} canWrite={canWrite} onChanged={refresh} />
 
+        {p.items.some((i) => i.in_scope) && (
+          <section className="space-y-2">
+            <h3 className="text-base font-semibold">
+              {t('programs.targets.title', 'Program targets')}
+            </h3>
+            <ProgramTargetsTable items={p.items} />
+          </section>
+        )}
         <ProgramNotifications
           program={p}
           canManage={canWrite && canManageIntegrations}
@@ -294,7 +304,16 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
             <TableBody>
               {p.entries.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell className="font-mono text-xs break-all">{e.pattern}</TableCell>
+                  <TableCell className="font-mono text-xs break-all">
+                    {e.pattern}
+                    {portLimit(e.ports, e.protocol) && (
+                      <Badge variant="outline" className="ml-2 font-mono">
+                        {t('programs.targets.onlyPorts', 'only {ports}', {
+                          ports: portLimit(e.ports, e.protocol),
+                        })}
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-xs">{e.target_type}</TableCell>
                   <TableCell>
                     <Badge variant={e.in_effect ? 'default' : 'secondary'}>

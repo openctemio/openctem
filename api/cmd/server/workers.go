@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
@@ -32,6 +34,7 @@ import (
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -475,6 +478,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// VEX statements past their expiry are withdrawn: their findings reopen.
+	if svc.VEX != nil {
+		w.ControllerManager.Register(controller.NewVEXStatementExpiryController(
+			svc.VEX, log.With("controller", "vex-statement-expiry")))
+	}
+
 	// Access requests: unconfirmed ones go after 24 h, decided ones after 90 days.
 	if svc.AccessRequest != nil {
 		w.ControllerManager.Register(controller.NewAccessRequestRetentionController(
@@ -578,6 +587,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if err != nil {
 			log.Error("vulnerability bundle import disabled", "error", err)
 		} else {
+			// Chunked (v2) bundles are fetched with retries, resume and mirror
+			// fall-back and applied chunk by chunk with a durable checkpoint
+			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
+			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
+				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
 			w.ControllerManager.Register(controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import")))
 		}
 	}
