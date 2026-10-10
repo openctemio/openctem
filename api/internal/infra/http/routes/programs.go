@@ -19,6 +19,9 @@ func registerProgramRoutes(router Router, h *handler.BountyProgramHandler, authM
 		r.POST("/preview", h.Preview, middleware.Require(permission.ProgramsWrite))
 		r.POST("/", h.Import, middleware.Require(permission.ProgramsWrite), requireStepUp())
 		r.GET("/{id}", h.Get, middleware.Require(permission.ProgramsRead))
+		// Accepting a program's terms changes no authorization; it unlocks a
+		// private program's details for the caller.
+		r.POST("/{id}/attest", h.Attest, middleware.Require(permission.ProgramsRead))
 		r.PUT("/{id}/scope", h.Reimport, middleware.Require(permission.ProgramsWrite), requireStepUp())
 		r.POST("/{id}/suspend", h.Pause, middleware.Require(permission.ProgramsWrite))
 		r.POST("/{id}/end", h.End, middleware.Require(permission.ProgramsWrite))

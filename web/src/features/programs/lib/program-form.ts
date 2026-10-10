@@ -10,6 +10,8 @@ import type {
   ProgramPreview,
   ProgramRules,
   ProgramStatus,
+  ScopeFileFormat,
+  ScopeFileInput,
   TestingWindow,
   WeekDay,
 } from '../api/programs-api.types'
@@ -165,4 +167,58 @@ export function summarizePreview(p: ProgramPreview): PreviewSummary {
 /** Short form of a terms hash for display. */
 export function shortHash(h: string | undefined): string {
   return h ? `${h.slice(0, 12)}…` : ''
+}
+
+/** The largest scope file the server reads (bytes). */
+export const MAX_SCOPE_FILE_BYTES = 256 * 1024
+
+export const SCOPE_FILE_FORMATS: { value: ScopeFileFormat; label: string }[] = [
+  { value: 'auto', label: 'Detect from the file' },
+  { value: 'platform_csv', label: 'Platform CSV export' },
+  { value: 'burp_json', label: 'Burp Suite target scope (JSON)' },
+  { value: 'generic_csv', label: 'Other CSV (choose the columns)' },
+  { value: 'text', label: 'Plain list' },
+]
+
+/**
+ * The column names of a CSV's header line (tab, semicolon or comma, as the
+ * server reads it). Empty for an empty file.
+ */
+export function csvHeaderColumns(content: string): string[] {
+  const first = content.replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0] ?? ''
+  if (!first.trim()) return []
+  const sep = first.includes('\t')
+    ? '\t'
+    : (first.match(/;/g)?.length ?? 0) > (first.match(/,/g)?.length ?? 0)
+      ? ';'
+      : ','
+  return first
+    .split(sep)
+    .map((c) => c.trim().replace(/^"(.*)"$/, '$1'))
+    .filter((c) => c !== '')
+}
+
+/** Whether a file is too large to send (UTF-8 bytes, as the server counts). */
+export function scopeFileTooLarge(content: string): boolean {
+  return new TextEncoder().encode(content).length > MAX_SCOPE_FILE_BYTES
+}
+
+export interface ScopeFileForm {
+  fileName: string
+  fileContent: string
+  fileFormat: ScopeFileFormat
+  mapIdentifier: string
+  mapType: string
+  mapInScope: string
+}
+
+/** The scope_file of a request; the mapping only for a generic CSV. */
+export function scopeFileFromForm(f: ScopeFileForm): ScopeFileInput {
+  const out: ScopeFileInput = { format: f.fileFormat, name: f.fileName, content: f.fileContent }
+  if (f.fileFormat === 'generic_csv') {
+    out.mapping = { identifier: f.mapIdentifier }
+    if (f.mapType) out.mapping.type = f.mapType
+    if (f.mapInScope) out.mapping.in_scope = f.mapInScope
+  }
+  return out
 }
