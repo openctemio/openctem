@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/testdb"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/finding"
@@ -150,7 +152,8 @@ func (h *gsHarness) seedGroups() {
 	h.t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = h.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, h.ownerB.String())
-		_, _ = h.db.ExecContext(ctx, `DELETE FROM components WHERE id IN ($1, $2)`, h.componentA.String(), h.componentB.String())
+		_, _ = h.db.ExecContext(ctx, `DELETE FROM software_products WHERE id IN (SELECT product_id FROM software_versions WHERE id IN ($1, $2))`,
+			h.componentA.String(), h.componentB.String())
 	})
 	// B1's owner is a member of the tenant: only a member can be a finding's
 	// assignee (assign-to-owners).
@@ -160,8 +163,7 @@ func (h *gsHarness) seedGroups() {
 	h.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'owner_ref')`, h.assetA.String(), h.memberA.String())
 	h.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'owner_ref')`, h.assetB.String(), h.ownerB.String())
 	for id, name := range map[shared.ID]string{h.componentA: gsComponentA, h.componentB: gsMarkerComponentB} {
-		h.exec(`INSERT INTO components (id, purl, name, version, ecosystem) VALUES ($1, $2, $3, '1.0.0', 'npm')`,
-			id.String(), "pkg:npm/"+name+"-"+id.String()+"@1.0.0", name)
+		testdb.InsertPackageVersion(h.t, h.db, "", id.String(), "pkg:npm/"+name+"-"+id.String()+"@1.0.0")
 	}
 	// FA: in scope. FB: out of scope, different value in every dimension.
 	h.exec(`UPDATE findings SET cve_id = $2, component_id = $3, finding_type = 'vulnerability' WHERE id = $1`,

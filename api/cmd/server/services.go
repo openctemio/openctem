@@ -44,8 +44,9 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
+	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
+	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/app/scopepolicy"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
@@ -85,6 +86,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
@@ -648,6 +650,7 @@ type Services struct {
 	// Components & Branches
 	Component      *asset.ComponentService
 	SBOMImport     *asset.SBOMImportService
+	VEX            *vexapp.Service
 	ReportSchedule *module.ReportScheduleService
 	Branch         *asset.BranchService
 
@@ -851,9 +854,12 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
-	// ScopePolicy is the platform policy for scope-widening approvals
+	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
-	ScopePolicy *scopepolicy.Service
+	ScanPolicy *scanpolicy.Service
+	// ScanGovernance is scan approval governance (RFC-073): settings,
+	// requests and the run gate (wired in wireScopeApprovers).
+	ScanGovernance *scangovapp.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
 	// Plans and limits.
@@ -1105,6 +1111,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = asset.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
+	s.VEX = vexapp.NewService(repos.VEXStatement, s.DataScope, s.Audit, log)
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
@@ -1840,6 +1847,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetToolContractSource(repos.Sensor)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
+	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
 	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)

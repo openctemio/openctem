@@ -80,6 +80,7 @@ func ledgerEntryOf(t *scopedom.Target, now time.Time) *jobsign.LedgerEntry {
 	return &jobsign.LedgerEntry{
 		ID: t.ID().String(), Type: string(t.TargetType()), Pattern: t.Pattern(),
 		MaxTier: int(t.MaxTier()), ExpiresAt: utcPtr(t.ExpiresAt()),
+		Ports: t.Constraint().Ports, Protocol: t.Constraint().Protocol,
 	}
 }
 
@@ -153,11 +154,12 @@ func (s *Service) commitEntry(ctx context.Context, before *jobsign.LedgerEntry, 
 	if widens {
 		ch.Requester = userRef(t.CreatedBy())
 		ch.RequiredApprovals = min(max(t.ApprovalsRequired(), 0), jobsign.MaxPolicyApprovals)
-		// The platform approval policy in force (RFC-054 §12.6), for the
-		// signer's record of why the change needed this many approvals.
-		if s.approvalPolicy != nil {
-			mode, _ := s.approvalPolicy.EffectiveScopeApprovalMode(ctx, t.TenantID())
-			ch.PlatformPolicy = string(mode)
+		// The scan approval mode in force (RFC-073 §6), for the signer's
+		// record of why the change needed this many approvals: entries
+		// need approvals only in Strict.
+		if s.governance != nil {
+			mode, _ := s.governance.ScanGovernanceMode(ctx, t.TenantID())
+			ch.PlatformPolicy = "scan_approval:" + string(mode)
 		}
 		for _, a := range t.Approvals() {
 			if id := userRef(a.UserID); id != "" {
@@ -309,7 +311,7 @@ func (s *Service) applyLedger(ctx context.Context, ch jobsign.LedgerChange, kind
 }
 
 func sameLedgerEntry(a, b jobsign.LedgerEntry) bool {
-	return a.ID == b.ID && a.Type == b.Type && a.Pattern == b.Pattern && a.MaxTier == b.MaxTier && sameExpiry(a.ExpiresAt, b.ExpiresAt)
+	return a.ID == b.ID && a.SameScope(b) && a.MaxTier == b.MaxTier && sameExpiry(a.ExpiresAt, b.ExpiresAt)
 }
 
 func sameLedgerExclusion(a, b jobsign.LedgerExclusion) bool {
