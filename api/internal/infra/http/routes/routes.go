@@ -262,9 +262,11 @@ type Handlers struct {
 	IdleReadOnly middleware.IdleReadOnlyChecker
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
-	// AdminScopePolicy: the platform policy for scope-widening approvals
-	// (RFC-054 §12.6), platform default and per organization.
-	AdminScopePolicy *handler.AdminScopePolicyHandler
+	// AdminScanPolicy: the platform policy for scan approval
+	// (RFC-073), platform default and per organization.
+	AdminScanPolicy *handler.AdminScanPolicyHandler
+	// ScanGovernance: the organization's scan approval settings (RFC-073).
+	ScanGovernance *handler.ScanGovernanceHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
@@ -574,7 +576,8 @@ func Register(
 
 	// Relationship Suggestion routes (auto-generated relationship recommendations)
 	if h.RelationshipSuggestion != nil {
-		registerRelationshipSuggestionRoutes(router, h.RelationshipSuggestion, authMiddleware, userSync)
+		registerRelationshipSuggestionRoutes(router, h.RelationshipSuggestion, authMiddleware, userSync,
+			h.ModuleGate.RequireModule(moduledom.ModuleRelationships))
 	}
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
@@ -586,6 +589,7 @@ func Register(
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
 	registerAssetReconciliationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	// Finding evidence: masked proof per detection / retest + audited reveal.
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)

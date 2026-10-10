@@ -49,3 +49,15 @@ func (t tenantAssets) AssetIDsInTenant(_ context.Context, tenantID shared.ID, id
 func tenantAssetEnforcer(owners tenantAssets) *datascope.Enforcer {
 	return datascope.New(owners, nil, logger.NewNop())
 }
+
+func (tenantAssets) HasHiddenAssets(context.Context, shared.ID, shared.ID) (bool, error) {
+	return false, nil
+}
+
+func (tenantAssets) AssetIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}
+
+func (tenantAssets) FindingIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}

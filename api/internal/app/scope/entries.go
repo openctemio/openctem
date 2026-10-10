@@ -25,6 +25,7 @@ import (
 	"time"
 
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -88,34 +89,35 @@ var (
 type policy struct {
 	settings tenant.ScopeSettings
 	admins   int
-	// mode is the platform approval policy in force (RFC-054 §12.6).
-	mode tenant.ScopeApprovalMode
+	// mode is the organization's scan approval mode in force (RFC-073):
+	// entries need approvals only in Strict.
+	mode scangov.Mode
 }
 
-// ApprovalPolicySource answers the platform approval policy of a tenant
-// (*scopepolicy.Service). It fails closed (required).
-type ApprovalPolicySource interface {
-	EffectiveScopeApprovalMode(ctx context.Context, tenantID shared.ID) (tenant.ScopeApprovalMode, string)
+// GovernanceSource answers a tenant's scan approval mode in force and who
+// decided it (*scanpolicy.Service). It fails closed (Strict).
+type GovernanceSource interface {
+	ScanGovernanceMode(ctx context.Context, tenantID shared.ID) (scangov.Mode, string)
 }
 
-// SetApprovalPolicy wires the platform approval policy. Without it every
-// tenant is `required`.
-func (s *Service) SetApprovalPolicy(src ApprovalPolicySource) { s.approvalPolicy = src }
+// SetGovernance wires scan approval governance. Without it every tenant is
+// Strict: entries keep the approvals of RFC-054 §7.
+func (s *Service) SetGovernance(src GovernanceSource) { s.governance = src }
 
-// ApprovalPolicy answers the tenant's approval mode and its source
-// (platform_default or organization_override).
-func (s *Service) ApprovalPolicy(ctx context.Context, tenantID string) (tenant.ScopeApprovalMode, string) {
+// ApprovalPolicy answers the tenant's scan approval mode and its source
+// (organization or platform).
+func (s *Service) ApprovalPolicy(ctx context.Context, tenantID string) (scangov.Mode, string) {
 	id, err := shared.IDFromString(tenantID)
-	if err != nil || s.approvalPolicy == nil {
-		return tenant.ScopeApprovalRequired, "platform_default"
+	if err != nil || s.governance == nil {
+		return scangov.ModeStrict, scangov.SourcePlatform
 	}
-	return s.approvalPolicy.EffectiveScopeApprovalMode(ctx, id)
+	return s.governance.ScanGovernanceMode(ctx, id)
 }
 
 func (s *Service) loadPolicy(ctx context.Context, tenantID shared.ID) (policy, error) {
-	p := policy{admins: 2, mode: tenant.ScopeApprovalRequired}
-	if s.approvalPolicy != nil {
-		p.mode, _ = s.approvalPolicy.EffectiveScopeApprovalMode(ctx, tenantID)
+	p := policy{admins: 2, mode: scangov.ModeStrict}
+	if s.governance != nil {
+		p.mode, _ = s.governance.ScanGovernanceMode(ctx, tenantID)
 	}
 	if s.settings != nil {
 		st, err := s.settings.GetScopeSettings(ctx, tenantID.String())

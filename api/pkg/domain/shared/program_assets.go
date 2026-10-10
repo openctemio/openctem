@@ -18,3 +18,25 @@ func ProgramAssetsIncluded(ctx context.Context) bool {
 	v, _ := ctx.Value(includeProgramAssetsKey{}).(bool)
 	return v
 }
+
+// ProgramViewer is who asks for metrics that include program-only assets:
+// the private program assets of programs the viewer is not a member of stay
+// out of them unless the viewer is an owner (RFC-065 §15.3).
+type ProgramViewer struct {
+	UserID ID
+	Owner  bool
+}
+
+type programViewerKey struct{}
+
+// WithProgramViewer records who reads program-only assets in the metrics.
+func WithProgramViewer(ctx context.Context, v ProgramViewer) context.Context {
+	return context.WithValue(ctx, programViewerKey{}, v)
+}
+
+// ProgramViewerOf returns the recorded viewer (false when none: an internal
+// call).
+func ProgramViewerOf(ctx context.Context) (ProgramViewer, bool) {
+	v, ok := ctx.Value(programViewerKey{}).(ProgramViewer)
+	return v, ok
+}

@@ -91,11 +91,11 @@ export function formatOccurrence(iso: string, timeZone: string, locale = 'en-GB'
 }
 
 /** "in 3 days", "in 5 hours", "in 12 minutes" relative to now. */
-export function formatRelativeFuture(iso: string, now: Date = new Date()): string {
+export function formatRelativeFuture(iso: string, now: Date = new Date(), locale = 'en'): string {
   const ms = new Date(iso).getTime() - now.getTime()
   if (Number.isNaN(ms)) return ''
   const minutes = Math.round(ms / 60_000)
-  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
   if (Math.abs(minutes) < 60) return rtf.format(minutes, 'minute')
   const hours = Math.round(minutes / 60)
   if (Math.abs(hours) < 48) return rtf.format(hours, 'hour')

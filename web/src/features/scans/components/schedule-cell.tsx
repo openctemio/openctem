@@ -1,25 +1,44 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Clock, Loader2 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
-import { SCHEDULE_TYPE_LABELS, type ScanConfig } from '@/lib/api/scan-types'
+import type { ScanConfig } from '@/lib/api/scan-types'
+import { scheduleTypeName } from '../lib/labels'
+import { enTranslate, type Translate } from '../lib/translate'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { hasSchedule, scheduleOn } from '../lib/scan-status'
 
 /** "in 2 days", "in 3 hours", "Soon", "Overdue"; null without a date. */
-export function formatNextRun(nextRunAt?: string, now: number = Date.now()): string | null {
+export function formatNextRun(
+  nextRunAt?: string,
+  now: number = Date.now(),
+  t: Translate = enTranslate
+): string | null {
   if (!nextRunAt) return null
   const diffMs = new Date(nextRunAt).getTime() - now
   if (!Number.isFinite(diffMs)) return null
-  if (diffMs < 0) return 'Overdue'
+  if (diffMs < 0) return t('scans.nextRun.overdue')
   const minutes = Math.floor(diffMs / 60000)
   const hours = Math.floor(minutes / 60)
   const days = Math.floor(hours / 24)
-  if (days > 0) return `in ${days} day${days > 1 ? 's' : ''}`
-  if (hours > 0) return `in ${hours} hour${hours > 1 ? 's' : ''}`
-  if (minutes > 0) return `in ${minutes} min${minutes > 1 ? 's' : ''}`
-  return 'Soon'
+  if (days > 0) {
+    return t(days > 1 ? 'scans.nextRun.inDayMany' : 'scans.nextRun.inDayOne', undefined, {
+      count: days,
+    })
+  }
+  if (hours > 0) {
+    return t(hours > 1 ? 'scans.nextRun.inHourMany' : 'scans.nextRun.inHourOne', undefined, {
+      count: hours,
+    })
+  }
+  if (minutes > 0) {
+    return t(minutes > 1 ? 'scans.nextRun.inMinMany' : 'scans.nextRun.inMinOne', undefined, {
+      count: minutes,
+    })
+  }
+  return t('scans.nextRun.soon')
 }
 
 /**
@@ -35,17 +54,18 @@ export function ScheduleCell({
   config: ScanConfig
   onToggle: (action: 'pause' | 'activate', config: ScanConfig) => Promise<void>
 }) {
+  const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.ScansWrite)
   const [saving, setSaving] = React.useState(false)
   const [on, setOn] = React.useState(scheduleOn(config))
   React.useEffect(() => setOn(scheduleOn(config)), [config])
 
   if (!hasSchedule(config)) {
-    return <span className="text-sm text-muted-foreground">Manual</span>
+    return <span className="text-sm text-muted-foreground">{t('scans.state.manual')}</span>
   }
 
   const disabled = config.status === 'disabled'
-  const nextRun = on ? formatNextRun(config.next_run_at) : null
+  const nextRun = on ? formatNextRun(config.next_run_at, undefined, t) : null
   const toggle = async (checked: boolean) => {
     if (saving || disabled) return
     setOn(checked)
@@ -66,7 +86,7 @@ export function ScheduleCell({
           checked={on}
           onCheckedChange={toggle}
           disabled={disabled || saving || !canWrite}
-          aria-label={on ? 'Turn the schedule off' : 'Turn the schedule on'}
+          aria-label={on ? t('scans.cell.scheduleOffAria') : t('scans.cell.scheduleOnAria')}
         />
         {saving && (
           <span className="absolute inset-0 flex items-center justify-center">
@@ -75,21 +95,21 @@ export function ScheduleCell({
         )}
       </div>
       <div className="flex min-w-0 flex-col">
-        <span className="text-sm">{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
+        <span className="text-sm">{scheduleTypeName(t, config.schedule_type)}</span>
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           {disabled ? (
-            'Disabled'
+            t('scans.state.disabled')
           ) : on ? (
             nextRun ? (
               <>
                 <Clock className="h-3 w-3" />
-                Next: {nextRun}
+                {t('scans.cell.next', undefined, { time: nextRun })}
               </>
             ) : (
-              'Schedule on'
+              t('scans.state.scheduleOn')
             )
           ) : (
-            'Schedule off'
+            t('scans.state.scheduleOff')
           )}
         </span>
       </div>

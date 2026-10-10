@@ -13,6 +13,7 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { FileText, FolderOpen, Target } from 'lucide-react'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useTranslation } from '@/context/i18n-provider'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { NewScanFormData } from '../../types'
 import { COVERAGE_LEVELS, type CoverageLevel } from '../../lib/coverage-expansion'
@@ -36,6 +37,7 @@ interface TargetsStepProps {
 type Source = 'assets' | 'groups' | 'paste'
 
 export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStepProps) {
+  const { t } = useTranslation()
   const targets = data.targets
   const [source, setSource] = useState<Source>(() =>
     targets.customTargets.length > 0 && targets.assetIds.length === 0
@@ -47,8 +49,13 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
   const groupNames = useMemo(() => targets.assetGroupNames ?? {}, [targets.assetGroupNames])
   const pickedGroups = useMemo(
     () =>
-      Object.fromEntries(targets.assetGroupIds.map((id) => [id, groupNames[id] ?? 'Asset group'])),
-    [targets.assetGroupIds, groupNames]
+      Object.fromEntries(
+        targets.assetGroupIds.map((id) => [
+          id,
+          groupNames[id] ?? t('scans.targets.assetGroupFallback'),
+        ])
+      ),
+    [targets.assetGroupIds, groupNames, t]
   )
   const pickedAssets = useMemo(
     () =>
@@ -110,6 +117,7 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
     syncExpansion(expandedKey)
   }, [expandedKey])
 
+  const rootsLabel = expansion.roots.map((r) => `*.${r}`).join(', ')
   const sent = directTargets(data)
   const sensorPreference =
     data.sensorPreference === 'tenant' || data.sensorPreference === 'platform'
@@ -157,17 +165,17 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
         <TabsList className="w-full">
           <TabsTrigger value="assets" className="flex-1">
             <Target className="h-4 w-4" aria-hidden />
-            Assets
+            {t('scans.targets.tabAssets')}
             <TabsCount value={targets.assetIds.length || null} />
           </TabsTrigger>
           <TabsTrigger value="groups" className="flex-1">
             <FolderOpen className="h-4 w-4" aria-hidden />
-            Groups
+            {t('scans.targets.tabGroups')}
             <TabsCount value={targets.assetGroupIds.length || null} />
           </TabsTrigger>
           <TabsTrigger value="paste" className="flex-1">
             <FileText className="h-4 w-4" aria-hidden />
-            Paste
+            {t('scans.targets.tabPaste')}
             <TabsCount
               value={pasted.lines.length || null}
               tone={pasted.invalid.length > 0 ? 'danger' : 'default'}
@@ -188,7 +196,7 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
       {/* Coverage level (research/48 §6.7) */}
       {showCoverage && typedTargets.length > 0 && (
         <fieldset className="space-y-2 rounded-lg border p-3">
-          <legend className="px-1 text-sm font-medium">Coverage</legend>
+          <legend className="px-1 text-sm font-medium">{t('scans.targets.coverage')}</legend>
           <RadioGroup
             value={coverage}
             onValueChange={(v) =>
@@ -201,10 +209,18 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
                 key={lvl.id}
                 className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-muted/50"
               >
-                <RadioGroupItem value={lvl.id} className="mt-0.5" aria-label={lvl.label} />
+                <RadioGroupItem
+                  value={lvl.id}
+                  className="mt-0.5"
+                  aria-label={t(`scans.coverage.${lvl.id}.label`, lvl.label)}
+                />
                 <span className="min-w-0">
-                  <span className="block text-sm">{lvl.label}</span>
-                  <span className="block text-xs text-muted-foreground">{lvl.hint}</span>
+                  <span className="block text-sm">
+                    {t(`scans.coverage.${lvl.id}.label`, lvl.label)}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {t(`scans.coverage.${lvl.id}.hint`, lvl.hint)}
+                  </span>
                 </span>
               </label>
             ))}
@@ -212,14 +228,19 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
           {coverage !== 'host' && (
             <p className="text-xs text-muted-foreground" aria-live="polite">
               {expansion.roots.length === 0
-                ? 'No domain names to expand: enter or pick a domain.'
+                ? t('scans.targets.noDomains')
                 : coverage === 'subdomains'
-                  ? `Scans ${expansion.roots.map((r) => `*.${r}`).join(', ')}: every run takes the subdomains your inventory holds at that time.`
+                  ? t('scans.targets.subdomainsNote', undefined, { roots: rootsLabel })
                   : expansion.isLoading
-                    ? 'Looking up your inventory…'
+                    ? t('scans.targets.lookingUp')
                     : expansion.added.length === 0
-                      ? `Scans ${expansion.roots.map((r) => `*.${r}`).join(', ')}; no recorded addresses below them yet.`
-                      : `Scans ${expansion.roots.map((r) => `*.${r}`).join(', ')} and adds ${expansion.added.length} recorded ${expansion.added.length === 1 ? 'address' : 'addresses'}.`}
+                      ? t('scans.targets.noRecordedAddresses', undefined, { roots: rootsLabel })
+                      : expansion.added.length === 1
+                        ? t('scans.targets.addsOne', undefined, { roots: rootsLabel })
+                        : t('scans.targets.addsMany', undefined, {
+                            roots: rootsLabel,
+                            count: expansion.added.length,
+                          })}
             </p>
           )}
         </fieldset>

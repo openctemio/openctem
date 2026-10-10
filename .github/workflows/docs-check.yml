@@ -44,4 +44,4 @@ jobs:
           path: .docs-site
           persist-credentials: false
       - name: Documentation links in code
-        run: python3 scripts/check_docs_links.py --docs .docs-site --fetch-other .
+        run: python3 scripts/check_docs_links.py --docs .docs-site --fetch-other --live .
