@@ -28,7 +28,7 @@
 import * as React from 'react'
 import Link from '@/components/link'
 import { usePathname } from 'next/navigation'
-import { ShieldX, ArrowLeft, Home, Package, Settings } from 'lucide-react'
+import { ShieldX, ArrowLeft, Home, Package, Settings, Lock } from 'lucide-react'
 import { usePermissions } from '@/lib/permissions/hooks'
 import { Permission } from '@/lib/permissions/constants'
 import { useBootstrapModules, useBootstrapContextSafe } from '@/context/bootstrap-provider'
@@ -59,7 +59,12 @@ export function RouteGuard({ children }: RouteGuardProps) {
   const pathname = usePathname()
   // Use the same permission hook as sidebar for consistency
   const { can, isLoading: permissionsLoading } = usePermissions()
-  const { moduleIds, notEntitledModuleIds, isLoading: modulesLoading } = useBootstrapModules()
+  const {
+    moduleIds,
+    notEntitledModuleIds,
+    readOnlyModules,
+    isLoading: modulesLoading,
+  } = useBootstrapModules()
   const { isBootstrapped } = useBootstrapContextSafe()
 
   // Ensure permission sync has fully settled during tenant switches
@@ -138,8 +143,51 @@ export function RouteGuard({ children }: RouteGuardProps) {
     )
   }
 
+  // A module the organization lost recently is read-only until its grace ends:
+  // the page renders, and says why saving is refused.
+  const readOnlyUntil = routeConfig?.module ? readOnlyModules?.[routeConfig.module] : undefined
+  if (readOnlyUntil) {
+    return (
+      <>
+        <ReadOnlyModuleBanner until={readOnlyUntil} />
+        {children}
+      </>
+    )
+  }
+
   // User has access - render children
   return <>{children}</>
+}
+
+/** Formats an RFC 3339 instant as a date, or returns it as is. */
+function formatDate(value: string): string {
+  const d = new Date(value)
+  return Number.isNaN(d.getTime())
+    ? value
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+/**
+ * Shown above a module's pages while the module is in read-only grace: the
+ * organization's plan no longer includes it, data can still be read and
+ * exported, changes are refused.
+ */
+export function ReadOnlyModuleBanner({ until }: { until: string }) {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-sm"
+    >
+      <Lock className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+      <p>
+        <span className="font-medium">Read-only until {formatDate(until)}.</span>{' '}
+        <span className="text-muted-foreground">
+          Your organization&apos;s plan no longer includes this feature. You can still view and
+          export its data; changes are turned off. Contact your platform administrator to keep it.
+        </span>
+      </p>
+    </div>
+  )
 }
 
 /**

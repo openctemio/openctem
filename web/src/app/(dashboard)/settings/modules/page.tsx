@@ -116,7 +116,9 @@ export default function ModuleManagementPage() {
   const { resetModules, isResetting } = useResetTenantModules(tenantId)
   const { edges: dependencyEdges } = useModuleDependencyGraph(tenantId)
   // Sidebar, route guard and module checks read the bootstrap set.
-  const { refreshModules } = useBootstrapContext()
+  const { refreshModules, data: bootstrapData } = useBootstrapContext()
+  // Modules in read-only grace (lost from the plan recently), with its end.
+  const readOnlyModules = bootstrapData?.modules?.read_only_modules
   // Subscribe to "module.updated" WS events on the tenant channel so
   // an admin in another tab (or another admin) flipping a module
   // reflects on this page within ~100ms instead of waiting for the
@@ -451,6 +453,7 @@ export default function ModuleManagementPage() {
                       requires={requires[mod.id]}
                       requiredBy={requiredBy[mod.id]}
                       moduleNames={moduleNames}
+                      readOnlyUntil={readOnlyModules?.[mod.id]}
                     />
                   ))}
                 </div>
@@ -511,6 +514,7 @@ export default function ModuleManagementPage() {
                             requires={requires[mod.id]}
                             requiredBy={requiredBy[mod.id]}
                             moduleNames={moduleNames}
+                            readOnlyUntil={readOnlyModules?.[mod.id]}
                           />
                         ))}
                       </div>
@@ -659,6 +663,7 @@ function ModuleRow({
   requires = [],
   requiredBy = [],
   moduleNames = {},
+  readOnlyUntil,
 }: {
   mod: TenantModule
   isEnabled: boolean
@@ -669,6 +674,8 @@ function ModuleRow({
   requires?: DependencyEdgeWithKind[]
   requiredBy?: DependencyEdgeWithKind[]
   moduleNames?: Record<string, string>
+  /** End of the module's read-only grace, when the plan dropped it recently. */
+  readOnlyUntil?: string
 }) {
   const hasSubModules = mod.sub_modules && mod.sub_modules.length > 0
   const categoryLabel = CATEGORY_LABELS[mod.category] || mod.category
@@ -706,7 +713,17 @@ function ModuleRow({
                 Beta
               </Badge>
             )}
-            {notEntitled && (
+            {notEntitled && readOnlyUntil && (
+              <Badge
+                variant="outline"
+                className="gap-1 text-xs text-warning"
+                title="Your plan no longer includes this module. Its data can be viewed and exported until then; changes are turned off."
+              >
+                <Lock className="h-3 w-3" />
+                Read-only until {new Date(readOnlyUntil).toLocaleDateString()}
+              </Badge>
+            )}
+            {notEntitled && !readOnlyUntil && (
               <Badge
                 variant="outline"
                 className="gap-1 text-xs text-muted-foreground"

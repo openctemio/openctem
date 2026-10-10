@@ -178,7 +178,7 @@ describe('OrganizationModulesPanel', () => {
     expect(deleteModuleGrant).not.toHaveBeenCalled()
 
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText(/loses it now/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/only read it for 30 days/)).toBeInTheDocument()
     await userEvent.type(within(dialog).getByLabelText('Reason'), 'Trial ended early on request')
     await userEvent.type(within(dialog).getByLabelText('Code from your authenticator'), '654321')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Let the plan decide' }))
@@ -188,6 +188,33 @@ describe('OrganizationModulesPanel', () => {
         totp_code: '654321',
       })
     )
+  })
+
+  it('shows a module in read-only grace with its end', () => {
+    vi.mocked(useTenantModuleEntitlements).mockReturnValue({
+      data: {
+        ...ENTITLEMENTS,
+        modules: [
+          {
+            module: 'pentest',
+            name: 'Penetration Testing',
+            core: false,
+            entitled: false,
+            source: 'grace',
+            in_plan: false,
+            read_only_until: '2026-11-08T12:00:00Z',
+          },
+        ],
+      },
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+    } as unknown as ReturnType<typeof useTenantModuleEntitlements>)
+    render(<OrganizationModulesPanel tenantId="t1" canManage />)
+    expect(screen.getByText('Read-only')).toBeInTheDocument()
+    expect(
+      screen.getByText(`until ${new Date('2026-11-08T12:00:00Z').toLocaleDateString()}`)
+    ).toBeInTheDocument()
   })
 
   it('a read-only administrator sees no actions', () => {
