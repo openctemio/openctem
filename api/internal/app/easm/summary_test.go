@@ -10,10 +10,10 @@ import (
 
 type fakeReader struct {
 	data      *SummaryData
-	scopeUser *shared.ID
+	scopeUser *shared.DataScope
 }
 
-func (f *fakeReader) Summary(_ context.Context, _ shared.ID, scopeUserID *shared.ID, _ time.Time, _ int) (*SummaryData, error) {
+func (f *fakeReader) Summary(_ context.Context, _ shared.ID, scopeUserID *shared.DataScope, _ time.Time, _ int) (*SummaryData, error) {
 	f.scopeUser = scopeUserID
 	return f.data, nil
 }

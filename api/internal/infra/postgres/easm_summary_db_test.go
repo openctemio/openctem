@@ -121,7 +121,7 @@ func TestEASMSummaryRepository(t *testing.T) {
 		user.String(), tenant.String(), www); err != nil {
 		t.Fatal(err)
 	}
-	s, err := repo.Summary(ctx, tenant, &user, now, 10)
+	s, err := repo.Summary(ctx, tenant, &shared.DataScope{TenantID: tenant, UserID: user}, now, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

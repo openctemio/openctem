@@ -1,7 +1,7 @@
 package postgres
 
-// Scan approval requests and the scan approver directory (RFC-072,
-// docs/rfcs/RFC-072-scan-approval-governance.md). Every query carries the
+// Scan approval requests and the scan approver directory (RFC-073,
+// docs/rfcs/RFC-073-scan-approval-governance.md). Every query carries the
 // tenant: a request of one organization is never read or written through
 // another.
 

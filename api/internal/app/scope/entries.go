@@ -89,7 +89,7 @@ var (
 type policy struct {
 	settings tenant.ScopeSettings
 	admins   int
-	// mode is the organization's scan approval mode in force (RFC-072):
+	// mode is the organization's scan approval mode in force (RFC-073):
 	// entries need approvals only in Strict.
 	mode scangov.Mode
 }

@@ -34,7 +34,7 @@ type ScanHandler struct {
 	coverageStats scancoverage.CoverageStatsReader
 	validator     *validator.Validator
 	logger        *logger.Logger
-	// approvals: scan approval (RFC-072); nil when not wired.
+	// approvals: scan approval (RFC-073); nil when not wired.
 	approvals *ScanApprovalHandler
 }
 
@@ -226,7 +226,7 @@ type AssetCompatibilityPreviewResponse struct {
 type ScanDetailResponse struct {
 	// ApprovalStatus: the newest approval request of the scan (pending,
 	// approved, rejected, expired, superseded, canceled); empty when none
-	// (RFC-072). On lists only.
+	// (RFC-073). On lists only.
 	ApprovalStatus string   `json:"approval_status,omitempty"`
 	ID             string   `json:"id"`
 	TenantID       string   `json:"tenant_id"`

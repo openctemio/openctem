@@ -38,7 +38,7 @@ func (f *routeScans) GovernanceSubjectOf(_ context.Context, sc *scan.Scan) (scan
 
 func (f *routeScans) RunApproved(context.Context, shared.ID, shared.ID, string) error { return nil }
 
-// Scan approval requests through the real routes and database (RFC-072
+// Scan approval requests through the real routes and database (RFC-073
 // §8): a member submits, an administrator approves, the requester never
 // approves, a member without scans:approve cannot decide, reminders are
 // rate-limited, and another organization reaches nothing (404).

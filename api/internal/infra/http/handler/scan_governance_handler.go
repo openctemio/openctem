@@ -1,7 +1,7 @@
 package handler
 
-// The organization's scan approval settings (RFC-072,
-// docs/rfcs/RFC-072-scan-approval-governance.md §4): the mode (owner, step-up,
+// The organization's scan approval settings (RFC-073,
+// docs/rfcs/RFC-073-scan-approval-governance.md §4): the mode (owner, step-up,
 // reason) and the approval rules (owner or administrator, step-up, reason),
 // under the token singleton /api/v1/organization. Reads: anyone who reads
 // scans, so the New Scan page can say what will need approval.
@@ -78,7 +78,7 @@ func (h *ScanGovernanceHandler) tenantID(w http.ResponseWriter, r *http.Request)
 
 // Get handles GET /api/v1/organization/settings/scan-governance.
 // @Summary      Scan approval settings
-// @Description  The organization's scan approval (RFC-072): the mode in force (off by default, on, strict) and who set it, the owner's own choice, the platform policy, the approval rules and the presets. Needs scans:read.
+// @Description  The organization's scan approval (RFC-073): the mode in force (off by default, on, strict) and who set it, the owner's own choice, the platform policy, the approval rules and the presets. Needs scans:read.
 // @Tags         Scans
 // @Produce      json
 // @Success      200  {object}  ScanGovernanceResponse

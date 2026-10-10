@@ -14,7 +14,7 @@ import { adminCan } from '@/features/admin-console/types'
 
 /**
  * System -> Scan approval: the platform default for scan approval
- * (RFC-072 §5). An organization may have its own override on its Scope
+ * (RFC-073 §5). An organization may have its own override on its Scope
  * tab. Any administrator sees it; super admins change it.
  */
 export default function ScanApprovalPolicyPage() {
