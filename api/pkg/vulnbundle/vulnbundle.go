@@ -14,6 +14,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -352,24 +353,16 @@ func (v *Verified) Read(m Manifest) (*Records, error) {
 			n++
 			switch kind {
 			case "products":
-				var p product
-				if err := feedsign.DecodeStrict(line, &p); err != nil {
+				key, c, err := ParseProduct(line)
+				if err != nil {
 					return err
 				}
-				c, err := productCPE(p.Key)
-				if err != nil || p.Part != c.Part || p.CPEVendor != c.Vendor || p.CPEProduct != c.Product {
-					return fmt.Errorf("product %q", p.Key)
+				if _, dup := products[key]; dup {
+					return fmt.Errorf("product %s listed twice", key)
 				}
-				if _, dup := products[p.Key]; dup {
-					return fmt.Errorf("product %s listed twice", p.Key)
-				}
-				products[p.Key] = c
+				products[key] = c
 			case "vulns":
-				var r vuln
-				if err := feedsign.DecodeStrict(line, &r); err != nil {
-					return err
-				}
-				c, err := toCVE(r)
+				c, err := ParseVuln(line)
 				if err != nil {
 					return err
 				}
@@ -379,19 +372,22 @@ func (v *Verified) Read(m Manifest) (*Records, error) {
 				byID[c.ID] = len(out.CVEs)
 				out.CVEs = append(out.CVEs, c)
 			case "ranges":
-				var r rng
-				if err := feedsign.DecodeStrict(line, &r); err != nil {
-					return err
-				}
-				idx, ok := byID[r.Vuln]
-				if !ok {
-					return fmt.Errorf("range of %s, which is not in the bundle", r.Vuln)
-				}
-				cr, err := toRange(r, products)
+				r, err := ParseRange(line)
 				if err != nil {
 					return err
 				}
-				out.CVEs[idx].Ranges = append(out.CVEs[idx].Ranges, cr)
+				vid := r.Range.Range.VulnID
+				idx, ok := byID[vid]
+				if !ok {
+					return fmt.Errorf("range of %s, which is not in the bundle", vid)
+				}
+				if _, ok := products[r.ProductKey]; !ok {
+					return fmt.Errorf("range of %s: product %s is not in the bundle", vid, r.ProductKey)
+				}
+				if _, ok := products[r.ConditionKey]; r.ConditionKey != "" && !ok {
+					return fmt.Errorf("range of %s: condition %s is not in the bundle", vid, r.ConditionKey)
+				}
+				out.CVEs[idx].Ranges = append(out.CVEs[idx].Ranges, r.Range)
 			}
 			return nil
 		})
@@ -404,6 +400,59 @@ func (v *Verified) Read(m Manifest) (*Records, error) {
 	}
 	out.Products = len(products)
 	return out, nil
+}
+
+// ParseProduct decodes and validates one products record: its key and the
+// CPE product it names.
+func ParseProduct(line []byte) (string, vulnmatch.CPE, error) {
+	var p product
+	if err := feedsign.DecodeStrict(line, &p); err != nil {
+		return "", vulnmatch.CPE{}, err
+	}
+	c, err := productCPE(p.Key)
+	if err != nil || p.Part != c.Part || p.CPEVendor != c.Vendor || p.CPEProduct != c.Product {
+		return "", vulnmatch.CPE{}, fmt.Errorf("product %q", p.Key)
+	}
+	return p.Key, c, nil
+}
+
+// ParseVuln decodes and validates one vulns record (without ranges).
+func ParseVuln(line []byte) (cvecorpus.CVE, error) {
+	var r vuln
+	if err := feedsign.DecodeStrict(line, &r); err != nil {
+		return cvecorpus.CVE{}, err
+	}
+	return toCVE(r)
+}
+
+// KeyedRange is one validated ranges record: its record id in a chunked
+// bundle ("<vuln>#<digest>"), the product keys it names and the range.
+type KeyedRange = cvecorpus.KeyedRange
+
+// ParseRange decodes and validates one ranges record. Whether its
+// vulnerability and products are in the same bundle is the caller's check.
+func ParseRange(line []byte) (KeyedRange, error) {
+	var r rng
+	if err := feedsign.DecodeStrict(line, &r); err != nil {
+		return KeyedRange{}, err
+	}
+	if !cveIDRE.MatchString(r.Vuln) {
+		return KeyedRange{}, fmt.Errorf("range of vuln %q", r.Vuln)
+	}
+	cr, err := toRange(r)
+	if err != nil {
+		return KeyedRange{}, err
+	}
+	return KeyedRange{Key: rangeID(r), ProductKey: r.Product, ConditionKey: r.Condition, Range: cr}, nil
+}
+
+// rangeID is the record id the collector gives a range in a chunked
+// bundle: the vulnerability id, "#", and the first 8 bytes of the SHA-256
+// of the range's JSON encoding, hex.
+func rangeID(r rng) string {
+	b, _ := json.Marshal(r)
+	sum := sha256.Sum256(b)
+	return r.Vuln + "#" + hex.EncodeToString(sum[:8])
 }
 
 func productCPE(key string) (vulnmatch.CPE, error) {
@@ -446,13 +495,13 @@ func toCVE(r vuln) (cvecorpus.CVE, error) {
 	return c, nil
 }
 
-func toRange(r rng, products map[string]vulnmatch.CPE) (cvecorpus.Range, error) {
+func toRange(r rng) (cvecorpus.Range, error) {
 	bad := func(what string) (cvecorpus.Range, error) {
 		return cvecorpus.Range{}, fmt.Errorf("range of %s: %s", r.Vuln, what)
 	}
-	p, ok := products[r.Product]
-	if !ok {
-		return bad("product " + r.Product + " is not in the bundle")
+	p, err := productCPE(r.Product)
+	if err != nil {
+		return bad("product " + r.Product)
 	}
 	if r.Scheme != string(vulnmatch.SchemeGeneric) {
 		return bad("scheme " + r.Scheme)
@@ -484,9 +533,9 @@ func toRange(r rng, products map[string]vulnmatch.CPE) (cvecorpus.Range, error) 
 	out := cvecorpus.Range{Product: p, Source: r.Source, Range: vulnmatch.Range{VulnID: r.Vuln, Scheme: vulnmatch.SchemeGeneric,
 		Exact: r.Exact, Start: r.Start, StartIncl: r.StartIncl, End: r.End, EndIncl: r.EndIncl, Edition: r.Edition, Target: r.Target}}
 	if r.Condition != "" {
-		c, ok := products[r.Condition]
-		if !ok {
-			return bad("condition " + r.Condition + " is not in the bundle")
+		c, err := productCPE(r.Condition)
+		if err != nil {
+			return bad("condition " + r.Condition)
 		}
 		out.Condition = &c
 	}
