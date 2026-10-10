@@ -260,6 +260,10 @@ type AttributionGate interface {
 	// but only below tier (RFC-054 §4.2 step 6), with the covering entry of
 	// the highest ceiling.
 	TierExceeded(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error)
+	// UncoveredTargets returns the targets naming an internet host or
+	// address that no scope authority of the tenant covers (no scope
+	// target, root-domain seed or verified domain at or above them).
+	UncoveredTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error)
 }
 
 // ServiceOption is a functional option for Service.
