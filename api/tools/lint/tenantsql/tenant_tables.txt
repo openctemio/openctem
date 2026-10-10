@@ -172,6 +172,7 @@ tenant_identity_providers
 tenant_idle_lifecycle
 tenant_invitations
 tenant_members
+tenant_module_grants
 tenant_modules
 tenant_plan_overrides
 tenant_plans
