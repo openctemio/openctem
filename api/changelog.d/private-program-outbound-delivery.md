@@ -9,7 +9,7 @@
   bound for a destination not attached to that program, including messages
   about assets the organization also owns.
 - New: `GET /api/v1/programs/{id}/delivery`,
-  `PUT|DELETE /api/v1/programs/{id}/channels/{integrationId}` (members,
+  `PUT|DELETE /api/v1/programs/{id}/notification-channels/{integration_id}` (members,
   `integrations:manage`, step-up to attach) and
   `PUT /api/v1/programs/{id}/org-channels` (owners only, reason, step-up),
   all audited.

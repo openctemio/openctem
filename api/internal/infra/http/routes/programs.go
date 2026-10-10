@@ -46,9 +46,9 @@ func registerProgramRoutes(router Router, h *handler.BountyProgramHandler, authM
 		// the organization-channel opt-in is owner-only in the service,
 		// with a reason (step-up). Both are audited.
 		r.GET("/{id}/delivery", h.Delivery, middleware.Require(permission.ProgramsRead))
-		r.PUT("/{id}/channels/{integrationId}", h.AttachChannel,
+		r.PUT("/{id}/notification-channels/{integration_id}", h.AttachChannel,
 			middleware.RequireAll(permission.ProgramsWrite, permission.IntegrationsManage), requireStepUp())
-		r.DELETE("/{id}/channels/{integrationId}", h.DetachChannel,
+		r.DELETE("/{id}/notification-channels/{integration_id}", h.DetachChannel,
 			middleware.RequireAll(permission.ProgramsWrite, permission.IntegrationsManage))
 		r.PUT("/{id}/org-channels", h.SetOrgChannels, middleware.Require(permission.ProgramsWrite), requireStepUp())
 	}, tenantMiddlewares...)
