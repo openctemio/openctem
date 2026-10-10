@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-10; decisions C1–C10 adopted as recommended, §14; the owner may revise any of them). P0 in implementation |
+| Status | Accepted (2026-10-10; decisions C1–C14 adopted as recommended, §14; the owner may revise any of them). P0 in implementation; P1 VEX statements implemented |
 | Scope | api (`pkg/domain/software`, `pkg/domain/component`, `internal/app/asset` component and SBOM services, ingest, `internal/infra/postgres` component/software repositories, migrations, routes), web (`/components`, the component detail page, dependency graph, SBOM import and export) |
 | Architecture | [software-components.md](../architecture/software-components.md) |
 | Related | RFC-066 (software catalog, matcher; O6 one inventory model, O11 catalog sharing, O12 feed outside the platform), RFC-069 (asset change timeline), RFC-064 (modules), ADR-004 (finding provenance), [finding-import.md](../architecture/finding-import.md) (VEX documents), [global-catalog-trust.md](../architecture/global-catalog-trust.md), [component-relationship-best-practices.md](../architecture/component-relationship-best-practices.md) |
@@ -233,7 +233,8 @@ vex_statements
   id uuid PK, tenant_id uuid NOT NULL
   vuln_id text NOT NULL           -- CVE, GHSA, OSV or scanner rule id, upper case for CVE/GHSA
   product_id uuid NOT NULL → software_products   -- global or the tenant's own
-  version_ids uuid[] NOT NULL DEFAULT '{}'       -- empty = every version of the product
+  versions text[] NOT NULL DEFAULT '{}'          -- exact versions as observed (≤ 64); empty and no range = every version (C11)
+  version_range text NULL                        -- ">=1.2.0,<1.4.3": comparators that all hold (≤ 8 terms); not with versions
   asset_id uuid NULL               -- NULL = every asset; otherwise only this asset
   status text NOT NULL             -- not_affected | affected | fixed | under_investigation
   justification text NULL          -- component_not_present | vulnerable_code_not_present | vulnerable_code_not_in_execute_path | vulnerable_code_cannot_be_controlled_by_adversary | inline_mitigations_already_exist (required when not_affected)
@@ -242,7 +243,8 @@ vex_statements
   document_ref text NULL           -- file name and statement id of an imported document
   expires_at timestamptz NULL
   created_by, updated_by uuid, created_at, updated_at
-  UNIQUE (tenant_id, vuln_id, product_id, coalesce(asset_id, zero uuid), version_ids) -- one statement per subject
+  expired_at timestamptz NULL      -- set when the expiry controller withdrew the statement
+  UNIQUE (tenant_id, vuln_id, product_id, coalesce(asset_id, zero uuid), versions, coalesce(version_range, '')) -- one statement per subject
 ```
 
 - Findings keep their `vex_*` columns as the applied snapshot and gain
@@ -304,15 +306,32 @@ the parser is isolated so a format adds a reader, not a writer.
   - `affected` and `under_investigation` annotate only.
 - **Sticky:** ingest and the matcher check statements before creating or
   reopening a finding; a matching `not_affected` statement creates it closed.
-- **Edit or delete:** findings the statement closed reopen (`open` or their
-  previous status) unless another statement still covers them.
+- **Edit or delete:** findings the statement closed reopen (false positive
+  to `new`, resolved to `confirmed`, the lifecycle's reopen edges; C13)
+  unless another statement still covers them. The vulnerability, package and
+  asset of a statement are fixed; a different subject is a new statement.
+- **Precedence:** when several statements cover a finding, one asset beats
+  every asset, listed versions beat a range beat every version, then the most
+  recently edited wins.
 - **Expiry:** a controller reopens findings when a statement expires, with an
   audit and timeline entry.
 - **Export:** the SBOM export includes the statements that cover the asset
   (CycloneDX `vulnerabilities[].analysis`); `GET /vex-statements/export`
   produces an OpenVEX document.
-- Limits: one statement touches at most 5 000 findings per apply (as finding
-  import); the rest are applied by the controller in batches.
+- Limits: applying a statement walks its findings in batches of 1 000, one
+  short transaction each (C12).
+- **Import:** `POST /vex-statements/import?asset_id=&dry_run=` reads OpenVEX,
+  CSAF VEX and CycloneDX VEX (JSON, 5 MB, 5 000 statements, the strict
+  parsers of finding import) into one statement per vulnerability and
+  package; the preview lists what would be created, updated or left alone
+  and every skipped statement with its reason. It never overwrites a
+  statement written in the organization (`origin = manual`).
+- **No severity downgrade:** a statement closes or annotates; it never
+  changes a finding's severity (C14).
+- Implemented: [software-components.md](../architecture/software-components.md),
+  "VEX statements". Still open: OpenVEX export (`GET /vex-statements/export`),
+  statements in the CycloneDX SBOM export, finding-import documents stored as
+  statements.
 
 ## 9. License policy
 
@@ -360,8 +379,8 @@ producers; a wrong row is fixed at its source or by a VEX statement).
 |---|---|---|
 | components list, summary, detail, versions, where-used, vulnerabilities, paths, graph, export | `components:read` | scoped (links of accessible assets; product detail 404 without an in-scope link) |
 | SBOM import | `components:write` | scoped (target asset must be accessible) |
-| VEX list | `components:read` | scoped (statements with an asset outside scope hidden; product-wide statements visible when the product has an in-scope link) |
-| VEX create, edit, delete | `findings:approve` | scoped (asset-bound statements need the asset in scope; product-wide statements need full data access, because they close findings on every asset) |
+| VEX list, read | `components:read` | scoped (statements with an asset outside scope hidden; product-wide statements visible when the product has an in-scope link) |
+| VEX create, edit, delete, import | `findings:approve` | scoped (asset-bound statements need the asset in scope; product-wide statements need full data access, because they close findings on every asset) |
 | License policy read / write | `settings:read` / `settings:write` | config |
 
 - Module: everything belongs to the `components` module (SBOM export already
@@ -447,6 +466,10 @@ Adopted 2026-10-10 as recommended; the owner may revise any of them.
 | C8 | Health data | Only from the signed feed bundle; the platform never calls registries |
 | C9 | Legacy routes | Retired (`stats`, `ecosystems`, `vulnerable`, `licenses`, manual create, update, delete) |
 | C10 | Branch dimension | Dropped (`asset_components.branch_id` was never written); the inventory is per asset and location |
+| C11 | VEX versions | Stored as version strings plus an optional range, not version ids: a statement can name a version before the inventory has seen it (an imported document about the next release), and a range keeps covering new versions |
+| C12 | Applying a statement | Synchronous, in batches of 1 000 findings per transaction; no per-apply cap and no deferred controller pass |
+| C13 | Reopen on withdrawal | The lifecycle's reopen edges (false positive → new, resolved → confirmed), not a stored previous status |
+| C14 | Severity | A statement never downgrades severity: it closes (not_affected, fixed) or annotates (affected, under investigation); the reason shows on the finding |
 
 ## 15. Testing
 
