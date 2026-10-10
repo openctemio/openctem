@@ -2,4 +2,4 @@
 
 - Every time a bug-bounty program scope is applied, its in-scope targets are ingested as assets of the program organization through the standard CTIS ingest: names, addresses and networks, a host and a service asset per listed port, a web application or API for a URL with a path, mobile apps and repositories (which no entry covers and which are never scanned). Executables, hardware, smart contracts and AI models stay program targets without an asset.
 - Followed public programs ingest with source kind feed (run = feed sequence, observed at the record last change); imported and pasted programs with source kind import. Dedup, attribute reconciliation and the change timeline apply; an identical re-import writes nothing. The report opens no exposure.
-- Migration 001911 records which assets are a program targets (bounty_program_target_assets); they count as program assets for links, system tags and the program group data scope.
+- Migration 001963 records which assets are a program targets (bounty_program_target_assets); they count as program assets for links, system tags and the program group data scope.
