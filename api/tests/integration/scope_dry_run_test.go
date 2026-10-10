@@ -118,6 +118,15 @@ func TestScopeDryRun(t *testing.T) {
 			t.Errorf("explain %s: names a rule %+v (another tenant's?)", target, rule)
 		}
 	}
+	// Only a pending entry of the caller's own tenant lets a scan wait for
+	// approval: expired, deactivated and another tenant's entries do not.
+	pending, err := scopeService(db).PendingCovered(ctx, tenantA, []string{"pend.example", "x.old.example", "off.example", "x.b-only.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || !pending["pend.example"] {
+		t.Errorf("pending covered = %v, want only pend.example", pending)
+	}
 	if r := ex.Exclusion("excl.dry.example"); r == nil || r.Pattern != "excl.dry.example" {
 		t.Errorf("exclusion rule: %+v", r)
 	}
