@@ -55,7 +55,7 @@ claim     scope_recheck.go: recorded tier > intensity -> INTENSITY_EXCEEDED (com
 
 - `Passive discovery` starter workflow: `discover.subdomains` → `resolve.dns`
   → `lookup.asn`, and `lookup.rdap` on the roots (migration
-  `001930_passive_lookup_tools`, version 2 of the template).
+  `001965_passive_lookup_tools`, version 2 of the template).
 - The passive lookups (sensor tools `rdap`, `asn`; `network: egress-proxy`):
   - `lookup.rdap`: registration data of a root domain from its registry's
     RDAP service, found through the IANA bootstrap
