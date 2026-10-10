@@ -47,6 +47,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
     why: 'SCM CI pipeline feature',
   },
   {
+    path: /^src\/config\/modules\.generated\.ts$/,
+    why: 'integrations.pipelines (CI) module, generated from the module registry',
+  },
+  {
     path: /^src\/config\/__tests__\/settings-route-guards\.test\.ts$/,
     why: 'pipelines_int (CI) module slug',
   },
