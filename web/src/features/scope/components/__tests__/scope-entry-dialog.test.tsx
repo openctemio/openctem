@@ -17,7 +17,7 @@ vi.mock('@/lib/permissions', async (orig) => {
   return {
     ...actual,
     useHasPermission: (p: string) => p !== actual.Permission.ScopeApprove || perms.approve,
-    usePermissions: () => ({ can: () => true }),
+    usePermissions: () => ({ can: () => true, isOwner: () => false }),
   }
 })
 vi.mock('@/context/tenant-provider', () => ({
@@ -240,5 +240,87 @@ describe('request and approval rules', () => {
     expect(approvalsForNew({ canApprove: true, effective: 0, tier: 't1' })).toBe(0)
     expect(approvalsForNew({ canApprove: true, effective: 0, tier: 't2' })).toBe(1)
     expect(approvalsForNew({ canApprove: true, effective: 2, tier: 't1' })).toBe(2)
+  })
+})
+
+describe('ScopeEntryDialog: duration follows the policy', () => {
+  it('a T2 entry defaults to the longest allowed expiry; Permanent is disabled with who can change it', async () => {
+    api.get.mockResolvedValue({ ...settings, t2_max_days: 30, t2_permanent_allowed: false })
+    api.post.mockResolvedValue({ pattern: '*.vndirect.com.vn', status: 'pending' })
+    const user = userEvent.setup()
+    wrap(
+      <ScopeEntryDialog
+        open
+        onOpenChange={() => {}}
+        draft={{ target_type: 'domain', pattern: '*.vndirect.com.vn', tier: 't2' }}
+      />
+    )
+    const thirty = await screen.findByRole('radio', { name: '30 days' })
+    // No error before the user acts.
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(thirty).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Permanent' })).toBeDisabled()
+    expect(screen.queryByRole('radio', { name: '90 days' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Ask an owner' })).toHaveAttribute(
+      'href',
+      '/settings/scope'
+    )
+    expect(screen.getByTestId('expiry')).toHaveTextContent(/^Expires \d{1,2} \w{3} \d{4}$/)
+    await user.type(screen.getByLabelText('Reason'), 'pentest OPS-1')
+    await user.click(screen.getByRole('button', { name: 'Add to scope' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/v1/scope/targets',
+        expect.objectContaining({
+          pattern: '*.vndirect.com.vn',
+          max_tier: 't2',
+          expires_in_days: 30,
+        })
+      )
+    )
+  })
+
+  it('a T2 entry defaults to Permanent when an owner allows it', async () => {
+    api.get.mockResolvedValue({ ...settings, t2_max_days: 365, t2_permanent_allowed: true })
+    wrap(
+      <ScopeEntryDialog
+        open
+        onOpenChange={() => {}}
+        draft={{ target_type: 'domain', pattern: 'acme.io', tier: 't2' }}
+      />
+    )
+    const permanent = await screen.findByRole('radio', { name: 'Permanent' })
+    await waitFor(() => expect(permanent).toHaveAttribute('aria-checked', 'true'))
+    expect(screen.getByRole('radio', { name: '1 year' })).toBeEnabled()
+    expect(screen.queryByRole('link', { name: 'Ask an owner' })).toBeNull()
+  })
+
+  it('a custom date is bounded from tomorrow to the policy limit', async () => {
+    api.get.mockResolvedValue({ ...settings, t2_max_days: 90, t2_permanent_allowed: false })
+    const user = userEvent.setup()
+    wrap(
+      <ScopeEntryDialog
+        open
+        onOpenChange={() => {}}
+        draft={{ target_type: 'domain', pattern: 'acme.io', tier: 't2' }}
+      />
+    )
+    await user.click(await screen.findByRole('radio', { name: 'Custom date' }))
+    const date = screen.getByLabelText('Expires on')
+    const day = (n: number) => {
+      const d = new Date()
+      d.setHours(0, 0, 0, 0)
+      d.setDate(d.getDate() + n)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    expect(date).toHaveAttribute('min', day(1))
+    expect(date).toHaveAttribute('max', day(90))
+  })
+
+  it('a member request offers no Permanent at all', async () => {
+    perms.approve = false
+    wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
+    await screen.findByRole('radio', { name: '7 days' })
+    expect(screen.queryByRole('radio', { name: 'Permanent' })).toBeNull()
   })
 })
