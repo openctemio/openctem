@@ -13,6 +13,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { useRouter } from 'next/navigation'
 import {
   Dialog,
@@ -67,9 +68,10 @@ export function ScanAssetsDialog({
   open,
   onOpenChange,
   candidates,
-  title = 'Scan assets',
+  title,
   onSuccess,
 }: ScanAssetsDialogProps) {
+  const { t } = useTranslation()
   const router = useRouter()
   const [scannerName, setScannerName] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -82,14 +84,14 @@ export function ScanAssetsDialog({
     const resolved: string[] = []
     let skipped = 0
     for (const c of candidates) {
-      const t = c.target?.trim()
-      if (!t) {
+      const target = c.target?.trim()
+      if (!target) {
         skipped += 1
         continue
       }
-      if (seen.has(t)) continue
-      seen.add(t)
-      resolved.push(t)
+      if (seen.has(target)) continue
+      seen.add(target)
+      resolved.push(target)
     }
     return { targets: resolved, skippedCount: skipped }
   }, [candidates])
@@ -101,7 +103,7 @@ export function ScanAssetsDialog({
 
   const handleSubmit = async () => {
     if (cappedTargets.length === 0) {
-      toast.error('No scannable targets in the selected assets')
+      toast.error(t('scans.assetsDialog.noTargets'))
       return
     }
 
@@ -115,10 +117,12 @@ export function ScanAssetsDialog({
 
       await invalidateScanRunsCache()
       toast.success(
-        `Scan started for ${cappedTargets.length} target${cappedTargets.length !== 1 ? 's' : ''}`,
+        cappedTargets.length === 1
+          ? t('scans.assetsDialog.startedOne')
+          : t('scans.assetsDialog.startedMany', undefined, { count: cappedTargets.length }),
         {
           action: {
-            label: 'View run',
+            label: t('scans.assetsDialog.viewRun'),
             onClick: () => router.push('/scans/runs'),
           },
         }
@@ -132,11 +136,11 @@ export function ScanAssetsDialog({
         return
       }
       if (error instanceof ApiClientError && error.statusCode === 429) {
-        toast.error('Rate limit reached — please wait a moment before starting another scan.')
+        toast.error(t('scans.assetsDialog.rateLimit'))
       } else if (error instanceof ApiClientError && error.statusCode === 400) {
-        toast.error(getErrorMessage(error, 'Some targets were rejected by the scanner.'))
+        toast.error(getErrorMessage(error, t('scans.assetsDialog.rejected')))
       } else {
-        toast.error(getErrorMessage(error, 'Failed to start scan'))
+        toast.error(getErrorMessage(error, t('scans.assetsDialog.startFailed')))
       }
     } finally {
       setIsSubmitting(false)
@@ -147,13 +151,13 @@ export function ScanAssetsDialog({
     <Dialog open={open} onOpenChange={(o) => !isSubmitting && onOpenChange(o)}>
       <DialogContent size="md">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle>{title ?? t('scans.assetsDialog.title')}</DialogTitle>
           <DialogDescription>
             {cappedTargets.length > 0
-              ? `Run an immediate scan against ${cappedTargets.length} target${
-                  cappedTargets.length !== 1 ? 's' : ''
-                }.`
-              : 'None of the selected assets have a scannable address.'}
+              ? cappedTargets.length === 1
+                ? t('scans.assetsDialog.runOne')
+                : t('scans.assetsDialog.runMany', undefined, { count: cappedTargets.length })
+              : t('scans.assetsDialog.noAddress')}
           </DialogDescription>
         </DialogHeader>
 
@@ -161,16 +165,18 @@ export function ScanAssetsDialog({
           {/* Target preview */}
           {cappedTargets.length > 0 && (
             <div className="space-y-2">
-              <Label>Targets</Label>
+              <Label>{t('scans.assetsDialog.targets')}</Label>
               <div className="flex flex-wrap gap-2 rounded-md border p-3 max-h-40 overflow-y-auto">
-                {cappedTargets.slice(0, PREVIEW_LIMIT).map((t) => (
-                  <Badge key={t} variant="secondary" className="font-mono text-xs">
-                    {t}
+                {cappedTargets.slice(0, PREVIEW_LIMIT).map((target) => (
+                  <Badge key={target} variant="secondary" className="font-mono text-xs">
+                    {target}
                   </Badge>
                 ))}
                 {cappedTargets.length > PREVIEW_LIMIT && (
                   <Badge variant="outline" className="text-xs">
-                    +{cappedTargets.length - PREVIEW_LIMIT} more
+                    {t('scans.assetsDialog.more', undefined, {
+                      count: cappedTargets.length - PREVIEW_LIMIT,
+                    })}
                   </Badge>
                 )}
               </div>
@@ -180,15 +186,23 @@ export function ScanAssetsDialog({
           {/* Guards / warnings */}
           {skippedCount > 0 && (
             <p className="text-xs text-muted-foreground">
-              {skippedCount} asset{skippedCount !== 1 ? 's' : ''} skipped (no scannable address).
+              {t(
+                skippedCount === 1
+                  ? 'scans.assetsDialog.skippedOne'
+                  : 'scans.assetsDialog.skippedMany',
+                undefined,
+                { count: skippedCount }
+              )}
             </p>
           )}
           {isOverCap && (
             <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                {targets.length} targets exceed the limit — only the first {MAX_TARGETS} will be
-                scanned.
+                {t('scans.assetsDialog.overCap', undefined, {
+                  count: targets.length,
+                  max: MAX_TARGETS,
+                })}
               </span>
             </div>
           )}
@@ -196,14 +210,14 @@ export function ScanAssetsDialog({
             <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                This will scan {cappedTargets.length} targets at once. Confirm you want to proceed.
+                {t('scans.assetsDialog.large', undefined, { count: cappedTargets.length })}
               </span>
             </div>
           )}
 
           {/* Scanner: the tool registry's active scanners (it was a fixed list) */}
           <div className="space-y-2">
-            <Label htmlFor="scan-assets-scanner">Scanner</Label>
+            <Label htmlFor="scan-assets-scanner">{t('scans.basic.scanner')}</Label>
             <ScannerSelect id="scan-assets-scanner" value={scannerName} onChange={setScannerName} />
           </div>
 
@@ -213,7 +227,11 @@ export function ScanAssetsDialog({
             // The same live scope check as New Scan and Quick scan.
             <SelectionSummary
               targets={cappedTargets}
-              chips={cappedTargets.map((t) => ({ key: t, label: t, kind: 'typed' as const }))}
+              chips={cappedTargets.map((target) => ({
+                key: target,
+                label: target,
+                kind: 'typed' as const,
+              }))}
               groupCount={0}
               invalidCount={0}
               scannerName={scannerName}
@@ -223,18 +241,18 @@ export function ScanAssetsDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit}>
             {isSubmitting ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                Starting...
+                {t('scans.common.starting')}
               </>
             ) : (
               <>
                 <Wifi className="me-2 h-4 w-4" />
-                Start Scan
+                {t('scans.quick.start')}
               </>
             )}
           </Button>

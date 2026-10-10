@@ -1,6 +1,7 @@
 'use client'
 
 import { RelativeTime, RunStatusBadge } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ScanLastRun } from '@/lib/api/scan-types'
 import { lastRunReason } from '../lib/scan-status'
 
@@ -17,10 +18,11 @@ export function LastRunCell({
   run: ScanLastRun | null
   onOpen?: (runId: string) => void
 }) {
+  const { t } = useTranslation()
   if (!run) {
-    return <span className="text-sm text-muted-foreground">Never</span>
+    return <span className="text-sm text-muted-foreground">{t('scans.cell.never')}</span>
   }
-  const reason = lastRunReason(run)
+  const reason = lastRunReason(run, t)
   const body = (
     <span className="flex min-w-0 flex-col items-start gap-0.5">
       <RunStatusBadge status={run.status} progress={run.progress} title={reason} />
@@ -36,7 +38,7 @@ export function LastRunCell({
         e.stopPropagation()
         onOpen(run.id)
       }}
-      aria-label={`Open the latest run (${run.status})`}
+      aria-label={t('scans.cell.openLatestRun', undefined, { status: run.status })}
     >
       {body}
     </button>

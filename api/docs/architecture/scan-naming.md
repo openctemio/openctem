@@ -26,7 +26,7 @@ A vendor's own word appears only as provenance, for example "GitHub workflow
 - Scan runs belong to the Scans area: reading needs `scans:read`, cancelling
   needs `scans:write`, module `scans`.
 - A scan run starts only by triggering a Scan (`POST /api/v1/scans/{id}/trigger`
-  or its schedule), so every run passes the same gate: scope, freeze windows,
+  or its schedule), so every run passes the same gate: scope, scan windows,
   sensors and tools. There is no direct "run this workflow" endpoint.
 
 ## History

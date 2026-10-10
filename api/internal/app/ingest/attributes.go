@@ -43,7 +43,7 @@ func reportSource(b Binding, opts Options, report *ctis.Report) (asset.SourceKin
 	}
 	if b.Kind == BindingTrusted {
 		switch opts.SourceKind {
-		case asset.SourceKindIntegration, asset.SourceKindImport:
+		case asset.SourceKindIntegration, asset.SourceKindImport, asset.SourceKindFeed:
 			if opts.SourceName != "" {
 				name = opts.SourceName
 			}
@@ -83,11 +83,11 @@ func reportObservedAt(report *ctis.Report, now time.Time) time.Time {
 }
 
 // untrustedAttributes are the tracked attributes the policy does not let
-// kind decide.
-func untrustedAttributes(p asset.ReconciliationPolicy, kind asset.SourceKind) map[asset.TrackedAttribute]bool {
+// source (kind and name) decide.
+func untrustedAttributes(p asset.ReconciliationPolicy, kind asset.SourceKind, name string) map[asset.TrackedAttribute]bool {
 	out := map[asset.TrackedAttribute]bool{}
 	for _, attr := range asset.AllTrackedAttributes() {
-		if !p.Trusts(attr, kind) {
+		if !p.Trusts(attr, kind, name) {
 			out[attr] = true
 		}
 	}

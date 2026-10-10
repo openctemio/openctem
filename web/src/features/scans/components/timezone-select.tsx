@@ -3,6 +3,7 @@
 /** A searchable IANA timezone picker (the zones the browser knows). */
 
 import { useMemo, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -24,6 +25,7 @@ interface TimezoneSelectProps {
 }
 
 export function TimezoneSelect({ id, value, onChange }: TimezoneSelectProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const zones = useMemo(() => timeZoneOptions(value), [value])
   return (
@@ -43,9 +45,9 @@ export function TimezoneSelect({ id, value, onChange }: TimezoneSelectProps) {
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] min-w-64 p-0" align="start">
         <Command>
-          <CommandInput placeholder="Search timezones…" />
+          <CommandInput placeholder={t('scans.timezone.search')} />
           <CommandList className="max-h-64">
-            <CommandEmpty>No timezone found.</CommandEmpty>
+            <CommandEmpty>{t('scans.timezone.none')}</CommandEmpty>
             <CommandGroup>
               {zones.map((zone) => (
                 <CommandItem
