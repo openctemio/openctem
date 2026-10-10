@@ -60,6 +60,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionAssetReconciliation: &s.AssetReconciliation,
 		SectionVulnMatching:        &s.VulnMatching,
 		SectionLicensePolicy:       &s.LicensePolicy,
+		SectionScanGovernance:      &s.ScanGovernance,
 	}
 }
 

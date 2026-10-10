@@ -43,6 +43,8 @@ type Settings struct {
 	LicensePolicy licensepolicy.Policy `json:"license_policy,omitempty"`
 	// AssetReconciliation is which source decides an asset attribute (RFC-069).
 	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
+	// ScanGovernance is scan approval governance (RFC-073).
+	ScanGovernance ScanGovernanceSettings `json:"scan_governance,omitempty"`
 
 	// SubscribedBundles is the set of product-bundle IDs the tenant runs
 	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
