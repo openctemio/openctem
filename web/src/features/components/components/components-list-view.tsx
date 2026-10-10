@@ -185,19 +185,19 @@ export function ComponentsListView() {
           <StackedCell
             truncate
             primary={
-              <Link href={`/components/${row.original.id}`} className="font-medium hover:underline">
-                {row.original.name}
-              </Link>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Link
+                  href={`/components/${row.original.id}`}
+                  className="truncate font-medium hover:underline"
+                >
+                  {row.original.name}
+                </Link>
+                <EcosystemBadge ecosystem={row.original.ecosystem} className="shrink-0" />
+              </span>
             }
             secondary={<span className="font-mono text-xs">{row.original.purl}</span>}
           />
         ),
-      },
-      {
-        id: 'ecosystem',
-        enableSorting: false,
-        header: () => t('components.col.ecosystem', 'Ecosystem'),
-        cell: ({ row }) => <EcosystemBadge ecosystem={row.original.ecosystem} />,
       },
       {
         id: 'versions',
@@ -233,7 +233,7 @@ export function ComponentsListView() {
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
-            title={t('components.col.vulnerabilities', 'Open vulnerabilities')}
+            title={t('components.col.vulns', 'Vulnerabilities')}
           />
         ),
         cell: ({ row }) => (
@@ -247,7 +247,7 @@ export function ComponentsListView() {
         id: 'fix',
         enableSorting: false,
         header: () => t('components.col.fix', 'Fix'),
-        cell: ({ row }) => <FixPill available={row.original.fix_available} />,
+        cell: ({ row }) => <FixPill available={row.original.fix_available} compact />,
       },
       {
         id: 'license',
@@ -420,6 +420,7 @@ export function ComponentsListView() {
                 sorting={list.sorting}
                 onSortingChange={list.setSorting}
                 getRowId={(p) => p.id}
+                initialColumnVisibility={{ last_seen: false }}
                 emptyMessage={t('components.noMatch', 'No packages match these filters')}
                 emptyDescription={t(
                   'components.noMatchHint',

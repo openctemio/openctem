@@ -2489,5 +2489,6 @@
   "components.import.licenses": "Giấy phép",
   "components.import.diff": "{added} mới, {unchanged} không đổi, {removed} đã ghi nhận cho tài sản này nhưng không có trong tệp.",
   "components.import.written": "Đã ghi {links} gói, {edges} liên kết phụ thuộc, xóa {removed}.",
-  "components.import.skipped": "Bỏ qua {count} mục"
+  "components.import.skipped": "Bỏ qua {count} mục",
+  "components.col.vulns": "Lỗ hổng"
 }
