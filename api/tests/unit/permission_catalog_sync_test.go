@@ -36,7 +36,7 @@ var permSeedMigrations = []string{
 	"001495_bounty_programs.up.sql",           // attack_surface:programs:* (RFC-065)
 	"001534_findings_comment_severity.up.sql", // findings:comment, findings:severity
 	"001760_scan_window_policies.up.sql",      // scans:windows:manage (RFC-067)
-	"001831_scan_approval_requests.up.sql",    // scans:approve (RFC-073)
+	"001921_scan_approval_requests.up.sql",    // scans:approve (RFC-073)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
