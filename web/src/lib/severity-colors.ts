@@ -75,15 +75,6 @@ export const SEVERITY_DOT_COLORS: Record<SeverityLevel, string> = {
   info: 'bg-gray-500',
 }
 
-/** SVG fill of the same hues as SEVERITY_DOT_COLORS (graph nodes). */
-export const SEVERITY_FILL_COLORS: Record<SeverityLevel, string> = {
-  critical: 'fill-red-500',
-  high: 'fill-orange-500',
-  medium: 'fill-yellow-500',
-  low: 'fill-blue-500',
-  info: 'fill-gray-500',
-}
-
 /** Foreground color that reads on the solid background above. */
 export const SEVERITY_SOLID_TEXT: Record<SeverityLevel, string> = {
   critical: 'text-white',

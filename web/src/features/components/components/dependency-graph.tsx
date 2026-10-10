@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import { SegmentedLens } from '@/features/shared'
 import { SEVERITY_LEVELS } from '@/lib/severity'
-import { SEVERITY_DOT_COLORS, SEVERITY_FILL_COLORS } from '@/lib/severity-colors'
+import { SEVERITY_CHART_COLORS, SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 import type { DependencyGraph as Graph, GraphNode } from '../api/types'
 
@@ -213,7 +213,7 @@ export function DependencyGraphView({
                     strokeWidth={focus || matches(n) ? 2.5 : 1}
                   />
                   {sev && (
-                    <circle cx={12} cy={NODE_H / 2} r={4} className={SEVERITY_FILL_COLORS[sev]} />
+                    <circle cx={12} cy={NODE_H / 2} r={4} fill={SEVERITY_CHART_COLORS[sev]} />
                   )}
                   <text
                     x={sev ? 22 : 10}
