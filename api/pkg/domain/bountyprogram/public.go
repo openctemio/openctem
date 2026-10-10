@@ -150,3 +150,10 @@ type CatalogRepository interface {
 	// catalog program is closed or removed.
 	StaleSubscriptions(ctx context.Context, limit int) ([]ProgramRef, error)
 }
+
+// AssetFlags are the fields of an asset derived from its program links
+// (RFC-065 §16.5).
+type AssetFlags struct {
+	SystemTags  []string
+	ProgramOnly bool
+}

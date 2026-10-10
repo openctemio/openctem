@@ -70,6 +70,7 @@ func (s *Service) Subscribe(ctx context.Context, tenantID, actor, publicID share
 	if err := s.repo.Import(ctx, bp.ImportWrite{Program: p, Group: group, Entries: entries, Exclusions: s.exclusions(p, pv)}); err != nil {
 		return nil, nil, err
 	}
+	s.ensureTargets(ctx, p, pv)
 	s.assign(ctx, p)
 	return p, pv, nil
 }
@@ -171,6 +172,7 @@ func (s *Service) replaceAwaitingAcceptance(ctx context.Context, p *bp.Program, 
 	}
 	s.audited(ctx, p, shared.ID{}, "Program terms changed by the program feed; entries wait for a new acceptance",
 		map[string]any{"entries_created": len(create), "entries_removed": len(drop)})
+	s.ensureTargets(ctx, p, pv)
 	s.assign(ctx, p)
 	return nil
 }
