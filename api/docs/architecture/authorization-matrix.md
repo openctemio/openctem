@@ -183,11 +183,17 @@ Details: [api-keys.md](./api-keys.md).
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/components` | `components:read` |
-| `GET /api/v1/components/{id}` | `components:read` |
-| `POST /api/v1/components` | `components:write` |
-| `PUT /api/v1/components/{id}` | `components:write` |
-| `DELETE /api/v1/components/{id}` | `components:delete` |
+| `GET /api/v1/components`, `/summary` | `components:read` (counts and facets only over in-scope assets) |
+| `GET /api/v1/components/{id}`, `/{id}/versions`, `/{id}/assets`, `/{id}/vulnerabilities` | `components:read` (404 unless an in-scope asset uses the package) |
+| `GET /api/v1/components/sbom` | `components:read` (one in-scope asset, or every in-scope asset) |
+| `POST /api/v1/components/import` | `components:write` (target asset in scope; rate limited) |
+| `GET /api/v1/assets/{id}/components`, `/dependency-paths`, `/dependency-graph` | `components:read` (asset in scope) |
+| `GET /api/v1/vex-statements`, `/{id}` | `components:read` (asset-bound statements: asset in scope; statements for every asset: an in-scope asset uses the package; else 404) |
+| `GET`/`PUT /api/v1/organization/settings/license-policy` | `settings:read` / `settings:write` (configuration of the caller's organization; a PUT re-evaluates its package links and license findings; audited) |
+| `POST /api/v1/vex-statements`, `PATCH`/`DELETE /{id}`, `POST /import` | `findings:approve` (closes findings: asset-bound needs the asset in scope, 404 otherwise; a statement for every asset needs full data access, 403 otherwise; import rate limited) |
+
+The inventory has no manual create, update or delete (RFC-070): sensors, CI
+and SBOM import write it.
 
 #### Findings (`/api/v1/findings`)
 
@@ -996,6 +1002,23 @@ from exactly two sources:
 |---|---|---|
 | **Group assignment**: the assets assigned to the user's active groups | `team:groups:write` (Groups → Assets, scope rules, or a *group* owner on an asset's Owners tab) | `asset_owners` rows with `group_id` × `group_members` |
 | **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000372`) |
+
+**Private program assets** (RFC-065 §15.3): the program-only assets of
+private bug-bounty programs, and their findings, are seen only by the
+programs' members and the organization's owners. An administrator or
+full-data role who is neither gets `DataScope{Unrestricted: true}` from the
+enforcer (only while something is hidden from them; otherwise `nil` as
+before): every asset of the tenant but the hidden ones. `dataScopeCondAt` /
+`filterspec.ScopeSQL` add `filterspec.NotHiddenSQL` to every scoped read
+(restricted scopes too), the id checks (`AssertAsset`, `AssertFinding`,
+`Filter`) use the same rule, and acting (`CanActOnAssets`, `Delegable`)
+stays unrestricted. `Caller.IsOwner` (and `SetOwnerLookup` outside a
+request) decides who is an owner; `ResolveActing` keeps it only when the
+acting user is the request's caller. Program system tags shown to, or
+matched by the tag filter of, a non-owner are derived only from programs
+not hidden from them (`filterspec.ProgramHiddenSQL`, the one "program
+hidden" predicate). Notification pushes for a hidden asset reach only
+owners and the program's members.
 
 **Being an owner is not an access grant** (owner decision O1, 2026-10-03).
 Naming a user as an owner of an asset, in any RACI role or through the

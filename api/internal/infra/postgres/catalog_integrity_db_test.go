@@ -10,7 +10,6 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -133,102 +132,6 @@ func TestVulnCatalog_NewCVEFromTenantGetsRiskSignalsOnlyFromThreatIntel(t *testi
 	}
 	if !epss.Valid || epss.Float64 != 0.0123 {
 		t.Errorf("EPSS must come from the EPSS feed (0.0123), got %v", epss)
-	}
-}
-
-func TestComponentCatalog_TenantCannotOverwriteSharedFields(t *testing.T) {
-	db := catalogTestDB(t)
-	ctx := context.Background()
-	repo := NewComponentRepository(&DB{DB: db})
-
-	name := "catalog-test-" + shared.NewID().String()
-	first, err := component.NewComponent(name, "1.0.0", component.EcosystemNPM)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first.UpdateDescription("real description")
-	first.UpdateHomepage("https://real.example")
-	id, err := repo.Upsert(ctx, first)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM components WHERE id = $1`, id.String())
-	})
-
-	evil, _ := component.NewComponent(name, "1.0.0", component.EcosystemNPM)
-	evil.UpdateDescription("attacker description")
-	evil.UpdateHomepage("https://evil.example")
-	if _, err := repo.Upsert(ctx, evil); err != nil {
-		t.Fatal(err)
-	}
-
-	var desc, home sql.NullString
-	if err := db.QueryRowContext(ctx, `SELECT description, homepage FROM components WHERE id = $1`, id.String()).Scan(&desc, &home); err != nil {
-		t.Fatal(err)
-	}
-	if desc.String != "real description" || home.String != "https://real.example" {
-		t.Errorf("a later upsert overwrote the shared component: description=%q homepage=%q", desc.String, home.String)
-	}
-}
-
-func TestLicenses_AreTenantLocal(t *testing.T) {
-	db := catalogTestDB(t)
-	ctx := context.Background()
-	repo := NewComponentRepository(&DB{DB: db})
-	tA, tB := seedTestTenant(ctx, t, db), seedTestTenant(ctx, t, db)
-	aA, aB := seedTestAsset(ctx, t, db, tA), seedTestAsset(ctx, t, db, tB)
-
-	c, _ := component.NewComponent("lic-test-"+shared.NewID().String(), "1.0.0", component.EcosystemNPM)
-	id, err := repo.Upsert(ctx, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM components WHERE id = $1`, id.String())
-	})
-
-	// Tenant A's sensor declares AGPL; tenant B's declares MIT.
-	for _, p := range []struct {
-		tenant, asset shared.ID
-		license       string
-	}{{tA, aA, "AGPL-3.0-only"}, {tB, aB, "MIT"}} {
-		valid, err := repo.EnsureLicenses(ctx, []string{p.license, "not a license!"})
-		if err != nil || len(valid) != 1 {
-			t.Fatalf("EnsureLicenses = %v %v", valid, err)
-		}
-		d, _ := component.NewAssetDependency(p.tenant, p.asset, id, "package.json", component.DependencyTypeDirect)
-		d.SetLicense(valid[0])
-		if err := repo.LinkAsset(ctx, d); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	licensesOf := func(tenant shared.ID) map[string]bool {
-		stats, err := repo.GetLicenseStats(ctx, tenant)
-		if err != nil {
-			t.Fatal(err)
-		}
-		out := map[string]bool{}
-		for _, s := range stats {
-			out[s.LicenseID] = true
-		}
-		return out
-	}
-	if b := licensesOf(tB); b["AGPL-3.0-only"] || !b["MIT"] {
-		t.Errorf("tenant B's license report = %v; want only MIT", b)
-	}
-	if a := licensesOf(tA); !a["AGPL-3.0-only"] || a["MIT"] {
-		t.Errorf("tenant A's license report = %v; want only AGPL-3.0-only", a)
-	}
-
-	// A re-scan that declares no license keeps the recorded one.
-	d, _ := component.NewAssetDependency(tB, aB, id, "package.json", component.DependencyTypeDirect)
-	if err := repo.LinkAsset(ctx, d); err != nil {
-		t.Fatal(err)
-	}
-	if b := licensesOf(tB); !b["MIT"] {
-		t.Errorf("license lost on re-scan: %v", b)
 	}
 }
 

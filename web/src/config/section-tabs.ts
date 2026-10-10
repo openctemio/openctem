@@ -24,6 +24,7 @@ import {
   Link2,
   ListChecks,
   Radar,
+  ShieldCheck,
   Swords,
   Trophy,
   Wrench,
@@ -160,6 +161,14 @@ export const SCANS_SECTION_TABS: readonly SectionTab[] = [
     module: 'scan_workflows',
     permission: Permission.ScanWorkflowsRead,
     keywords: ['pipeline', 'pipelines', 'builder'],
+  },
+  {
+    label: 'Approvals',
+    href: '/scans/approvals',
+    icon: ShieldCheck,
+    module: 'scans',
+    permission: Permission.ScansRead,
+    keywords: ['approval', 'approve', 'governance', 'review'],
   },
 ]
 

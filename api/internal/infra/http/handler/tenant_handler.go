@@ -56,6 +56,9 @@ type TenantHandler struct {
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
 	// sign-up setting, read on each request.
 	signupPolicy signupdom.PolicySource
+	// licenseEvaluator re-evaluates the inventory after a license policy
+	// change (nil: not evaluated until the next package write).
+	licenseEvaluator LicensePolicyEvaluator
 	// freePlan: self-service organizations are Free, capped per person.
 	freePlan auth.FreePlan
 	// provisioning creates accounts on behalf of organization administrators.
