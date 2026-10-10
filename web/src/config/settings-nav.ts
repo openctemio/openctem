@@ -390,6 +390,23 @@ export const settingsNav: SettingsNavGroup[] = [
     title: 'Scanning',
     items: [
       {
+        id: 'scan-approval',
+        title: 'Scan approval',
+        description: 'Which scans need a person’s approval before they run: off by default.',
+        url: '/settings/scanning/scan-approval',
+        icon: ShieldCheck,
+        permission: Permission.ScansRead,
+        module: 'scans',
+        keywords: [
+          'approval',
+          'approve',
+          'governance',
+          'intrusive',
+          'change advisory',
+          'four eyes',
+        ],
+      },
+      {
         id: 'scan-profiles',
         title: 'Scan profiles',
         description: 'Reusable scan configurations: tools, intensity and duration.',
