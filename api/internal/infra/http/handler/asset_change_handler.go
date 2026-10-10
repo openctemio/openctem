@@ -72,7 +72,7 @@ func parseChangeQuery(r *http.Request) (assetdom.ChangeQuery, error) {
 	}
 	q.Limit = n
 	for _, a := range splitList(v.Get("attribute")) {
-		if !assetdom.TrackedAttribute(a).IsValid() {
+		if !assetdom.TrackedAttribute(a).IsValid() && !assetdom.SetAttribute(a).IsValid() {
 			return q, apierror.BadRequest("unknown attribute")
 		}
 		q.Attributes = append(q.Attributes, a)

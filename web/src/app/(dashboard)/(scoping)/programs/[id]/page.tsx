@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
-import { Permission, useHasPermission } from '@/lib/permissions'
+import { Permission, useHasPermission, usePermissions } from '@/lib/permissions'
 import { ErrorState, PageHeader } from '@/features/shared'
 import {
   EMPTY_PROGRAM_FORM,
@@ -33,6 +33,7 @@ import {
   ProgramExclusionsTable,
   ProgramForm,
   ProgramLocked,
+  ProgramNotifications,
   ProgramPendingTerms,
   ProgramSource,
   ProgramSuggestions,
@@ -79,6 +80,8 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
   const { id } = use(params)
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.ProgramsWrite)
+  const canManageIntegrations = useHasPermission(Permission.IntegrationsManage)
+  const { isOwner } = usePermissions()
   const { data: p, error, mutate } = useProgram(id)
   const [reimport, setReimport] = useState(false)
   const [reattest, setReattest] = useState(false)
@@ -282,6 +285,11 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
             <ProgramTargetsTable items={p.items} />
           </section>
         )}
+        <ProgramNotifications
+          program={p}
+          canManage={canWrite && canManageIntegrations}
+          isOwner={isOwner()}
+        />
 
         <section className="space-y-2">
           <h3 className="text-base font-semibold">{t('programs.entries', 'Scope entries')}</h3>
