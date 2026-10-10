@@ -2,7 +2,7 @@
  * Bug-bounty programs API types (RFC-065, /api/v1/programs).
  */
 
-export type ProgramStatus = 'active' | 'paused' | 'ended'
+export type ProgramStatus = 'active' | 'paused' | 'ended' | 'pending_attestation'
 
 export type ForbiddenTechnique =
   'dos' | 'automated_scanning' | 'intrusive' | 'social_engineering' | 'physical' | 'bruteforce'
@@ -31,7 +31,8 @@ export interface ProgramRules {
   testing_windows?: TestingWindow[]
 }
 
-export type ProgramScopeSource = 'paste' | 'file_import' | 'program_api' | 'program_file'
+export type ProgramScopeSource =
+  'paste' | 'file_import' | 'program_api' | 'program_file' | 'public_feed'
 
 /** Who sees a program (RFC-065 §15): private = members and owners only. */
 export type ProgramVisibility = 'private' | 'public'
@@ -183,6 +184,32 @@ export interface ProgramDetail extends Program {
   items: ProgramItem[]
   entries: ProgramEntry[]
   exclusions: PlannedExclusion[]
+}
+
+/** A program of the public catalog (RFC-065 §16). */
+export interface PublicProgram {
+  id: string
+  feed_id: string
+  platform: string
+  handle: string
+  name: string
+  url: string
+  offers_bounty: boolean
+  in_scope: number
+  out_of_scope: number
+  items: ProgramItem[]
+  rules: ProgramRules
+  terms_text: string
+  terms_sha256: string
+  source: string
+  as_of: string
+}
+
+export interface PublicProgramPage {
+  data: PublicProgram[]
+  total: number
+  page: number
+  per_page: number
 }
 
 export interface ProgramChange {
