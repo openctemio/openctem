@@ -84,14 +84,20 @@ type CreateScanRequest struct {
 	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
 	// TargetOptions tunes how each run resolves the dynamic selectors among
 	// the targets (*.example.com, CIDRs) from the inventory (RFC-068).
-	TargetOptions  *scan.TargetOptions `json:"target_options"`
-	ScanType       string              `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string              `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string              `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any      `json:"scanner_config"`
-	TargetsPerJob  int                 `json:"targets_per_job"`
-	ScheduleType   string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron   string              `json:"schedule_cron" validate:"max=100"`
+	TargetOptions *scan.TargetOptions `json:"target_options"`
+	// Intensity is the probe ceiling of every run (RFC-071): passive (no
+	// packets from the sensors to the targets), active (non-intrusive
+	// probing) or intrusive. Omitted: the tier the scanner or workflow
+	// probes at. A scanner or workflow step above it is refused
+	// (INTENSITY_EXCEEDED).
+	Intensity      string         `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any `json:"scanner_config"`
+	TargetsPerJob  int            `json:"targets_per_job"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
@@ -127,8 +133,10 @@ type UpdateScanRequest struct {
 	TargetsPerJob  *int           `json:"targets_per_job"`
 	// TargetOptions: omitted = unchanged (RFC-068).
 	TargetOptions *scan.TargetOptions `json:"target_options"`
-	ScheduleType  string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron  string              `json:"schedule_cron" validate:"max=100"`
+	// Intensity: omitted = unchanged (RFC-071).
+	Intensity    string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
@@ -186,6 +194,9 @@ type QuickScanRequest struct {
 	WorkflowID  string         `json:"workflow_id" validate:"omitempty,uuid"`
 	Config      map[string]any `json:"config"`
 	Tags        []string       `json:"tags" validate:"max=20,dive,max=50"`
+	// Intensity: the probe ceiling (RFC-071); omitted = the tier the
+	// scanner or workflow probes at.
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
 }
 
 // QuickScanResponse represents the response for quick scan.
@@ -237,11 +248,14 @@ type ScanDetailResponse struct {
 	Targets        []string `json:"targets,omitempty"`         // Direct targets
 	// TargetOptions: how each run resolves the dynamic selectors among
 	// Targets from the inventory (RFC-068).
-	TargetOptions  scan.TargetOptions `json:"target_options"`
-	ScanType       string             `json:"scan_type"`
-	ScanWorkflowID *string            `json:"scan_workflow_id,omitempty"`
-	ScannerName    string             `json:"scanner_name,omitempty"`
-	ScannerConfig  map[string]any     `json:"scanner_config,omitempty"`
+	TargetOptions scan.TargetOptions `json:"target_options"`
+	// Intensity is the probe ceiling of every run: passive, active or
+	// intrusive (RFC-071).
+	Intensity      string         `json:"intensity" enums:"passive,active,intrusive"`
+	ScanType       string         `json:"scan_type"`
+	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
+	ScannerName    string         `json:"scanner_name,omitempty"`
+	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
 	// ScannerConfigWarnings lists scanner_config values that look like
 	// secrets (a token, a password, an Authorization header). The config is
 	// sent to the sensor in clear inside every command, so a secret there
@@ -382,6 +396,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		Targets:             req.Targets,
 		AssetIDs:            req.AssetIDs,
 		TargetOptions:       req.TargetOptions,
+		Intensity:           req.Intensity,
 		ScanType:            req.ScanType,
 		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,
@@ -606,6 +621,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		ScannerConfig:       req.ScannerConfig,
 		TargetsPerJob:       req.TargetsPerJob,
 		TargetOptions:       req.TargetOptions,
+		Intensity:           req.Intensity,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
 		ScheduleRRule:       req.ScheduleRRule,
@@ -1377,6 +1393,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		AssetGroupIDs:         assetGroupIDs,
 		Targets:               s.Targets,
 		TargetOptions:         s.TargetOptions,
+		Intensity:             string(s.EffectiveIntensity()),
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
 		ScannerConfig:         scannerConfigFor(s.ScannerConfig, revealSecrets),
@@ -1602,6 +1619,7 @@ func (h *ScanHandler) QuickScan(w http.ResponseWriter, r *http.Request) {
 		WorkflowID:  req.WorkflowID,
 		Config:      req.Config,
 		Tags:        req.Tags,
+		Intensity:   req.Intensity,
 		CreatedBy:   userID,
 	})
 	if err != nil {
