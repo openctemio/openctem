@@ -24,8 +24,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// maxProgramBody bounds a program request (the paste is at most 256 KiB).
-const maxProgramBody = bp.MaxScopeTextBytes + 64*1024
+// maxProgramBody bounds a program request: the paste or file is at most
+// 256 KiB, which JSON escaping can double, plus the terms text.
+const maxProgramBody = 2*bp.MaxScopeTextBytes + 128*1024
 
 // BountyProgramHandler serves /api/v1/programs.
 type BountyProgramHandler struct {
@@ -41,11 +42,18 @@ func NewBountyProgramHandler(svc *bpapp.Service, audit *auditsvc.AuditService, l
 
 // ProgramRequest is the body of a preview, an import and a re-import.
 type ProgramRequest struct {
-	Name       string   `json:"name"`
-	Platform   string   `json:"platform"`
-	Handle     string   `json:"handle"`
-	ProgramURL string   `json:"program_url"`
-	ScopeText  string   `json:"scope_text"`
+	Name       string `json:"name"`
+	Platform   string `json:"platform"`
+	Handle     string `json:"handle"`
+	ProgramURL string `json:"program_url"`
+	ScopeText  string `json:"scope_text"`
+	// ScopeFile is an imported scope file (platform CSV, Burp scope JSON,
+	// a CSV with a column mapping); it replaces scope_text when set.
+	ScopeFile *bp.ScopeFile `json:"scope_file,omitempty"`
+	// TermsText is the program's own terms (policy, confidentiality).
+	TermsText string `json:"terms_text"`
+	// Visibility is private (default) or public; read on import only.
+	Visibility string   `json:"visibility"`
 	Rules      bp.Rules `json:"rules"`
 	// AcceptTermsSHA256 is the attestation: the terms_sha256 of the preview
 	// the person accepted.
@@ -59,11 +67,16 @@ type ProgramResumeRequest struct {
 
 // ProgramResponse is one program.
 type ProgramResponse struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Platform      string     `json:"platform"`
-	Handle        string     `json:"handle"`
-	ProgramURL    string     `json:"program_url"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Platform   string `json:"platform"`
+	Handle     string `json:"handle"`
+	ProgramURL string `json:"program_url"`
+	Visibility string `json:"visibility"`
+	TermsText  string `json:"terms_text"`
+	// Locked: a private program whose current terms the caller has not
+	// accepted; only its name, platform, visibility and terms are shown.
+	Locked        bool       `json:"locked"`
 	Status        string     `json:"status"`
 	ScopeSource   string     `json:"scope_source"`
 	Authoritative bool       `json:"authoritative"`
@@ -119,6 +132,7 @@ func idRef(id *shared.ID) *ActorRef {
 func toProgramResponse(p *bp.Program) ProgramResponse {
 	out := ProgramResponse{
 		ID: p.ID.String(), Name: p.Name, Platform: p.Platform, Handle: p.Handle, ProgramURL: p.ProgramURL,
+		Visibility: string(visibility(p)), TermsText: p.TermsText,
 		Status: string(p.Status), ScopeSource: p.ScopeSource, Authoritative: p.Authoritative, Rules: p.Rules,
 		MaxTier: p.Rules.MaxTier().String(), TermsSHA256: p.TermsSHA256, AcceptedBy: idRef(p.AcceptedBy),
 		AcceptedAt: p.AcceptedAt, CreatedBy: idRef(p.CreatedBy), CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
@@ -135,6 +149,13 @@ func toProgramResponse(p *bp.Program) ProgramResponse {
 		out.PendingTermsSHA256 = p.Pending.TermsSHA256
 	}
 	return out
+}
+
+func visibility(p *bp.Program) bp.Visibility {
+	if p.IsPrivate() {
+		return bp.VisibilityPrivate
+	}
+	return bp.VisibilityPublic
 }
 
 func (h *BountyProgramHandler) caller(r *http.Request) (tenantID, actor shared.ID, ok bool) {
@@ -157,10 +178,16 @@ func (h *BountyProgramHandler) decode(w http.ResponseWriter, r *http.Request, v 
 
 func (h *BountyProgramHandler) input(req ProgramRequest) bpapp.Input {
 	return bpapp.Input{Name: req.Name, Platform: req.Platform, Handle: req.Handle, ProgramURL: req.ProgramURL,
-		ScopeText: req.ScopeText, Rules: req.Rules, AcceptTermsSHA256: req.AcceptTermsSHA256}
+		ScopeText: req.ScopeText, ScopeFile: req.ScopeFile, TermsText: req.TermsText, Visibility: req.Visibility,
+		Rules: req.Rules, AcceptTermsSHA256: req.AcceptTermsSHA256}
 }
 
 func (h *BountyProgramHandler) writeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, shared.ErrNotFound) {
+		// Another tenant's, or one the caller may not see: the same 404.
+		apierror.NotFound("Program").WriteJSON(w)
+		return
+	}
 	if writeScopeEntryError(w, err) {
 		return
 	}
@@ -182,8 +209,11 @@ func (h *BountyProgramHandler) writeError(w http.ResponseWriter, err error) {
 func (h *BountyProgramHandler) auditProgram(r *http.Request, action audit.Action, p *bp.Program, msg string, meta map[string]any) {
 	event := auditsvc.NewSuccessEvent(action, audit.ResourceTypeBountyProgram, p.ID.String()).
 		WithResourceName(p.Name).WithMessage(msg).
-		WithMetadata("program_url", p.ProgramURL).
-		WithMetadata("terms_sha256", p.TermsSHA256)
+		WithMetadata("terms_sha256", p.TermsSHA256).
+		WithMetadata("visibility", string(visibility(p)))
+	if !p.IsPrivate() {
+		event = event.WithMetadata("program_url", p.ProgramURL)
+	}
 	for k, v := range meta {
 		event = event.WithMetadata(k, v)
 	}
@@ -220,8 +250,10 @@ func (h *BountyProgramHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]ProgramResponse, 0, len(list))
-	for _, p := range list {
-		out = append(out, toProgramResponse(p))
+	for _, v := range list {
+		pr := toProgramResponse(v.Program)
+		pr.Locked = v.Locked
+		out = append(out, pr)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }
@@ -322,6 +354,11 @@ func (h *BountyProgramHandler) Get(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
+	if d.Program.IsPrivate() {
+		// Every view of a private program's terms is audited.
+		h.auditProgram(r, audit.ActionBountyProgramViewed, d.Program, "Private program viewed",
+			map[string]any{"locked": d.Locked})
+	}
 	out := ProgramDetailResponse{ProgramResponse: toProgramResponse(d.Program), Items: d.Program.ScopeItems,
 		Entries: make([]ScopeTargetResponse, 0, len(d.Entries)), Exclusions: d.Exclusions}
 	if out.Items == nil {
@@ -330,7 +367,47 @@ func (h *BountyProgramHandler) Get(w http.ResponseWriter, r *http.Request) {
 	for _, e := range d.Entries {
 		out.Entries = append(out.Entries, toScopeTargetResponse(e))
 	}
+	out.Locked = d.Locked
+	if out.Exclusions == nil {
+		out.Exclusions = []bpapp.PlannedExclusion{}
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// Attest handles POST /api/v1/programs/{id}/attest
+// @Summary      Accept program terms
+// @Description  Record that the caller accepts the program's current terms and its confidentiality (accept_terms_sha256 = the program's terms_sha256; 409 PROGRAM_TERMS_CHANGED otherwise). A private program shows its scope, rules and link only to a member or owner who accepted its current terms; a change of terms asks again. Changes no authorization. Audited.
+// @Tags         Programs
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                true  "Program ID"
+// @Param        body  body      ProgramResumeRequest  true  "Terms hash"
+// @Success      200   {object}  ProgramResponse
+// @Failure      404   {object}  apierror.Error
+// @Failure      409   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /programs/{id}/attest [post]
+func (h *BountyProgramHandler) Attest(w http.ResponseWriter, r *http.Request) {
+	tenantID, actor, ok := h.caller(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	id, ok := h.programID(w, r)
+	if !ok {
+		return
+	}
+	var req ProgramResumeRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	p, err := h.svc.Attest(r.Context(), tenantID, actor, id, req.AcceptTermsSHA256)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.auditProgram(r, audit.ActionBountyProgramTermsAccepted, p, "Program terms and confidentiality accepted", nil)
+	writeJSON(w, http.StatusOK, toProgramResponse(p))
 }
 
 // Reimport handles PUT /api/v1/programs/{id}/scope

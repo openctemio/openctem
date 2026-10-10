@@ -31,6 +31,7 @@ audit_logs
 authorization_letters
 automation_runs
 automations
+bounty_program_attestations
 bounty_program_exclusions
 bounty_programs
 business_service_assets
@@ -127,6 +128,7 @@ scan_run_scope_snapshots
 scan_run_stage_plans
 scan_run_targets
 scan_runs
+scan_scope_waits
 scan_step_outputs
 scan_workflow_versions
 scan_workflows

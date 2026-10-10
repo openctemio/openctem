@@ -1,8 +1,10 @@
 'use client'
 
 /**
- * Import a bug-bounty program (RFC-065 §5): paste its scope, preview what
- * the import creates, accept the program's rules and scope, import.
+ * Add a bug-bounty program (RFC-065 §5, §15): choose where its scope comes
+ * from (entered by hand or a scope file), preview what the import creates,
+ * accept the program's rules and scope, import. Private and invite-only
+ * programs need no link and no credential.
  */
 
 import { useRouter } from 'next/navigation'
@@ -18,10 +20,10 @@ export default function NewProgramPage() {
   return (
     <Main>
       <PageHeader
-        title={t('programs.new.title', 'Import program')}
+        title={t('programs.new.title', 'Add program')}
         description={t(
-          'programs.new.description',
-          'In-scope targets become scope entries that take effect when you accept the program rules; out-of-scope items stop program entries only, never your own scope.'
+          'programs.new.descriptionSources',
+          'Enter the scope by hand or import the scope file from the program page. In-scope targets become scope entries that take effect when you accept the program rules; out-of-scope items stop program entries only, never your own scope.'
         )}
       />
       <ProgramForm

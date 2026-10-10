@@ -2,13 +2,15 @@
 
 /**
  * Scoping › Programs (RFC-065): the bug-bounty and disclosure programs the
- * caller works on. Members of a program's group see it; owners, admins and
- * full-data roles see every program. Program targets are scanned from the
- * organization's own sensors only.
+ * caller works on. Members of a program's group see it; a public program is
+ * also visible to owners, admins and full-data roles, a private one only to
+ * its members and the owners, locked until the person accepts its terms
+ * (RFC-065 §15). Program targets are scanned from the organization's own
+ * sensors only.
  */
 
 import Link from '@/components/link'
-import { Plus, Trophy } from 'lucide-react'
+import { Lock, Plus, Trophy } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -80,9 +82,23 @@ export default function ProgramsPage() {
             {(data ?? []).map((p) => (
               <TableRow key={p.id}>
                 <TableCell>
-                  <Link href={`/programs/${p.id}`} className="font-medium hover:underline">
+                  <Link
+                    href={`/programs/${p.id}`}
+                    className="inline-flex items-center gap-1.5 font-medium hover:underline"
+                  >
+                    {p.visibility === 'private' && (
+                      <Lock
+                        className="text-muted-foreground h-3.5 w-3.5"
+                        aria-label={t('programs.visibility.private', 'Private')}
+                      />
+                    )}
                     {p.name}
                   </Link>
+                  {p.locked && (
+                    <span className="text-muted-foreground ml-2 text-xs">
+                      {t('programs.locked.badge', 'accept the terms to open')}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="text-muted-foreground">{p.platform || '-'}</TableCell>
                 <TableCell>
@@ -90,7 +106,7 @@ export default function ProgramsPage() {
                     {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-mono text-xs">{p.max_tier}</TableCell>
+                <TableCell className="font-mono text-xs">{p.locked ? '-' : p.max_tier}</TableCell>
               </TableRow>
             ))}
           </TableBody>
