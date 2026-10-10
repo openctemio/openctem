@@ -64,6 +64,28 @@ func (d *WorkflowEventDispatcher) DispatchAssetsDiscovered(_ context.Context, te
 // dispatchAssetsDiscovered is the synchronous body of DispatchAssetsDiscovered.
 // It returns the number of workflows triggered.
 func (d *WorkflowEventDispatcher) dispatchAssetsDiscovered(ctx context.Context, tenantID shared.ID, assets []*asset.Asset) int {
+	ids := make([]shared.ID, 0, len(assets))
+	for _, a := range assets {
+		if a != nil {
+			ids = append(ids, a.ID())
+		}
+	}
+	restricted, ok := d.restrictedAssets(ctx, tenantID, ids)
+	if !ok {
+		return 0
+	}
+	if len(restricted) > 0 {
+		kept := make([]*asset.Asset, 0, len(assets))
+		for _, a := range assets {
+			if a != nil && !restricted[a.ID()] {
+				kept = append(kept, a)
+			}
+		}
+		assets = kept
+	}
+	if len(assets) == 0 {
+		return 0
+	}
 	workflows, err := d.findMatchingWorkflows(ctx, tenantID, automationdom.TriggerTypeAssetDiscovered)
 	if err != nil {
 		d.logger.Error("failed to find asset_discovered workflows", "tenant_id", tenantID, "error", err)

@@ -93,5 +93,7 @@
   "settings.item.ci-pipelines": "Tích hợp CI/CD",
   "settings.desc.ci-pipelines": "Pipeline CI/CD nào được gửi kết quả và điều gì làm pipeline thất bại.",
   "settings.item.scan-windows": "Khung giờ quét",
-  "settings.desc.scan-windows": "Khi nào được quét những mục tiêu nào: khung giờ kiểm thử và khung cấm quét."
+  "settings.desc.scan-windows": "Khi nào được quét những mục tiêu nào: khung giờ kiểm thử và khung cấm quét.",
+  "settings.item.scan-approval": "Phê duyệt quét",
+  "settings.desc.scan-approval": "Lượt quét nào cần người phê duyệt trước khi chạy: mặc định tắt."
 }

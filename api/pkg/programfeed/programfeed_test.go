@@ -353,7 +353,9 @@ func TestRecordToleratesAddedFields(t *testing.T) {
 	b := programfeedtest.New(t, now)
 	rec := programfeedtest.Record("disclose", "acme", []string{"api.acme.io"}, nil, now)
 	rec["environment"] = "production"
-	rec["in_scope"] = []map[string]any{{"type": "domain", "value": "api.acme.io", "confidence": "published", "port": 8443, "protocol": "tcp"}}
+	rec["in_scope"] = []map[string]any{{"type": "domain", "value": "api.acme.io", "confidence": "published", "port": 8443,
+		"ports": []string{"8443", "9000-9001"}, "protocol": "tcp", "instructions": "use the test header", "requires": "X-Test: 1",
+		"environment": "staging", "max_severity": "high", "eligible_for_bounty": false}}
 	v, err := programfeed.VerifyDir(b.Write(t, 3, []map[string]any{rec}), programfeed.Options{PinnedRoot: b.RootKeyID(), Now: now})
 	if err != nil {
 		t.Fatal(err)
@@ -362,11 +364,19 @@ func TestRecordToleratesAddedFields(t *testing.T) {
 	if err != nil || len(progs) != 1 {
 		t.Fatalf("added fields: %d %v", len(progs), err)
 	}
-	// A port-restricted target is never an entry for the whole host.
-	for _, it := range progs[0].ItemsFor(nil) {
-		if it.InScope && it.Scannable() {
-			t.Fatalf("port-restricted target scannable: %+v", it)
-		}
+	// A port-restricted target becomes an entry limited to its ports, never
+	// one for the whole host; its qualifiers are kept.
+	items := progs[0].ItemsFor(nil)
+	if len(items) != 1 {
+		t.Fatalf("items = %+v", items)
+	}
+	it := items[0]
+	if !it.Scannable() || it.Ports != "8443,9000-9001" || it.Protocol != "tcp" || it.Constraint().IsZero() {
+		t.Fatalf("port-restricted target: %+v", it)
+	}
+	if it.Instructions != "use the test header" || it.Requires != "X-Test: 1" || it.Environment != "staging" ||
+		it.MaxSeverity != "high" || it.EligibleForBounty == nil || *it.EligibleForBounty {
+		t.Fatalf("qualifiers lost: %+v", it)
 	}
 	// A fine-grained non-network asset type stays a program target.
 	rec["in_scope"] = []map[string]any{{"type": "other", "value": "com.acme.app", "confidence": "published", "asset_type": "android_app"},

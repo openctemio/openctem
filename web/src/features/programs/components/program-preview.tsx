@@ -24,6 +24,7 @@ import type {
   ProgramPreview as Preview,
 } from '../api/programs-api.types'
 import { summarizePreview } from '../lib/program-form'
+import { portLimit } from '../lib/program-targets'
 
 const ENTRY_STATUS: Record<
   PlannedEntry['status'],
@@ -48,8 +49,17 @@ export function ProgramEntriesTable({ entries }: { entries: PlannedEntry[] }) {
       </TableHeader>
       <TableBody>
         {entries.map((e) => (
-          <TableRow key={`${e.target_type}:${e.pattern}`}>
-            <TableCell className="font-mono text-xs break-all">{e.pattern}</TableCell>
+          <TableRow key={`${e.target_type}:${e.pattern}:${e.constraint?.ports ?? ''}`}>
+            <TableCell className="font-mono text-xs break-all">
+              {e.pattern}
+              {portLimit(e.constraint?.ports, e.constraint?.protocol) && (
+                <Badge variant="outline" className="ml-2 font-mono">
+                  {t('programs.targets.onlyPorts', 'only {ports}', {
+                    ports: portLimit(e.constraint?.ports, e.constraint?.protocol),
+                  })}
+                </Badge>
+              )}
+            </TableCell>
             <TableCell className="text-muted-foreground text-xs">{e.target_type}</TableCell>
             <TableCell>
               <Badge variant={ENTRY_STATUS[e.status].variant}>
