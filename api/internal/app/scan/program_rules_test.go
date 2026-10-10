@@ -27,7 +27,6 @@ func TestRefuseProgramRules(t *testing.T) {
 		want error
 	}{
 		{nil, nil},
-		{bp.ErrOutsideWindow, bp.ErrOutsideWindow},
 		{bp.ErrRulesConflict, bp.ErrRulesConflict},
 		{errors.New("db down"), shared.ErrValidation},
 	}

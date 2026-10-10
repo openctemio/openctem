@@ -133,8 +133,10 @@ type Repositories struct {
 
 	// Scan zones (RFC-023)
 	ScanZone *postgres.ScanZoneRepository
-	// Scan freeze windows (docs/architecture/scan-zones.md)
-	ScanFreezeWindow *postgres.ScanFreezeWindowRepository
+	// Scan window policies, overrides and the assets behind targets (RFC-067)
+	ScanWindowPolicy   *postgres.ScanWindowPolicyRepository
+	ScanWindowOverride *postgres.ScanWindowOverrideRepository
+	ScanWindowAsset    *postgres.ScanWindowAssetRepository
 	// Content packs (RFC-061)
 	ContentPack *postgres.ContentPackRepository
 	// Platform content packs and channels (RFC-061)
@@ -401,7 +403,9 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Scan zones (RFC-023)
 		ScanZone:            postgres.NewScanZoneRepository(db),
-		ScanFreezeWindow:    postgres.NewScanFreezeWindowRepository(db),
+		ScanWindowPolicy:    postgres.NewScanWindowPolicyRepository(db),
+		ScanWindowOverride:  postgres.NewScanWindowOverrideRepository(db),
+		ScanWindowAsset:     postgres.NewScanWindowAssetRepository(db),
 		ContentPack:         postgres.NewContentPackRepository(db),
 		PlatformContentPack: postgres.NewPlatformContentPackRepository(db),
 

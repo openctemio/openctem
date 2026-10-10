@@ -36,6 +36,7 @@ import {
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
+import { WindowWaits } from '@/features/scan-windows'
 import { RunStageLanes } from './run-stage-lanes'
 import { RunTimeline } from './run-timeline'
 
@@ -199,6 +200,15 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             {isScanRun && (
               <DetailSection title="Stages">
                 <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
+              </DetailSection>
+            )}
+            {(run.window_waits?.waiting_count ?? 0) > 0 && (
+              <DetailSection title="Scan windows">
+                <WindowWaits
+                  waitingCount={run.window_waits?.waiting_count}
+                  waiting={run.window_waits?.waiting}
+                  nextOpenAt={run.window_waits?.next_open_at}
+                />
               </DetailSection>
             )}
             <DetailSection title="Timeline">

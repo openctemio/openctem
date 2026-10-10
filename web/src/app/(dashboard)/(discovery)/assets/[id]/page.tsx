@@ -30,6 +30,7 @@ import {
   AssetIdentitySections,
   useAsset,
 } from '@/features/assets'
+import { AssetScanWindowCard } from '@/features/scan-windows'
 import { cn } from '@/lib/utils'
 import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
 import { CRITICALITY_TEXT_COLORS } from '@/lib/criticality-colors'
@@ -217,6 +218,9 @@ export default function AssetDetailPage() {
           </DetailSections>
         </CardContent>
       </Card>
+
+      {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
+      <AssetScanWindowCard assetId={asset.id} className="mt-4" />
 
       {/* The inventory filtered to this type */}
       <Card className="mt-4 bg-muted/30">
