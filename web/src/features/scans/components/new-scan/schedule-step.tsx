@@ -9,6 +9,7 @@
 'use client'
 
 import { Label } from '@/components/ui/label'
+import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
@@ -52,17 +53,18 @@ export function ScheduleStep({
   requireFutureRun = true,
   offerSaveOnly = false,
 }: ScheduleStepProps) {
+  const { t } = useTranslation()
   const schedule = data.schedule
   const timezone = schedule.timezone || viewerTimeZone()
   const set = (patch: Partial<ScanSchedule>) => onChange({ schedule: { ...schedule, ...patch } })
   const frequency = schedule.frequency ?? 'weekly'
-  const problem = scheduleError(data, { requireFuture: requireFutureRun })
+  const problem = scheduleError(data, { requireFuture: requireFutureRun }, t)
   const later = !schedule.runImmediately && !schedule.saveOnly
 
   return (
     <div className="space-y-6 p-4">
       <div className="space-y-3">
-        <Label>When to run?</Label>
+        <Label>{t('scans.schedule.whenToRun')}</Label>
         <RadioGroup
           value={schedule.runImmediately ? 'now' : schedule.saveOnly ? 'save' : 'later'}
           onValueChange={(value) =>
@@ -80,7 +82,7 @@ export function ScheduleStep({
             )}
           >
             <RadioGroupItem value="now" id="run-now" />
-            <span className="font-medium">Run immediately</span>
+            <span className="font-medium">{t('scans.schedule.now')}</span>
           </label>
 
           <div
@@ -93,26 +95,26 @@ export function ScheduleStep({
           >
             <label htmlFor="run-later" className="flex cursor-pointer items-center gap-3">
               <RadioGroupItem value="later" id="run-later" />
-              <span className="font-medium">Schedule for later</span>
+              <span className="font-medium">{t('scans.schedule.later')}</span>
             </label>
 
             {later && (
               <div className="ms-6 grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="frequency" className="text-sm">
-                    Frequency
+                    {t('scans.schedule.frequency')}
                   </Label>
                   <Select
                     value={frequency}
                     onValueChange={(value: ScheduleFrequency) => set({ frequency: value })}
                   >
                     <SelectTrigger id="frequency" className="w-full">
-                      <SelectValue placeholder="Select frequency" />
+                      <SelectValue placeholder={t('scans.schedule.frequencyPlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
                       {FREQUENCY_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
-                          {option.label}
+                          {t(`scans.frequency.${option.value}`, option.label)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -121,7 +123,7 @@ export function ScheduleStep({
 
                 <div className="space-y-2">
                   <Label htmlFor="schedule-timezone" className="text-sm">
-                    Timezone
+                    {t('scans.schedule.timezone')}
                   </Label>
                   <TimezoneSelect
                     id="schedule-timezone"
@@ -134,7 +136,7 @@ export function ScheduleStep({
                   <>
                     <div className="space-y-2">
                       <Label htmlFor="run-at-date" className="text-sm">
-                        Date
+                        {t('scans.schedule.date')}
                       </Label>
                       <Input
                         id="run-at-date"
@@ -147,7 +149,7 @@ export function ScheduleStep({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="run-at-time" className="text-sm">
-                        Time
+                        {t('scans.schedule.time')}
                       </Label>
                       <Input
                         id="run-at-time"
@@ -163,19 +165,19 @@ export function ScheduleStep({
                 {frequency === 'weekly' && (
                   <div className="space-y-2">
                     <Label htmlFor="day" className="text-sm">
-                      Day
+                      {t('scans.schedule.day')}
                     </Label>
                     <Select
                       value={schedule.dayOfWeek?.toString()}
                       onValueChange={(v) => set({ dayOfWeek: parseInt(v, 10) })}
                     >
                       <SelectTrigger id="day" className="w-full">
-                        <SelectValue placeholder="Select day" />
+                        <SelectValue placeholder={t('scans.schedule.dayPlaceholder')} />
                       </SelectTrigger>
                       <SelectContent>
                         {DAY_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value.toString()}>
-                            {option.label}
+                            {t(`scans.day.${option.value}`, option.label)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -186,7 +188,7 @@ export function ScheduleStep({
                 {frequency === 'monthly' && (
                   <div className="space-y-2">
                     <Label htmlFor="day-of-month" className="text-sm">
-                      Day of the month
+                      {t('scans.schedule.dayOfMonth')}
                     </Label>
                     <Select
                       value={(schedule.dayOfMonth ?? 1).toString()}
@@ -205,7 +207,7 @@ export function ScheduleStep({
                     </Select>
                     {(schedule.dayOfMonth ?? 1) > 28 && (
                       <p className="text-xs text-muted-foreground">
-                        A shorter month runs on its last day.
+                        {t('scans.schedule.shortMonth')}
                       </p>
                     )}
                   </div>
@@ -214,7 +216,7 @@ export function ScheduleStep({
                 {frequency !== 'once' && (
                   <div className="space-y-2">
                     <Label htmlFor="time" className="text-sm">
-                      Time
+                      {t('scans.schedule.time')}
                     </Label>
                     <Input
                       id="time"
@@ -246,9 +248,9 @@ export function ScheduleStep({
             >
               <RadioGroupItem value="save" id="run-save" className="mt-0.5" />
               <span>
-                <span className="block font-medium">Save without running</span>
+                <span className="block font-medium">{t('scans.schedule.saveOnly')}</span>
                 <span className="text-muted-foreground block text-xs">
-                  Start it later from the scan page, or add a schedule then.
+                  {t('scans.schedule.saveOnlyHint')}
                 </span>
               </span>
             </label>
@@ -258,7 +260,7 @@ export function ScheduleStep({
           <div className="mt-4 rounded-lg border p-4">
             <SchedulePreview
               request={schedulePreviewRequestFromForm(data)}
-              title={frequency === 'once' ? 'Runs once' : undefined}
+              title={frequency === 'once' ? t('scans.schedule.runsOnce') : undefined}
             />
           </div>
         )}

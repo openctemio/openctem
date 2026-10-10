@@ -98,7 +98,7 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/grpc v1.83.2 // indirect
+	google.golang.org/grpc v1.84.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 
@@ -107,6 +107,8 @@ require (
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.2.1-0.20261010104255-e73d19f7eb79
+	// sdk-go main at 17ba39a (pkg/transfer, chunked feed transfer): replace with the next tag.
+	github.com/openctemio/sdk-go v0.18.1-0.20261010083220-17ba39a04836
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/teambition/rrule-go v1.8.2
