@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   pathname: '/sensors',
   permissions: new Set<string>(),
   moduleIds: ['dashboard'] as string[],
+  notEntitled: [] as string[],
 }))
 
 vi.mock('next/navigation', () => ({
@@ -15,7 +16,11 @@ vi.mock('@/lib/permissions/hooks', () => ({
   usePermissions: () => ({ can: (p: string) => state.permissions.has(p), isLoading: false }),
 }))
 vi.mock('@/context/bootstrap-provider', () => ({
-  useBootstrapModules: () => ({ moduleIds: state.moduleIds, isLoading: false }),
+  useBootstrapModules: () => ({
+    moduleIds: state.moduleIds,
+    notEntitledModuleIds: state.notEntitled,
+    isLoading: false,
+  }),
   useBootstrapContextSafe: () => ({ isBootstrapped: true }),
 }))
 
@@ -26,6 +31,16 @@ describe('RouteGuard', () => {
     state.pathname = '/sensors'
     state.permissions = new Set()
     state.moduleIds = ['dashboard']
+    state.notEntitled = []
+  })
+
+  it('says the plan does not include it, with no way to turn it on, when it is not entitled', () => {
+    state.permissions = new Set(['sensors:read', 'team:update'])
+    state.notEntitled = ['sensors']
+    render(<RouteGuard>page</RouteGuard>)
+    expect(screen.getByText('Not in your plan')).toBeInTheDocument()
+    expect(screen.getByText(/platform administrator/i)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Manage modules/ })).toBeNull()
   })
 
   it('says access is denied, not "upgrade your plan", when the user lacks the permission', () => {

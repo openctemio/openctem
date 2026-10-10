@@ -134,6 +134,9 @@ type TenantModulesResponse struct {
 	// bare []string here would be a second, thinner copy of that catalog.
 	ComingSoonModuleIDs []string `json:"coming_soon_module_ids,omitempty"`
 	BetaModuleIDs       []string `json:"beta_module_ids,omitempty"`
+	// NotEntitledModuleIDs are modules the organization's plan does not
+	// include: a page of one says "not in your plan", not "turned off".
+	NotEntitledModuleIDs []string `json:"not_entitled_module_ids,omitempty"`
 }
 
 // LicensingModuleResponse represents a module in the response.
@@ -215,11 +218,12 @@ func (h *BootstrapHandler) buildModulesResponse(
 	}
 
 	return &TenantModulesResponse{
-		ModuleIDs:           moduleIDs,
-		Modules:             modulesResp,
-		SubModules:          subModulesMap,
-		ComingSoonModuleIDs: comingSoonIDs,
-		BetaModuleIDs:       betaIDs,
+		ModuleIDs:            moduleIDs,
+		Modules:              modulesResp,
+		SubModules:           subModulesMap,
+		ComingSoonModuleIDs:  comingSoonIDs,
+		BetaModuleIDs:        betaIDs,
+		NotEntitledModuleIDs: enabledModules.NotEntitledModuleIDs,
 	}
 }
 
