@@ -44,7 +44,7 @@ func (s *Service) SetSync(f ScopeFetcher, c TokenCipher, gone func(error) bool, 
 // encrypted and never returned; an empty token keeps the stored one. The
 // route requires step-up.
 func (s *Service) ConfigureSource(ctx context.Context, tenantID, actor, id shared.ID, in bp.SyncSourceInput) (*bp.Program, error) {
-	p, err := s.loadForCaller(ctx, tenantID, actor, id)
+	p, err := s.loadAttested(ctx, tenantID, actor, id)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ type SyncResult struct {
 
 // Sync reads a program's source now, for a caller who may see it.
 func (s *Service) Sync(ctx context.Context, tenantID, actor, id shared.ID) (*SyncResult, error) {
-	p, err := s.loadForCaller(ctx, tenantID, actor, id)
+	p, err := s.loadAttested(ctx, tenantID, actor, id)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (s *Service) sync(ctx context.Context, p *bp.Program, actor shared.ID) (*Sy
 			"entries_removed": res.RemovedEntries, "exclusions_added": res.AddedExclusions})
 	}
 	if diff.Widens() {
-		terms := bp.NewTerms(p.ProgramURL, p.Rules, items).SHA256()
+		terms := bp.NewTerms(p.ProgramURL, p.Rules, items).WithText(p.TermsText).SHA256()
 		if p.Pending == nil || p.Pending.TermsSHA256 != terms {
 			p.Pending = &bp.PendingTerms{TermsSHA256: terms, Items: items}
 			if s.notifier != nil {
@@ -270,20 +270,20 @@ func (s *Service) audited(ctx context.Context, p *bp.Program, actor shared.ID, m
 
 // Pending answers what accepting a program's pending terms would do.
 func (s *Service) Pending(ctx context.Context, tenantID, actor, id shared.ID) (*Preview, error) {
-	p, err := s.loadForCaller(ctx, tenantID, actor, id)
+	p, err := s.loadAttested(ctx, tenantID, actor, id)
 	if err != nil {
 		return nil, err
 	}
 	if p.Pending == nil {
 		return nil, bp.ErrNoPendingTerms
 	}
-	return s.previewItems(ctx, tenantID, p.ProgramURL, p.Rules, p.Pending.Items, p)
+	return s.previewItems(ctx, tenantID, p.ProgramURL, p.TermsText, p.Rules, p.Pending.Items, p)
 }
 
 // Accept puts a program's pending terms into effect on the caller's
 // attestation (the pending terms hash). The route requires step-up.
 func (s *Service) Accept(ctx context.Context, tenantID, actor, id shared.ID, acceptTerms string) (*bp.Program, *Preview, error) {
-	p, err := s.loadForCaller(ctx, tenantID, actor, id)
+	p, err := s.loadAttested(ctx, tenantID, actor, id)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -298,7 +298,7 @@ func (s *Service) Accept(ctx context.Context, tenantID, actor, id shared.ID, acc
 	if err := checkTerms(acceptTerms, p.Pending.TermsSHA256); err != nil {
 		return nil, nil, err
 	}
-	pv, err := s.previewItems(ctx, tenantID, p.ProgramURL, p.Rules, p.Pending.Items, p)
+	pv, err := s.previewItems(ctx, tenantID, p.ProgramURL, p.TermsText, p.Rules, p.Pending.Items, p)
 	if err != nil {
 		return nil, nil, err
 	}
