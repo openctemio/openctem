@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	ddimport "github.com/openctemio/openctem/api/internal/infra/importer/defectdojo"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -115,6 +117,9 @@ func (s *SyncService) SyncTenant(ctx context.Context, tenantID shared.ID) (*Sync
 	out, err := s.ingester.Ingest(ctx, agt, ingest.Input{
 		Report:       report,
 		CoverageType: ingest.CoverageTypePartial,
+		// The tenant's DefectDojo connection: an integration for attribute
+		// reconciliation (RFC-069).
+		Options: ingest.Options{SourceKind: asset.SourceKindIntegration, SourceName: "defectdojo"},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("defectdojo ingest: %w", err)
