@@ -539,7 +539,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.ScopeConfig,
   },
-  '/settings/scanning/freeze-windows': {
+  '/settings/scanning/scan-windows': {
     permission: Permission.ScansRead,
     module: Module.Scans,
   },
@@ -749,6 +749,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
   },
 
+  // Vulnerability matching policy (RFC-066): owners and admins.
+  '/settings/vulnerability-matching': {
+    permission: Permission.TeamUpdate,
+  },
   // Asset source precedence (RFC-069): owner/admin on the API.
   '/settings/asset-sources': {
     permission: Permission.TeamUpdate,

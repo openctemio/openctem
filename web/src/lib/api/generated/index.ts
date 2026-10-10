@@ -147,6 +147,16 @@ export type ScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckRe
 export type ScopeBulkOperationResponse =
   Schemas['internal_infra_http_handler.ScopeBulkOperationResponse']
 
+// Inventory vulnerability matching (RFC-066): an asset's software, its
+// matched CVEs and the organization's policy
+export type AssetSoftwareListResponse =
+  Schemas['internal_infra_http_handler.AssetSoftwareListResponse']
+export type AssetSoftwareResponse = Schemas['internal_infra_http_handler.AssetSoftwareResponse']
+export type AssetSoftwareMatchResponse =
+  Schemas['internal_infra_http_handler.AssetSoftwareMatchResponse']
+export type VulnMatchingSettings =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_tenant.VulnMatchingSettings']
+
 // Asset state history ("What changed")
 export type StateChangeResponse = Schemas['internal_infra_http_handler.StateChangeResponse']
 

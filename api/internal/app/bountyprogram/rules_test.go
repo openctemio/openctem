@@ -79,9 +79,10 @@ func TestJobRules(t *testing.T) {
 	if err != nil || r.RateLimit != 2 || len(r.Programs) != 2 {
 		t.Fatalf("acme+shop: %+v %v", r, err)
 	}
-	// Outside acme's window.
-	if _, err := svc.JobRules(ctx, tenant, []string{"app.acme.example"}, mon10.Add(4*time.Hour)); !errors.Is(err, bp.ErrOutsideWindow) {
-		t.Fatalf("outside window: %v", err)
+	// Testing windows are scan windows (RFC-067): the rules a job carries
+	// do not depend on the time.
+	if r, err := svc.JobRules(ctx, tenant, []string{"app.acme.example"}, mon10.Add(4*time.Hour)); err != nil || r == nil || r.RateLimit != 5 {
+		t.Fatalf("outside window: %+v %v", r, err)
 	}
 	// shop has no window: any time.
 	if _, err := svc.JobRules(ctx, tenant, []string{"store.example"}, mon10.Add(4*time.Hour)); err != nil {

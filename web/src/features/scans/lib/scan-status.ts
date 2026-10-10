@@ -1,5 +1,6 @@
 import type { ScanConfig, ScanLastRun } from '@/lib/api/scan-types'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { enTranslate, type Translate } from './translate'
 
 /**
  * What a scan list row says about a scan: its latest run (the real run
@@ -37,27 +38,34 @@ export function lastRunOf(
   return null
 }
 
-/** Readable refusal codes; anything else is shown as sent. */
-const REFUSAL_LABELS: Record<string, string> = {
-  ALL_TARGETS_EXCLUDED: 'Every target is excluded by scope',
-  ALL_TARGETS_UNCONFIRMED: 'No target is authorized for active scanning',
-  NO_TARGETS: 'No targets',
-  NO_COMPATIBLE_TARGETS: 'No target this scanner can scan',
-  NO_SENSOR_AVAILABLE: 'No sensor online',
-  SCAN_FREEZE_ACTIVE: 'Freeze window active',
-  SCAN_NOT_TRIGGERABLE: 'Scan paused or disabled',
-  WILDCARD_TARGET: 'Wildcard target not allowed',
-  TARGET_SELECTOR_UNAVAILABLE: 'Dynamic targets could not be resolved',
-  TOOL_DISABLED: 'Scanner disabled',
-  TOOL_NOT_FOUND: 'Scanner not available',
-  SENSOR_POLICY_REFUSED: "Refused by the sensors' local policy",
-  MAX_CONCURRENT_RUNS: 'Too many runs at once',
-}
+/** Refusal codes with a translated label; any other code is shown as sent. */
+const REFUSAL_CODES = new Set([
+  'ALL_TARGETS_EXCLUDED',
+  'ALL_TARGETS_UNCONFIRMED',
+  'NO_TARGETS',
+  'NO_COMPATIBLE_TARGETS',
+  'NO_SENSOR_AVAILABLE',
+  'SCAN_WINDOW_NEVER_OPENS',
+  'SCAN_NOT_TRIGGERABLE',
+  'WILDCARD_TARGET',
+  'TARGET_SELECTOR_UNAVAILABLE',
+  'TOOL_DISABLED',
+  'TOOL_NOT_FOUND',
+  'SENSOR_POLICY_REFUSED',
+  'MAX_CONCURRENT_RUNS',
+])
 
 /** One line on why a blocked or failed run ended, for hover text. */
-export function lastRunReason(run: ScanLastRun | null): string | undefined {
+export function lastRunReason(
+  run: ScanLastRun | null,
+  t: Translate = enTranslate
+): string | undefined {
   if (!run) return undefined
-  const label = run.refusal_code ? (REFUSAL_LABELS[run.refusal_code] ?? run.refusal_code) : ''
+  const label = run.refusal_code
+    ? REFUSAL_CODES.has(run.refusal_code)
+      ? t(`scans.refusal.${run.refusal_code}`)
+      : run.refusal_code
+    : ''
   // The message can carry sensor or tool text: control and direction
   // characters are shown as escapes, never applied.
   const message = toDisplayText(run.error_message?.trim() ?? '')
@@ -70,10 +78,14 @@ export function lastRunReason(run: ScanLastRun | null): string | undefined {
  * scanner of a single check. `kind` says which.
  */
 export function scanTypeLabel(
-  config: Pick<ScanConfig, 'scan_type' | 'scan_workflow_name' | 'scanner_name'>
+  config: Pick<ScanConfig, 'scan_type' | 'scan_workflow_name' | 'scanner_name'>,
+  t: Translate = enTranslate
 ): { label: string; kind: 'workflow' | 'single' } {
   if (config.scan_type === 'workflow') {
-    return { label: config.scan_workflow_name?.trim() || 'Workflow', kind: 'workflow' }
+    return {
+      label: config.scan_workflow_name?.trim() || t('scans.scanType.workflow'),
+      kind: 'workflow',
+    }
   }
-  return { label: config.scanner_name?.trim() || 'Single check', kind: 'single' }
+  return { label: config.scanner_name?.trim() || t('scans.scanType.single'), kind: 'single' }
 }

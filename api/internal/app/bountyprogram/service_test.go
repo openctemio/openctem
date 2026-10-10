@@ -15,7 +15,7 @@ type fakeRepo struct {
 	programs map[shared.ID]*bp.Program
 	entries  map[shared.ID]*scopedom.Target
 	excl     map[shared.ID][]bp.Exclusion
-	members  map[shared.ID]map[shared.ID]bool // program -> users
+	members  map[shared.ID]map[shared.ID]bool   // program -> users
 	attest   map[shared.ID]map[shared.ID]string // program -> user -> terms
 }
 
@@ -51,6 +51,13 @@ func (f *fakeRepo) ReplaceScope(_ context.Context, w bp.ScopeWrite) error {
 	}
 	for _, e := range w.CreateEntries {
 		f.entries[e.ID()] = e
+	}
+	if w.DeactivateEntries {
+		for _, e := range f.entries {
+			if e.ProgramID() != nil && e.ProgramID().Equals(w.Program.ID) {
+				e.Deactivate()
+			}
+		}
 	}
 	f.excl[w.Program.ID] = w.Exclusions
 	return nil
