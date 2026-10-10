@@ -117,6 +117,7 @@ var v1ChangeKinds = map[string]bool{"program_added": true, "program_reopened": t
 const (
 	labelURL       = "url"
 	labelDomain    = "domain"
+	labelCIDR      = "cidr"
 	labelIPAddress = "ip_address"
 )
 
@@ -167,7 +168,7 @@ func v1AssetLabel(assetType string) string {
 	case "ip_address", "ip":
 		return labelIPAddress
 	case "cidr", "ip_range":
-		return "cidr"
+		return labelCIDR
 	case "url", "web_application", "website", "api":
 		return labelURL
 	}
