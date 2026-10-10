@@ -11,6 +11,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import Link from '@/components/link'
 import {
   Dialog,
@@ -38,6 +39,7 @@ import { ScannerSelect } from './scanner-select'
 import { PasteSource } from './target-picker/paste-source'
 import { SelectionSummary } from './target-picker/selection-summary'
 import { parsePastedTargets } from '../lib/target-format'
+import { enTranslate, type Translate } from '../lib/translate'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
 
 interface QuickScanDialogProps {
@@ -55,13 +57,18 @@ export function parseTargets(text: string): string[] {
 }
 
 /** Default name offered by "Save as scan". */
-export function defaultSaveName(scanner: string, targets: string[]): string {
-  if (targets.length === 0) return `${scanner} scan`
+export function defaultSaveName(
+  scanner: string,
+  targets: string[],
+  t: Translate = enTranslate
+): string {
+  if (targets.length === 0) return t('scans.quick.defaultName', undefined, { scanner })
   const more = targets.length > 1 ? ` +${targets.length - 1}` : ''
   return `${scanner} — ${targets[0]}${more}`
 }
 
 export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDialogProps) {
+  const { t } = useTranslation()
   const [targets, setTargets] = useState<string[]>([])
   const [scannerName, setScannerName] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -80,11 +87,11 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
 
   const handleSubmit = async () => {
     if (targetList.length === 0) {
-      toast.error('Please enter at least one target')
+      toast.error(t('scans.quick.needTarget'))
       return
     }
     if (!scannerName) {
-      toast.error('Please choose a scanner')
+      toast.error(t('scans.err.scanner'))
       return
     }
 
@@ -92,10 +99,10 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
     setRefused([])
     try {
       const result = await quickScan({ targets: targetList, scanner_name: scannerName })
-      toast.success(`Quick scan started on ${targetList.length} target(s)`)
+      toast.success(t('scans.quick.started', undefined, { count: targetList.length }))
       await Promise.all([invalidateScanRunsCache(), invalidateScanManagementStatsCache()])
       setStarted(result ?? null)
-      setSaveName(defaultSaveName(scannerName, targetList))
+      setSaveName(defaultSaveName(scannerName, targetList, t))
       onSuccess?.()
     } catch (error) {
       const scopeRefused = refusedFromError(error)
@@ -103,7 +110,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
         setRefused(scopeRefused)
         return
       }
-      toast.error(getErrorMessage(error, 'Failed to start the quick scan'))
+      toast.error(getErrorMessage(error, t('scans.quick.startFailed')))
     } finally {
       setIsSubmitting(false)
     }
@@ -116,9 +123,9 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
       await saveQuickScan({ name })
       await invalidateScanConfigsCache()
       setSavedName(name)
-      toast.success(`Saved as scan "${name}"`)
+      toast.success(t('scans.quick.saved', undefined, { name }))
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to save the scan'))
+      toast.error(getErrorMessage(error, t('scans.quick.saveFailed')))
     }
   }
 
@@ -136,10 +143,8 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent size="md">
         <DialogHeader>
-          <DialogTitle>Quick Scan</DialogTitle>
-          <DialogDescription>
-            Run a scanner on targets now. Nothing is saved unless you choose to.
-          </DialogDescription>
+          <DialogTitle>{t('scans.quick.title')}</DialogTitle>
+          <DialogDescription>{t('scans.quick.description')}</DialogDescription>
         </DialogHeader>
 
         {started ? (
@@ -148,24 +153,24 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
               <div className="flex items-start gap-3 rounded-lg border p-3">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                 <div className="space-y-1 text-sm">
-                  <p className="font-medium">Scan started on {started.target_count} target(s)</p>
-                  <p className="text-muted-foreground">
-                    Follow it under Runs. It is not saved as a scan configuration.
+                  <p className="font-medium">
+                    {t('scans.quick.startedOn', undefined, { count: started.target_count })}
                   </p>
+                  <p className="text-muted-foreground">{t('scans.quick.followRuns')}</p>
                 </div>
               </div>
 
               {savedName ? (
                 <p className="text-sm">
-                  Saved as{' '}
+                  {t('scans.quick.savedAsPrefix')}{' '}
                   <Link href={`/scans/${started.scan_id}`} className="font-medium underline">
                     {savedName}
                   </Link>
-                  . You can schedule it from there.
+                  . {t('scans.quick.savedAsSuffix')}
                 </p>
               ) : (
                 <div className="space-y-2">
-                  <Label htmlFor="quick-save-name">Save as scan</Label>
+                  <Label htmlFor="quick-save-name">{t('scans.quick.saveAsScan')}</Label>
                   <div className="flex gap-2">
                     <Input
                       id="quick-save-name"
@@ -183,18 +188,15 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                       ) : (
                         <Save className="me-2 h-4 w-4" />
                       )}
-                      Save
+                      {t('scans.quick.save')}
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Keeps these targets and this scanner as a configuration you can run again or
-                    schedule.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t('scans.quick.saveHint')}</p>
                 </div>
               )}
             </DialogBody>
             <DialogFooter>
-              <Button onClick={handleClose}>Done</Button>
+              <Button onClick={handleClose}>{t('scans.quick.done')}</Button>
             </DialogFooter>
           </>
         ) : (
@@ -205,7 +207,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
 
               {/* Scanner: the tool registry's active scanners */}
               <div className="space-y-2">
-                <Label htmlFor="quick-scanner">Scanner</Label>
+                <Label htmlFor="quick-scanner">{t('scans.basic.scanner')}</Label>
                 <ScannerSelect id="quick-scanner" value={scannerName} onChange={setScannerName} />
               </div>
 
@@ -214,13 +216,13 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
               ) : (
                 <SelectionSummary
                   targets={targetList}
-                  chips={targetList.map((t) => ({
-                    key: t,
-                    label: t,
+                  chips={targetList.map((target) => ({
+                    key: target,
+                    label: target,
                     kind: 'typed' as const,
                     onRemove: () =>
                       setTargets([
-                        ...targetList.filter((x) => x !== t),
+                        ...targetList.filter((x) => x !== target),
                         ...pasted.invalid.map((bad) => bad.input),
                       ]),
                   }))}
@@ -233,7 +235,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
 
             <DialogFooter>
               <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 onClick={handleSubmit}
@@ -247,12 +249,12 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                 {isSubmitting ? (
                   <>
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    Starting...
+                    {t('scans.common.starting')}
                   </>
                 ) : (
                   <>
                     <Zap className="me-2 h-4 w-4" />
-                    Start Scan
+                    {t('scans.quick.start')}
                   </>
                 )}
               </Button>

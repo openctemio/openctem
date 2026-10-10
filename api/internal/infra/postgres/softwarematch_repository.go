@@ -276,6 +276,19 @@ func (r *SoftwareMatchRepository) DequeueTenants(ctx context.Context, limit int)
 
 // TenantMatches (see softwarematch.Store).
 func (r *SoftwareMatchRepository) TenantMatches(ctx context.Context, tenantID shared.ID, currentSince time.Time, limit int) ([]softwarematch.Match, error) {
+	return r.matches(ctx, `s.tenant_id = $1 AND s.superseded_at IS NULL AND s.last_seen_at >= $2`, limit,
+		tenantID.String(), currentSince)
+}
+
+// AssetMatches (see softwarematch.Store).
+func (r *SoftwareMatchRepository) AssetMatches(ctx context.Context, tenantID, assetID shared.ID) ([]softwarematch.Match, error) {
+	return r.matches(ctx, `s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL`, 10_000,
+		tenantID.String(), assetID.String())
+}
+
+// matches reads current links joined with their versions' matches; where
+// must filter on the tenant ($1) and uses $2; $3 is the limit.
+func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, limit int, a1, a2 any) ([]softwarematch.Match, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT s.asset_id, (a.exposure = 'public' OR COALESCE(a.is_internet_accessible, false)),
 			s.confidence, s.location, COALESCE(s.port, 0), COALESCE(s.transport, ''), s.evidence,
@@ -296,9 +309,9 @@ func (r *SoftwareMatchRepository) TenantMatches(ctx context.Context, tenantID sh
 		JOIN cve_records r ON r.cve_id = m.cve_id AND r.status <> 'Rejected'
 		LEFT JOIN kev_catalog k ON k.cve_id = m.cve_id
 		LEFT JOIN epss_scores e ON e.cve_id = m.cve_id
-		WHERE s.tenant_id = $1 AND s.superseded_at IS NULL AND s.last_seen_at >= $2
+		WHERE `+where+`
 		ORDER BY s.asset_id, m.cve_id
-		LIMIT $3`, tenantID.String(), currentSince, limit)
+		LIMIT $3`, a1, a2, limit)
 	if err != nil {
 		return nil, fmt.Errorf("tenant matches: %w", err)
 	}

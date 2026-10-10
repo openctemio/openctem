@@ -59,6 +59,7 @@ const mttdInternetFacingQuery = `
 			CASE WHEN a.exposure = 'public' THEN a.exposure_changed_at END AS classified_at
 		FROM assets a
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
+			AND ($3::bool OR NOT a.program_only)
 			AND a.status <> 'archived'
 			AND (a.exposure = 'public' OR a.is_internet_accessible = true)
 			AND a.first_seen >= NOW() - make_interval(days => $2::int)
@@ -97,7 +98,7 @@ func (r *DashboardRepository) mttdInternetFacing(ctx context.Context, tenantID s
 		mean, median sql.NullFloat64
 		out          module.DurationMetric
 	)
-	if err := r.db.QueryRowContext(ctx, mttdInternetFacingQuery, tenantID.String(), days).
+	if err := r.db.QueryRowContext(ctx, mttdInternetFacingQuery, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx)).
 		Scan(&mean, &median, &out.SampleSize, &out.Unmeasured); err != nil {
 		return out, fmt.Errorf("program metrics mttd: %w", err)
 	}
@@ -122,7 +123,7 @@ const mttrValidatedQuery = `
 	timed AS (
 		SELECT EXTRACT(EPOCH FROM (f.resolved_at - v.validated_at)) / 3600.0 AS hours
 		FROM validated v
-		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only
+		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only AND ($3::bool OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
 		WHERE f.status = 'resolved'
 			AND f.resolved_at IS NOT NULL
 			AND f.resolved_at >= NOW() - make_interval(days => $2::int)
@@ -140,7 +141,7 @@ func (r *DashboardRepository) mttrValidated(ctx context.Context, tenantID shared
 		mean, median sql.NullFloat64
 		out          module.DurationMetric
 	)
-	if err := r.db.QueryRowContext(ctx, mttrValidatedQuery, tenantID.String(), days).
+	if err := r.db.QueryRowContext(ctx, mttrValidatedQuery, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx)).
 		Scan(&mean, &median, &out.SampleSize); err != nil {
 		return out, fmt.Errorf("program metrics mttr validated: %w", err)
 	}
@@ -167,7 +168,7 @@ const ownerAcceptanceQuery = `
 			(fa.changes->>'assignee_id')::uuid AS assignee_id,
 			f.sla_deadline, f.resolved_at
 		FROM finding_activities fa
-		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only
+		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only AND ($3::bool OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
 		WHERE fa.tenant_id = $1
 			AND fa.activity_type = 'assigned'
 			AND fa.created_at >= NOW() - make_interval(days => $2::int)
@@ -215,7 +216,7 @@ const ownerAcceptanceQuery = `
 
 func (r *DashboardRepository) ownerAcceptance(ctx context.Context, tenantID shared.ID, days int) (module.OwnerAcceptanceMetric, error) {
 	var out module.OwnerAcceptanceMetric
-	if err := r.db.QueryRowContext(ctx, ownerAcceptanceQuery, tenantID.String(), days).
+	if err := r.db.QueryRowContext(ctx, ownerAcceptanceQuery, tenantID.String(), days, shared.ProgramAssetsIncluded(ctx)).
 		Scan(&out.Accepted, &out.Missed, &out.Pending, &out.Excluded); err != nil {
 		return out, fmt.Errorf("program metrics owner acceptance: %w", err)
 	}

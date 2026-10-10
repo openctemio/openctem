@@ -8,6 +8,7 @@
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { AlertCircle, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,7 @@ interface PasteSourceProps {
 }
 
 export function PasteSource({ value, onChange, children }: PasteSourceProps) {
+  const { t } = useTranslation()
   const parsed = useMemo(() => parsePastedTargets(value), [value])
   const kinds = (Object.entries(parsed.byKind) as [TargetKind, number][]).filter(
     ([k]) => k !== 'invalid'
@@ -38,11 +40,9 @@ export function PasteSource({ value, onChange, children }: PasteSourceProps) {
       <div className="flex items-end justify-between gap-2">
         <div>
           <Label htmlFor="custom-targets" className="text-sm">
-            Targets
+            {t('scans.paste.label')}
           </Label>
-          <p className="text-muted-foreground text-xs">
-            One per line, or separated by commas or spaces.
-          </p>
+          <p className="text-muted-foreground text-xs">{t('scans.paste.format')}</p>
         </div>
         {canClean && (
           <Button
@@ -53,7 +53,7 @@ export function PasteSource({ value, onChange, children }: PasteSourceProps) {
             onClick={() => onChange([...parsed.targets, ...parsed.invalid.map((i) => i.input)])}
           >
             <Sparkles className="me-1 h-3 w-3" aria-hidden />
-            Clean up
+            {t('scans.paste.cleanUp')}
           </Button>
         )}
       </div>
@@ -72,35 +72,46 @@ export function PasteSource({ value, onChange, children }: PasteSourceProps) {
         {parsed.lines.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-muted-foreground">
-              {parsed.targets.length} {parsed.targets.length === 1 ? 'target' : 'targets'}
+              {t(
+                parsed.targets.length === 1 ? 'scans.paste.targetsOne' : 'scans.paste.targetsMany',
+                undefined,
+                {
+                  count: parsed.targets.length,
+                }
+              )}
             </span>
             {kinds.map(([kind, n]) => (
               <Badge key={kind} variant="secondary" className="text-[11px]">
-                {n} {TARGET_KIND_LABELS[kind]}
+                {n} {t(`scans.kind.${kind}`, TARGET_KIND_LABELS[kind])}
               </Badge>
             ))}
             {parsed.duplicates > 0 && (
               <span className="text-muted-foreground">
-                · {parsed.duplicates} repeated {parsed.duplicates === 1 ? 'line' : 'lines'} counted
-                once
+                {t(
+                  parsed.duplicates === 1 ? 'scans.paste.repeatedOne' : 'scans.paste.repeatedMany',
+                  undefined,
+                  { count: parsed.duplicates }
+                )}
               </span>
             )}
           </div>
         )}
         {parsed.invalid.length > 0 && (
-          <ul className="space-y-1" aria-label="Lines that are not targets">
+          <ul className="space-y-1" aria-label={t('scans.paste.invalidLines')}>
             {parsed.invalid.slice(0, 5).map((line, i) => (
               <li key={i} className="flex items-center gap-2 text-xs text-destructive">
                 <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
                 <span className="truncate font-mono" title={line.input}>
                   {line.input}
                 </span>
-                <span className="text-muted-foreground shrink-0">{line.reason}</span>
+                <span className="text-muted-foreground shrink-0">
+                  {line.reasonKey ? t(line.reasonKey, line.reason) : line.reason}
+                </span>
               </li>
             ))}
             {parsed.invalid.length > 5 && (
               <li className="text-xs text-destructive">
-                and {parsed.invalid.length - 5} more lines that are not targets
+                {t('scans.paste.moreInvalid', undefined, { count: parsed.invalid.length - 5 })}
               </li>
             )}
           </ul>
@@ -111,7 +122,7 @@ export function PasteSource({ value, onChange, children }: PasteSourceProps) {
 
       {value.length === 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-muted-foreground text-xs">Examples:</span>
+          <span className="text-muted-foreground text-xs">{t('scans.paste.examples')}</span>
           {EXAMPLES.map((example) => (
             <button
               key={example}
@@ -125,8 +136,7 @@ export function PasteSource({ value, onChange, children }: PasteSourceProps) {
         </div>
       )}
       <p className="text-muted-foreground text-xs">
-        <code className="rounded bg-muted px-1">*.example.com</code> covers example.com and every
-        name below it.
+        {t('scans.paste.wildcardHelp', undefined, { pattern: '*.example.com' })}
       </p>
     </div>
   )

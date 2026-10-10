@@ -20,11 +20,11 @@ import type {
 } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
 import { parsePastedTargets } from './target-format'
+import { enTranslate, type Translate } from './translate'
 import { instantToZonedWallTime, viewerTimeZone, zonedWallTimeToInstant } from './zoned-time'
 import {
   TENABLE_SC_TOOL,
   readTenableScanConfig,
-  tenableScanConfigError,
   tenableScanConfigToApi,
 } from '@/features/integrations/lib/tenable-sc'
 import { apiTargetOptions, isWildcardTarget, toWildcards } from './dynamic-targets'
@@ -65,14 +65,16 @@ function toApiSensorPreference(preference: string): ApiSensorPreference {
 }
 
 /** First problem with the Basic step, or null. Shared by New and Edit. */
-export function basicInfoError(form: NewScanFormData): string | null {
-  if (!form.name.trim()) return 'Please enter a scan name'
-  if (form.mode === 'single' && !form.scannerName) return 'Please choose a scanner'
+export function basicInfoError(form: NewScanFormData, t: Translate = enTranslate): string | null {
+  if (!form.name.trim()) return t('scans.err.name')
+  if (form.mode === 'single' && !form.scannerName) return t('scans.err.scanner')
   if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
-    const problem = tenableScanConfigError(readTenableScanConfig(form.scannerConfig))
-    if (problem) return problem
+    const config = readTenableScanConfig(form.scannerConfig)
+    if (!config.integrationId) return t('scans.err.tenableConnector')
+    if (config.policyId <= 0) return t('scans.err.tenablePolicy')
+    if (config.repositoryId <= 0) return t('scans.err.tenableRepository')
   }
-  if (form.mode === 'workflow' && !form.workflowId) return 'Please select a workflow'
+  if (form.mode === 'workflow' && !form.workflowId) return t('scans.err.workflow')
   return null
 }
 
@@ -93,15 +95,16 @@ export function onceRunAt(form: NewScanFormData): Date | null {
  */
 export function scheduleError(
   form: NewScanFormData,
-  opts: { requireFuture?: boolean; now?: Date } = {}
+  opts: { requireFuture?: boolean; now?: Date } = {},
+  t: Translate = enTranslate
 ): string | null {
   const { schedule } = form
   if (schedule.runImmediately || schedule.saveOnly || schedule.frequency !== 'once') return null
   const at = onceRunAt(form)
-  if (!at) return 'Choose the date and time of the run'
+  if (!at) return t('scans.err.dateTime')
   const now = opts.now ?? new Date()
   if (opts.requireFuture !== false && at.getTime() < now.getTime() + 60_000) {
-    return 'The run must be at least a minute from now (to run now, choose Run immediately)'
+    return t('scans.err.future')
   }
   return null
 }
@@ -163,22 +166,27 @@ export function directTargets(form: NewScanFormData): string[] {
 }
 
 /** First problem with the Targets step, or null. Shared by New and Edit. */
-export function targetsError(form: NewScanFormData): string | null {
+export function targetsError(form: NewScanFormData, t: Translate = enTranslate): string | null {
   const { targets } = form
   if (
     targets.assetGroupIds.length === 0 &&
     targets.assetIds.length === 0 &&
     targets.customTargets.length === 0
   ) {
-    return 'Select at least one target (asset group, asset or custom target)'
+    return t('scans.err.noTarget')
   }
   const invalid = parsePastedTargets(targets.customTargets).invalid.length
   if (invalid > 0) {
-    return `${invalid} typed ${invalid === 1 ? 'line is' : 'lines are'} not a target: fix or remove ${invalid === 1 ? 'it' : 'them'}`
+    return t(invalid === 1 ? 'scans.err.invalidOne' : 'scans.err.invalidMany', undefined, {
+      count: invalid,
+    })
   }
   const n = directTargets(form).length
   if (n > MAX_DIRECT_TARGETS) {
-    return `A scan takes at most ${MAX_DIRECT_TARGETS.toLocaleString()} direct targets; ${n.toLocaleString()} are selected. Remove some, or put them in an asset group and scan the group.`
+    return t('scans.err.tooMany', undefined, {
+      max: MAX_DIRECT_TARGETS.toLocaleString(),
+      count: n.toLocaleString(),
+    })
   }
   return null
 }
