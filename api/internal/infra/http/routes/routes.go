@@ -591,6 +591,7 @@ func Register(
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
 	registerScanApprovalRoutes(router, h.Scan.Approvals(), authMiddleware, userSync)
 	registerAssetReconciliationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)

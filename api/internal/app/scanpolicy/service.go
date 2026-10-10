@@ -58,6 +58,15 @@ type Repository interface {
 	SetDefault(ctx context.Context, p scangov.PlatformPolicy, expectedVersion int, by shared.ID, at time.Time) (int, error)
 	GetOverride(ctx context.Context, tenantID shared.ID) (*scangov.PlatformPolicy, error)
 	SetOverride(ctx context.Context, tenantID shared.ID, p *scangov.PlatformPolicy) error
+	// ListFollowingDefault lists the organizations with no override.
+	ListFollowingDefault(ctx context.Context) ([]shared.ID, error)
+}
+
+// TierCeilings records a change of an organization's scope entry tier
+// ceilings with the job signer's ledger (*scope.Service): turning them off
+// is accepted by the signer before save, or fails.
+type TierCeilings interface {
+	CommitTierCeilings(ctx context.Context, tenantID shared.ID, enforced bool, requester string, mode scangov.Mode, save func() error) error
 }
 
 // SettingsReader reads an organization's scan governance settings
@@ -94,6 +103,7 @@ type Service struct {
 	admins   AdminLister
 	mail     Mailer
 	tenants  TenantNotifier
+	ceilings TierCeilings
 	log      *logger.Logger
 
 	mu       sync.Mutex
@@ -113,6 +123,36 @@ func NewService(repo Repository, audit AuditWriter, admins AdminLister, mail Mai
 // SetSettings wires the organization settings the effective mode reads.
 // Without it every organization is Off unless the policy forces a mode.
 func (s *Service) SetSettings(r SettingsReader) { s.settings = r }
+
+// SetTierCeilings wires the job signer's ledger for the tier ceilings,
+// which follow the mode in force (only Strict enforces them).
+func (s *Service) SetTierCeilings(c TierCeilings) { s.ceilings = c }
+
+// chosenMode is the organization owner's choice (Off without settings).
+func (s *Service) chosenMode(ctx context.Context, tenantID shared.ID) (scangov.Mode, error) {
+	if s.settings == nil {
+		return scangov.ModeOff, nil
+	}
+	st, err := s.settings.GetScanGovernanceSettings(ctx, tenantID.String())
+	if err != nil {
+		return "", fmt.Errorf("read scan governance settings: %w", err)
+	}
+	if st == nil {
+		return scangov.ModeOff, nil
+	}
+	return st.EffectiveMode(), nil
+}
+
+// commitCeilings runs save, telling the job signer's ledger first when the
+// change turns the organization's tier ceilings off, after when it turns
+// them on.
+func (s *Service) commitCeilings(ctx context.Context, tenantID shared.ID, prev, next scangov.Mode, save func() error) error {
+	changed, enforced := scangov.CeilingsChange(prev, next)
+	if !changed || s.ceilings == nil {
+		return save()
+	}
+	return s.ceilings.CommitTierCeilings(ctx, tenantID, enforced, "", next, save)
+}
 
 // Default returns the platform default and its version (0: nothing stored,
 // tenant_controlled).
@@ -164,15 +204,9 @@ func (s *Service) EffectiveMode(ctx context.Context, tenantID shared.ID) (scango
 	if err != nil {
 		return "", "", "", err
 	}
-	var chosen scangov.Mode
-	if s.settings != nil {
-		st, err := s.settings.GetScanGovernanceSettings(ctx, tenantID.String())
-		if err != nil {
-			return "", "", "", fmt.Errorf("read scan governance settings: %w", err)
-		}
-		if st != nil {
-			chosen = st.EffectiveMode()
-		}
+	chosen, err := s.chosenMode(ctx, tenantID)
+	if err != nil {
+		return "", "", "", err
 	}
 	m, src := scangov.Effective(chosen, p)
 	return m, src, p, nil
@@ -187,6 +221,13 @@ func (s *Service) ScanGovernanceMode(ctx context.Context, tenantID shared.ID) (s
 		return scangov.ModeStrict, scangov.SourcePlatform
 	}
 	return m, src
+}
+
+// TierCeilingsEnforced reports whether the organization's scope entry tier
+// ceilings are in force (Strict only; an unreadable mode is Strict).
+func (s *Service) TierCeilingsEnforced(ctx context.Context, tenantID shared.ID) bool {
+	m, _ := s.ScanGovernanceMode(ctx, tenantID)
+	return scangov.TierCeilingsEnforced(m)
 }
 
 // Change describes who changes the policy and why.
@@ -220,7 +261,12 @@ func (s *Service) UpdateDefault(ctx context.Context, p scangov.PlatformPolicy, e
 	if err != nil {
 		return 0, err
 	}
-	v, err := s.repo.SetDefault(ctx, p, expectedVersion, c.Actor.ID(), time.Now().UTC())
+	var v int
+	err = s.acrossFollowers(ctx, prev, p, func() error {
+		var err error
+		v, err = s.repo.SetDefault(ctx, p, expectedVersion, c.Actor.ID(), time.Now().UTC())
+		return err
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -244,15 +290,28 @@ func (s *Service) UpdateOverride(ctx context.Context, tenantID shared.ID, p *sca
 	if p != nil && !p.Valid() {
 		return fmt.Errorf("%w: policy must be tenant_controlled, off, on, strict or null", shared.ErrValidation)
 	}
-	prevMode, _, _, _ := s.EffectiveMode(ctx, tenantID)
+	prevMode, _, _, err := s.EffectiveMode(ctx, tenantID)
+	if err != nil {
+		return err
+	}
 	prev, err := s.repo.GetOverride(ctx, tenantID)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.SetOverride(ctx, tenantID, p); err != nil {
+	nextPolicy := scangov.PolicyTenantControlled
+	if p != nil {
+		nextPolicy = *p
+	} else if nextPolicy, _, err = s.Default(ctx); err != nil {
 		return err
 	}
-	next, _, _, _ := s.EffectiveMode(ctx, tenantID)
+	chosen, err := s.chosenMode(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	next, _ := scangov.Effective(chosen, nextPolicy)
+	if err := s.commitCeilings(ctx, tenantID, prevMode, next, func() error { return s.repo.SetOverride(ctx, tenantID, p) }); err != nil {
+		return err
+	}
 	s.record(ctx, c, ActionTenantOverrides, &tenantID, policyText(prev), policyText(p))
 	s.mailOthers(ctx, c, "[Scans] Scan approval policy changed for an organization",
 		fmt.Sprintf("%s changed the scan approval policy of organization %s from %s to %s (in effect: %s). Reason: %s",
@@ -260,6 +319,61 @@ func (s *Service) UpdateOverride(ctx context.Context, tenantID shared.ID, p *sca
 	if s.tenants != nil && prevMode != next {
 		s.tenants.NotifyAdmins(ctx, tenantID, "Scan approval changed by your platform administrator",
 			"Scan approval in your organization is now "+describeMode(next)+". Step-up, scope exclusions, ownership proof, the platform deny list, audit and notifications still apply.")
+	}
+	return nil
+}
+
+// acrossFollowers runs save (a change of the platform default from prev to
+// next) with the tier ceilings of every organization that follows the
+// default and whose mode crosses Strict: those turned off are accepted by
+// the job signer before save (any refusal fails the change, and the ones
+// already accepted are narrowed back), those turned on are sent after.
+func (s *Service) acrossFollowers(ctx context.Context, prev, next scangov.PlatformPolicy, save func() error) error {
+	if s.ceilings == nil || prev == next {
+		return save()
+	}
+	ids, err := s.repo.ListFollowingDefault(ctx)
+	if err != nil {
+		return err
+	}
+	type crossing struct {
+		id         shared.ID
+		mode, prev scangov.Mode
+	}
+	var off, on []crossing
+	for _, id := range ids {
+		chosen, err := s.chosenMode(ctx, id)
+		if err != nil {
+			return err
+		}
+		a, _ := scangov.Effective(chosen, prev)
+		b, _ := scangov.Effective(chosen, next)
+		changed, enforced := scangov.CeilingsChange(a, b)
+		switch {
+		case !changed:
+		case enforced:
+			on = append(on, crossing{id, b, a})
+		default:
+			off = append(off, crossing{id, b, a})
+		}
+	}
+	noop := func() error { return nil }
+	for i, c := range off {
+		if err := s.ceilings.CommitTierCeilings(ctx, c.id, false, "", c.mode, noop); err != nil {
+			for _, done := range off[:i] {
+				_ = s.ceilings.CommitTierCeilings(context.WithoutCancel(ctx), done.id, true, "", done.prev, noop)
+			}
+			return err
+		}
+	}
+	if err := save(); err != nil {
+		for _, done := range off {
+			_ = s.ceilings.CommitTierCeilings(context.WithoutCancel(ctx), done.id, true, "", done.prev, noop)
+		}
+		return err
+	}
+	for _, c := range on {
+		_ = s.ceilings.CommitTierCeilings(context.WithoutCancel(ctx), c.id, true, "", c.mode, noop)
 	}
 	return nil
 }
