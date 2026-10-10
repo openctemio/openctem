@@ -135,35 +135,26 @@ func registerComponentRoutes(
 		CleanupInterval: 5 * time.Minute,
 	}, nil)
 
-	// Component routes - tenant from JWT token
+	// Software components inventory (RFC-070) - tenant from the token. The
+	// inventory is written by producers (sensors, CI, SBOM import); there is
+	// no manual create, update or delete.
 	router.Group("/api/v1/components", func(r Router) {
-		// Stats endpoints (must be before /{id} to avoid matching)
-		r.GET("/stats", h.GetStats, middleware.Require(permission.ComponentsRead))
-		r.GET("/ecosystems", h.GetEcosystemStats, middleware.Require(permission.ComponentsRead))
-		r.GET("/vulnerable", h.GetVulnerableComponents, middleware.Require(permission.ComponentsRead))
-		r.GET("/licenses", h.GetLicenseStats, middleware.Require(permission.ComponentsRead))
+		r.GET("/summary", h.Summary, middleware.Require(permission.ComponentsRead))
 		r.GET("/sbom", h.ExportSBOM, middleware.Require(permission.ComponentsRead))
 		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite), sbomRL.Middleware())
-
-		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.ComponentsRead))
-		// Reverse lookup: assets that use a given global component (blast-radius)
+		r.GET("/versions/{version_id}", h.GetVersion, middleware.Require(permission.ComponentsRead))
+		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}/assets", h.ListAssets, middleware.Require(permission.ComponentsRead))
-		// CVEs affecting this component (forward lookup, paginated)
 		r.GET("/{id}/vulnerabilities", h.ListVulnerabilities, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ComponentsRead))
-
-		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.ComponentsWrite))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.ComponentsWrite))
-
-		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ComponentsDelete))
 	}, middlewares...)
 
 	// Asset-scoped component routes
-	router.Group("/api/v1/assets/{id}/components", func(r Router) {
-		r.GET("/", h.ListByAsset, middleware.Require(permission.ComponentsRead))
+	router.Group("/api/v1/assets/{id}", func(r Router) {
+		r.GET("/components", h.ListByAsset, middleware.Require(permission.ComponentsRead))
+		r.GET("/dependency-paths", h.DependencyPaths, middleware.Require(permission.ComponentsRead))
+		r.GET("/dependency-graph", h.DependencyGraph, middleware.Require(permission.ComponentsRead))
 	}, middlewares...)
 }
 

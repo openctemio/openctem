@@ -141,6 +141,9 @@ type ScopeApprovalPolicyView struct {
 	// EntriesNeedApproval: widening a scope entry needs approval (Strict
 	// only; in Off and On scans are what people approve).
 	EntriesNeedApproval bool `json:"entries_need_approval"`
+	// TierCeilings: an entry's max_tier limits the probes its targets get
+	// (Strict only; in Off and On an entry covers every tier).
+	TierCeilings bool `json:"tier_ceilings"`
 }
 
 // ScopeSettingsRequest replaces the settings. There is no field that turns
@@ -168,7 +171,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		T2MaxDuration: ss.T2Duration(), T2MaxDays: t2Days, T2PermanentAllowed: t2Permanent,
 		T2AttestationDays: ss.AttestationDays(),
 		ApprovalPolicy: ScopeApprovalPolicyView{ScanApproval: string(mode), Source: source,
-			EntriesNeedApproval: scangov.ScopeEntriesNeedApproval(mode)},
+			EntriesNeedApproval: scangov.ScopeEntriesNeedApproval(mode), TierCeilings: scangov.TierCeilingsEnforced(mode)},
 	}, nil
 }
 

@@ -1,0 +1,14 @@
+- id: branches
+  const: ModuleBranches
+  slug: branches
+  name: Branches
+  description: Code branches
+  icon: GitBranch
+  category: discovery
+  order: 12
+  permission: "assets:read"
+  depends:
+    - {id: assets, kind: hard, reason: "branches belong to repository assets"}
+    - {id: components, kind: soft, reason: "branch views surface component inventories per branch"}
+  routes:
+    - "/api/v1/repositories/{}/branches"

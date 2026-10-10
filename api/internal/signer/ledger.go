@@ -86,6 +86,10 @@ type tenantLedger struct {
 	exclusions map[string]jobsign.LedgerExclusion
 	// templates are the approved custom template versions, by template id.
 	templates map[string]jobsign.LedgerTemplate
+	// ceilingsOff: the entries' max_tier is not enforced (scan approval
+	// Off or On, RFC-073 §7); every entry covers every tier. The zero value
+	// enforces the ceilings.
+	ceilingsOff bool
 }
 
 func newTenantLedger() *tenantLedger {
@@ -94,7 +98,7 @@ func newTenantLedger() *tenantLedger {
 }
 
 func (t *tenantLedger) empty() bool {
-	return len(t.entries) == 0 && len(t.exclusions) == 0 && len(t.templates) == 0
+	return len(t.entries) == 0 && len(t.exclusions) == 0 && len(t.templates) == 0 && !t.ceilingsOff
 }
 
 func (t *tenantLedger) clone() *tenantLedger {
@@ -108,6 +112,7 @@ func (t *tenantLedger) clone() *tenantLedger {
 	for k, v := range t.templates {
 		c.templates[k] = v
 	}
+	c.ceilingsOff = t.ceilingsOff
 	return c
 }
 
@@ -131,6 +136,8 @@ func (t *tenantLedger) apply(ops []jobsign.LedgerOp, now time.Time) {
 			t.templates[op.Template.ID] = *op.Template
 		case jobsign.OpRemoveTemplate:
 			delete(t.templates, op.ID)
+		case jobsign.OpSetTierCeilings:
+			t.ceilingsOff = !*op.TierCeilings
 		}
 	}
 }
@@ -336,7 +343,7 @@ func (l *Ledger) Apply(ch jobsign.LedgerChange, now time.Time) (jobsign.LedgerAp
 	counted := 0
 	if kind == jobsign.ChangeWiden {
 		var r *refusal
-		if counted, r = l.checkApprovals(ch, now); r != nil {
+		if counted, r = l.checkApprovals(ch, cur, now); r != nil {
 			return jobsign.LedgerApplyResult{}, r
 		}
 	}
@@ -402,6 +409,10 @@ func classify(cur *tenantLedger, ops []jobsign.LedgerOp, now time.Time) string {
 		case jobsign.OpRemoveTemplate:
 			_, ok := t.templates[op.ID]
 			changes = changes || ok
+		case jobsign.OpSetTierCeilings:
+			off := !*op.TierCeilings
+			changes = changes || off != t.ceilingsOff
+			widens = widens || (off && !t.ceilingsOff)
 		}
 		t.apply([]jobsign.LedgerOp{op}, now)
 	}
@@ -432,11 +443,15 @@ func sameTime(a, b *time.Time) bool {
 // checkApprovals counts the distinct approvers of a widening who are not
 // the requester (a self-approval under RFC-054 §12 A2 counts once) and
 // compares them with the policy's count, the operator's floor and the
-// operator's floor for intrusive entries.
-func (l *Ledger) checkApprovals(ch jobsign.LedgerChange, now time.Time) (int, *refusal) {
+// operator's floor for intrusive entries (which also applies to turning
+// cur's tier ceilings off).
+func (l *Ledger) checkApprovals(ch jobsign.LedgerChange, cur *tenantLedger, now time.Time) (int, *refusal) {
 	need := max(ch.RequiredApprovals, l.minApprovals)
 	for _, op := range ch.Ops {
-		if op.Op == jobsign.OpPutEntry && op.Entry.MaxTier >= jobsign.TierIntrusive {
+		// Turning the tier ceilings off lets every entry cover intrusive
+		// probes: it needs what an intrusive entry needs.
+		if (op.Op == jobsign.OpPutEntry && op.Entry.MaxTier >= jobsign.TierIntrusive) ||
+			(op.Op == jobsign.OpSetTierCeilings && !*op.TierCeilings && !cur.ceilingsOff) {
 			need = max(need, l.t2MinApprovals)
 		}
 	}
@@ -574,6 +589,13 @@ func narrowingOps(cur *tenantLedger, snap jobsign.LedgerSnapshot, now time.Time)
 			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpRemoveTemplate, ID: id})
 		}
 	}
+	switch {
+	case cur.ceilingsOff && !snap.TierCeilingsOff:
+		on := true
+		ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpSetTierCeilings, TierCeilings: &on})
+	case !cur.ceilingsOff && snap.TierCeilingsOff:
+		diverged++
+	}
 	return ops, diverged
 }
 
@@ -707,7 +729,8 @@ type ledgerLimits struct{ ports, path bool }
 // without a port or path limit covers it, else the kinds of limits of the
 // covering entries. Matching is the API's own (scopedom.EntryMatches): a
 // port-limited entry covers only a target that names an allowed port, a
-// path-limited URL entry only URLs under its path.
+// path-limited URL entry only URLs under its path. With the tier ceilings
+// off any covering entry covers the target at every tier.
 func (t *tenantLedger) covers(target string, tier int, now time.Time) (covered, below bool, limited *ledgerLimits) {
 	forms := scopedom.AuthorityForms(target)
 	lim := &ledgerLimits{}
@@ -721,7 +744,7 @@ func (t *tenantLedger) covers(target string, tier int, now time.Time) (covered, 
 			if !scopedom.EntryMatches(tt, e.Pattern, c, f) {
 				continue
 			}
-			if e.MaxTier < tier {
+			if !t.ceilingsOff && e.MaxTier < tier {
 				below = true
 				continue
 			}
@@ -806,6 +829,15 @@ func validateChange(ch jobsign.LedgerChange) *refusal {
 }
 
 func validateOp(op jobsign.LedgerOp) error {
+	if op.Op == jobsign.OpSetTierCeilings {
+		if op.TierCeilings == nil || op.Entry != nil || op.Exclusion != nil || op.Template != nil || op.ID != "" {
+			return errors.New("set_tier_ceilings carries tier_ceilings only")
+		}
+		return nil
+	}
+	if op.TierCeilings != nil {
+		return errors.New("only set_tier_ceilings carries tier_ceilings")
+	}
 	switch op.Op {
 	case jobsign.OpPutEntry:
 		if op.Entry == nil || op.Exclusion != nil || op.ID != "" {

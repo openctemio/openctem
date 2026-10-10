@@ -1,0 +1,14 @@
+- id: business_units
+  const: ModuleBusinessUnits
+  slug: "business-units"
+  name: Business Units
+  description: "Organisational units that group assets for ownership, criticality and reporting"
+  icon: Building2
+  category: scoping
+  order: 11
+  user_facing: true
+  permission: "assets:read"
+  depends:
+    - {id: assets, kind: hard, reason: "business units group underlying assets"}
+  routes:
+    - "/api/v1/business-units"

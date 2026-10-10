@@ -1,0 +1,16 @@
+- id: remediation
+  const: ModuleRemediation
+  slug: remediation
+  name: Remediation
+  description: Remediation campaigns that group the fixes for many findings
+  icon: CheckSquare
+  category: mobilization
+  order: 40
+  user_facing: true
+  permission: "findings:remediation:read"
+  depends:
+    - {id: findings, kind: hard, reason: "remediation closes findings"}
+  routes:
+    - /api/v1/remediation/campaigns
+  jobs:
+    - RemediationProgressController
