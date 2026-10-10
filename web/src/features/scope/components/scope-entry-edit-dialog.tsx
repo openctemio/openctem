@@ -115,6 +115,8 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
   // Scan approval decides whether scope entries need approval (Strict
   // only, RFC-073 §6); t2 then always needs one.
   const entriesNeedApproval = settings?.approval_policy?.entries_need_approval ?? true
+  // Entry tier ceilings apply only in Strict scan approval (RFC-073 §6).
+  const tierCeilings = settings?.approval_policy?.tier_ceilings ?? true
   const needsApprovals =
     (settings?.effective_widening_approvals ?? 0) > 0 || (tier === 't2' && entriesNeedApproval)
 
@@ -170,7 +172,15 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
                 <span>{error}</span>
               </div>
             )}
-            <div className="space-y-2">
+            {!tierCeilings && (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scope.entry.noTierCeiling',
+                  'An entry covers every probe: the scan intensity and the approval rules decide how hard its targets are scanned.'
+                )}
+              </p>
+            )}
+            <div className={tierCeilings ? 'space-y-2' : 'hidden'}>
               <Label htmlFor={`${formId}-tier`}>
                 {t('scope.entry.tierLabel', 'Deepest probe allowed')}
               </Label>
