@@ -112,6 +112,11 @@ type Requirement struct {
 	// Validity of the approval; ValidityDays uses ValidityDays.
 	Validity     Validity `json:"validity,omitempty"`
 	ValidityDays int      `json:"validity_days,omitempty"`
+	// ApproverSource: "rule" (default: the roles and people above) or
+	// "asset_owners" (each owner of the scanned assets approves their part;
+	// FallbackGroupID approves targets nobody owns). See owners.go.
+	ApproverSource  string `json:"approver_source,omitempty"`
+	FallbackGroupID string `json:"fallback_group_id,omitempty"`
 }
 
 // Rule is one approval rule: conditions → requirement. Monitor records that
@@ -330,7 +335,7 @@ func (q Requirement) normalized() (Requirement, error) {
 	if q.Validity != ValidityDays {
 		q.ValidityDays = 0
 	}
-	return q, nil
+	return q.normalizedApprovers()
 }
 
 // compileTicket compiles an anchored ticket pattern (RE2: linear time, no
