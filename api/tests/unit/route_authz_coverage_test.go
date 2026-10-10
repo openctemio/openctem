@@ -114,6 +114,14 @@ type routeRec struct {
 	// is resolved from the registering function's parameters; it is "" when
 	// the receiver is a local variable.
 	handlerType, handlerMethod string
+	// fn is the function that registers the route (registerXRoutes).
+	fn string
+	// module is the module gate in the route's or an enclosing group's
+	// middleware: "const:<ModuleX constant>" for a RequireModule(moduledom.X)
+	// call, "param:<name>" for a gate parameter of the registering function
+	// (a parameter whose name ends in Gate, resolved at its call sites), ""
+	// for none.
+	module string
 }
 
 // exprContainsCall reports whether e calls a function or method named name.
@@ -253,10 +261,45 @@ func parseRoutes(t *testing.T) []routeRec {
 			return false
 		}
 		var params map[string]string // the enclosing FuncDecl's parameter types
+		var curFn string             // the enclosing FuncDecl's name
+
+		// moduleVars maps a middleware-slice var to the module gate its RHS
+		// contains (see routeRec.module).
+		collectModuleVars := func(block *ast.BlockStmt, parent map[string]string) map[string]string {
+			mv := map[string]string{}
+			for k, v := range parent {
+				mv[k] = v
+			}
+			ast.Inspect(block, func(m ast.Node) bool {
+				if as, ok := m.(*ast.AssignStmt); ok {
+					for i, lhs := range as.Lhs {
+						if id, ok := lhs.(*ast.Ident); ok && i < len(as.Rhs) {
+							if mod := moduleGateOf(as.Rhs[i], mv); mod != "" {
+								mv[id.Name] = mod
+							}
+						}
+					}
+				}
+				return true
+			})
+			return mv
+		}
+		argModule := func(args []ast.Expr, mv map[string]string) string {
+			for _, a := range args {
+				if mod := moduleGateOf(a, mv); mod != "" {
+					return mod
+				}
+			}
+			return ""
+		}
+		var moduleVars map[string]string
 
 		var process func(block *ast.BlockStmt, prefix string, inheritedGated, inheritedStepUp bool, gatedVars map[string]bool)
 		process = func(block *ast.BlockStmt, prefix string, inheritedGated, inheritedStepUp bool, gatedVars map[string]bool) {
 			gv := collectGatedVars(block, gatedVars)
+			outerModuleVars := moduleVars
+			moduleVars = collectModuleVars(block, moduleVars)
+			defer func() { moduleVars = outerModuleVars }()
 			ast.Inspect(block, func(m ast.Node) bool {
 				ce, ok := m.(*ast.CallExpr)
 				if !ok {
@@ -285,6 +328,15 @@ func parseRoutes(t *testing.T) []routeRec {
 						}
 					}
 					groupGated := inheritedGated || argGates(ce.Args[2:], gv)
+					if mod := argModule(ce.Args[2:], moduleVars); mod != "" {
+						saved := moduleVars
+						moduleVars = map[string]string{}
+						for k, v := range saved {
+							moduleVars[k] = v
+						}
+						moduleVars[groupModuleKey] = mod
+						defer func() { moduleVars = saved }()
+					}
 					groupStepUp := inheritedStepUp || stepUpArgs(ce.Args[2:])
 					if body != nil {
 						process(body, prefix+gp, groupGated, groupStepUp, gv)
@@ -310,6 +362,11 @@ func parseRoutes(t *testing.T) []routeRec {
 					gated:  inheritedGated || argGates(ce.Args[1:], gv),
 					stepUp: inheritedStepUp || stepUpArgs(ce.Args[1:]),
 					pos:    fileName + ":" + itoa(fset.Position(ce.Pos()).Line),
+					fn:     curFn,
+				}
+				rec.module = argModule(ce.Args[1:], moduleVars)
+				if rec.module == "" {
+					rec.module = moduleVars[groupModuleKey]
 				}
 				if len(ce.Args) > 1 {
 					if hs, ok := ce.Args[1].(*ast.SelectorExpr); ok {
@@ -327,6 +384,8 @@ func parseRoutes(t *testing.T) []routeRec {
 		ast.Inspect(f, func(n ast.Node) bool {
 			if fn, ok := n.(*ast.FuncDecl); ok && fn.Body != nil {
 				params = paramTypes(fn)
+				curFn = fn.Name.Name
+				moduleVars = map[string]string{}
 				process(fn.Body, "", false, false, map[string]bool{})
 			}
 			return true
@@ -374,4 +433,42 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 			"— add a middleware.Require*, or (if intentionally public) add it to allowlistPrefixes/routeAuthzAllowlist with a reason:\n  %s",
 			strings.Join(ungated, "\n  "))
 	}
+}
+
+// groupModuleKey carries an enclosing group's module gate in moduleVars.
+const groupModuleKey = "\x00group"
+
+// moduleGateOf reports the module gate an expression contains: a
+// X.RequireModule(moduledom.ModuleY) call ("const:ModuleY"), a gate
+// parameter ("param:<name>": an identifier ending in Gate), or a var already
+// known to hold one.
+func moduleGateOf(e ast.Expr, vars map[string]string) string {
+	found := ""
+	ast.Inspect(e, func(n ast.Node) bool {
+		if found != "" {
+			return false
+		}
+		switch x := n.(type) {
+		case *ast.CallExpr:
+			if sel, ok := x.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "RequireModule" && len(x.Args) == 1 {
+				if c, ok := x.Args[0].(*ast.SelectorExpr); ok {
+					found = "const:" + c.Sel.Name
+					return false
+				}
+			}
+		case *ast.SelectorExpr:
+			return false // h.ModuleGate and the like: not a gate value by itself
+		case *ast.Ident:
+			if strings.HasSuffix(x.Name, "Gate") {
+				found = "param:" + x.Name
+				return false
+			}
+			if v, ok := vars[x.Name]; ok {
+				found = v
+				return false
+			}
+		}
+		return true
+	})
+	return found
 }
