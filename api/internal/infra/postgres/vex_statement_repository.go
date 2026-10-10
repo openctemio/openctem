@@ -217,7 +217,8 @@ func (r *VEXStatementRepository) List(ctx context.Context, f vex.Filter, page pa
 		return pagination.Result[*vex.Statement]{}, fmt.Errorf("list vex statements: %w", err)
 	}
 	defer rows.Close()
-	out := make([]*vex.Statement, 0, page.Limit())
+	// Not preallocated from the page size (a caller-chosen number).
+	out := []*vex.Statement{}
 	for rows.Next() {
 		s, err := scanVEXStatement(rows)
 		if err != nil {
