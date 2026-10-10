@@ -6,7 +6,7 @@
  * (and the ones only monitor rules catch). Nothing is saved.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
@@ -41,23 +41,24 @@ export function ApprovalRuleTester({ rules, auto = true }: ApprovalRuleTesterPro
   const [busy, setBusy] = useState(false)
   const key = JSON.stringify(rules)
 
-  const run = async () => {
+  // Keyed by the rules' content, so a new array with the same rules does
+  // not run the test again.
+  const run = useCallback(async () => {
     setBusy(true)
     setError(null)
     try {
-      setResult(await testScanGovernanceRules(rules))
+      setResult(await testScanGovernanceRules(JSON.parse(key) as ScanApprovalRule[]))
     } catch (e) {
       setResult(null)
       setError(getErrorMessage(e, t('scans.ruleTester.failed', 'The rules could not be tested')))
     } finally {
       setBusy(false)
     }
-  }
+  }, [key, t])
 
   useEffect(() => {
     if (auto) void run()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run when the rules change
-  }, [key, auto])
+  }, [run, auto])
 
   return (
     <section className="space-y-3 rounded-md border p-3" aria-live="polite">
