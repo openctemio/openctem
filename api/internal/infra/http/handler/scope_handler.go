@@ -1433,6 +1433,10 @@ type ScopeCheckResult struct {
 // CheckScopeResponse lists the answers in input order.
 type CheckScopeResponse struct {
 	Results []ScopeCheckResult `json:"results"`
+	// Tier is the probe tier the targets were checked at (0 passive, 1 safe
+	// active, 2 intrusive): the request tier, else the scanner tier. A client
+	// compares it with a pending entry tier to say what still blocks.
+	Tier int `json:"tier"`
 }
 
 // CheckScope handles POST /api/v1/scope/check
@@ -1514,7 +1518,7 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	has := func(p string) bool { return middleware.HasPermission(ctx, p) }
-	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results))}
+	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results)), Tier: tier}
 	for _, res := range results {
 		item := ScopeCheckResult{Target: res.Target, AssetID: res.AssetID, Allowed: res.Allowed}
 		if res.Allowed {
