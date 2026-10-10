@@ -30,12 +30,7 @@ func rekeyService(f *mergeFixture) *refingerprint.Service {
 // a line-free but version-keyed fingerprint, linked to its component.
 func (f *mergeFixture) v1SCA(asset shared.ID, purl, cve, status string, created time.Time) shared.ID {
 	f.t.Helper()
-	var comp string
-	if err := f.db.QueryRow(`INSERT INTO components (name, version, ecosystem, purl)
-		VALUES ('lodash', $2, 'npm', $1)
-		ON CONFLICT (purl) DO UPDATE SET purl = EXCLUDED.purl RETURNING id`, purl, purl[len(purl)-7:]).Scan(&comp); err != nil {
-		f.t.Fatalf("component: %v", err)
-	}
+	_, comp := testdb.SeedPackageVersion(f.t, f.db, f.tenant.String(), purl)
 	id := shared.NewID()
 	if _, err := f.db.Exec(`
 		INSERT INTO findings (id, tenant_id, asset_id, component_id, source, tool_name, rule_id, cve_id, message,

@@ -23,7 +23,7 @@ var jobInfrastructure = map[string]string{
 }
 
 // Every background controller the server builds is owned by exactly one
-// module of the registry (configs/modules.yaml, `jobs`), so a job of a
+// module of the registry (configs/modules/<id>.yaml, `jobs`), so a job of a
 // module that can be switched off is a decision, not an accident (RFC-064 R2).
 func TestEveryJobBelongsToAModule(t *testing.T) {
 	root := repoRoot(t)
@@ -73,7 +73,7 @@ func TestEveryJobBelongsToAModule(t *testing.T) {
 			continue
 		}
 		if _, ok := owner[name]; !ok {
-			problems = append(problems, name+" ("+pos+"): add it to the `jobs` of its module in configs/modules.yaml")
+			problems = append(problems, name+" ("+pos+"): add it to the `jobs` of its module in configs/modules/<id>.yaml")
 		}
 	}
 	for name, id := range owner {
