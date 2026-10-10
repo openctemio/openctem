@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -61,14 +62,33 @@ type Binding struct {
 	StepRunID *shared.ID
 	// CIRunID is the CI run the report belongs to (BindingCIRun only).
 	CIRunID *shared.ID
+	// DispatchedAt is when the bound command was handed to the sensor
+	// (BindingCommand only): the report cannot have observed anything
+	// earlier, so its timestamp is clamped up to it.
+	DispatchedAt time.Time
+}
+
+// Run is the scan task or CI run the report belongs to ("" for none).
+func (b Binding) Run() string {
+	switch {
+	case b.CommandID != nil:
+		return b.CommandID.String()
+	case b.CIRunID != nil:
+		return b.CIRunID.String()
+	}
+	return ""
 }
 
 // CommandBinding binds a report to cmd, which the caller has checked is
 // assigned to the submitting sensor and open.
 func CommandBinding(cmd *command.Command) Binding {
 	id := cmd.ID
+	dispatched := cmd.CreatedAt
+	if cmd.AcknowledgedAt != nil {
+		dispatched = *cmd.AcknowledgedAt
+	}
 	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd),
-		CommandType: cmd.Type, StepRunID: cmd.StepRunID}
+		CommandType: cmd.Type, StepRunID: cmd.StepRunID, DispatchedAt: dispatched}
 }
 
 // TrustedBinding is the binding of a server-side ingest.
