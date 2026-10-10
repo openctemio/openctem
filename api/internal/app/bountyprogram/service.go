@@ -70,6 +70,8 @@ type Service struct {
 	ledger     Ledger
 	log        *logger.Logger
 	now        func() time.Time
+	// isOwner answers whether the caller owns the tenant (access.go).
+	isOwner OwnerCheck
 }
 
 // NewService wires the service. Without a FullData checker every caller is
@@ -140,9 +142,23 @@ type Input struct {
 	Handle     string
 	ProgramURL string
 	ScopeText  string
+	// ScopeFile, when set, is read instead of ScopeText (RFC-065 §15.2).
+	ScopeFile *bp.ScopeFile
+	// TermsText is the program's own terms (policy, confidentiality).
+	TermsText string
+	// Visibility is private (default) or public; set on import only.
+	Visibility string
 	Rules      bp.Rules
 	// AcceptTermsSHA256 is the attestation: the terms hash from the preview.
 	AcceptTermsSHA256 string
+}
+
+// scopeSource is the source an import or re-import records.
+func (in Input) scopeSource() string {
+	if in.ScopeFile != nil {
+		return bp.ScopeSourceFileImport
+	}
+	return bp.ScopeSourcePaste
 }
 
 // Entry statuses in a preview.
@@ -205,19 +221,31 @@ func (s *Service) Preview(ctx context.Context, tenantID shared.ID, in Input, pro
 	if err := bp.ValidateDetails(name, in.Platform, in.Handle, in.ProgramURL); err != nil {
 		return nil, err
 	}
+	if _, err := bp.ParseVisibility(in.Visibility); err != nil {
+		return nil, err
+	}
+	if err := bp.ValidateTermsText(in.TermsText); err != nil {
+		return nil, err
+	}
 	rules := in.Rules.Normalize()
 	if err := rules.Validate(); err != nil {
 		return nil, err
 	}
-	items, err := bp.ParseScope(in.ScopeText)
+	var items []bp.Item
+	var err error
+	if in.ScopeFile != nil {
+		items, err = bp.ParseScopeFile(*in.ScopeFile)
+	} else {
+		items, err = bp.ParseScope(in.ScopeText)
+	}
 	if err != nil {
 		return nil, err
 	}
-	return s.previewItems(ctx, tenantID, in.ProgramURL, rules, items, program)
+	return s.previewItems(ctx, tenantID, in.ProgramURL, in.TermsText, rules, items, program)
 }
 
 // previewItems is Preview for items already read (a paste, or a sync).
-func (s *Service) previewItems(ctx context.Context, tenantID shared.ID, programURL string, rules bp.Rules, items []bp.Item, program *bp.Program) (*Preview, error) {
+func (s *Service) previewItems(ctx context.Context, tenantID shared.ID, programURL, termsText string, rules bp.Rules, items []bp.Item, program *bp.Program) (*Preview, error) {
 	plan := bp.PlanScope(items)
 	existing, err := s.repo.TenantEntries(ctx, tenantID)
 	if err != nil {
@@ -228,7 +256,7 @@ func (s *Service) previewItems(ctx context.Context, tenantID shared.ID, programU
 		byKey[entryKey(t.TargetType(), t.Pattern())] = t
 	}
 	out := &Preview{Items: items, NotScannable: plan.NotScannable, MaxTier: rules.MaxTier().String(),
-		TermsSHA256: bp.NewTerms(programURL, rules, items).SHA256(), rules: rules,
+		TermsSHA256: bp.NewTerms(programURL, rules, items).WithText(termsText).SHA256(), rules: rules,
 		Entries: make([]PlannedEntry, 0, len(plan.Entries)), Exclusions: make([]PlannedExclusion, 0, len(plan.Exclusions))}
 	for _, e := range plan.Entries {
 		pe := PlannedEntry{TargetType: e.TargetType, Pattern: e.Pattern, Status: PlanCreate}
@@ -302,7 +330,10 @@ func checkTerms(accepted, computed string) error {
 // newEntries builds the program entries the preview marks "create".
 func (s *Service) newEntries(p *bp.Program, pv *Preview, actor shared.ID, active bool) ([]*scopedom.Target, error) {
 	out := make([]*scopedom.Target, 0, len(pv.Entries))
-	reason := clip(fmt.Sprintf("Program %s (%s)", p.Name, p.ProgramURL), scopedom.MaxReasonLength)
+	reason := clip("Program "+p.Name, scopedom.MaxReasonLength)
+	if p.ProgramURL != "" && !p.IsPrivate() {
+		reason = clip(fmt.Sprintf("Program %s (%s)", p.Name, p.ProgramURL), scopedom.MaxReasonLength)
+	}
 	for _, e := range pv.Entries {
 		if e.Status != PlanCreate {
 			continue
@@ -348,10 +379,12 @@ func (s *Service) Import(ctx context.Context, tenantID, actor shared.ID, in Inpu
 		return nil, nil, err
 	}
 	now := s.now()
+	visibility, _ := bp.ParseVisibility(in.Visibility) // checked by Preview
 	p := &bp.Program{
 		ID: shared.NewID(), TenantID: tenantID, Name: strings.TrimSpace(in.Name),
 		Platform: strings.TrimSpace(in.Platform), Handle: strings.TrimSpace(in.Handle),
-		ProgramURL: strings.TrimSpace(in.ProgramURL), Status: bp.StatusActive, ScopeSource: bp.ScopeSourcePaste,
+		ProgramURL: strings.TrimSpace(in.ProgramURL), Status: bp.StatusActive, ScopeSource: in.scopeSource(),
+		Visibility: visibility, TermsText: strings.TrimSpace(in.TermsText),
 		Rules: pv.rules, ScopeItems: pv.Items, TermsSHA256: pv.TermsSHA256,
 		AcceptedBy: &actor, AcceptedAt: &now, CreatedBy: &actor, CreatedAt: now, UpdatedAt: now,
 	}
@@ -367,6 +400,7 @@ func (s *Service) Import(ctx context.Context, tenantID, actor shared.ID, in Inpu
 	}); err != nil {
 		return nil, nil, err
 	}
+	s.recordAttestation(ctx, p, actor)
 	s.widened(ctx, p, fmt.Sprintf("Program %s imported with %d scope entries (attested by the importer)", p.Name, len(entries)), len(entries) > 0)
 	return p, pv, nil
 }
@@ -374,25 +408,15 @@ func (s *Service) Import(ctx context.Context, tenantID, actor shared.ID, in Inpu
 // Access errors.
 var errNotFound = bp.ErrNotFound
 
-// loadForCaller returns a program the caller may see: a full-data caller
-// sees every program of the tenant; anyone else only the programs whose
-// group has them. Anything else is not found.
+// loadForCaller returns a program the caller may see (canSee, access.go):
+// a public program to full-data callers and members, a private one to
+// owners and members. Anything else is not found.
 func (s *Service) loadForCaller(ctx context.Context, tenantID, actor, id shared.ID) (*bp.Program, error) {
 	p, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
-	full, err := s.isFullData(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if full {
-		return p, nil
-	}
-	if actor.IsZero() {
-		return nil, errNotFound
-	}
-	ok, err := s.repo.IsMember(ctx, tenantID, id, actor)
+	ok, err := s.canSee(ctx, p, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -409,26 +433,68 @@ func (s *Service) isFullData(ctx context.Context, tenantID shared.ID) (bool, err
 	return s.fullData.FullDataCaller(ctx, tenantID)
 }
 
-// List lists the programs the caller may see.
-func (s *Service) List(ctx context.Context, tenantID, actor shared.ID) ([]*bp.Program, error) {
+// List lists the programs the caller may see; a private program the
+// caller has not accepted the current terms of is locked (redacted).
+func (s *Service) List(ctx context.Context, tenantID, actor shared.ID) ([]View, error) {
 	full, err := s.isFullData(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if full {
-		return s.repo.List(ctx, tenantID, nil)
-	}
-	if actor.IsZero() {
+	owner := s.ownerCaller(ctx)
+	var all []*bp.Program
+	switch {
+	case full || owner:
+		all, err = s.repo.List(ctx, tenantID, nil)
+	case actor.IsZero():
 		return nil, nil
+	default:
+		all, err = s.repo.List(ctx, tenantID, &actor)
 	}
-	return s.repo.List(ctx, tenantID, &actor)
+	if err != nil {
+		return nil, err
+	}
+	member := map[shared.ID]bool{}
+	attested := map[shared.ID]string{}
+	if !actor.IsZero() {
+		ids, err := s.repo.MemberProgramIDs(ctx, tenantID, actor)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			member[id] = true
+		}
+		if attested, err = s.repo.Attestations(ctx, tenantID, actor); err != nil {
+			return nil, err
+		}
+	}
+	out := make([]View, 0, len(all))
+	for _, p := range all {
+		if !p.IsPrivate() {
+			if full || member[p.ID] {
+				out = append(out, View{Program: p})
+			}
+			continue
+		}
+		if !owner && !member[p.ID] {
+			continue
+		}
+		if attested[p.ID] != "" && attested[p.ID] == p.TermsSHA256 {
+			out = append(out, View{Program: p})
+		} else {
+			out = append(out, View{Program: redact(p), Locked: true})
+		}
+	}
+	return out, nil
 }
 
-// Detail is a program with its entries and program exclusions.
+// Detail is a program with its entries and program exclusions. Locked: a
+// private program whose current terms the caller has not accepted; only
+// the redacted program is set.
 type Detail struct {
 	Program    *bp.Program
 	Entries    []*scopedom.Target
 	Exclusions []PlannedExclusion
+	Locked     bool
 }
 
 // Get returns a program the caller may see.
@@ -436,6 +502,13 @@ func (s *Service) Get(ctx context.Context, tenantID, actor, id shared.ID) (*Deta
 	p, err := s.loadForCaller(ctx, tenantID, actor, id)
 	if err != nil {
 		return nil, err
+	}
+	ok, err := s.attested(ctx, p, actor)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return &Detail{Program: redact(p), Locked: true}, nil
 	}
 	entries, err := s.repo.Entries(ctx, tenantID, id)
 	if err != nil {
@@ -462,7 +535,7 @@ func (s *Service) Get(ctx context.Context, tenantID, actor, id shared.ID) (*Deta
 // (active when the program is active), program exclusions replaced. The
 // route requires attack_surface:programs:write and step-up.
 func (s *Service) Reimport(ctx context.Context, tenantID, actor, id shared.ID, in Input) (*bp.Program, *Preview, error) {
-	p, err := s.loadForCaller(ctx, tenantID, actor, id)
+	p, err := s.loadAttested(ctx, tenantID, actor, id)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -480,6 +553,10 @@ func (s *Service) Reimport(ctx context.Context, tenantID, actor, id shared.ID, i
 		return nil, nil, err
 	}
 	p.ProgramURL = strings.TrimSpace(in.ProgramURL)
+	p.TermsText = strings.TrimSpace(in.TermsText)
+	if p.ScopeSource == bp.ScopeSourcePaste || p.ScopeSource == bp.ScopeSourceFileImport {
+		p.ScopeSource = in.scopeSource()
+	}
 	if strings.TrimSpace(in.Platform) != "" {
 		p.Platform = strings.TrimSpace(in.Platform)
 	}
@@ -527,6 +604,7 @@ func (s *Service) applyScope(ctx context.Context, p *bp.Program, pv *Preview, ac
 	}); err != nil {
 		return err
 	}
+	s.recordAttestation(ctx, p, actor)
 	s.widened(ctx, p, fmt.Sprintf("Program %s scope accepted: %d entries added, %d removed (attested)", p.Name, len(create), len(drop)),
 		len(create) > 0 && p.Status == bp.StatusActive)
 	return nil
@@ -601,6 +679,7 @@ func (s *Service) Resume(ctx context.Context, tenantID, actor, id shared.ID, acc
 	}); err != nil {
 		return nil, err
 	}
+	s.recordAttestation(ctx, p, actor)
 	s.widened(ctx, p, fmt.Sprintf("Program %s resumed (attested)", p.Name), true)
 	return p, nil
 }

@@ -116,6 +116,7 @@ func (s *Scan) SetRRuleSchedule(rule, timezone string) error {
 
 	s.ScheduleType = ScheduleRRule
 	s.ScheduleRRule = rule
+	s.ScheduleRunAt = nil
 	s.ScheduleCron = ""
 	s.ScheduleDay = nil
 	s.ScheduleTime = nil

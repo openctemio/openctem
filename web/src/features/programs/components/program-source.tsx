@@ -29,6 +29,7 @@ import { setProgramSource, syncProgram } from '../api/use-programs'
 
 export const SCOPE_SOURCE_LABEL: Record<ProgramScopeSource, string> = {
   paste: 'Pasted by hand',
+  file_import: 'Imported from a file',
   program_api: 'Platform researcher API',
   program_file: 'Scope file on the program domain',
 }
@@ -47,8 +48,12 @@ export function ProgramSource({ program: p, canWrite, onChanged }: ProgramSource
   const { t } = useTranslation()
   const id = useId()
   const current = (p.scope_source || 'paste') as ProgramScopeSource
+  // A pasted or imported scope is not read again; the others sync.
+  const synced = current === 'program_api' || current === 'program_file'
   const [editing, setEditing] = useState(false)
-  const [source, setSource] = useState<ProgramScopeSource>(current)
+  const [source, setSource] = useState<ProgramScopeSource>(
+    current === 'file_import' ? 'paste' : current
+  )
   const [url, setUrl] = useState(p.sync?.url ?? '')
   const [handle, setHandle] = useState(p.sync?.handle ?? '')
   const [username, setUsername] = useState(p.sync?.username ?? '')
@@ -112,7 +117,7 @@ export function ProgramSource({ program: p, canWrite, onChanged }: ProgramSource
         <h3 className="text-base font-semibold">{t('programs.source.title', 'Scope source')}</h3>
         {canWrite && p.status !== 'ended' && (
           <div className="flex flex-wrap gap-2">
-            {current !== 'paste' && (
+            {synced && (
               <Button variant="outline" size="sm" onClick={sync} disabled={busy}>
                 {busy ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -161,7 +166,7 @@ export function ProgramSource({ program: p, canWrite, onChanged }: ProgramSource
             </dd>
           </>
         )}
-        {current !== 'paste' && (
+        {synced && (
           <>
             <dt className="text-muted-foreground">{t('programs.source.lastSync', 'Last sync')}</dt>
             <dd>
@@ -190,11 +195,13 @@ export function ProgramSource({ program: p, canWrite, onChanged }: ProgramSource
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(Object.keys(SCOPE_SOURCE_LABEL) as ProgramScopeSource[]).map((k) => (
-                  <SelectItem key={k} value={k}>
-                    {t(`programs.source.kinds.${k}`, SCOPE_SOURCE_LABEL[k])}
-                  </SelectItem>
-                ))}
+                {(Object.keys(SCOPE_SOURCE_LABEL) as ProgramScopeSource[])
+                  .filter((k) => k !== 'file_import')
+                  .map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {t(`programs.source.kinds.${k}`, SCOPE_SOURCE_LABEL[k])}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>

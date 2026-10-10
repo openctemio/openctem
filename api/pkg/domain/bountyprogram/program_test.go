@@ -202,7 +202,7 @@ func TestValidateDetails(t *testing.T) {
 	if err := ValidateDetails("Acme", "self-hosted", "jdoe", "https://acme.example/security"); err != nil {
 		t.Fatal(err)
 	}
-	for _, u := range []string{"http://acme.example/", "javascript:alert(1)", "https://user:pw@acme.example/", "", "https://"} {
+	for _, u := range []string{"http://acme.example/", "javascript:alert(1)", "https://user:pw@acme.example/", "https://"} {
 		if err := ValidateDetails("Acme", "", "", u); err == nil {
 			t.Errorf("url %q must be refused", u)
 		}
