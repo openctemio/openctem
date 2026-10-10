@@ -54,6 +54,12 @@ type Service struct {
 	inApp     InAppNotifier
 	audit     AuditLogger
 	now       func() time.Time
+
+	// Requester and time facts (requester.go).
+	requesters RequesterDirectory
+	timezones  TimezoneSource
+	// lister lists the tenant's scans for the rule tester (tester.go).
+	lister ScanLister
 }
 
 // NewService creates the service.
