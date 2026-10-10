@@ -170,6 +170,51 @@ Its programs are local-only: every target is a suggestion until confirmed;
 the signed stream's record wins on the same id. Program assets will carry provenance and system tags and be
 left out of the organization's own metrics by default (RFC-065 §16.5).
 
+### Chunked bundles (format v2)
+
+When the source offers bundle format v2 (a `latest.v2.dsse.json` pointer in
+`PROGRAMFEED_DIR`, or `PROGRAMFEED_URL` / `PROGRAMFEED_MIRRORS` configured),
+the importer reads it through the sdk-go bundle consumer
+(`feed-transfer.md`, the chunked feed transfer design); otherwise the whole-bundle (v1)
+reader above runs, for one release.
+
+```
+origins: PROGRAMFEED_URL → PROGRAMFEED_MIRRORS → PROGRAMFEED_DIR
+  (SSRF-guarded client, retries + Retry-After, Range resume, circuit breaker,
+   verified chunk cache in FEED_CACHE_DIR)
+──► key set: feedsign.VerifyKeySet (pinned root, version ≥ last accepted)
+──► pointer + manifest: signature, pin, feed, sequence > applied (else
+    ErrRollback), delta only on its base, expiry ≤ 7 days, caps
+──► per chunk (sha256 before parse): programs then changes, every record
+    validated, ids ascending inside ordered chunk ranges; one transaction:
+    upserts (never over a newer sequence of the same stream, never over a
+    live signed record from the local stream) + feed_checkpoints advance
+──► complete: snapshot archives the stream's older rows; program_feed_state
+    and feed_checkpoints record the applied sequence (one transaction)
+```
+
+`feed_checkpoints` (one row per feed: `programfeed`, `programfeed-local`,
+`vulnfeed`) holds the applied sequence and the bundle in progress with its
+next chunk; a crash resumes at that chunk, a refused chunk leaves everything
+after it unapplied, and the row never moves back. It is platform-wide by
+design (no tenant column, no tenant data); tenant effects run afterwards in
+the tenant-scoped reconcile. A manifest whose `meta.collector.local_only` is
+set is refused on the signed stream. The local stream reads the unsigned
+`snapshot.v2.manifest.json` (and delta) of `programfeed build --local-only`
+only while the source is enabled: the importer checks the manifests, signs
+them with a key that exists only for that run in a private directory, and
+the same consumer applies them with the same chunk checks and checkpoint.
+
+## Confidentiality of private program assets
+
+Program-only assets of private programs, and their findings, are visible to
+the programs' members and the organization's owners only: the data-scope
+layer leaves them out for everyone else, administrators included (404 by
+id, absent from lists, exports, counts and dashboards). Shared assets stay
+visible without the private program's tags, and the inventory's tag
+filter matches only the tags of programs the viewer may see. Details:
+[authorization-matrix.md](authorization-matrix.md#data-scope-layer-2-access-groups).
+
 ## Evidence
 
 Every scan run links to a scope snapshot: the entry that covered each of its

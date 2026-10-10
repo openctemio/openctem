@@ -52,7 +52,7 @@ func TestEASMReviewQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	queue := func(scope *shared.ID, q easm.ReviewQuery) []string {
+	queue := func(scope *shared.DataScope, q easm.ReviewQuery) []string {
 		t.Helper()
 		if q.States == nil {
 			q.States = []attribution.State{attribution.StateNeedsReview, attribution.StateCandidate}
@@ -108,7 +108,7 @@ func TestEASMReviewQueue(t *testing.T) {
 		user.String(), tenant.String(), candidate); err != nil {
 		t.Fatal(err)
 	}
-	if got := queue(&user, easm.ReviewQuery{}); len(got) != 1 || got[0] != candidate {
+	if got := queue(&shared.DataScope{TenantID: tenant, UserID: user}, easm.ReviewQuery{}); len(got) != 1 || got[0] != candidate {
 		t.Fatalf("scoped queue = %v", got)
 	}
 

@@ -4,8 +4,10 @@
 //
 // The scope rows live in user_accessible_assets. Who is restricted:
 //
-//   - administrators (owner/admin), holders of a has_full_data_access role
-//     and internal calls with no user are never restricted;
+//   - owners and internal calls with no user are never restricted;
+//     administrators and holders of a has_full_data_access role see every
+//     asset except the program-only assets of private bug-bounty programs
+//     they are not a member of (RFC-065 §15.3; DataScope.Unrestricted);
 //   - every other member sees only the assets of their scope rows, and a
 //     member with no scope row sees nothing (fail closed). There is no
 //     per-organization "see everything" mode any more (owner decision D2,
@@ -36,6 +38,9 @@ var ErrInactivePrincipal = fmt.Errorf("%w: the acting member is not active", sha
 type Caller struct {
 	UserID  string
 	IsAdmin bool
+	// IsOwner: the caller owns the tenant. Owners see private program
+	// assets without being program members.
+	IsOwner bool
 	// APIKey marks a request authenticated with an API key. A key never
 	// inherits its holder's full-data role: full data through a key needs an
 	// explicit full-data key (research doc 15, §5.7), not built yet.
@@ -51,6 +56,10 @@ type CallerFunc func(ctx context.Context) Caller
 // AdminLookup decides whether a user administers a tenant when there is no
 // request context to ask (for example a WebSocket subscription).
 type AdminLookup func(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+
+// OwnerLookup decides whether a user owns a tenant when there is no request
+// context to ask.
+type OwnerLookup func(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 
 // Repository is the storage the enforcer needs.
 type Repository interface {
@@ -69,6 +78,16 @@ type Repository interface {
 	// AssetIDsInTenant returns the subset of assetIDs that are live (not
 	// soft-deleted) assets of the tenant.
 	AssetIDsInTenant(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error)
+	// HasHiddenAssets reports whether any asset of the tenant is hidden
+	// from the user (a program-only asset of private programs the user is
+	// not a member of).
+	HasHiddenAssets(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// AssetIDsVisible returns the subset of assetIDs that are not hidden
+	// from the user.
+	AssetIDsVisible(ctx context.Context, tenantID, userID shared.ID, assetIDs []shared.ID) ([]shared.ID, error)
+	// FindingIDsVisible returns the subset of findingIDs (in the tenant)
+	// whose asset is not hidden from the user.
+	FindingIDsVisible(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) ([]shared.ID, error)
 }
 
 // Enforcer resolves and enforces the caller's data scope. A nil *Enforcer is
@@ -77,6 +96,7 @@ type Enforcer struct {
 	repo        Repository
 	caller      CallerFunc
 	adminLookup AdminLookup
+	ownerLookup OwnerLookup
 	logger      *logger.Logger
 }
 
@@ -93,6 +113,15 @@ func New(repo Repository, caller CallerFunc, log *logger.Logger) *Enforcer {
 func (e *Enforcer) SetAdminLookup(fn AdminLookup) {
 	if e != nil {
 		e.adminLookup = fn
+	}
+}
+
+// SetOwnerLookup wires the owner decision used when there is no request
+// context (ForUser). Without it, ForUser treats no user as an owner, so
+// private program assets stay hidden (fail closed).
+func (e *Enforcer) SetOwnerLookup(fn OwnerLookup) {
+	if e != nil {
+		e.ownerLookup = fn
 	}
 }
 
@@ -115,7 +144,7 @@ func (e *Enforcer) Resolve(ctx context.Context, tenantID shared.ID) (*shared.Dat
 
 // ResolveFor is Resolve for an explicit caller.
 func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
-	if e == nil || e.repo == nil || c.IsAdmin || c.UserID == "" {
+	if e == nil || e.repo == nil || c.UserID == "" || c.IsOwner {
 		return nil, nil
 	}
 	userID, err := shared.IDFromString(c.UserID)
@@ -123,18 +152,27 @@ func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller)
 		// An unparseable acting user cannot be matched to any scope row.
 		return nil, fmt.Errorf("%w: invalid acting user", shared.ErrNotFound)
 	}
-	// A role with has_full_data_access is the Layer 2 bypass (owner decision
-	// D3): it sees every asset of the tenant whatever its group rows say.
-	// Owner and Administrator hold it through their system roles; a lookup
-	// error restricts (fail closed).
-	if !c.APIKey {
-		full, ferr := e.repo.HasFullDataRole(ctx, tenantID, userID)
+	// An administrator, and a role with has_full_data_access (the Layer 2
+	// bypass, owner decision D3), see every asset of the tenant whatever
+	// their group rows say, except the private program assets of programs
+	// they are not a member of. A lookup error restricts (fail closed).
+	full := c.IsAdmin
+	if !full && !c.APIKey {
+		f, ferr := e.repo.HasFullDataRole(ctx, tenantID, userID)
 		if ferr != nil {
 			return nil, fmt.Errorf("resolve full data access: %w", ferr)
 		}
-		if full {
-			return nil, nil
+		full = f
+	}
+	if full {
+		hidden, herr := e.repo.HasHiddenAssets(ctx, tenantID, userID)
+		if herr != nil {
+			return nil, fmt.Errorf("resolve private program assets: %w", herr)
 		}
+		if hidden {
+			return &shared.DataScope{TenantID: tenantID, UserID: userID, Unrestricted: true}, nil
+		}
+		return nil, nil
 	}
 	// Every other member is restricted to their scope rows; no row means
 	// nothing (fail closed, in every organization).
@@ -163,7 +201,11 @@ func (e *Enforcer) FullData(ctx context.Context, tenantID shared.ID, actingUserI
 // (admin, full-data role, scope rows), so every path agrees. The
 // API-key marker still comes from the request.
 func (e *Enforcer) ResolveActing(ctx context.Context, tenantID shared.ID, actingUserID string, isAdmin bool) (*shared.DataScope, error) {
-	return e.ResolveFor(ctx, tenantID, Caller{UserID: actingUserID, IsAdmin: isAdmin, APIKey: e.CallerOf(ctx).APIKey})
+	c := e.CallerOf(ctx)
+	// Owner visibility (private program assets) is the request caller's
+	// only: an acting user who is not the caller is never treated as owner.
+	return e.ResolveFor(ctx, tenantID, Caller{UserID: actingUserID, IsAdmin: isAdmin,
+		IsOwner: c.IsOwner && c.UserID == actingUserID, APIKey: c.APIKey})
 }
 
 // ForUser resolves the scope of a user outside a request (no auth context),
@@ -172,7 +214,7 @@ func (e *Enforcer) ForUser(ctx context.Context, tenantID, userID shared.ID) (*sh
 	if e == nil {
 		return nil, nil
 	}
-	isAdmin := false
+	isAdmin, isOwner := false, false
 	if e.adminLookup != nil {
 		admin, err := e.adminLookup(ctx, tenantID, userID)
 		if err != nil {
@@ -180,7 +222,14 @@ func (e *Enforcer) ForUser(ctx context.Context, tenantID, userID shared.ID) (*sh
 		}
 		isAdmin = admin
 	}
-	return e.ResolveFor(ctx, tenantID, Caller{UserID: userID.String(), IsAdmin: isAdmin})
+	if isAdmin && e.ownerLookup != nil {
+		owner, err := e.ownerLookup(ctx, tenantID, userID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve owner: %w", err)
+		}
+		isOwner = owner
+	}
+	return e.ResolveFor(ctx, tenantID, Caller{UserID: userID.String(), IsAdmin: isAdmin, IsOwner: isOwner})
 }
 
 // InScope reports whether assetID is inside scope. A nil scope admits all.
@@ -191,11 +240,20 @@ func (e *Enforcer) InScope(ctx context.Context, scope *shared.DataScope, assetID
 	if e == nil || e.repo == nil {
 		return false, nil
 	}
-	ids, err := e.repo.AssetIDsInScope(ctx, scope.TenantID, scope.UserID, []shared.ID{assetID})
+	ids, err := e.assetIDsIn(ctx, scope, []shared.ID{assetID})
 	if err != nil {
 		return false, err
 	}
 	return len(ids) == 1, nil
+}
+
+// assetIDsIn is the subset of assetIDs inside a non-nil scope: not hidden
+// for an Unrestricted scope, in the scope rows (and not hidden) otherwise.
+func (e *Enforcer) assetIDsIn(ctx context.Context, scope *shared.DataScope, assetIDs []shared.ID) ([]shared.ID, error) {
+	if scope.Unrestricted {
+		return e.repo.AssetIDsVisible(ctx, scope.TenantID, scope.UserID, assetIDs)
+	}
+	return e.repo.AssetIDsInScope(ctx, scope.TenantID, scope.UserID, assetIDs)
 }
 
 // AssertAsset returns shared.ErrNotFound unless the request's caller may see
@@ -316,7 +374,7 @@ func (e *Enforcer) Filter(ctx context.Context, scope *shared.DataScope, assetIDs
 	if e == nil || e.repo == nil || len(assetIDs) == 0 {
 		return func(shared.ID) bool { return false }, nil
 	}
-	in, err := e.repo.AssetIDsInScope(ctx, scope.TenantID, scope.UserID, dedupe(assetIDs))
+	in, err := e.assetIDsIn(ctx, scope, dedupe(assetIDs))
 	if err != nil {
 		return nil, fmt.Errorf("filter by data scope: %w", err)
 	}
@@ -343,7 +401,13 @@ func (e *Enforcer) FilterFindings(ctx context.Context, scope *shared.DataScope, 
 	if e == nil || e.repo == nil || len(findingIDs) == 0 {
 		return func(shared.ID) bool { return false }, nil
 	}
-	in, err := e.repo.FindingIDsInScope(ctx, scope.TenantID, scope.UserID, dedupe(findingIDs))
+	var in []shared.ID
+	var err error
+	if scope.Unrestricted {
+		in, err = e.repo.FindingIDsVisible(ctx, scope.TenantID, scope.UserID, dedupe(findingIDs))
+	} else {
+		in, err = e.repo.FindingIDsInScope(ctx, scope.TenantID, scope.UserID, dedupe(findingIDs))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("filter findings by data scope: %w", err)
 	}
@@ -369,7 +433,9 @@ func (e *Enforcer) CanActOnAssets(ctx context.Context, tenantID shared.ID, fallb
 	if err != nil {
 		return nil, false, fmt.Errorf("resolve act scope: %w", err)
 	}
-	if scope == nil {
+	if !scope.Restricted() {
+		// Hiding private program assets is about what one sees, not what
+		// an administrator may act on.
 		return func(shared.ID) bool { return true }, true, nil
 	}
 	pred, err := e.Filter(ctx, scope, assetIDs)
@@ -390,7 +456,7 @@ func (e *Enforcer) Delegable(ctx context.Context, tenantID shared.ID, assetIDs [
 	if err != nil {
 		return nil, false, err
 	}
-	if scope == nil {
+	if !scope.Restricted() {
 		return func(shared.ID) bool { return true }, true, nil
 	}
 	admit, err := e.Filter(ctx, scope, assetIDs)
@@ -452,5 +518,17 @@ func MembershipAdminLookup(members MembershipReader) AdminLookup {
 			return false, ErrInactivePrincipal
 		}
 		return m.IsOwner() || m.IsAdmin(), nil
+	}
+}
+
+// MembershipOwnerLookup is the OwnerLookup production wires: the team role
+// is owner and the membership is active.
+func MembershipOwnerLookup(members MembershipReader) OwnerLookup {
+	return func(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+		m, err := members.GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			return false, err
+		}
+		return m.IsActive() && m.IsOwner(), nil
 	}
 }

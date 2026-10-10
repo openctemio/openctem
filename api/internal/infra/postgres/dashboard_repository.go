@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // DashboardRepository implements app.DashboardStatsRepository using PostgreSQL.
@@ -920,16 +921,31 @@ func newSeverityCounts() map[string]int {
 // finding without an asset stays.
 func programFindingExcl(ctx context.Context, col string) string {
 	if shared.ProgramAssetsIncluded(ctx) {
-		return ""
+		return hiddenProgramExcl(ctx, col)
 	}
 	return " AND NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = " + col + " AND pa.program_only)"
+}
+
+// hiddenProgramExcl keeps the private program assets hidden from the
+// viewer out of metrics that include program assets (RFC-065 §15.3): an
+// owner, or an internal call with no viewer, sees them all.
+func hiddenProgramExcl(ctx context.Context, col string) string {
+	v, ok := shared.ProgramViewerOf(ctx)
+	if !ok || v.Owner {
+		return ""
+	}
+	return " AND " + filterspec.NotHiddenForViewer(col, "$1", v.UserID)
 }
 
 // programAssetExcl leaves out program-only assets unless the request
 // includes them; alias is the assets alias with its dot, or "".
 func programAssetExcl(ctx context.Context, alias string) string {
 	if shared.ProgramAssetsIncluded(ctx) {
-		return ""
+		col := alias + "id"
+		if alias == "" {
+			col = "assets.id" // the outer table, never the subquery alias
+		}
+		return hiddenProgramExcl(ctx, col)
 	}
 	return " AND NOT " + alias + "program_only"
 }

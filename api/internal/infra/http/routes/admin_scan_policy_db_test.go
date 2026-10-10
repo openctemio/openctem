@@ -16,7 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// The platform scan approval policy through the console routes (RFC-072
+// The platform scan approval policy through the console routes (RFC-073
 // §5): any administrator reads; only a super admin changes it, with a
 // reason and a fresh authenticator code; every change is in the admin audit
 // log; an organization override wins over the default and forces the

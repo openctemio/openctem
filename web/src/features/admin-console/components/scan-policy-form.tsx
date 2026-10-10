@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The platform policy for scan approval (RFC-072 §5), used by System > Scan
+ * The platform policy for scan approval (RFC-073 §5), used by System > Scan
  * approval (the platform default) and an organization's Scope tab (its
  * override). It lets the organization's owner choose Off, On or Strict, or
  * forces one. Forcing Off never turns scope off: step-up, exclusions,

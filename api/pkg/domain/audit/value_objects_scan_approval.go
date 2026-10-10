@@ -1,6 +1,6 @@
 package audit
 
-// Scan approval governance actions (docs/rfcs/RFC-072-scan-approval-governance.md).
+// Scan approval governance actions (docs/rfcs/RFC-073-scan-approval-governance.md).
 // The settings actions are on the organization (tenant).
 const (
 	// ActionScanGovernanceModeChanged: an owner turned scan approval off,

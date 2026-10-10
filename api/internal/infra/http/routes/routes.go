@@ -263,9 +263,9 @@ type Handlers struct {
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
 	// AdminScanPolicy: the platform policy for scan approval
-	// (RFC-072), platform default and per organization.
+	// (RFC-073), platform default and per organization.
 	AdminScanPolicy *handler.AdminScanPolicyHandler
-	// ScanGovernance: the organization's scan approval settings (RFC-072).
+	// ScanGovernance: the organization's scan approval settings (RFC-073).
 	ScanGovernance *handler.ScanGovernanceHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource

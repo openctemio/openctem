@@ -1,6 +1,6 @@
 package tenant
 
-// Scope-entry approvals under scan approval governance (RFC-072 §6): a scope
+// Scope-entry approvals under scan approval governance (RFC-073 §6): a scope
 // entry needs the approvals of RFC-054 §7 only when the organization's scan
 // approval is Strict. Off and On approve scans, not entries: an entry is
 // then a target list item. Step-up, the dry run, ownership proof, the

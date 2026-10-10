@@ -1,4 +1,4 @@
-# RFC-072: Scan approval governance (approve scans, not scope entries)
+# RFC-073: Scan approval governance (approve scans, not scope entries)
 
 | | |
 |---|---|
