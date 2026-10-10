@@ -224,6 +224,9 @@ type Program struct {
 	Sync Sync
 	// Pending is a widening a sync found, waiting for a member.
 	Pending *PendingTerms
+	// PublicProgramID is the catalog program a subscribed program follows
+	// (scope_source public_feed, RFC-065 §16).
+	PublicProgramID *shared.ID
 }
 
 // Program errors.
