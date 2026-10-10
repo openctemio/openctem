@@ -119,7 +119,10 @@ export interface PastedTargets {
 export function parsePastedTargets(lines: string[]): PastedTargets {
   const out: PastedTargets = { lines: [], targets: [], invalid: [], duplicates: 0, byKind: {} }
   const seen = new Set<string>()
-  for (const raw of lines) {
+  // A target never holds a comma, a semicolon or a space: a pasted list may
+  // use any of them between targets.
+  const tokens = lines.flatMap((line) => line.split(/[,;\s]+/))
+  for (const raw of tokens) {
     if (!raw.trim()) continue
     const c = classifyTarget(raw)
     out.lines.push(c)
