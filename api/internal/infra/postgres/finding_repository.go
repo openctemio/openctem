@@ -3757,6 +3757,10 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 				-- recorded in the resolution note does not.
 				AND (status NOT IN ` + fixedReopenFromSQL + `
 					OR resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
+				-- A finding the organization's VEX statement marks fixed stays
+				-- resolved while the statement stands (it is withdrawn on edit,
+				-- delete or expiry, which reopens it).
+				AND NOT (status = 'resolved' AND resolution_method = 'vex_fixed' AND vex_statement_id IS NOT NULL)
 			FOR UPDATE
 		)
 		UPDATE findings f

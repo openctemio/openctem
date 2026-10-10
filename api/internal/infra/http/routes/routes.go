@@ -43,6 +43,7 @@ type Handlers struct {
 	Tenant           *handler.TenantHandler           // nil if not initialized (no database)
 	User             *handler.UserHandler             // nil if not initialized (no database)
 	Component        *handler.ComponentHandler        // nil if not initialized (no database)
+	VEXStatement     *handler.VEXStatementHandler     // nil if not initialized (no database)
 	Vulnerability    *handler.VulnerabilityHandler    // nil if not initialized (no database)
 	RemediationGroup *handler.RemediationGroupHandler // nil if not initialized (no database)
 	MCP              *handler.MCPHandler              // read-only MCP server; nil if not initialized
@@ -536,6 +537,7 @@ func Register(
 	if h.Component != nil {
 		registerComponentRoutes(router, h.Component, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleComponents))
 	}
+	registerVEXStatementRoutes(router, h.VEXStatement, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleComponents))
 
 	// Asset Service routes (CTEM Discovery - network services on assets)
 	if h.AssetService != nil {
