@@ -205,6 +205,16 @@ only while the source is enabled: the importer checks the manifests, signs
 them with a key that exists only for that run in a private directory, and
 the same consumer applies them with the same chunk checks and checkpoint.
 
+## Confidentiality of private program assets
+
+Program-only assets of private programs, and their findings, are visible to
+the programs' members and the organization's owners only: the data-scope
+layer leaves them out for everyone else, administrators included (404 by
+id, absent from lists, exports, counts and dashboards). Shared assets stay
+visible without the private program's tags, and the inventory's tag
+filter matches only the tags of programs the viewer may see. Details:
+[authorization-matrix.md](authorization-matrix.md#data-scope-layer-2-access-groups).
+
 ## Evidence
 
 Every scan run links to a scope snapshot: the entry that covered each of its
