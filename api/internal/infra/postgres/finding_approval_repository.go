@@ -79,12 +79,9 @@ func approvalWhere(tenantID shared.ID, scope *shared.DataScope) (string, []any) 
 	where := "a.tenant_id = $1"
 	args := []any{tenantID.String()}
 	if scope != nil {
-		args = append(args, scope.UserID.String())
-		where += fmt.Sprintf(` AND a.finding_id IN (
-			SELECT f.id FROM findings f
-			WHERE f.tenant_id = $1
-			  AND f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa
-			                     WHERE uaa.user_id = $%d AND uaa.tenant_id = $1))`, len(args))
+		cond, scopeArgs := dataScopeCondAt("f.asset_id", scope, len(args)+1)
+		args = append(args, scopeArgs...)
+		where += ` AND a.finding_id IN (SELECT f.id FROM findings f WHERE f.tenant_id = $1 AND ` + cond + `)`
 	}
 	return where, args
 }
