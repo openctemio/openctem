@@ -348,8 +348,8 @@ R3 DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
 R3 GET /api/v1/admin/tenants/{tenantId}/plan
 R3 PUT /api/v1/admin/tenants/{tenantId}/plan
 R3 PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
-R3 GET /api/v1/admin/tenants/{tenantId}/scope-policy
-R3 PUT /api/v1/admin/tenants/{tenantId}/scope-policy
+R3 GET /api/v1/admin/tenants/{tenantId}/scan-approval-policy
+R3 PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy
 R3 GET /api/v1/admin/tenants/{tenantId}/idle
 R3 PUT /api/v1/admin/tenants/{tenantId}/idle/exemption
 # Team member end dates (RFC-050 W22): the /groups subtree keeps {groupId}/{userId} (chi needs one name per position).
