@@ -175,6 +175,8 @@ func TestTenantTablesMatchSchema(t *testing.T) {
 		  ON t.table_schema = c.table_schema AND t.table_name = c.table_name
 		WHERE c.table_schema = 'public' AND c.column_name = 'tenant_id'
 		  AND t.table_type = 'BASE TABLE'
+		  -- monthly partitions are named by date; their parent is listed
+		  AND NOT EXISTS (SELECT 1 FROM pg_class k WHERE k.relname = c.table_name AND k.relispartition)
 		ORDER BY c.table_name`)
 	if err != nil {
 		t.Fatal(err)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -62,12 +63,34 @@ func (s *AssetService) ReconcileAttributes(ctx context.Context, tenantID shared.
 func (s *AssetService) applyAttributes(ctx context.Context, tenantID shared.ID, in assetdom.AttributeApply, actor *shared.ID) ([]assetdom.AttributeChange, error) {
 	in.Policy = s.ReconciliationPolicy(ctx, tenantID)
 	in.Now = time.Now()
-	changes, err := s.attrSources.Apply(ctx, tenantID, in)
+	in.Actor = actor
+	res, err := s.attrSources.Apply(ctx, tenantID, in)
 	if err != nil {
 		return nil, fmt.Errorf("reconcile attributes: %w", err)
 	}
-	s.afterAttributeChanges(ctx, tenantID, changes, actor)
-	return changes, nil
+	for v, n := range res.Verdicts {
+		metrics.AssetAttributeObservationsTotal.WithLabelValues(string(v)).Add(float64(n))
+	}
+	metrics.AssetChangeEventsTotal.Add(float64(res.Events))
+	s.afterAttributeChanges(ctx, tenantID, res.Changes, actor)
+	return res.Changes, nil
+}
+
+// ResolveAttributes re-resolves the tracked attributes of the tenant's
+// assets without new observations (a policy change, a source past its TTL)
+// and applies what changed; reason is the timeline reason of each change.
+func (s *AssetService) ResolveAttributes(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, reason assetdom.ChangeReason) (int, error) {
+	if s.attrSources == nil || len(assetIDs) == 0 {
+		return 0, nil
+	}
+	refs := make([]assetdom.AttributeRef, 0, len(assetIDs)*len(assetdom.AllTrackedAttributes()))
+	for _, id := range assetIDs {
+		for _, attr := range assetdom.AllTrackedAttributes() {
+			refs = append(refs, assetdom.AttributeRef{AssetID: id, Attribute: attr})
+		}
+	}
+	changes, err := s.applyAttributes(ctx, tenantID, assetdom.AttributeApply{Resolve: refs, Reason: reason}, nil)
+	return len(changes), err
 }
 
 // afterAttributeChanges records each change in the asset history, re-scores
@@ -81,7 +104,7 @@ func (s *AssetService) afterAttributeChanges(ctx context.Context, tenantID share
 		if c.Source.Kind == assetdom.SourceKindManual {
 			ch.SetChangedBy(actor)
 		}
-		ch.SetReason(fmt.Sprintf("decided by %s source %s, observed %s",
+		ch.SetReason(fmt.Sprintf("%s: decided by %s source %s, observed %s", c.Reason,
 			c.Source.Kind, sourceLabel(c.Source.Name), c.Source.ObservedAt.UTC().Format(time.RFC3339)))
 		s.recordStateChange(ctx, ch)
 		switch c.Attribute {
@@ -180,7 +203,7 @@ func (s *AssetService) GetAttributeSources(ctx context.Context, tenantID, assetI
 	now := time.Now()
 	out := make([]AttributeSourcesView, 0, len(assetdom.AllTrackedAttributes()))
 	for _, attr := range assetdom.AllTrackedAttributes() {
-		r := assetdom.Resolve(attr, obs, p, now)
+		r := assetdom.ResolveFrom(attr, obs, p, now, a.AttributeValue(attr))
 		out = append(out, AttributeSourcesView{
 			Attribute: attr, Value: a.AttributeValue(attr), Locked: r.Locked, Conflict: r.Conflict,
 			Winner: r.Winner, Candidates: r.Candidates,

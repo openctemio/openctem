@@ -454,6 +454,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	).SetScopeTargetExpirer(repos.ScopeTarget))
 
+	// Asset change timeline (RFC-069): partitions, retention, TTL expiry.
+	w.ControllerManager.Register(controller.NewAssetChangeTimelineController(
+		repos.AssetChangeEvents, svc.Asset, cfg.AssetChangeRetentionDays,
+		log.With("controller", "asset-change-timeline")))
+
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
 		&controller.RoleSyncControllerConfig{
