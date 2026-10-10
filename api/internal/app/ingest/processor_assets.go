@@ -45,9 +45,10 @@ type AssetProcessor struct {
 	identityReviewer IdentityReviewer
 	propsValidator   *validator.PropertiesValidator
 	logger           *logger.Logger
-	// ports reads and closes open_port assets (research/22 P0-6; nil = ports
-	// are only ever added).
-	ports PortReconciler
+	// trackSets: set attributes (IP addresses, technologies, open ports)
+	// are reconciled per source (attribute_sets.go), so a merge leaves the
+	// sets of an existing asset to that reconciliation.
+	trackSets bool
 
 	// assetsDiscoveredCallback receives the assets THIS ingest actually
 	// inserted (nil = disabled). It drives the `asset_discovered` workflow
@@ -1990,6 +1991,9 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// class may hold is not kept here.
 	asset.NormalizeAssetProperties(existing.Type(), existing.SubType(), mergedProps)
 	dropMisplacedProperties(existing.Type(), existing.SubType(), mergedProps)
+	if p.trackSets {
+		keepReconciledSets(existingProps, mergedProps)
+	}
 	existing.SetProperties(mergedProps)
 
 	// Re-apply the scanner's explicit CTEM signals on re-scan (compliance /

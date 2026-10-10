@@ -66,6 +66,9 @@ type Binding struct {
 	// (BindingCommand only): the report cannot have observed anything
 	// earlier, so its timestamp is clamped up to it.
 	DispatchedAt time.Time
+	// JobPorts and JobTopPorts are the bound command's port settings
+	// (BindingCommand only): what a port scan covered.
+	JobPorts, JobTopPorts string
 }
 
 // Run is the scan task or CI run the report belongs to ("" for none).
@@ -87,8 +90,9 @@ func CommandBinding(cmd *command.Command) Binding {
 	if cmd.AcknowledgedAt != nil {
 		dispatched = *cmd.AcknowledgedAt
 	}
+	ports, top := command.PayloadPortSettings(cmd.Payload)
 	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd),
-		CommandType: cmd.Type, StepRunID: cmd.StepRunID, DispatchedAt: dispatched}
+		CommandType: cmd.Type, StepRunID: cmd.StepRunID, DispatchedAt: dispatched, JobPorts: ports, JobTopPorts: top}
 }
 
 // TrustedBinding is the binding of a server-side ingest.
