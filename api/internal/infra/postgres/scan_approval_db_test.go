@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Scan approval requests are tenant-scoped (RFC-072): a request is created
+// Scan approval requests are tenant-scoped (RFC-073): a request is created
 // only for the tenant's own scan; get, list, decide, consume and remind
 // never reach another tenant's request; one pending request per scan; the
 // target facts read only the tenant's assets.

@@ -6,7 +6,7 @@
   zone). Runs of an approved definition need nothing more; a change needs a
   new approval with the diff shown. Manual, scheduled, quick and retried
   runs all pass the gate (a scheduled run without approval is recorded as
-  blocked). RFC-072 §8.
+  blocked). RFC-073 §8.
 - New permission `scans:approve` (owners and administrators). Routes:
   `POST /api/v1/scans/approval-preview`, `GET/POST /api/v1/scans/{id}/approval`,
   `POST /api/v1/scans/{id}/emergency-run` (owner or administrator, step-up,

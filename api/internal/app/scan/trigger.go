@@ -191,7 +191,7 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		}
 	}
 
-	// Scan approval (RFC-072): a scan the organization's rules hold runs only
+	// Scan approval (RFC-073): a scan the organization's rules hold runs only
 	// under an approval of its current definition.
 	if err := s.requireApproval(ctx, sc, input.TriggeredBy); err != nil {
 		return nil, err

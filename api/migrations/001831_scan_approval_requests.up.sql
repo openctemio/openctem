@@ -1,4 +1,4 @@
--- Scan approval requests (docs/rfcs/RFC-072-scan-approval-governance.md §8).
+-- Scan approval requests (docs/rfcs/RFC-073-scan-approval-governance.md §8).
 --
 -- 1. scans:approve: who approves scans (owners and administrators by default;
 --    any role may be given it).
@@ -8,7 +8,7 @@
 --    New table only: nothing existing changes.
 
 INSERT INTO permissions (id, module_id, name, description, is_active) VALUES
-    ('scans:approve', 'scans', 'Approve Scans', 'Approve or reject scan approval requests and start emergency runs (RFC-072)', true)
+    ('scans:approve', 'scans', 'Approve Scans', 'Approve or reject scan approval requests and start emergency runs (RFC-073)', true)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -54,4 +54,4 @@ CREATE INDEX IF NOT EXISTS idx_scan_approval_scan
     ON scan_approval_requests (tenant_id, scan_id, created_at DESC);
 
 COMMENT ON TABLE scan_approval_requests IS
-    'Approval requests on scan definitions (RFC-072): what runs, how hard, against what, when and where.';
+    'Approval requests on scan definitions (RFC-073): what runs, how hard, against what, when and where.';

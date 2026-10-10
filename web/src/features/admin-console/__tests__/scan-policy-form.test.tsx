@@ -1,5 +1,5 @@
 /**
- * The console's scan approval policy (RFC-072 §5): a super admin saves a
+ * The console's scan approval policy (RFC-073 §5): a super admin saves a
  * policy with a reason and an authenticator code; anyone else reads it; an
  * organization may follow the platform default.
  */

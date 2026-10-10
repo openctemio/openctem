@@ -1095,7 +1095,7 @@ over the change digest verified by the signer; the signed scope document
 checked by the sensor next to the job (two repositories); zone ranges, time
 windows and distinct-target ceilings in the ledger.
 
-**Amendment 2026-10-10 (RFC-072 §7).** The approval count of an entry
+**Amendment 2026-10-10 (RFC-073 §7).** The approval count of an entry
 follows the organization's scan approval: 0 in Off and On, RFC-054 §7 in
 Strict. The hard minimum of one approval for a t2 entry is replaced by an
 operator floor, `SIGNER_LEDGER_T2_MIN_APPROVALS` (0 to 2, default 0). In

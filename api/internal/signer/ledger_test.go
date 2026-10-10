@@ -137,7 +137,7 @@ func TestLedger_WideningNeedsThePolicyApprovals(t *testing.T) {
 
 func TestLedger_IntrusiveEntryFollowsThePolicyAndTheOperatorFloors(t *testing.T) {
 	exp := tNow.Add(7 * 24 * time.Hour)
-	// The organization's policy says 0 (scan approval Off or On, RFC-072
+	// The organization's policy says 0 (scan approval Off or On, RFC-073
 	// §7): an intrusive entry widens without approval unless the operator
 	// set a floor for intrusive entries.
 	open := newService(t, t.TempDir(), newKey(t), enforcing)

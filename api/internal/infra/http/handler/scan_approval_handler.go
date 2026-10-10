@@ -1,7 +1,7 @@
 package handler
 
-// Scan approval requests (RFC-072,
-// docs/rfcs/RFC-072-scan-approval-governance.md §8): the New Scan preview,
+// Scan approval requests (RFC-073,
+// docs/rfcs/RFC-073-scan-approval-governance.md §8): the New Scan preview,
 // a scan's approval state and submission, the approvals inbox, decisions,
 // reminders and emergency runs. The tenant is the authenticated principal's;
 // another organization's scan or request answers 404.
