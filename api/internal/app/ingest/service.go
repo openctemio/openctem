@@ -295,6 +295,12 @@ func (s *Service) SetAssignmentApplier(applier AssignmentApplier) {
 
 // SetRemediationKeyApplier wires post-insert remediation-group key derivation
 // (RFC-015). Nil-safe: when not wired, findings are not grouped.
+// SetVEXStatementApplier wires the organization's VEX statements, applied
+// to the findings of every report.
+func (s *Service) SetVEXStatementApplier(a VEXStatementApplier) {
+	s.findingProcessor.SetVEXStatementApplier(a)
+}
+
 func (s *Service) SetRemediationKeyApplier(applier RemediationKeyApplier) {
 	s.findingProcessor.SetRemediationKeyApplier(applier)
 }

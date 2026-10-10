@@ -183,6 +183,7 @@ user_dashboards
 user_roles
 validation_evidence
 verified_domains
+vex_statements
 vuln_match_queue
 vulnerabilities
 web_endpoint_events
