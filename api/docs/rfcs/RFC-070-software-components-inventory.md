@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-10; decisions C1–C10 adopted as recommended, §14; the owner may revise any of them). P0 in implementation |
+| Status | Accepted (2026-10-10; decisions C1–C19 adopted as recommended, §14; the owner may revise any of them). P0 in implementation; P1 VEX statements and license policy implemented |
 | Scope | api (`pkg/domain/software`, `pkg/domain/component`, `internal/app/asset` component and SBOM services, ingest, `internal/infra/postgres` component/software repositories, migrations, routes), web (`/components`, the component detail page, dependency graph, SBOM import and export) |
 | Architecture | [software-components.md](../architecture/software-components.md) |
 | Related | RFC-066 (software catalog, matcher; O6 one inventory model, O11 catalog sharing, O12 feed outside the platform), RFC-069 (asset change timeline), RFC-064 (modules), ADR-004 (finding provenance), [finding-import.md](../architecture/finding-import.md) (VEX documents), [global-catalog-trust.md](../architecture/global-catalog-trust.md), [component-relationship-best-practices.md](../architecture/component-relationship-best-practices.md) |
@@ -170,11 +170,11 @@ asset_software (RFC-066) gains:
 
 - Confidence is 100 for a version read from a lock file or SBOM with a purl,
   80 for a name and version without a purl.
-- `superseded_at` works as in RFC-066: a newer version of the same package at
-  the same location marks the old link superseded (upgrade detected).
-- A link not reported by a full snapshot of the same asset and location for
-  the retention window is removed (the SBOM is the truth for that location);
-  partial reports (a single tool's findings) only add or refresh.
+- `superseded_at` is not used for packages: several versions of one package
+  legitimately coexist in one lock file. A full snapshot (a sensor or CI
+  report, an SBOM) replaces the links at the locations it names, so an
+  upgrade shows as the old version's link going away; partial reports (a
+  finding that names a package) only add or refresh.
 
 ### 5.4 Dependency graph: `asset_software_edges`
 
@@ -233,7 +233,8 @@ vex_statements
   id uuid PK, tenant_id uuid NOT NULL
   vuln_id text NOT NULL           -- CVE, GHSA, OSV or scanner rule id, upper case for CVE/GHSA
   product_id uuid NOT NULL → software_products   -- global or the tenant's own
-  version_ids uuid[] NOT NULL DEFAULT '{}'       -- empty = every version of the product
+  versions text[] NOT NULL DEFAULT '{}'          -- exact versions as observed (≤ 64); empty and no range = every version (C11)
+  version_range text NULL                        -- ">=1.2.0,<1.4.3": comparators that all hold (≤ 8 terms); not with versions
   asset_id uuid NULL               -- NULL = every asset; otherwise only this asset
   status text NOT NULL             -- not_affected | affected | fixed | under_investigation
   justification text NULL          -- component_not_present | vulnerable_code_not_present | vulnerable_code_not_in_execute_path | vulnerable_code_cannot_be_controlled_by_adversary | inline_mitigations_already_exist (required when not_affected)
@@ -242,7 +243,8 @@ vex_statements
   document_ref text NULL           -- file name and statement id of an imported document
   expires_at timestamptz NULL
   created_by, updated_by uuid, created_at, updated_at
-  UNIQUE (tenant_id, vuln_id, product_id, coalesce(asset_id, zero uuid), version_ids) -- one statement per subject
+  expired_at timestamptz NULL      -- set when the expiry controller withdrew the statement
+  UNIQUE (tenant_id, vuln_id, product_id, coalesce(asset_id, zero uuid), versions, coalesce(version_range, '')) -- one statement per subject
 ```
 
 - Findings keep their `vex_*` columns as the applied snapshot and gain
@@ -286,13 +288,13 @@ the parser is isolated so a format adds a reader, not a writer.
   pep440 epoch or major). Source: `findings.fixed_versions` now, corpus ranges
   after OSV import. When no single version fixes everything, the advice lists
   the minimum per CVE.
-- **Risk score** (0–100) per version link, rolled up to the product as the
-  maximum:
-  `base = max over open findings of (cvss or severity floor) × 10`,
-  `+15 KEV`, `+10 if EPSS ≥ 0.1`, `+5 direct dependency`, `−10 development or
-  test scope`, `× asset criticality factor (critical 1.0, high 0.9, medium 0.75,
-  low 0.6)`, clamped to 0–100. Findings closed by VEX do not count. Reachability
-  adds a factor when a producer supplies it.
+- **Risk score** (0–100) of a package: the maximum over its open in-scope
+  findings of `(severity floor + 15 if known exploited + 10 if EPSS ≥ 0.1) ×
+  asset criticality factor`, with the floors critical 90, high 70, medium 40,
+  low 10 and the factors critical 1.0, high 0.9, medium 0.75, low 0.6 (0.75
+  when unset), clamped to 0–100. Closed findings (including those closed by
+  VEX) do not count. Dependency scope and reachability add factors when the
+  data supports them (P1).
 
 ## 8. VEX
 
@@ -304,15 +306,32 @@ the parser is isolated so a format adds a reader, not a writer.
   - `affected` and `under_investigation` annotate only.
 - **Sticky:** ingest and the matcher check statements before creating or
   reopening a finding; a matching `not_affected` statement creates it closed.
-- **Edit or delete:** findings the statement closed reopen (`open` or their
-  previous status) unless another statement still covers them.
+- **Edit or delete:** findings the statement closed reopen (false positive
+  to `new`, resolved to `confirmed`, the lifecycle's reopen edges; C13)
+  unless another statement still covers them. The vulnerability, package and
+  asset of a statement are fixed; a different subject is a new statement.
+- **Precedence:** when several statements cover a finding, one asset beats
+  every asset, listed versions beat a range beat every version, then the most
+  recently edited wins.
 - **Expiry:** a controller reopens findings when a statement expires, with an
   audit and timeline entry.
 - **Export:** the SBOM export includes the statements that cover the asset
   (CycloneDX `vulnerabilities[].analysis`); `GET /vex-statements/export`
   produces an OpenVEX document.
-- Limits: one statement touches at most 5 000 findings per apply (as finding
-  import); the rest are applied by the controller in batches.
+- Limits: applying a statement walks its findings in batches of 1 000, one
+  short transaction each (C12).
+- **Import:** `POST /vex-statements/import?asset_id=&dry_run=` reads OpenVEX,
+  CSAF VEX and CycloneDX VEX (JSON, 5 MB, 5 000 statements, the strict
+  parsers of finding import) into one statement per vulnerability and
+  package; the preview lists what would be created, updated or left alone
+  and every skipped statement with its reason. It never overwrites a
+  statement written in the organization (`origin = manual`).
+- **No severity downgrade:** a statement closes or annotates; it never
+  changes a finding's severity (C14).
+- Implemented: [software-components.md](../architecture/software-components.md),
+  "VEX statements". Still open: OpenVEX export (`GET /vex-statements/export`),
+  statements in the CycloneDX SBOM export, finding-import documents stored as
+  statements.
 
 ## 9. License policy
 
@@ -328,6 +347,18 @@ the parser is isolated so a format adds a reader, not a writer.
   severity high; `review` → medium only when the tenant opts in, otherwise only
   visible in the inventory). One finding per asset, package and license; it
   closes when the link goes away or the policy allows it.
+- Implemented (C15–C19): `GET/PUT /api/v1/organization/settings/license-policy`
+  (`settings:read` / `settings:write`, audited `tenant.license_policy_updated`);
+  `default` is `allow` or `review`, `unknown` is `review` or `deny`,
+  `review_findings` is the opt-in for review findings. A PUT re-evaluates the
+  whole organization synchronously (one evaluation per distinct license set
+  and scope, then one update); every package write (sensor, CI, SBOM import)
+  re-evaluates the assets it wrote. The verdict is cached on the link
+  (`license_verdict`, `license_rule`). License findings use the reserved tool
+  name `license-policy`; the evaluation creates, reopens, re-grades and
+  resolves only those (resolution method `license_policy`), each status move
+  with an activity entry. Still open: the `license_verdict` list filter and
+  the license-violations KPI of `GET /components`.
 
 ## 10. API
 
@@ -360,8 +391,8 @@ producers; a wrong row is fixed at its source or by a VEX statement).
 |---|---|---|
 | components list, summary, detail, versions, where-used, vulnerabilities, paths, graph, export | `components:read` | scoped (links of accessible assets; product detail 404 without an in-scope link) |
 | SBOM import | `components:write` | scoped (target asset must be accessible) |
-| VEX list | `components:read` | scoped (statements with an asset outside scope hidden; product-wide statements visible when the product has an in-scope link) |
-| VEX create, edit, delete | `findings:approve` | scoped (asset-bound statements need the asset in scope; product-wide statements need full data access, because they close findings on every asset) |
+| VEX list, read | `components:read` | scoped (statements with an asset outside scope hidden; product-wide statements visible when the product has an in-scope link) |
+| VEX create, edit, delete, import | `findings:approve` | scoped (asset-bound statements need the asset in scope; product-wide statements need full data access, because they close findings on every asset) |
 | License policy read / write | `settings:read` / `settings:write` | config |
 
 - Module: everything belongs to the `components` module (SBOM export already
@@ -381,7 +412,9 @@ problem is, i18n (en, vi) for every string.
   (All, Vulnerable, License issues, Outdated) that only change filters; facet
   sidebar on desktop, a filter sheet on phones (ecosystem, severity, KEV, fix
   available, relationship, scope, license category and verdict, asset,
-  owner); saved views; columns: package (name, namespace, purl copy), ecosystem,
+  owner); every filter in the URL (shareable, bookmarkable); saved views once
+  the list adopts the RFC-048 filter document (P1); columns: package (name,
+  namespace, purl copy), ecosystem,
   versions in use, assets, severity counts, KEV, fix, license, risk; server
   pagination; row selection with bulk actions (create remediation group, VEX
   statement, export CSV).
@@ -418,7 +451,8 @@ problem is, i18n (en, vi) for every string.
 4. Web: list, detail, graph and path view, import wizard, export dialog, empty
    states, en and vi.
 
-**P1:** VEX statements (table, CRUD, sticky application, expiry controller,
+**P1:** saved views for the list (RFC-048 filter document, `savedview`
+page `components`); VEX statements (table, CRUD, sticky application, expiry controller,
 OpenVEX and CycloneDX export, finding-import documents stored as statements);
 license policy and license findings; upgrade advice from corpus ranges; OSV
 package matching (RFC-066 P1) and relinking of private products; SPDX 3.0
@@ -444,6 +478,15 @@ Adopted 2026-10-10 as recommended; the owner may revise any of them.
 | C8 | Health data | Only from the signed feed bundle; the platform never calls registries |
 | C9 | Legacy routes | Retired (`stats`, `ecosystems`, `vulnerable`, `licenses`, manual create, update, delete) |
 | C10 | Branch dimension | Dropped (`asset_components.branch_id` was never written); the inventory is per asset and location |
+| C11 | VEX versions | Stored as version strings plus an optional range, not version ids: a statement can name a version before the inventory has seen it (an imported document about the next release), and a range keeps covering new versions |
+| C12 | Applying a statement | Synchronous, in batches of 1 000 findings per transaction; no per-apply cap and no deferred controller pass |
+| C13 | Reopen on withdrawal | The lifecycle's reopen edges (false positive → new, resolved → confirmed), not a stored previous status |
+| C15 | License categories | The categories of the seeded SPDX catalog (`permissive`, `weak_copyleft`, `copyleft`, `proprietary`, `public_domain`, `unknown`); rules name them as `category:<name>` |
+| C16 | Several declared licenses | A link that declares several licenses (or expressions) must satisfy all of them (AND); in an expression OR takes the most permissive choice, AND the strictest term; an id WITH an exception matches a rule for the full form first, then the id; `GPL-2.0+` falls back to `GPL-2.0` |
+| C17 | Rule precedence | A rule for the license id beats a category rule; among rules for the same match the first in the list that applies to the link's scope wins (so a scope-limited allow placed first carves out test dependencies); a link without a scope counts as runtime |
+| C18 | Unknown licenses | Free text, `LicenseRef-` ids without a rule, unparseable expressions and links without a license get the `unknown` verdict |
+| C19 | License finding identity | Asset + package + declared license set (the installed version is not identity, per RFC-043); `component_id` points at the version that carries it |
+| C14 | Severity | A statement never downgrades severity: it closes (not_affected, fixed) or annotates (affected, under investigation); the reason shows on the finding |
 
 ## 15. Testing
 

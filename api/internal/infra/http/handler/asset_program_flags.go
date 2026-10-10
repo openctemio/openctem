@@ -9,7 +9,9 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ProgramAssetFlags are one asset's derived program fields.
@@ -18,7 +20,9 @@ type ProgramAssetFlags = bp.AssetFlags
 // ProgramAssetFlagReader reads them for a page of assets of one tenant
 // (*postgres.BountyProgramRepository).
 type ProgramAssetFlagReader interface {
-	ProgramAssetFlags(ctx context.Context, tenantID string, assetIDs []string) (map[string]ProgramAssetFlags, error)
+	// ProgramAssetFlagsFor leaves out what tells a viewer of a private
+	// program they are not a member of (RFC-065 §15.3).
+	ProgramAssetFlagsFor(ctx context.Context, tenantID string, assetIDs []string, viewer shared.ProgramViewer) (map[string]ProgramAssetFlags, error)
 }
 
 // SetProgramFlags wires the program asset flags.
@@ -32,7 +36,9 @@ func (h *AssetHandler) addProgramFlags(r *http.Request, tenantID string, out []*
 	for _, a := range out {
 		ids = append(ids, a.ID)
 	}
-	flags, err := h.programFlags.ProgramAssetFlags(r.Context(), tenantID, ids)
+	uid, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	viewer := shared.ProgramViewer{UserID: uid, Owner: middleware.IsOwner(r.Context())}
+	flags, err := h.programFlags.ProgramAssetFlagsFor(r.Context(), tenantID, ids, viewer)
 	if err != nil {
 		h.logger.Warn("program asset flags not read", "error", err)
 		return

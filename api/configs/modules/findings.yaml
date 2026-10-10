@@ -1,0 +1,33 @@
+- id: findings
+  const: ModuleFindings
+  slug: findings
+  name: Findings
+  description: "Findings, approvals and exceptions, with SLA deadlines and priority classes"
+  icon: AlertTriangle
+  category: core
+  order: 3
+  core: true
+  user_facing: true
+  permission: "findings:read"
+  mcp:
+    - list_findings
+    - get_finding
+    - finding_stats
+    - list_active_cves
+    - explain_finding_priority
+    - list_remediation_groups
+  jobs:
+    - ApprovalExpirationController
+    - PriorityReclassifyController
+    - PriorityReclassifySweepController
+    - PriorityAuditRetentionController
+    - EvidenceRetentionController
+    - ScannerOutputRetentionController
+    - RiskSnapshotController
+    - CTEMIDRefreshController
+    - IngestWorkerController
+    - JobRecoveryController
+    - RetestScheduler
+    - ThreatIntelRefreshController
+    - VulnMatchController
+    - VulnFeedImportController

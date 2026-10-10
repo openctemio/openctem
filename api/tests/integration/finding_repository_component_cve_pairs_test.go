@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/testdb"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
@@ -55,7 +57,6 @@ func TestListComponentCVEPairs_ReturnsSeededPair(t *testing.T) {
 
 	t.Cleanup(func() {
 		_, _ = db.Exec(`DELETE FROM findings WHERE id = ANY($1)`, pq.Array([]string{findingID}))
-		_, _ = db.Exec(`DELETE FROM components WHERE id = ANY($1)`, pq.Array([]string{componentID}))
 		_, _ = db.Exec(`DELETE FROM vulnerabilities WHERE id = ANY($1)`, pq.Array([]string{vulnID}))
 		_, _ = db.Exec(`DELETE FROM assets WHERE id = ANY($1)`, pq.Array([]string{assetID}))
 		_, _ = db.Exec(`DELETE FROM tenants WHERE id = ANY($1)`, pq.Array([]string{tenantID}))
@@ -73,13 +74,7 @@ func TestListComponentCVEPairs_ReturnsSeededPair(t *testing.T) {
 	)
 	require.NoError(t, err, "seed asset")
 
-	_, err = db.Exec(
-		`INSERT INTO components (id, purl, name, ecosystem) VALUES ($1,$2,$3,$4)`,
-		componentID,
-		fmt.Sprintf("pkg:npm/test-lib@1.0.0-%s", componentID[:8]),
-		"test-lib", "npm",
-	)
-	require.NoError(t, err, "seed component")
+	testdb.InsertPackageVersion(t, db, tenantID, componentID, fmt.Sprintf("pkg:npm/test-lib@1.0.0-%s", componentID[:8]))
 
 	_, err = db.Exec(
 		`INSERT INTO vulnerabilities (id, cve_id, title, severity) VALUES ($1,$2,$3,$4)`,
@@ -87,7 +82,7 @@ func TestListComponentCVEPairs_ReturnsSeededPair(t *testing.T) {
 	)
 	require.NoError(t, err, "seed vulnerability")
 
-	// findings.component_id → components(id) directly.
+	// findings.component_id → software_versions(id).
 	_, err = db.Exec(
 		`INSERT INTO findings (id, tenant_id, asset_id, component_id, vulnerability_id,
 		  source, tool_name, message, severity, fingerprint, status, created_at, updated_at)
@@ -145,7 +140,6 @@ func TestListComponentCVEPairs_TenantIsolation(t *testing.T) {
 
 	cleanup := func(r row) {
 		_, _ = db.Exec(`DELETE FROM findings WHERE id = $1`, r.findingID)
-		_, _ = db.Exec(`DELETE FROM components WHERE id = $1`, r.componentID)
 		_, _ = db.Exec(`DELETE FROM vulnerabilities WHERE id = $1`, r.vulnID)
 		_, _ = db.Exec(`DELETE FROM assets WHERE id = $1`, r.assetID)
 		_, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, r.tenantID)
@@ -160,9 +154,7 @@ func TestListComponentCVEPairs_TenantIsolation(t *testing.T) {
 		_, err = db.Exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, scope, exposure) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 			r.assetID, r.tenantID, "iso-asset", "repository", "medium", "active", "internal", "unknown")
 		require.NoError(t, err)
-		_, err = db.Exec(`INSERT INTO components (id, purl, name, ecosystem) VALUES ($1,$2,$3,$4)`,
-			r.componentID, "pkg:npm/iso-lib-"+r.componentID[:8]+"@1.0", "iso-lib", "npm")
-		require.NoError(t, err)
+		testdb.InsertPackageVersion(t, db, r.tenantID, r.componentID, "pkg:npm/iso-lib-"+r.componentID[:8]+"@1.0")
 		_, err = db.Exec(`INSERT INTO vulnerabilities (id, cve_id, title, severity) VALUES ($1,$2,$3,$4)`,
 			r.vulnID, r.cveID, "Isolation test CVE", "medium")
 		require.NoError(t, err)

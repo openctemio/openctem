@@ -13,7 +13,8 @@ Read `web/CLAUDE.md` first; it points to the detailed guides in `web/.claude/`.
    Never set `max-h-*`, `overflow-*` or `max-w-*` on the content; use `size`. The modal-layout governance
    test enforces this.
 3. **Text** goes through `useTranslation()` (`@/context/i18n-provider`). Add every key to
-   `src/lib/i18n/dictionaries/en.json` and `vi.json` in the same PR.
+   `src/lib/i18n/dictionaries/en/<namespace>.json` and `vi/<namespace>.json` (namespace = the key's
+   first segment) in the same PR.
 4. **Permissions:** `<Can permission={Permission.X}>` or `usePermissions()` to hide or disable actions; the API
    is the only authority, so never rely on the UI check. Module-gated pages follow the API's module state.
 5. **Links and data:** import links from `@/components/link`, not `next/link` directly (the request-hygiene

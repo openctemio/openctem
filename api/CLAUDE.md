@@ -340,8 +340,17 @@ exactly two sources:
 **Being an asset owner is not a scope grant** (decision O1,
 2026-10-03): naming a *user* as an owner is an assignment (accountability,
 finding assignment, notifications) and never changes what that user can see.
-Owners/admins, holders of a `has_full_data_access` role and internal calls
-with no user are never restricted; a member with no scope row sees
+Owners and internal calls with no user are never restricted.
+Administrators and holders of a `has_full_data_access` role are not narrowed
+to scope rows, with one exception: the program-only assets of a **private
+bug-bounty program** (and their findings) are seen only by that program's
+members and the organization's owners (RFC-065 §15.3). For such a caller the
+enforcer returns `DataScope{Unrestricted: true}` (every asset but the hidden
+ones); every scoped read goes through `dataScopeCondAt` /
+`filterspec.ScopeSQL`, so never test `scope != nil` to mean "restricted to
+scope rows" (use `scope.Restricted()`), and never skip the scope for an
+admin. Program system tags follow the same rule
+(`filterspec.ProgramHiddenSQL`). A member with no scope row sees
 **nothing**, in every organization (the per-organization "see everything"
 mode is retired, decision D2, 2026-10-04). By-id access is enforced in
 `internal/app/datascope` (out of scope answers 404, never 403). Full model:
@@ -885,7 +894,8 @@ no counts that go stale:
 
 - **What changed:** `git log` on `develop`, `changelog.d/` (unreleased entries,
   one file per change; never edit `CHANGELOG.md` directly), `CHANGELOG.md`, and the RFC index
-  (`docs/rfcs/README.md`), which maps each design to its implementation PRs.
+  (`docs/rfcs/README.md`, generated from each RFC's H1 and Status by
+  `python3 scripts/rfc_index.py`; implementation PRs are listed in each RFC).
 - **Migrations:** the numbers are not contiguous (renumbering leaves gaps), so
   do not count them. The newest is
   `ls migrations/*.up.sql | sort | tail -1`. A new migration takes the next

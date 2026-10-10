@@ -1,0 +1,14 @@
+- id: audit
+  const: ModuleAudit
+  slug: audit
+  name: Audit
+  description: Audit log for tracking all actions
+  icon: History
+  category: insights
+  order: 51
+  core: true
+  user_facing: true
+  permission: "audit:read"
+  jobs:
+    - AuditChainVerifyController
+    - AuditRetentionController

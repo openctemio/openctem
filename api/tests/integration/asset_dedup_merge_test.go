@@ -9,13 +9,14 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // TestApproveAndMerge_ConflictSafe verifies that merging duplicate assets:
 //   - does NOT crash on UNIQUE/CHECK conflicts (asset_services, asset_relationships),
-//   - preserves asset_components (previously cascade-deleted = data loss),
+//   - preserves package links (asset_software; once cascade-deleted = data loss),
 //   - drops would-be self-loop relationships,
 //   - deletes the merged assets and marks the review merged.
 func TestApproveAndMerge_ConflictSafe(t *testing.T) {
@@ -42,12 +43,11 @@ func TestApproveAndMerge_ConflictSafe(t *testing.T) {
 		exec(`INSERT INTO asset_relationships (id, tenant_id, source_asset_id, target_asset_id, relationship_type)
 			VALUES ($1,$2,$3,$4,$5)`, shared.NewID().String(), tenant.String(), src.String(), tgt.String(), typ)
 	}
-	comp := func(assetID, compID shared.ID, path string) {
-		exec(`INSERT INTO asset_components (id, tenant_id, asset_id, component_id, path, name, ecosystem)
-			VALUES ($1,$2,$3,$4,$5,$6,'npm')`, shared.NewID().String(), tenant.String(), assetID.String(), compID.String(), path, "lib")
+	prod, compA := testdb.SeedPackageVersion(t, db, tenant.String(), "pkg:npm/dedup-lib@1.0.0")
+	_, compB := testdb.SeedPackageVersion(t, db, tenant.String(), "pkg:npm/dedup-lib@2.0.0")
+	comp := func(assetID shared.ID, versionID, path string) {
+		testdb.SeedPackageLink(t, db, tenant.String(), assetID.String(), prod, versionID, path, "direct")
 	}
-
-	compA, compB := shared.NewID(), shared.NewID()
 
 	// asset_services: keep tcp/443; merge1 tcp/443 (conflict→drop) + tcp/8080 (move)
 	svc(keep, 443, "tcp")
@@ -61,7 +61,7 @@ func TestApproveAndMerge_ConflictSafe(t *testing.T) {
 	rel(keep, other, "depends_on")
 	rel(merge1, other, "depends_on")
 
-	// asset_components: keep compA@/a; merge1 compA@/a (conflict→drop) + compB@/b (move)
+	// package links: keep compA@/a; merge1 compA@/a (conflict→drop) + compB@/b (move)
 	comp(keep, compA, "/a")
 	comp(merge1, compA, "/a")
 	comp(merge1, compB, "/b")
@@ -106,8 +106,8 @@ func TestApproveAndMerge_ConflictSafe(t *testing.T) {
 	if n := count(`SELECT COUNT(*) FROM asset_relationships WHERE source_asset_id=target_asset_id`); n != 0 {
 		t.Errorf("self-loop relationships must not exist, got %d", n)
 	}
-	// components: keep has compA@/a + compB@/b = 2
-	if n := count(`SELECT COUNT(*) FROM asset_components WHERE asset_id=$1`, keep.String()); n != 2 {
+	// package links: keep has compA@/a + compB@/b = 2
+	if n := count(`SELECT COUNT(*) FROM asset_software WHERE asset_id=$1 AND source='package'`, keep.String()); n != 2 {
 		t.Errorf("keep components: expected 2 (compA+compB preserved), got %d", n)
 	}
 	// merge1 deleted
