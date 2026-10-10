@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
+	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/app/scopepolicy"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -62,12 +63,17 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 	if svc.Scope == nil {
 		return
 	}
-	// The platform approval policy (RFC-054 §12.6): fail closed to
-	// `required` when it cannot be read.
-	if repos != nil && repos.ScopePolicy != nil {
-		svc.ScopePolicy = scopepolicy.NewService(repos.ScopePolicy, repos.AdminAuditLog, repos.Admin,
+	// The platform policy for scan approval and the organization's scan
+	// approval mode (RFC-073): scope entries need approval only in Strict;
+	// an unreadable mode counts as Strict for them.
+	if repos != nil && repos.ScanPolicy != nil {
+		svc.ScanPolicy = scanpolicy.NewService(repos.ScanPolicy, repos.AdminAuditLog, repos.Admin,
 			scopePolicyMailer{email: svc.Email, log: log}, svc.Scope, log)
-		svc.Scope.SetApprovalPolicy(svc.ScopePolicy)
+		if svc.Tenant != nil {
+			svc.ScanPolicy.SetSettings(svc.Tenant)
+		}
+		svc.Scope.SetGovernance(svc.ScanPolicy)
+		wireScanGovernance(svc, repos, log)
 	}
 	var totp scopeapp.TOTPVerifier
 	if svc.Auth != nil {
@@ -87,15 +93,15 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 	}
 }
 
-// scopePolicyMailer emails the other platform administrators when the scope
+// scopePolicyMailer emails the other platform administrators when the scan
 // approval policy changes (asynchronous; the service also writes a WARN line
-// with alert=scope_approval_policy_changed for log-based alerting).
+// with alert=scan_approval_policy_changed for log-based alerting).
 type scopePolicyMailer struct {
 	email *auth.EmailService
 	log   *logger.Logger
 }
 
-var _ scopepolicy.Mailer = scopePolicyMailer{}
+var _ scanpolicy.Mailer = scopePolicyMailer{}
 
 func (m scopePolicyMailer) NotifyScopePolicyChanged(_ context.Context, to []string, subject, body string) {
 	if m.email == nil || !m.email.IsConfigured() || len(to) == 0 {
@@ -105,7 +111,36 @@ func (m scopePolicyMailer) NotifyScopePolicyChanged(_ context.Context, to []stri
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := m.email.SendReport(ctx, "", to, subject, "<p>"+html.EscapeString(body)+"</p>"); err != nil {
-			m.log.Warn("scope policy email failed", "error", logger.SanitizeError(err))
+			m.log.Warn("scan policy email failed", "error", logger.SanitizeError(err))
 		}
 	}()
+}
+
+// wireScanGovernance builds scan approval governance (RFC-073): the settings,
+// the approval requests, the approver directory, the authenticator check for
+// an owner's own approval, notifications and audit, and the gate every scan
+// run passes.
+func wireScanGovernance(svc *Services, repos *Repositories, log *logger.Logger) {
+	if svc.Tenant == nil {
+		return
+	}
+	svc.ScanGovernance = scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log)
+	if repos.ScanApproval != nil {
+		svc.ScanGovernance.SetRequests(repos.ScanApproval)
+		var totp scangovapp.TOTPVerifier
+		if svc.Auth != nil {
+			totp = scopeTOTP{auth: svc.Auth}
+		}
+		svc.ScanGovernance.SetApprovers(repos.ScanApproval, totp)
+	}
+	if svc.Notification != nil {
+		svc.ScanGovernance.SetNotifier(svc.Notification)
+	}
+	if svc.Audit != nil {
+		svc.ScanGovernance.SetAudit(svc.Audit)
+	}
+	if svc.Scan != nil {
+		svc.ScanGovernance.SetScans(svc.Scan)
+		svc.Scan.SetApprovalGate(svc.ScanGovernance, repos.ScanApproval)
+	}
 }

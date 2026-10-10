@@ -191,6 +191,12 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		}
 	}
 
+	// Scan approval (RFC-073): a scan the organization's rules hold runs only
+	// under an approval of its current definition.
+	if err := s.requireApproval(ctx, sc, input.TriggeredBy); err != nil {
+		return nil, err
+	}
+
 	// The organization's sensor opt-ins (research/25 D3): interactsh is
 	// removed for this run, custom templates refuse the trigger.
 	optInWarning, err := s.applyOptInsAtTrigger(ctx, sc)

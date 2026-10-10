@@ -385,6 +385,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Assets & Components
 		Component:     handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
+		VEXStatement:  handler.NewVEXStatementHandler(svc.VEX, log),
 		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
@@ -738,9 +739,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
 	}
-	// The platform policy for scope-widening approvals (RFC-054 §12.6).
-	if svc.ScopePolicy != nil {
-		handlers.AdminScopePolicy = handler.NewAdminScopePolicyHandler(svc.ScopePolicy, adminConsoleSvc, log)
+	// The platform policy for scan approval (RFC-073).
+	if svc.ScanPolicy != nil {
+		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
+	}
+	// Scan approval governance (RFC-073): settings, requests, the inbox and
+	// the scan list badge.
+	if svc.ScanGovernance != nil {
+		handlers.ScanGovernance = handler.NewScanGovernanceHandler(svc.ScanGovernance, log)
+		if handlers.Scan != nil {
+			handlers.Scan.SetApprovals(handler.NewScanApprovalHandler(svc.ScanGovernance, log))
+		}
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {

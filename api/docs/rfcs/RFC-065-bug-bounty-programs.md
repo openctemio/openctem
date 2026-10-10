@@ -714,7 +714,12 @@ covers the target.
   programs. Controller `program-feed-local`, hourly. Fetching allowlisted
   public datasets directly from the platform is a later option.
 
-### 16.8 Program targets as collected assets (owner direction, 2026-10-10; next change)
+### 16.8 Program targets as collected assets (owner direction, 2026-10-10)
+
+> Status: points 2 and 3 are built (typed scope items, port/protocol and
+> path limits on entries enforced at dispatch, claim and in the signer's
+> ledger, per-item qualifiers; migration `001910`). Point 1 (CTIS ingest)
+> and the confidentiality of private-program assets follow.
 
 The feed importer is an asset collector, not a second asset pipeline:
 
