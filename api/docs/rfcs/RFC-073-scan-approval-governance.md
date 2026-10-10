@@ -53,7 +53,7 @@ is refused.
 |---|---|
 | G1 | Off is the default for every organization, including existing ones (owner 2026-10-10). |
 | G2 | The tenant mode is a settings section (`tenants.settings.scan_governance`): `mode`, `rules`, `pending_expiry_days`. Mode: owner, step-up, reason. Rules: owner or administrator, step-up, reason. |
-| G3 | The platform policy is `tenants.scan_approval_policy` + `platform_settings.scan_approval_policy`: `tenant_controlled` (default), `off`, `on`, `strict`. Migration `001830` renames the RFC-054 column and maps `disabled` to `off`, `required` and `tenant_controlled` to the default. Minimal back-compat: the old values had no meaning once entries stop needing approval outside Strict. |
+| G3 | The platform policy is `tenants.scan_approval_policy` + `platform_settings.scan_approval_policy`: `tenant_controlled` (default), `off`, `on`, `strict`. Migration `001881` renames the RFC-054 column and maps `disabled` to `off`, `required` and `tenant_controlled` to the default. Minimal back-compat: the old values had no meaning once entries stop needing approval outside Strict. |
 | G4 | Turning On with no rule seeds the Light preset (intrusive scans need one approval), so On is never silently empty. |
 | G5 | Rules: conditions AND inside a rule; rules OR'ed; every matched rule is shown; the matched rule asking the most approvals (first on a tie) decides who approves; justification and ticket requirements and ticket formats add up; the shortest validity wins. Monitor-mode rules record "would need approval" without blocking. |
 | G6 | Strict: at least two distinct approvers and a justification for every caught scan; scope entries keep RFC-054 §7 approvals; the T2 duration and attestation rules of RFC-054 §12.4/12.5 stay in every mode (they bound long intrusive grants, they are not approvals). |
@@ -219,7 +219,7 @@ the declared intensity changes the digest: it needs a new approval.
 
 | PR | Content |
 |---|---|
-| Setting | modes, platform policy renamed to scans, rules and presets (validation, evaluation), settings API, scope entries Strict-only, signer t2 floor, admin console and scope page texts (migration `001830`) |
-| Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge (migration `001831`) |
+| Setting | modes, platform policy renamed to scans, rules and presets (validation, evaluation), settings API, scope entries Strict-only, signer t2 floor, admin console and scope page texts (migration `001881`) |
+| Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge |
 | Web | Settings > Scanning (mode, rule builder, presets), New Scan review "needs approval by…", Submit for approval, Approvals inbox, scan list badge |
 | Later | monitor-mode report, rule tester, the §4.1 later conditions, asset-owner approvers |
