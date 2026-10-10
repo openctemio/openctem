@@ -65,6 +65,7 @@ type Service struct {
 	classifier Classifier
 	sla        SLAApplier
 	assets     AssetGetter
+	links      LinkReader
 	logger     *logger.Logger
 	now        func() time.Time
 }

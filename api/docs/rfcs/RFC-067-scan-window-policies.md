@@ -145,9 +145,10 @@ same structure.
 
 **Time.** Windows are occurrences computed in their time zone from local
 dates (`time.Date`), so the "is it open" test and the "next opening" search
-use the same intervals. On the day clocks go forward a slot over the skipped
-hour starts at the first valid instant after it; on the day clocks go back a
-slot over the repeated hour lasts the longer real duration. Time zones come
+use the same intervals. A wall-clock time the clocks skip is moved forward by
+the gap (02:30 on the day clocks go forward reads as 03:30), so a slot over
+the skipped hour is that much shorter; a time the clocks repeat reads as the
+later pass, so a slot over the repeated hour lasts an hour longer. Time zones come
 from the Go tz database embedded in the binary (`time/tzdata`), so evaluation
 never depends on the host image. A source whose time zone cannot be loaded
 fails closed: an allow source is never open and a blackout source is always
@@ -309,11 +310,13 @@ organization, not an invisible attribute of one run.
 | `GET /api/v1/scan-window-policies` (`?enabled=`), `GET /{id}` | `scans:read` | each policy with `open_now`, `next_change_at` for its own windows |
 | `POST /`, `PATCH /{id}`, `DELETE /{id}` | `scans:windows:manage` | audited `scan_window_policy.created/updated/deleted` |
 | `POST /api/v1/scan-window-policies/preview` | `scans:read` | a draft policy: matching assets (count and the first 50) and the next 5 openings |
-| `POST /api/v1/scan-windows/evaluate` | `scans:read` | `targets` and/or `asset_ids`, optional `tier`: per target the decision and explanation (§4.4). Used by the asset page and the scan dialog. |
+| `POST /api/v1/scan-windows/preview` | `scans:read` | `targets` and/or `asset_ids`, optional `tier` and `scan_zone_id`: per target the decision and explanation (§4.4); an asset outside the caller data scope is 404. Used by the asset page and the scan dialog. |
 | `GET /api/v1/scan-window-overrides`, `POST /`, `DELETE /{id}` | `scans:read` / `scans:windows:override` | §8 |
 
-The scan run's tasks carry `window_hold` (`next_open_at`, blocking sources,
-`never`). Every route is tenant-scoped from the token; another
+The scan run's tasks carry `window_hold` (`reason`, `next_open_at`, blocking
+sources, `never`), the run carries `window_waits` (the targets that waited
+when it started), and the zone routing and workflow previews carry
+`windows` (which targets would wait, which never open). Every route is tenant-scoped from the token; another
 organization's policy, override or asset answers 404, and a selector id that
 is not the organization's answers 422 without saying whether it exists
 elsewhere.
@@ -327,8 +330,9 @@ elsewhere.
   `scan_runs.freeze_override` are dropped; `commands.window_hold`,
   `commands.window_closed_at` and `commands.window_policy_ids` are added
   (nullable, no rewrite).
-- `scans:freeze:override` becomes `scans:windows:override` in every role that
-  held it; `scans:windows:manage` is granted to owner and admin.
+- `scans:freeze:override` becomes `scans:windows:override` in every role and
+  API key that held it (migration 001761); `scans:windows:manage` is granted
+  to owner and admin (001760).
 - `/api/v1/scan-freeze-windows` and the `override_freeze` trigger field are
   removed; Settings › Scan freeze windows becomes Settings › Scan windows.
 - Down migrations restore the freeze table from the blackout policies it can

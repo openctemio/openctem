@@ -7,6 +7,7 @@
  */
 
 import { useMemo, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Hash, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -29,7 +30,8 @@ import {
 import { LastRunCell } from './last-run-cell'
 import { ScanControls, scanStateLabel } from './scan-controls'
 import { lastRunOf, scanTypeLabel } from '../lib/scan-status'
-import { SCAN_TYPE_LABELS, SCHEDULE_TYPE_LABELS, type ScanConfig } from '@/lib/api/scan-types'
+import type { ScanConfig } from '@/lib/api/scan-types'
+import { scanTypeName, scheduleTypeName } from '../lib/labels'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { formatScanDate, scanSuccessRate } from '../lib/format'
@@ -38,10 +40,10 @@ import { SchedulePreview } from './schedule-preview'
 import { describeTargetOptions, hasCidrTarget, hasDynamicTargets } from '../lib/dynamic-targets'
 
 type Tab = 'overview' | 'config' | 'details'
-const TABS: DetailTab<Tab>[] = [
-  { value: 'overview', label: 'Overview' },
-  { value: 'config', label: 'Configuration' },
-  { value: 'details', label: 'Details' },
+const TAB_KEYS: { value: Tab; key: string }[] = [
+  { value: 'overview', key: 'scans.sheet.overview' },
+  { value: 'config', key: 'scans.sheet.configuration' },
+  { value: 'details', key: 'scans.sheet.details' },
 ]
 
 export interface ScanConfigDetailSheetProps {
@@ -56,6 +58,8 @@ export function ScanConfigDetailSheet({
   onOpenChange,
   onDelete,
 }: ScanConfigDetailSheetProps) {
+  const { t } = useTranslation()
+  const tabs: DetailTab<Tab>[] = TAB_KEYS.map((x) => ({ value: x.value, label: t(x.key) }))
   const [tab, setTab] = useState<Tab>('overview')
   const [shownId, setShownId] = useState<string | null>(null)
   if (config && config.id !== shownId) {
@@ -67,17 +71,17 @@ export function ScanConfigDetailSheet({
 
   const menu: DetailMenuItem[] = [
     {
-      label: 'Copy ID',
+      label: t('scans.sheet.copyId'),
       icon: Hash,
       onSelect: () => {
         copyToClipboard(config.id)
-        toast.success('ID copied to clipboard')
+        toast.success(t('scans.sheet.idCopied'))
       },
     },
   ]
   if (canDelete) {
     menu.push({
-      label: 'Delete configuration',
+      label: t('scans.sheet.deleteConfig'),
       icon: Trash2,
       destructive: true,
       separatorBefore: true,
@@ -95,16 +99,16 @@ export function ScanConfigDetailSheet({
           title={config.name}
           badges={<LastRunCell run={lastRunOf(config)} />}
           meta={[
-            scanTypeLabel(config).label,
-            SCHEDULE_TYPE_LABELS[config.schedule_type],
-            scanStateLabel(config),
+            scanTypeLabel(config, t).label,
+            scheduleTypeName(t, config.schedule_type),
+            scanStateLabel(config, t),
           ]}
           actions={<ScanControls config={config} />}
           menu={menu}
           onClose={() => onOpenChange(false)}
         />
       }
-      tabs={<DetailTabs tabs={TABS} value={tab} onValueChange={setTab} />}
+      tabs={<DetailTabs tabs={tabs} value={tab} onValueChange={setTab} />}
     >
       {tab === 'overview' && <Overview config={config} />}
       {tab === 'config' && <Configuration config={config} />}
@@ -114,27 +118,32 @@ export function ScanConfigDetailSheet({
 }
 
 function Overview({ config }: { config: ScanConfig }) {
+  const { t } = useTranslation()
   // The same formula as the scan list and the scan page (scanSuccessRate).
   const successRate = useMemo(() => scanSuccessRate(config), [config])
   const settled = config.successful_runs + (config.partial_runs ?? 0) + config.failed_runs
   return (
     <div className="space-y-5">
-      <DetailStatGrid aria-label="Key numbers">
+      <DetailStatGrid aria-label={t('scans.sheet.keyNumbers')}>
         <DetailStat
-          label="Success rate"
-          value={successRate === null ? 'No runs' : `${successRate}%`}
+          label={t('scans.sheet.successRate')}
+          value={successRate === null ? t('scans.sheet.noRuns') : `${successRate}%`}
           meter={
             successRate === null
               ? undefined
-              : { value: config.successful_runs, max: settled, label: 'Successful runs' }
+              : {
+                  value: config.successful_runs,
+                  max: settled,
+                  label: t('scans.sheet.successfulRuns'),
+                }
           }
-          caption={scanStateLabel(config)}
+          caption={scanStateLabel(config, t)}
         />
-        <DetailStat label="Total runs" value={config.total_runs} />
-        <DetailStat label="Successful" value={config.successful_runs} />
-        <DetailStat label="Partial" value={config.partial_runs ?? 0} />
+        <DetailStat label={t('scans.sheet.totalRuns')} value={config.total_runs} />
+        <DetailStat label={t('scans.sheet.successful')} value={config.successful_runs} />
+        <DetailStat label={t('scans.sheet.partial')} value={config.partial_runs ?? 0} />
         <DetailStat
-          label="Failed"
+          label={t('scans.sheet.failed')}
           value={config.failed_runs}
           tone={config.failed_runs > 0 ? 'destructive' : 'default'}
         />
@@ -142,20 +151,26 @@ function Overview({ config }: { config: ScanConfig }) {
 
       <DetailSections>
         {config.description && (
-          <DetailSection title="Description">
+          <DetailSection title={t('scans.sheet.description')}>
             <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
               {config.description}
             </p>
           </DetailSection>
         )}
-        <DetailSection title="Timeline">
+        <DetailSection title={t('scans.sheet.timeline')}>
           <DetailFieldGrid>
-            <DetailField label="Created">{formatScanDate(config.created_at)}</DetailField>
+            <DetailField label={t('scans.sheet.created')}>
+              {formatScanDate(config.created_at)}
+            </DetailField>
             {config.last_run_at && (
-              <DetailField label="Last run">{formatScanDate(config.last_run_at)}</DetailField>
+              <DetailField label={t('scans.sheet.lastRun')}>
+                {formatScanDate(config.last_run_at)}
+              </DetailField>
             )}
             {config.next_run_at && (
-              <DetailField label="Next scheduled">{formatScanDate(config.next_run_at)}</DetailField>
+              <DetailField label={t('scans.sheet.nextScheduled')}>
+                {formatScanDate(config.next_run_at)}
+              </DetailField>
             )}
           </DetailFieldGrid>
         </DetailSection>
@@ -165,19 +180,26 @@ function Overview({ config }: { config: ScanConfig }) {
 }
 
 function Configuration({ config }: { config: ScanConfig }) {
+  const { t } = useTranslation()
   return (
     <DetailSections>
-      <DetailSection title="Schedule">
+      <DetailSection title={t('scans.sheet.schedule')}>
         <DetailFieldGrid>
-          <DetailField label="Scan type">{SCAN_TYPE_LABELS[config.scan_type]}</DetailField>
-          <DetailField label="Frequency">{SCHEDULE_TYPE_LABELS[config.schedule_type]}</DetailField>
+          <DetailField label={t('scans.sheet.scanType')}>
+            {scanTypeName(t, config.scan_type)}
+          </DetailField>
+          <DetailField label={t('scans.sheet.frequency')}>
+            {scheduleTypeName(t, config.schedule_type)}
+          </DetailField>
           {config.schedule_rrule && (
-            <DetailField label="Rule" full>
+            <DetailField label={t('scans.sheet.rule')} full>
               <code className="text-xs break-all">{config.schedule_rrule}</code>
             </DetailField>
           )}
-          {config.schedule_time && <DetailField label="Time">{config.schedule_time}</DetailField>}
-          <DetailField label="Timezone">{config.schedule_timezone}</DetailField>
+          {config.schedule_time && (
+            <DetailField label={t('scans.sheet.time')}>{config.schedule_time}</DetailField>
+          )}
+          <DetailField label={t('scans.sheet.timezone')}>{config.schedule_timezone}</DetailField>
         </DetailFieldGrid>
         <div className="mt-4">
           <SchedulePreview
@@ -187,7 +209,7 @@ function Configuration({ config }: { config: ScanConfig }) {
         </div>
       </DetailSection>
       {config.tags && config.tags.length > 0 && (
-        <DetailSection title="Tags" count={config.tags.length}>
+        <DetailSection title={t('scans.sheet.tags')} count={config.tags.length}>
           <div className="flex flex-wrap gap-2">
             {config.tags.map((tag) => (
               <Badge key={tag} variant="secondary" className="gap-1">
@@ -203,6 +225,7 @@ function Configuration({ config }: { config: ScanConfig }) {
 }
 
 function Details({ config }: { config: ScanConfig }) {
+  const { t } = useTranslation()
   const groupIds =
     config.asset_group_ids && config.asset_group_ids.length > 0
       ? config.asset_group_ids
@@ -213,10 +236,15 @@ function Details({ config }: { config: ScanConfig }) {
   return (
     <DetailSections>
       {(groupIds.length > 0 || targets.length > 0) && (
-        <DetailSection title="Targets">
+        <DetailSection title={t('scans.sheet.targets')}>
           <DetailFieldGrid>
             {groupIds.length > 0 && (
-              <DetailField label={groupIds.length === 1 ? 'Asset group' : 'Asset groups'} full>
+              <DetailField
+                label={
+                  groupIds.length === 1 ? t('scans.sheet.assetGroup') : t('scans.sheet.assetGroups')
+                }
+                full
+              >
                 <span className="flex flex-wrap gap-1">
                   {groupIds.map((id) => (
                     <Badge key={id} variant="outline" className="font-mono text-xs" title={id}>
@@ -227,33 +255,36 @@ function Details({ config }: { config: ScanConfig }) {
               </DetailField>
             )}
             {targets.length > 0 && (
-              <DetailField label={`Direct targets (${targets.length})`} full>
+              <DetailField
+                label={t('scans.sheet.directTargets', undefined, { count: targets.length })}
+                full
+              >
                 <span className="flex flex-wrap gap-1">
                   {targets.slice(0, 5).map((target, i) => (
                     <Badge key={i} variant="secondary" className="max-w-[16rem] text-xs">
-                      <TruncatedText value={target} label="Target" />
+                      <TruncatedText value={target} label={t('scans.sheet.target')} />
                     </Badge>
                   ))}
                   {targets.length > 5 && (
                     <Badge variant="secondary" className="text-xs">
-                      +{targets.length - 5} more
+                      {t('scans.sheet.moreTargets', undefined, { count: targets.length - 5 })}
                     </Badge>
                   )}
                 </span>
               </DetailField>
             )}
             {(hasDynamicTargets(targets, config.target_options) || hasCidrTarget(targets)) && (
-              <DetailField label="Dynamic targets" full>
+              <DetailField label={t('scans.sheet.dynamicTargets')} full>
                 <span className="block text-sm" data-testid="scan-dynamic-targets">
                   {hasDynamicTargets(targets, config.target_options)
                     ? config.schedule_type === 'manual'
-                      ? '*.domain targets are resolved from the inventory each time the scan runs.'
-                      : 'Targets are re-resolved from the inventory at each run, so names found since the last run are scanned too.'
-                    : 'Address ranges are swept whole.'}
+                      ? t('scans.sheet.dynManual')
+                      : t('scans.sheet.dynScheduled')
+                    : t('scans.sheet.dynRanges')}
                 </span>
-                {describeTargetOptions(targets, config.target_options).length > 0 && (
+                {describeTargetOptions(targets, config.target_options, t).length > 0 && (
                   <span className="block text-xs text-muted-foreground">
-                    {describeTargetOptions(targets, config.target_options).join(' · ')}
+                    {describeTargetOptions(targets, config.target_options, t).join(' · ')}
                   </span>
                 )}
               </DetailField>
@@ -261,12 +292,16 @@ function Details({ config }: { config: ScanConfig }) {
           </DetailFieldGrid>
         </DetailSection>
       )}
-      <DetailSection title="Identity">
+      <DetailSection title={t('scans.sheet.identity')}>
         <DetailFieldGrid>
-          <DetailField label="Created by">{config.created_by_name || 'System'}</DetailField>
-          <DetailField label="Created">{formatScanDate(config.created_at)}</DetailField>
-          <DetailField label="ID" full>
-            <DetailCopyId id={config.id} label="Configuration ID" />
+          <DetailField label={t('scans.sheet.createdBy')}>
+            {config.created_by_name || t('scans.sheet.system')}
+          </DetailField>
+          <DetailField label={t('scans.sheet.created')}>
+            {formatScanDate(config.created_at)}
+          </DetailField>
+          <DetailField label={t('scans.sheet.idLabel')} full>
+            <DetailCopyId id={config.id} label={t('scans.sheet.configId')} />
           </DetailField>
         </DetailFieldGrid>
       </DetailSection>

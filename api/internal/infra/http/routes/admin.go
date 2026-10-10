@@ -41,7 +41,7 @@ import (
 //	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
-//	/admin/settings/scope-policy, /admin/tenants/{id}/scope-policy
+//	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
@@ -50,6 +50,8 @@ import (
 //	                                            TOTP code (audited, both logs)
 //	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
 //	                                            code (audited with the reason)
+//	/admin/program-feed       any admin         local bundle switch: super_admin +
+//	                                            reason + fresh TOTP code (audited)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
@@ -174,11 +176,11 @@ func registerAdminRoutes(
 	// Scope-widening approvals (RFC-054 §12.6): any admin reads; a super
 	// admin changes the platform default with a fresh authenticator code and
 	// a reason (checked in the handler; the service audits and notifies).
-	if h.AdminScopePolicy != nil {
+	if h.AdminScanPolicy != nil {
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
-		router.Group("/api/v1/admin/settings/scope-policy", func(r Router) {
-			r.GET("/", h.AdminScopePolicy.GetDefault)
-			r.PUT("/", h.AdminScopePolicy.UpdateDefault, requireSuper)
+		router.Group("/api/v1/admin/settings/scan-approval-policy", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetDefault)
+			r.PUT("/", h.AdminScanPolicy.UpdateDefault, requireSuper)
 		}, adminMiddlewares...)
 	}
 
@@ -204,6 +206,18 @@ func registerAdminRoutes(
 	// an upstream release by URL with a required digest), revoking and moving
 	// a channel need super_admin and are audited. A platform pack reaches the
 	// platform's sensors of every organization.
+	// Program feed sources (RFC-065 §16.6): any admin reads; switching the
+	// operator's local bundle needs super_admin, a reason and a fresh console
+	// authenticator code (checked in the handler, audited high).
+	if h.AdminProgramFeed != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		f := h.AdminProgramFeed
+		router.Group("/api/v1/admin/program-feed", func(r Router) {
+			r.GET("/", f.Status)
+			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper)
+		}, adminMiddlewares...)
+	}
+
 	if h.PlatformContentPack != nil {
 		// Writes: super_admin here; the handler adds the reason, a fresh
 		// console authenticator code (confirmAdminStepUp) and its own admin
@@ -331,9 +345,9 @@ func registerAdminRoutes(
 			// The organization's scope approval policy (RFC-054 §12.6): any
 			// admin reads; a super admin changes it with a fresh code and a
 			// reason (the service writes the critical audit row).
-			if h.AdminScopePolicy != nil {
-				r.GET("/{tenantId}/scope-policy", h.AdminScopePolicy.GetOrganization, read...)
-				r.PUT("/{tenantId}/scope-policy", h.AdminScopePolicy.UpdateOrganization, superWrite, scope)
+			if h.AdminScanPolicy != nil {
+				r.GET("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.GetOrganization, read...)
+				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, superWrite, scope)
 			}
 
 			if h.VerifiedDomain != nil {

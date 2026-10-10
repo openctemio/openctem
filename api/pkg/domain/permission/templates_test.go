@@ -92,7 +92,7 @@ func TestRoleTemplates_NoAdministration(t *testing.T) {
 		permission.NotificationsWrite, permission.NotificationsDelete,
 		permission.SecretStoreWrite, permission.SecretStoreDelete,
 		permission.ScannerTemplatesWrite, permission.TemplateSourcesWrite, permission.ContentPacksWrite,
-		permission.ToolsWrite, permission.TenantToolsWrite, permission.ScanFreezeOverride,
+		permission.ToolsWrite, permission.TenantToolsWrite, permission.ScanWindowsManage, permission.ScanWindowsOverride,
 		permission.CredentialsReveal, permission.EvidenceReveal,
 	}
 	for _, tpl := range permission.RoleTemplates() {

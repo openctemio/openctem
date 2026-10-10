@@ -3,11 +3,9 @@ package scan
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanfreeze"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -22,7 +20,8 @@ import (
 //     (the trigger's NO_SENSOR_FOR_TOOL check, same message);
 //   - the targets: the zone routing preview with the scan type workflow
 //     (the trigger's target resolution, scope exclusions, zone plan);
-//   - a freeze window active now for the zone, for active work.
+//   - the scan windows of the targets at the workflow's highest tier
+//     (Targets.Windows): which wait and until when, which never open.
 //
 // A blocking verdict is one the trigger would refuse with.
 
@@ -70,17 +69,10 @@ type WorkflowPreviewAvailability struct {
 	SensorsExcluded int    `json:"sensors_excluded"`
 }
 
-// WorkflowPreviewFreeze is a freeze window active now.
-type WorkflowPreviewFreeze struct {
-	Window string    `json:"window"`
-	Until  time.Time `json:"until"`
-}
-
 // WorkflowPreview is the preview of a workflow scan.
 type WorkflowPreview struct {
-	Nodes   []WorkflowPreviewNode  `json:"nodes"`
-	Targets *ZoneRoutingPreview    `json:"targets"`
-	Freeze  *WorkflowPreviewFreeze `json:"freeze,omitempty"`
+	Nodes   []WorkflowPreviewNode `json:"nodes"`
+	Targets *ZoneRoutingPreview   `json:"targets"`
 	// Blocking: a trigger with these settings would be refused.
 	Blocking bool `json:"blocking"`
 }
@@ -110,6 +102,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 		AssetGroupIDs: in.AssetGroupIDs,
 		ScanType:      "workflow",
 		ScanZoneID:    in.ScanZoneID,
+		Tier:          new(workflowTier(tpl.Steps)),
 	})
 	if err != nil {
 		return nil, err
@@ -134,21 +127,6 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 	}
 	if targets.Error != nil {
 		out.Blocking = true
-	}
-
-	if s.freezeWindows != nil && workflowActive(tpl.Steps) {
-		var zones []shared.ID
-		if zoneID != nil {
-			zones = []shared.ID{*zoneID}
-		}
-		ws, err := s.freezeWindows.ActiveAt(ctx, tenantID, zones, time.Now())
-		if err != nil {
-			return nil, fmt.Errorf("freeze window check failed: %w", err)
-		}
-		if w := scanfreeze.Latest(ws); w != nil && w.ActiveUntil != nil {
-			out.Freeze = &WorkflowPreviewFreeze{Window: w.Name, Until: *w.ActiveUntil}
-			out.Blocking = true
-		}
 	}
 	return out, nil
 }

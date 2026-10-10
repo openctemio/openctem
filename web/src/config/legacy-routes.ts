@@ -22,6 +22,12 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   // "Connected Apps" was a ComingSoonPage that nothing linked to. Deleted; an
   // old bookmark lands on the integrations catalog instead of a 404.
   { source: '/settings/integrations/apps', destination: '/settings/integrations', permanent: true },
+  // Scope approvals became scan approval (RFC-073).
+  {
+    source: '/admin/system/scope-approvals',
+    destination: '/admin/system/scan-approval',
+    permanent: true,
+  },
   // "CI/CD" was a ComingSoonPage (owner decision D-31). Deleted until a real
   // page exists for the API's CI snippet and quality-gate endpoints.
   { source: '/settings/integrations/cicd', destination: '/settings/integrations', permanent: true },
@@ -85,6 +91,12 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   },
   // Scanning catalogs: configured at onboarding, rarely touched, so they live
   // in Settings › Scanning (owner decision D3). Detail and sub-pages follow.
+  // Scan freeze windows became blackout policies of Scan windows (RFC-067).
+  {
+    source: '/settings/scanning/freeze-windows',
+    destination: '/settings/scanning/scan-windows',
+    permanent: true,
+  },
   {
     source: '/scan-profiles/:path*',
     destination: '/settings/scanning/profiles/:path*',

@@ -372,7 +372,6 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 		if stepRun != nil {
 			cmd.SetStepRunID(stepRun.ID) // the step finishes with its last batch
 		}
-		cmd.FreezeOverride = run.FreezeOverride
 		cmd.DispatchGate = scanDispatchGate(sc, run)
 		if b.Zone != nil {
 			cmd.SetScanZone(b.Zone.ID)

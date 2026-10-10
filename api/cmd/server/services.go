@@ -11,6 +11,7 @@ import (
 	"time"
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
@@ -43,8 +44,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
+	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/app/scopepolicy"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
@@ -70,10 +71,11 @@ import (
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
-	scanfreezeapp "github.com/openctemio/openctem/api/internal/app/scanfreeze"
+	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
@@ -115,6 +117,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/email"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -305,6 +308,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 	return datascope.Caller{
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
+		IsOwner: middleware.IsOwner(ctx),
 		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
 	}
 }
@@ -601,8 +605,16 @@ type Services struct {
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
-	AttackSurface   *attack.SurfaceService
-	ThreatModel     *threatmodel.Service
+	// ProgramFeed imports the public program feed (RFC-065 §16); nil unless
+	// PROGRAMFEED_DIR and PROGRAMFEED_ROOT_KEY_ID are set.
+	ProgramFeed *programfeedapp.Importer
+	// ProgramFeedLocal imports the operator's local bundle; nil unless
+	// PROGRAMFEED_LOCAL_BUNDLE_DIR is set (and it runs only while enabled).
+	ProgramFeedLocal *programfeedapp.Importer
+	// ProgramFeedSettings holds the local bundle switch (admin console).
+	ProgramFeedSettings *postgres.PublicProgramRepository
+	AttackSurface       *attack.SurfaceService
+	ThreatModel         *threatmodel.Service
 	// ScopeLetters manages authorization letters (RFC-065 §13).
 	ScopeLetters *scope.LetterService
 
@@ -656,9 +668,12 @@ type Services struct {
 	// SensorGrant manages per-sensor grants (RFC-052 §5).
 	SensorGrant *sensorgrant.Service
 	ScanZone    *scanzoneapp.Service
-	// ScanFreeze manages scan freeze windows.
-	ScanFreeze *scanfreezeapp.Service
-	Command    *command.Service
+	// ScanWindow manages scan window policies and overrides (RFC-067);
+	// ScanWindowResolver finds what governs targets for the claim, the
+	// trigger and the API.
+	ScanWindow         *scanwindowapp.Service
+	ScanWindowResolver *scanwindowapp.Resolver
+	Command            *command.Service
 	// SensorContent is the scanner content policy and refresh (RFC-031).
 	SensorContent *sensorapp.ContentService
 	// TenableSC queues and follows Tenable.sc connector syncs (RFC-047).
@@ -832,9 +847,9 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
-	// ScopePolicy is the platform policy for scope-widening approvals
+	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
-	ScopePolicy *scopepolicy.Service
+	ScanPolicy *scanpolicy.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
 	// Plans and limits.
@@ -962,6 +977,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
+	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
 	s.Asset.SetScoringConfigProvider(asset.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)
@@ -1015,6 +1031,25 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		programSyncAuditor(s.Audit))
 	s.BountyProgram.SetAssigner(programRepo)
 	s.ProgramAssigner = programRepo
+	// The public program catalog and the feed importer (RFC-065 §16).
+	catalogRepo := postgres.NewPublicProgramRepository(&postgres.DB{DB: deps.DB})
+	s.BountyProgram.SetCatalog(catalogRepo)
+	// Chunked (v2) bundles are fetched through the SSRF-guarded client with
+	// retries, resume and mirror fall-back, and applied chunk by chunk with
+	// a durable checkpoint (docs/architecture/feed-transfer.md); the v1 reader stays the fallback.
+	feedTransfer := programfeedapp.Transfer{URLs: cfg.Scope.ProgramFeedURLs, CacheDir: cfg.Scope.FeedCacheDir,
+		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer}
+	if (cfg.Scope.ProgramFeedDir != "" || len(cfg.Scope.ProgramFeedURLs) > 0) && cfg.Scope.ProgramFeedRootKeyID != "" {
+		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
+			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log).WithChunks(catalogRepo, feedTransfer)
+	}
+	s.ProgramFeedSettings = catalogRepo
+	if cfg.Scope.ProgramFeedLocalBundleDir != "" {
+		localTransfer := feedTransfer
+		localTransfer.URLs, localTransfer.Registerer = nil, nil
+		s.ProgramFeedLocal = programfeedapp.NewLocalImporter(cfg.Scope.ProgramFeedLocalBundleDir, catalogRepo,
+			s.BountyProgram, catalogRepo, log).WithChunks(catalogRepo, localTransfer)
+	}
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
 	// Program rules (RFC-065 §12) are matched against the scope entries.
@@ -1022,6 +1057,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-040 §11.5: program entries reach the job signer's ledger through
 	// the scope service's hook (a no-op without a signer).
 	s.BountyProgram.SetLedger(s.Scope)
+	// Scan windows (RFC-067): policies selected by assets, scope entries,
+	// zones and programs; program testing windows are a source.
+	s.ScanWindowResolver = scanwindowapp.NewResolver(repos.ScanWindowPolicy, repos.ScanWindowOverride)
+	s.ScanWindowResolver.SetAssets(repos.ScanWindowAsset)
+	s.ScanWindowResolver.SetScope(s.Scope, programRepo)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
@@ -1704,9 +1744,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// the scan service exists the gate refuses (fail closed).
 		command.WithScopeRecheck(probeGate)}
 	if s.BountyProgram != nil {
-		// RFC-065 §12: program testing windows, headers, User-Agent and
-		// rate caps travel with each job a program covers.
+		// RFC-065 §12: program headers, User-Agent and rate caps travel
+		// with each job a program covers.
 		cmdOpts = append(cmdOpts, command.WithProgramRules(s.BountyProgram))
+	}
+	if s.ScanWindowResolver != nil {
+		// RFC-067: jobs outside their scan windows wait (program testing
+		// windows included).
+		cmdOpts = append(cmdOpts, command.WithScanWindows(s.ScanWindowResolver))
 	}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
@@ -1792,6 +1837,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// priority and SLA enrichment as ingested ones.
 	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
+	s.VulnMatch.SetLinkReader(repos.Software)
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
@@ -1937,13 +1983,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
+		// A scan refused only because pending scope entries cover its
+		// targets may be saved to start once they are approved (RFC-054 §7).
+		scan.WithScopeWaits(postgres.NewScanScopeWaitRepository(&postgres.DB{DB: deps.DB}), s.Scope),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
-		// Freeze windows: a scheduled run is deferred to the window's end,
-		// any other trigger refused unless overridden (audited).
-		scan.WithFreezeWindows(repos.ScanFreezeWindow),
+		// Scan windows (RFC-067): never-opening targets refuse the run, a
+		// scheduled run with nothing open is deferred to the next opening.
+		scan.WithScanWindows(s.ScanWindowResolver),
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
@@ -1980,7 +2029,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Scan.SetProgramRules(s.BountyProgram) // RFC-065 §12
 	}
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
-	s.ScanFreeze = scanfreezeapp.NewService(repos.ScanFreezeWindow, s.Audit, log)
+	if s.ScanWindowResolver != nil {
+		s.ScanWindow = scanwindowapp.NewService(repos.ScanWindowPolicy, repos.ScanWindowPolicy, repos.ScanWindowOverride, s.ScanWindowResolver, log)
+		s.ScanWindow.SetAudit(s.Audit)
+		s.ScanWindow.SetAssets(repos.ScanWindowAsset, s.DataScope)
+		s.ScanWindow.SetHoldReleaser(repos.Command)
+	}
 	// The validate-command dispatcher gates every probe through the scan
 	// service from here on.
 	probeGate.set(s.Scan)
@@ -2644,6 +2698,16 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// every administrator (RFC-054 §7).
 	if s.Scope != nil {
 		s.Scope.SetEntryPolicy(s.Tenant, repos.MemberLifecycle, s.Notification)
+	}
+
+	// Scan window overrides notify every administrator in the app and on
+	// the security-alert channel (RFC-067 §8).
+	if s.ScanWindow != nil {
+		var channels scanwindowapp.ChannelEnqueuer
+		if s.Outbox != nil {
+			channels = s.Outbox
+		}
+		s.ScanWindow.SetNotifications(repos.MemberLifecycle, s.Notification, channels)
 	}
 }
 

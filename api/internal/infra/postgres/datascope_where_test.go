@@ -24,11 +24,14 @@ func TestFindingWhere_DataScopeAlwaysFailClosed(t *testing.T) {
 	f.TenantID = &tid
 	f.DataScopeUserID = &uid
 	where, _ := r.buildWhereClause(f)
-	if strings.Contains(where, "NOT EXISTS") {
+	if strings.Contains(where, "NOT EXISTS (SELECT 1 FROM user_accessible_assets") {
 		t.Errorf("the scope must have no NOT EXISTS bypass; got: %s", where)
 	}
-	if !strings.Contains(where, "asset_id IN (SELECT asset_id FROM user_accessible_assets") {
+	if !strings.Contains(where, "asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa") {
 		t.Errorf("the scope must limit to the accessible assets; got: %s", where)
+	}
+	if !strings.Contains(where, "ph.program_only") {
+		t.Errorf("the scope must leave out private program assets; got: %s", where)
 	}
 
 	noTenant := vulnerability.NewFindingFilter()
@@ -44,10 +47,10 @@ func TestAssetWhere_DataScopeAlwaysFailClosed(t *testing.T) {
 	uid := shared.NewID()
 
 	where, _ := r.buildWhereClause(assetdom.Filter{TenantID: &tidStr, DataScopeUserID: &uid})
-	if strings.Contains(where, "NOT EXISTS") {
+	if strings.Contains(where, "NOT EXISTS (SELECT 1 FROM user_accessible_assets") {
 		t.Errorf("the scope must have no NOT EXISTS bypass; got: %s", where)
 	}
-	if !strings.Contains(where, "a.id IN (SELECT asset_id FROM user_accessible_assets") {
+	if !strings.Contains(where, "a.id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa") {
 		t.Errorf("the scope must limit assets to the accessible set; got: %s", where)
 	}
 

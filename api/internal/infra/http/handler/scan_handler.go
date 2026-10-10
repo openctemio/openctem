@@ -96,6 +96,11 @@ type CreateScanRequest struct {
 	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	// StartWhenScopeApproved saves the scan although some direct targets are
+	// refused, when every refused one is covered by a scope entry that waits
+	// for approval; the scan starts once those entries are approved, as the
+	// caller, and every gate runs again then. Any other refusal still refuses.
+	StartWhenScopeApproved bool `json:"start_when_scope_approved"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
@@ -133,9 +138,6 @@ type UpdateScanRequest struct {
 // TriggerScanRequest represents the request body for triggering a scan.
 type TriggerScanExecRequest struct {
 	Context map[string]any `json:"context"`
-	// OverrideFreeze starts the scan although a scan freeze window is
-	// active. Needs scans:freeze:override (403 otherwise); audited.
-	OverrideFreeze bool `json:"override_freeze,omitempty"`
 }
 
 // CloneScanRequest represents the request body for cloning a scan.
@@ -188,6 +190,9 @@ type QuickScanResponse struct {
 type CreateScanResponse struct {
 	*ScanDetailResponse
 	CompatibilityWarning *AssetCompatibilityPreviewResponse `json:"compatibility_warning,omitempty"`
+	// StartsWhenScopeApproved: the scan was saved to start once the pending
+	// scope entries covering its targets are approved (do not trigger it now).
+	StartsWhenScopeApproved bool `json:"starts_when_scope_approved,omitempty"`
 }
 
 // AssetCompatibilityPreviewResponse represents asset-scanner compatibility info.
@@ -282,7 +287,7 @@ type ScanStatsResponse struct {
 
 // CreateScan handles POST /api/v1/scans
 // @Summary      Create scan
-// @Description  Create a new scan configuration with scheduling options
+// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -380,6 +385,8 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		MaxRetries:          req.MaxRetries,
 		RetryBackoffSeconds: req.RetryBackoffSeconds,
 		CreatedBy:           userID,
+
+		StartWhenScopeApproved: req.StartWhenScopeApproved,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)
@@ -391,6 +398,9 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	// Build response
 	response := &CreateScanResponse{
 		ScanDetailResponse: h.toScanResponse(r.Context(), s),
+	}
+	if req.StartWhenScopeApproved {
+		response.StartsWhenScopeApproved = h.service.WaitsForScope(r.Context(), s.TenantID, s.ID)
 	}
 
 	// Check compatibility for single scanner scans with asset groups
@@ -851,9 +861,9 @@ func formatBulkMessage(action string, successful, failed int) string {
 // @Param        request  body      TriggerScanExecRequest  false  "Trigger context"
 // @Success      201  {object}  RunResponse
 // @Failure      400  {object}  apierror.Error
-// @Failure      403  {object}  apierror.Error  "override_freeze without scans:freeze:override"
+// @Failure      403  {object}  apierror.Error  "caller may not start this scan"
 // @Failure      404  {object}  apierror.Error
-// @Failure      409  {object}  apierror.Error  "SCAN_FREEZE_ACTIVE: a scan freeze window is active"
+// @Failure      409  {object}  apierror.Error  "SCAN_WINDOW_NEVER_OPENS: a target's scan window never opens"
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /scans/{id}/trigger [post]
@@ -868,17 +878,11 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.OverrideFreeze && !middleware.HasPermission(r.Context(), permission.ScanFreezeOverride.String()) {
-		apierror.Forbidden("Overriding a scan freeze window needs the scans:freeze:override permission").WriteJSON(w)
-		return
-	}
-
 	input := scansvc.TriggerScanExecInput{
-		TenantID:       tenantID,
-		ScanID:         scanID,
-		TriggeredBy:    userID,
-		Context:        req.Context,
-		FreezeOverride: req.OverrideFreeze,
+		TenantID:    tenantID,
+		ScanID:      scanID,
+		TriggeredBy: userID,
+		Context:     req.Context,
 		// A member's own "Run now": allowed on a paused scan (schedule off).
 		Interactive: true,
 	}
@@ -1494,10 +1498,10 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 			e.Details = d
 		}
 		e.WriteJSON(w)
-	case scansvc.AsFrozen(err) != nil:
-		// A scan freeze window is active: 409 with its own code, so the
-		// console can offer the override to those who hold it.
-		apierror.New(http.StatusConflict, apierror.Code(scansvc.CodeScanFrozen), scansvc.AsFrozen(err).Error()).WriteJSON(w)
+	case scanWindowNeverOpens(err) != nil:
+		// A target's scan windows never open: 409 with its own code, naming
+		// the targets and the windows.
+		apierror.New(http.StatusConflict, apierror.Code(scansvc.CodeWindowNeverOpens), scanWindowNeverOpens(err).Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
@@ -1768,4 +1772,14 @@ func toolUnavailableDetails(err error) *ToolUnavailableDetails {
 	}
 	return &ToolUnavailableDetails{Tool: tu.Tool, Step: tu.Step, Status: tu.Status,
 		SensorsTotal: tu.SensorsTotal, SensorsOnline: tu.SensorsOnline, SensorsExcluded: tu.SensorsExcluded, ZoneID: tu.ZoneID}
+}
+
+// scanWindowNeverOpens returns the trigger refusal for targets whose scan
+// windows never open, or nil.
+func scanWindowNeverOpens(err error) *scansvc.NeverOpensError {
+	var ne *scansvc.NeverOpensError
+	if errors.As(err, &ne) {
+		return ne
+	}
+	return nil
 }

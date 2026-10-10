@@ -2,6 +2,7 @@
  * Scan zone API types (RFC-023): /api/v1/scan-zones.
  * Contract: api/docs/architecture/scan-zones.md ("UI contract").
  */
+import type { components } from '@/lib/api/generated/api.types'
 
 /** A tenant-owned set of address ranges and the sensors that may scan them. */
 export interface ScanZone {
@@ -129,4 +130,6 @@ export interface ScanZonePreview {
   warnings: string[]
   /** What the trigger would refuse with, when it would. */
   error?: { code: string; message: string }
+  /** What the scan windows mean for the targets now (absent: none applies). RFC-067. */
+  windows?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.WindowPreview']
 }

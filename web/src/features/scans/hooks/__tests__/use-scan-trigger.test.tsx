@@ -122,48 +122,45 @@ describe('useScanTrigger', () => {
     expect(postMock).toHaveBeenCalledTimes(1)
   })
 
-  describe('scan freeze windows', () => {
-    const frozen = new ApiClientError(
-      'scan freeze window "Patch night" is active until 2026-10-06T04:00:00Z',
-      'SCAN_FREEZE_ACTIVE',
-      409
-    )
-
-    it('offers the override to a member holding scans:freeze:override, and sends it', async () => {
-      canMock.mockImplementation((p) => p === 'scans:freeze:override')
+  describe('scan windows', () => {
+    it('says which targets wait for their scan window when the run starts', async () => {
+      const { toast } = await import('sonner')
       getMock.mockRejectedValue(notFound)
-      postMock.mockRejectedValueOnce(frozen).mockResolvedValueOnce({})
+      postMock.mockResolvedValue({
+        id: 'r1',
+        window_waits: {
+          waiting_count: 2,
+          waiting: [
+            { target: 'a.example.com', next_open_at: '2026-10-12T07:00:00Z', blocking: [] },
+            { target: 'b.example.com', next_open_at: '2026-10-12T07:00:00Z', blocking: [] },
+          ],
+          next_open_at: '2026-10-12T07:00:00Z',
+        },
+      })
       render(<Harness />)
       await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
-
-      const dialog = await screen.findByRole('alertdialog')
-      expect(dialog).toHaveTextContent('Patch night')
-      expect(screen.getByTestId('busy')).toHaveTextContent('true')
-      await userEvent.click(screen.getByRole('button', { name: 'Start anyway' }))
-      expect(postMock).toHaveBeenCalledTimes(2)
+      expect(postMock).toHaveBeenCalledTimes(1)
       expect(postMock.mock.calls[0][1]).toEqual({})
-      expect(postMock.mock.calls[1][1]).toEqual({ override_freeze: true })
-      expect(screen.getByTestId('busy')).toHaveTextContent('false')
+      const call = vi.mocked(toast.success).mock.calls.at(-1)
+      expect(String((call?.[1] as { description?: string })?.description)).toMatch(
+        /^2 targets wait for their scan windows; they open /
+      )
     })
 
-    it('never sends an override without the permission', async () => {
+    it('explains a run whose targets can never be scanned, and offers no override', async () => {
+      const { toast } = await import('sonner')
       getMock.mockRejectedValue(notFound)
-      postMock.mockRejectedValue(frozen)
+      postMock.mockRejectedValue(
+        new ApiClientError('these targets can never be scanned', 'SCAN_WINDOW_NEVER_OPENS', 409)
+      )
       render(<Harness />)
       await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
       expect(postMock).toHaveBeenCalledTimes(1)
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-      expect(screen.getByTestId('busy')).toHaveTextContent('false')
-    })
-
-    it('starts nothing when the override is cancelled', async () => {
-      canMock.mockReturnValue(true)
-      getMock.mockRejectedValue(notFound)
-      postMock.mockRejectedValue(frozen)
-      render(<Harness />)
-      await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
-      await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
-      expect(postMock).toHaveBeenCalledTimes(1)
+      const call = vi.mocked(toast.error).mock.calls.at(-1)
+      expect(String((call?.[1] as { description?: string })?.description)).toContain(
+        'Settings > Scan windows'
+      )
       expect(screen.getByTestId('busy')).toHaveTextContent('false')
     })
   })

@@ -33,6 +33,7 @@ import {
 import type { AssetPropertyFormat } from '@/features/asset-types/registry.generated'
 import { serializeInventoryFilters } from '../lib/inventory-url'
 import type { Asset } from '../types/asset.types'
+import { ProgramTargetBadge } from './program-target-badge'
 
 // Assets not observed for this long are flagged as possibly stale.
 const STALE_AFTER_DAYS = 30
@@ -175,6 +176,7 @@ function yesNo(value: boolean | undefined): string | undefined {
 
 /** Reachability and data sensitivity: the context that weighs a finding's impact. */
 export function ExposureSection({ asset, isControlPlane }: ExposureSectionProps) {
+  const { t } = useTranslation()
   const sensitive = [asset.piiDataExposed && 'PII', asset.phiDataExposed && 'PHI'].filter(
     Boolean
   ) as string[]
@@ -191,6 +193,11 @@ export function ExposureSection({ asset, isControlPlane }: ExposureSectionProps)
           {isControlPlane ? 'Yes, other assets depend on it for security' : undefined}
         </DetailField>
         <DetailField label="Crown jewel">{asset.isCrownJewel ? 'Yes' : undefined}</DetailField>
+        <DetailField label={t('assets.programTarget.field', 'Bug-bounty program')}>
+          {asset.systemTags?.includes('bug-bounty') ? (
+            <ProgramTargetBadge systemTags={asset.systemTags} programOnly={asset.programOnly} />
+          ) : undefined}
+        </DetailField>
         <DetailField label="Data classification">
           {asset.dataClassification ? humanize(asset.dataClassification) : undefined}
         </DetailField>

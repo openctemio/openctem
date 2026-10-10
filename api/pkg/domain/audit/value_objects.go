@@ -80,6 +80,9 @@ const (
 	ActionBountyProgramSynced    Action = "bounty_program.synced"
 	// ActionBountyProgramViewed: someone read a private program (RFC-065 §15.3).
 	ActionBountyProgramViewed Action = "bounty_program.viewed"
+	// ActionBountyProgramSubscribed: an organization follows a public program
+	// (RFC-065 §16).
+	ActionBountyProgramSubscribed Action = "bounty_program.subscribed"
 	// Authorization letters (RFC-065 §13).
 	ActionScopeLetterUploaded Action = "scope_letter.uploaded"
 	ActionScopeLetterRevoked  Action = "scope_letter.revoked"
@@ -615,7 +618,7 @@ func (a Action) IsValid() bool {
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
-		ActionBountyProgramSourceSet, ActionBountyProgramSynced, ActionBountyProgramViewed,
+		ActionBountyProgramSourceSet, ActionBountyProgramSynced, ActionBountyProgramViewed, ActionBountyProgramSubscribed,
 		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,

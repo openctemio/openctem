@@ -209,7 +209,7 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 	// Layer 2 data scope, always strict: a user with no scope row sees no
 	// group.
 	if filter.DataScopeUserID != nil {
-		scope := &shared.DataScope{TenantID: *filter.TenantID, UserID: *filter.DataScopeUserID}
+		scope := &shared.DataScope{TenantID: *filter.TenantID, UserID: *filter.DataScopeUserID, Unrestricted: filter.DataScopeUnrestricted}
 		cond, scopeArgs := dataScopeCondAt("f.asset_id", scope, argOffset)
 		clauses = append(clauses, cond)
 		args = append(args, scopeArgs...)

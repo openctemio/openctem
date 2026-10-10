@@ -592,9 +592,11 @@ func registerRelationshipSuggestionRoutes(
 	h *handler.RelationshipSuggestionHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Suggestions are relationships the platform proposes: they follow the
+	// relationships module, as the console page and the relationship API do.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Suggestion routes under /api/v1/relationships/suggestions
 	router.Group("/api/v1/relationships/suggestions", func(r Router) {
@@ -703,4 +705,14 @@ func registerAssetImportRoutes(
 	router.Group("/api/v1/assets/import", func(r Router) {
 		r.POST("/csv", h.ImportCSV, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
 	}, tenantMiddlewares...)
+}
+
+// registerAssetSoftwareRoutes registers the asset's software list (RFC-066).
+func registerAssetSoftwareRoutes(router Router, h *handler.AssetSoftwareHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/assets/{id}/software", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

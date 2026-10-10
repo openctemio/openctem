@@ -72,6 +72,8 @@ type Service struct {
 	now        func() time.Time
 	// isOwner answers whether the caller owns the tenant (access.go).
 	isOwner OwnerCheck
+	// catalog is the public program catalog (subscription.go).
+	catalog bp.CatalogRepository
 }
 
 // NewService wires the service. Without a FullData checker every caller is

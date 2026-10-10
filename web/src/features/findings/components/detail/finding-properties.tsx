@@ -9,6 +9,7 @@
  * where (asset, source), then when (first / last seen), then trivia.
  */
 
+import { VERSION_MATCH_TOOL } from '@/features/vuln-matching/types'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import Link from '@/components/link'
 import { useId, useState } from 'react'
@@ -135,7 +136,11 @@ export function FindingProperties({
         .join(' · ')
     : ''
   const closed = CLOSED.has(triage.status)
-  const tool = [finding.toolName, finding.toolVersion].filter(Boolean).join(' ')
+  // A version-based match has no scanning tool behind it (RFC-066).
+  const tool =
+    finding.toolName === VERSION_MATCH_TOOL
+      ? 'Version match'
+      : [finding.toolName, finding.toolVersion].filter(Boolean).join(' ')
 
   return (
     <dl className={cn('space-y-1', className)} aria-label="Properties">
