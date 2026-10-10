@@ -129,7 +129,7 @@ here; the dispatch gate and grants apply as before.
 
 ## 8. Migration
 
-`001920_scan_intensity`: the column with default `active` and CHECK; existing
+`001940_scan_intensity`: the column with default `active` and CHECK; existing
 scans are backfilled with the tier they already probe at (single scanner: its
 tool; workflow: the highest step, by tool or capability; unknown counts as
 active), so no scan changes behaviour. Down drops the column. The discovery
