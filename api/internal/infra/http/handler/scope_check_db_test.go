@@ -264,7 +264,15 @@ func TestScopeCheck_ScannerNameSetsTier_DB(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s: status %d: %s", body, w.Code, w.Body.String())
 		}
-		return rec.got[len(rec.got)-1].Tier
+		var out CheckScopeResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatalf("%s: decode: %v", body, err)
+		}
+		got := rec.got[len(rec.got)-1].Tier
+		if out.Tier != got {
+			t.Fatalf("%s: response tier %d, checked at %d", body, out.Tier, got)
+		}
+		return got
 	}
 	want := int(scansvc.ProbeTier("zap"))
 	if want != 2 {

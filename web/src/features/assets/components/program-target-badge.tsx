@@ -25,7 +25,7 @@ export function ProgramTargetBadge({ systemTags, programOnly }: ProgramTargetBad
     <span className="inline-flex flex-wrap items-center gap-1">
       <Badge
         variant="outline"
-        className="border-dashed border-amber-500/60 text-amber-700 dark:text-amber-300"
+        className="border-dashed"
         title={t(
           'assets.programTarget.title',
           'Listed by a bug-bounty program. Tags from programs are set by the platform and cannot be edited.'
