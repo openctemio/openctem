@@ -1,0 +1,22 @@
+- id: attack_surface
+  const: ModuleAttackSurface
+  slug: "attack-surface"
+  name: Attack Surface
+  description: External attack surface overview — what an adversary sees before touching the network
+  icon: Target
+  category: scoping
+  order: 5
+  user_facing: true
+  permission: "assets:read"
+  depends:
+    - {id: assets, kind: hard, reason: "attack surface is computed from assets"}
+  routes:
+    - "/api/v1/attack-surface"
+    - /api/v1/easm
+  mcp:
+    - get_exposure_chains
+  jobs:
+    - CertMonitorController
+    - EASMDNSController
+    - GraphEnrichmentController
+    - ScopeJoinController

@@ -1,0 +1,9 @@
+{
+  "actor.system.upgrade_wildcard_split": "Bản nâng cấp OpenCTEM (đổi quy tắc wildcard)",
+  "actor.system.seed_migration": "Bản nâng cấp OpenCTEM (trước là seed khám phá)",
+  "actor.system.review_rule": "Chấp nhận từ quy tắc rà soát",
+  "actor.system.refusal_fix": "Cho phép từ lần quét bị chặn",
+  "actor.system.system": "OpenCTEM (tự động)",
+  "actor.former": "Cựu thành viên",
+  "actor.member": "Một thành viên"
+}

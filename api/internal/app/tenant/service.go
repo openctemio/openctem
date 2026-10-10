@@ -15,6 +15,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
@@ -2208,6 +2209,52 @@ func (s *TenantService) UpdateVulnMatchingSettings(
 	s.logAudit(ctx, actx, event)
 	out := t.TypedSettings().VulnMatching
 	return &out, nil
+}
+
+// GetLicensePolicySettings returns the organization's license policy, with
+// its defaults filled.
+func (s *TenantService) GetLicensePolicySettings(ctx context.Context, tenantID string) (*licensepolicy.Policy, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	p := t.TypedSettings().LicensePolicy
+	if err := p.Normalize(); err != nil {
+		return nil, fmt.Errorf("%w: %s", tenantdom.ErrSettingsSectionCorrupt, err.Error())
+	}
+	return &p, nil
+}
+
+// UpdateLicensePolicySettings replaces the organization's license policy
+// and audits the before/after values. The caller re-evaluates the links.
+func (s *TenantService) UpdateLicensePolicySettings(
+	ctx context.Context,
+	tenantID string,
+	p licensepolicy.Policy,
+	actx auditapp.AuditContext,
+) (*licensepolicy.Policy, error) {
+	var before licensepolicy.Policy
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionLicensePolicy, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().LicensePolicy
+		return t.UpdateLicensePolicySettings(p)
+	})
+	if err != nil {
+		return nil, err
+	}
+	after := t.TypedSettings().LicensePolicy
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantLicensePolicyUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, after)).
+		WithMessage("License policy updated").
+		WithMetadata("enabled_before", before.Enabled).
+		WithMetadata("enabled_after", after.Enabled).
+		WithMetadata("rules", len(after.Rules))
+	s.logAudit(ctx, actx, event)
+	return &after, nil
 }
 
 // GetEvidenceSettings returns the tenant's finding-evidence settings. The

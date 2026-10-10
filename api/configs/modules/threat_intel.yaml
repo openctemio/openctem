@@ -1,0 +1,14 @@
+- id: threat_intel
+  const: ModuleThreatIntel
+  slug: threat_intel
+  name: Threat Intel
+  description: Threat actors and the threat intelligence workspace
+  icon: Radar
+  category: prioritization
+  order: 20
+  user_facing: true
+  permission: "threat_intel:read"
+  depends:
+    - {id: findings, kind: hard, reason: "threat intel enriches findings"}
+  routes:
+    - "/api/v1/threat-actors"

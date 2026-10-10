@@ -1,0 +1,14 @@
+api/internal/app/command
+api/internal/app/easm
+api/internal/app/scan
+api/internal/app/scanrun
+api/internal/app/validation
+api/internal/infra/http/handler
+api/internal/infra/postgres
+api/pkg/domain/command
+api/pkg/domain/scan
+api/pkg/domain/scanrun
+api/pkg/domain/sensor
+api/pkg/domain/stage
+api/tests/integration
+api/tests/unit

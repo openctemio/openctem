@@ -3,6 +3,7 @@ package scangov
 import (
 	"slices"
 	"strings"
+	"time"
 )
 
 // Facts are what the rules read about a scan definition. The application
@@ -33,6 +34,16 @@ type Facts struct {
 	SensorPlacement string `json:"sensor_placement,omitempty"`
 	// ZoneID the scan is pinned to ("" automatic).
 	ZoneID string `json:"zone_id,omitempty"`
+	// Requester: who asks for the scan or starts the run, and through what
+	// (nil: unknown, which every requester condition catches).
+	Requester *Requester `json:"requester,omitempty"`
+	// At: when the run happens (now for a run; the next scheduled run, else
+	// now, for a request or a preview). Zero: unknown, which an hours
+	// condition catches.
+	At time.Time `json:"at,omitempty"`
+	// Timezone: the organization's timezone, for hours conditions that
+	// name none ("" is UTC).
+	Timezone string `json:"timezone,omitempty"`
 }
 
 // Matches reports whether facts f satisfy conditions c.
@@ -75,6 +86,12 @@ func (c Conditions) Matches(f Facts) bool {
 		}
 	}
 	if len(c.ZoneIDs) > 0 && !slices.Contains(c.ZoneIDs, strings.ToLower(f.ZoneID)) {
+		return false
+	}
+	if !c.requesterMatches(f.Requester) {
+		return false
+	}
+	if c.Hours != nil && !c.Hours.matches(f.At, f.Timezone) {
 		return false
 	}
 	return true

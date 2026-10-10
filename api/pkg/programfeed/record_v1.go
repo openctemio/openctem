@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -29,12 +31,12 @@ type v1Target struct {
 	Notes             string `json:"notes,omitempty"`
 	// Schema 1.1 qualifiers (all optional).
 	AssetType    string   `json:"asset_type,omitempty"`
-	Ports        []int    `json:"ports,omitempty"`
+	Ports        []string `json:"ports,omitempty"`
 	Protocol     string   `json:"protocol,omitempty"`
 	PathPrefix   string   `json:"path_prefix,omitempty"`
 	Environment  string   `json:"environment,omitempty"`
 	Instructions string   `json:"instructions,omitempty"`
-	Requires     []string `json:"requires,omitempty"`
+	Requires     string   `json:"requires,omitempty"`
 }
 
 type v1Rejected struct {
@@ -147,16 +149,54 @@ func v1Item(t v1Target, inScope bool) (bp.Item, error) {
 			label = "other"
 		}
 	}
-	it := bp.ClassifyTyped(t.Value, label)
-	it.InScope, it.Confidence, it.AssetType = inScope, t.Confidence, firstNonEmpty(t.AssetType, t.Type)
-	if inScope && it.Scannable() && (len(t.Ports) > 0 || t.Protocol != "" || t.PathPrefix != "") {
-		// A port-, protocol- or path-restricted target must never become an
-		// entry for the whole host: until scope entries carry those
-		// constraints (RFC-065 §16.8) it stays a program target, not scanned.
-		it.Kind, it.TargetType, it.Pattern = bp.KindOther, "", ""
-		it.Note = "restricted to ports, a protocol or a path: not scanned until the restriction can be enforced"
+	value := t.Value
+	if t.PathPrefix != "" {
+		value = v1PathURL(t.Value, t.PathPrefix)
 	}
+	it := bp.ClassifyTyped(value, label)
+	it.Raw = t.Value
+	if t.PathPrefix != "" {
+		it.Raw = value
+	}
+	it.InScope, it.Confidence, it.AssetType = inScope, t.Confidence, firstNonEmpty(t.AssetType, t.Type)
+	if inScope {
+		// A port or protocol limit becomes the entry's constraint; one the
+		// entry cannot carry leaves the target not scannable (never the
+		// whole host).
+		it = bp.LimitItem(it, t.Ports, t.Protocol)
+	}
+	it.EligibleForBounty, it.MaxSeverity, it.Environment = t.EligibleForBounty, t.MaxSeverity, t.Environment
+	it.Instructions = clipText(t.Instructions, bp.MaxItemInstructions)
+	it.Requires = clipText(t.Requires, bp.MaxItemRequires)
 	return it, nil
+}
+
+// v1PathURL joins a URL target and its path limit ("https://x.com" and
+// "/api/" give "https://x.com/api/"). A limit outside the URL's own path,
+// or anything that is not a web URL, gives "" (not scannable).
+func v1PathURL(value, prefix string) string {
+	u, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || !strings.HasPrefix(prefix, "/") {
+		return ""
+	}
+	base := strings.TrimSuffix(u.EscapedPath(), "/")
+	if base != "" && prefix != base && !strings.HasPrefix(prefix, base+"/") {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host + prefix
+}
+
+// clipText trims s and cuts it to n bytes on a rune boundary.
+func clipText(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 // v1AssetLabel maps the schema 1.1 asset_type onto the classifier's labels;

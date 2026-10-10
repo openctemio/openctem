@@ -8,6 +8,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import { SensorOptInBanner } from '@/features/sensors/components/sensor-opt-in-banner'
 import { ScanWindowsBanner } from '@/features/scan-windows'
+import { ScanApprovalBadge } from '@/features/scans/components/approval/scan-approval-badge'
 import {
   MetricStrip,
   type MetricStripItem,
@@ -602,7 +603,12 @@ function ConfigurationsTab() {
         header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
         cell: ({ row }) => (
           <div className="min-w-0">
-            <p className="font-medium">{row.original.name}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{row.original.name}</p>
+              <ScanApprovalBadge
+                status={(row.original as { approval_status?: string }).approval_status}
+              />
+            </div>
             {row.original.description && (
               <p className="max-w-[300px] truncate text-xs text-muted-foreground">
                 {row.original.description}

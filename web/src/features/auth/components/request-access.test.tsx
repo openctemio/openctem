@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi_ from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi as vi_ } from '@/lib/i18n/dictionaries'
 import { PUBLIC_ROUTES } from '@/lib/middleware/config'
 import {
   confirmAccessRequestAction,

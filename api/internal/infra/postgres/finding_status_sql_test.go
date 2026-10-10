@@ -68,6 +68,8 @@ var findingStatusWriters = map[string]int{
 	"finding_vex_document.go":              1, // vexFalsePositiveFromSQL
 	"softwarematch_repository.go":          1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, staleFromSQL, vexFalsePositiveFromSQL
 	"suppression_repository.go":            2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
+	"license_policy_repository.go":         2, // autoResolveFromSQL (policy no longer flags), fixedReopenFromSQL (flags again)
+	"vex_statement_repository.go":          1, // per-row move decided by vex.Decide (lifecycle edges, TestDecideFollowsLifecycle), guarded by the old status
 }
 
 var (

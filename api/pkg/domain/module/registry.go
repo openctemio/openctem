@@ -1,6 +1,6 @@
 package module
 
-// The module registry (RFC-064): configs/modules.yaml is the single
+// The module registry (RFC-064): configs/modules/<id>.yaml is the single
 // declaration of every module. cmd/gen-modules turns it into
 // registry_generated.go (the constants and Registry), the web constants and
 // the `modules` rows; the maps below are derived from Registry so no second
