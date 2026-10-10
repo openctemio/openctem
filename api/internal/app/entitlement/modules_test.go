@@ -16,7 +16,52 @@ type fakeModuleRepo struct {
 	planModules plan.PlanModules
 	version     int
 	grants      map[shared.ID][]plan.ModuleGrant
+	grace       map[shared.ID]map[string]time.Time
+	planGrace   map[plan.Plan][]string // lost modules started per plan
+	planEnded   map[plan.Plan][]string
 	failGrants  bool
+}
+
+func (f *fakeModuleRepo) ListModuleGrace(_ context.Context, id shared.ID) (map[string]time.Time, error) {
+	return f.grace[id], nil
+}
+
+func (f *fakeModuleRepo) StartModuleGrace(_ context.Context, id shared.ID, ids []string, until time.Time) error {
+	if f.grace == nil {
+		f.grace = map[shared.ID]map[string]time.Time{}
+	}
+	if f.grace[id] == nil {
+		f.grace[id] = map[string]time.Time{}
+	}
+	for _, m := range ids {
+		if _, ok := f.grace[id][m]; !ok {
+			f.grace[id][m] = until
+		}
+	}
+	return nil
+}
+
+func (f *fakeModuleRepo) EndModuleGrace(_ context.Context, id shared.ID, ids []string) error {
+	for _, m := range ids {
+		delete(f.grace[id], m)
+	}
+	return nil
+}
+
+func (f *fakeModuleRepo) StartPlanModuleGrace(_ context.Context, p plan.Plan, ids []string, _ time.Time) error {
+	if f.planGrace == nil {
+		f.planGrace = map[plan.Plan][]string{}
+	}
+	f.planGrace[p] = append(f.planGrace[p], ids...)
+	return nil
+}
+
+func (f *fakeModuleRepo) EndPlanModuleGrace(_ context.Context, p plan.Plan, ids []string) error {
+	if f.planEnded == nil {
+		f.planEnded = map[plan.Plan][]string{}
+	}
+	f.planEnded[p] = append(f.planEnded[p], ids...)
+	return nil
 }
 
 func (f *fakeModuleRepo) GetPlanModules(context.Context) (plan.PlanModules, int, error) {
@@ -108,12 +153,12 @@ func TestNotEntitled_PlanGrantDenyAndSubModules(t *testing.T) {
 	}
 	for _, id := range []string{moduledom.ModuleCompliance, moduledom.ModuleWorkflows, moduledom.ModuleAITriage,
 		moduledom.ModuleAITriageBulk /* follows its parent */} {
-		if !off[id] {
+		if _, ok := off[id]; !ok {
 			t.Errorf("%s should not be entitled", id)
 		}
 	}
 	for _, id := range []string{moduledom.ModuleAttackSurface, moduledom.ModulePentest, moduledom.ModuleFindings, moduledom.ModuleSLA} {
-		if off[id] {
+		if _, ok := off[id]; ok {
 			t.Errorf("%s should be entitled", id)
 		}
 	}
@@ -217,5 +262,102 @@ func TestChangeTenantPlan_NotifiesModules(t *testing.T) {
 	}
 	if len(*changed) != 1 || (*changed)[0] != id.String() {
 		t.Fatalf("notified %v", *changed)
+	}
+}
+
+// Losing a module starts its read-only grace; getting it back ends it.
+func TestGrace_StartsOnLossAndEndsOnRegain(t *testing.T) {
+	mr := &fakeModuleRepo{}
+	svc, repo, _ := newModuleService(t, mr)
+	id := freeTenant(repo)
+	a := newAdmin(t, "ops@example.test", admin.AdminRoleOpsAdmin)
+	ctx := context.Background()
+
+	if err := svc.PutModuleGrant(ctx, a, id, ModuleGrantInput{Module: moduledom.ModulePentest, Kind: plan.GrantDeny, Reason: "contract"}, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	until, ok := mr.grace[id][moduledom.ModulePentest]
+	if !ok || until.Before(time.Now().Add(plan.GracePeriod-time.Minute)) {
+		t.Fatalf("grace after a deny: %v %v, want about 30 days", until, ok)
+	}
+	off, err := svc.NotEntitled(ctx, id.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u := off[moduledom.ModulePentest]; u == nil {
+		t.Fatal("a module in grace must carry its read-only end")
+	}
+	_, list, _ := svc.ModuleEntitlements(ctx, id)
+	for _, e := range list {
+		if e.Module == moduledom.ModulePentest && (e.Source != SourceGrace || e.ReadOnlyUntil == nil || e.Entitled) {
+			t.Fatalf("pentest entitlement %+v, want grace", e)
+		}
+	}
+
+	if err := svc.DeleteModuleGrant(ctx, a, id, moduledom.ModulePentest, "plan decides", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, still := mr.grace[id][moduledom.ModulePentest]; still {
+		t.Fatal("grace must end when the module comes back")
+	}
+}
+
+// After the grace, the module is simply not entitled.
+func TestGrace_Expires(t *testing.T) {
+	mr := &fakeModuleRepo{}
+	svc, repo, _ := newModuleService(t, mr)
+	id := freeTenant(repo)
+	mr.grants = map[shared.ID][]plan.ModuleGrant{id: {{ModuleID: moduledom.ModulePentest, Kind: plan.GrantDeny, Reason: "r"}}}
+	mr.grace = map[shared.ID]map[string]time.Time{id: {moduledom.ModulePentest: time.Now().Add(-time.Minute)}}
+	off, err := svc.NotEntitled(context.Background(), id.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, ok := off[moduledom.ModulePentest]; !ok || u != nil {
+		t.Fatalf("expired grace: %v %v, want not entitled with no read access", u, ok)
+	}
+}
+
+// A trial grant that expired gives the same read-only grace from its expiry.
+func TestGrace_ExpiredTrial(t *testing.T) {
+	mr := &fakeModuleRepo{planModules: plan.PlanModules{plan.Free: {}, plan.Pro: {plan.AllModules}, plan.Enterprise: {plan.AllModules}}, version: 1}
+	svc, repo, _ := newModuleService(t, mr)
+	id := freeTenant(repo)
+	ended := time.Now().Add(-24 * time.Hour)
+	mr.grants = map[shared.ID][]plan.ModuleGrant{id: {{ModuleID: moduledom.ModulePentest, Kind: plan.GrantAdd, Reason: "trial", ExpiresAt: &ended}}}
+	off, err := svc.NotEntitled(context.Background(), id.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := off[moduledom.ModulePentest]
+	if u == nil || !u.Equal(ended.Add(plan.GracePeriod)) {
+		t.Fatalf("expired trial: read-only until %v, want %v", u, ended.Add(plan.GracePeriod))
+	}
+}
+
+// A plan mapping change starts grace for what each plan lost and ends it
+// for what it regained.
+func TestGrace_PlanMappingChange(t *testing.T) {
+	mr := &fakeModuleRepo{planModules: plan.PlanModules{
+		plan.Free: {moduledom.ModuleCompliance}, plan.Pro: {plan.AllModules}, plan.Enterprise: {plan.AllModules},
+	}, version: 1}
+	svc, _, _ := newModuleService(t, mr)
+	a := newAdmin(t, "root@example.test", admin.AdminRoleSuperAdmin)
+	if _, err := svc.UpdatePlanModules(context.Background(), a, plan.PlanModules{
+		plan.Free: {moduledom.ModulePentest}, plan.Pro: {moduledom.ModuleCompliance}, plan.Enterprise: {plan.AllModules},
+	}, 1, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := mr.planGrace[plan.Free]; len(got) != 1 || got[0] != moduledom.ModuleCompliance {
+		t.Fatalf("free lost %v, want compliance", got)
+	}
+	if got := mr.planEnded[plan.Free]; len(got) != 1 || got[0] != moduledom.ModulePentest {
+		t.Fatalf("free regained %v, want pentest", got)
+	}
+	if got := mr.planGrace[plan.Pro]; len(got) == 0 {
+		t.Fatal("pro lost every module but compliance: grace must start")
+	}
+	if got := mr.planGrace[plan.Enterprise]; len(got) != 0 {
+		t.Fatalf("enterprise lost nothing, got %v", got)
 	}
 }

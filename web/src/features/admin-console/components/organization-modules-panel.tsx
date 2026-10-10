@@ -31,6 +31,8 @@ export const SOURCE_LABEL: Record<string, [string, string]> = {
   grant: ['admin.modules.source.grant', 'Granted'],
   deny: ['admin.modules.source.deny', 'Denied'],
   none: ['admin.modules.source.none', 'Not in the plan'],
+  // Lost recently: read-only (view and export) until read_only_until.
+  grace: ['admin.modules.source.grace', 'Read-only'],
 }
 
 type Action = { module: ModuleEntitlement; kind: 'grant' | 'deny' | 'remove' }
@@ -108,10 +110,17 @@ export function OrganizationModulesPanel({ tenantId, canManage }: OrganizationMo
                     <Badge variant={m.entitled ? 'secondary' : 'outline'}>
                       {sourceLabel(m.source)}
                     </Badge>
-                    {m.grant_expires_at && (
+                    {m.grant_expires_at && m.source !== 'grace' && (
                       <span className="text-muted-foreground ms-2 text-xs">
                         {t('admin.modules.until', 'until {date}', {
                           date: new Date(m.grant_expires_at).toLocaleDateString(),
+                        })}
+                      </span>
+                    )}
+                    {m.read_only_until && (
+                      <span className="text-muted-foreground ms-2 text-xs">
+                        {t('admin.modules.until', 'until {date}', {
+                          date: new Date(m.read_only_until).toLocaleDateString(),
                         })}
                       </span>
                     )}
@@ -252,12 +261,12 @@ function ModuleActionDialog({
       : kind === 'deny'
         ? t(
             'admin.modules.denyWhat',
-            'The organization may no longer use this module although its plan includes it. Its data is kept.'
+            'The organization can only read this module for 30 days (view and export; no changes, its jobs stop), then loses it, although its plan includes it. Its data is kept.'
           )
         : module.source === 'grant'
           ? t(
               'admin.modules.removeGrantWhat',
-              'The grant ends and the plan decides again. If the plan does not include this module, the organization loses it now. Its data is kept.'
+              'The grant ends and the plan decides again. If the plan does not include this module, the organization can only read it for 30 days (view and export; no changes, its jobs stop), then loses it. Its data is kept.'
             )
           : t(
               'admin.modules.removeDenyWhat',

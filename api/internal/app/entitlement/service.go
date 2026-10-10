@@ -329,9 +329,13 @@ func (s *Service) ChangeTenantPlan(ctx context.Context, actor *admin.AdminUser, 
 		return plan.ErrInvalid
 	}
 	id := actor.ID()
-	if err := s.repo.SetTenantPlan(ctx, tenantID, p, &id, s.now().UTC()); err != nil {
+	lost, regained, err := s.lostAndRegained(ctx, tenantID, func() error {
+		return s.repo.SetTenantPlan(ctx, tenantID, p, &id, s.now().UTC())
+	})
+	if err != nil {
 		return err
 	}
+	s.applyGrace(ctx, tenantID, lost, regained)
 	s.writeAudit(ctx, actor, ActionTenantPlanSet, &tenantID, "tenant", map[string]any{"plan": string(p)}, ip, ua)
 	// The plan decides the organization's modules: refresh them.
 	if s.modulesChanged != nil {

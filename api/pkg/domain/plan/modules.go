@@ -133,6 +133,11 @@ type ModuleGrant struct {
 // Active reports whether the grant applies at t.
 func (g ModuleGrant) Active(t time.Time) bool { return g.ExpiresAt == nil || t.Before(*g.ExpiresAt) }
 
+// GracePeriod is how long an organization keeps read access to a module it
+// lost (a plan change, a deny, an expired trial): it can read and export its
+// data, but writes are refused and the module's jobs stop at once.
+const GracePeriod = 30 * 24 * time.Hour
+
 // ModuleRepository persists the plan to module map and the grants.
 type ModuleRepository interface {
 	// GetPlanModules returns the stored map and its version, or
@@ -144,4 +149,19 @@ type ModuleRepository interface {
 	ListModuleGrants(ctx context.Context, tenantID shared.ID) ([]ModuleGrant, error)
 	SetModuleGrant(ctx context.Context, g ModuleGrant) error
 	DeleteModuleGrant(ctx context.Context, tenantID shared.ID, moduleID string) error
+
+	// ListModuleGrace returns the organization's read-only grace per module.
+	ListModuleGrace(ctx context.Context, tenantID shared.ID) (map[string]time.Time, error)
+	// StartModuleGrace starts read-only grace until `until` for modules the
+	// organization just lost (a grace already running is kept).
+	StartModuleGrace(ctx context.Context, tenantID shared.ID, moduleIDs []string, until time.Time) error
+	// EndModuleGrace ends the grace of modules the organization has again.
+	EndModuleGrace(ctx context.Context, tenantID shared.ID, moduleIDs []string) error
+	// StartPlanModuleGrace starts grace for every organization on the plan
+	// (Enterprise includes organizations with no plan stored) that has no
+	// active grant of the module.
+	StartPlanModuleGrace(ctx context.Context, p Plan, moduleIDs []string, until time.Time) error
+	// EndPlanModuleGrace ends the grace of those modules for every
+	// organization on the plan.
+	EndPlanModuleGrace(ctx context.Context, p Plan, moduleIDs []string) error
 }
