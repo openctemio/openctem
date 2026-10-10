@@ -140,6 +140,12 @@ func (s *Service) recheck(ctx context.Context, tenantID shared.ID, sensorID *sha
 		if !ok {
 			continue
 		}
+		if max, capped := gate.IntensityMaxTier(); capped && gate.Tier > max {
+			// Never dispatched above the scan's intensity (RFC-071): the
+			// queue never builds such a job; this refuses one that exists.
+			outcomes[c.ID] = s.failAtClaim(ctx, c, intensityExceededMessage, FailureIntensityExceeded)
+			continue
+		}
 		targets := payloadTargets(c.Payload)
 		if len(targets) == 0 {
 			if c.DispatchGate == nil && c.Type != commanddom.CommandTypeScan {
@@ -180,6 +186,14 @@ func recheckGateOf(c *commanddom.Command) (commanddom.DispatchGate, bool) {
 // FailureGateRecordMissing is the failure code of a probing job queued
 // without a record whose targets cannot be read to re-check them.
 const FailureGateRecordMissing = scanrundom.FailureGateRecordMissing
+
+// FailureIntensityExceeded is the failure code of a job whose tier is
+// above the scan intensity it was queued under (RFC-071).
+const FailureIntensityExceeded = scanrundom.FailureIntensityExceeded
+
+// intensityExceededMessage is the error recorded on such a job.
+const intensityExceededMessage = FailureIntensityExceeded +
+	": this job probes above its scan's intensity and is never dispatched"
 
 // gateRecordMissingMessage is the error recorded on such a job.
 const gateRecordMissingMessage = FailureGateRecordMissing +

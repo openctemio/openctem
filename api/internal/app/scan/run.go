@@ -153,7 +153,10 @@ type QuickScanInput struct {
 	WorkflowID  string         `json:"workflow_id" validate:"omitempty,uuid"`
 	Config      map[string]any `json:"config"`
 	Tags        []string       `json:"tags" validate:"max=20,dive,max=50"`
-	CreatedBy   string         `json:"created_by" validate:"omitempty,uuid"`
+	// Intensity is the probe ceiling (RFC-071); "" = the tier the scanner
+	// or workflow probes at.
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	CreatedBy string `json:"created_by" validate:"omitempty,uuid"`
 }
 
 // QuickScanResult represents the result of a quick scan.
@@ -283,6 +286,9 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	// Refused before the ad-hoc scan is stored: a wildcard pattern only for
 	// a tool that takes it as a root domain.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
+		return nil, err
+	}
+	if err := s.applyIntensity(ctx, sc, input.Intensity); err != nil {
 		return nil, err
 	}
 
