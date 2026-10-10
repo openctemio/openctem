@@ -201,7 +201,11 @@ func (e *Enforcer) FullData(ctx context.Context, tenantID shared.ID, actingUserI
 // (admin, full-data role, scope rows), so every path agrees. The
 // API-key marker still comes from the request.
 func (e *Enforcer) ResolveActing(ctx context.Context, tenantID shared.ID, actingUserID string, isAdmin bool) (*shared.DataScope, error) {
-	return e.ResolveFor(ctx, tenantID, Caller{UserID: actingUserID, IsAdmin: isAdmin, APIKey: e.CallerOf(ctx).APIKey})
+	c := e.CallerOf(ctx)
+	// Owner visibility (private program assets) is the request caller's
+	// only: an acting user who is not the caller is never treated as owner.
+	return e.ResolveFor(ctx, tenantID, Caller{UserID: actingUserID, IsAdmin: isAdmin,
+		IsOwner: c.IsOwner && c.UserID == actingUserID, APIKey: c.APIKey})
 }
 
 // ForUser resolves the scope of a user outside a request (no auth context),

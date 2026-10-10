@@ -1070,10 +1070,19 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 
 	// Tags filter
 	if len(filter.Tags) > 0 {
-		// System tags (derived from program links) filter like tags.
-		conditions = append(conditions, fmt.Sprintf("(a.tags && $%d OR a.system_tags && $%d)", argIndex, argIndex))
-		args = append(args, pq.Array(filter.Tags))
-		argIndex++
+		// System tags (derived from program links) filter like tags; a
+		// non-owner matches only the tags of programs not hidden from them
+		// (RFC-065 §15.3).
+		if filter.ProgramTagViewer == nil {
+			conditions = append(conditions, fmt.Sprintf("(a.tags && $%d OR a.system_tags && $%d)", argIndex, argIndex))
+			args = append(args, pq.Array(filter.Tags))
+			argIndex++
+		} else {
+			conditions = append(conditions, fmt.Sprintf("(a.tags && $%d OR (a.system_tags && $%d AND %s))", argIndex, argIndex,
+				visibleProgramLinkSQL("a.id", "a.tenant_id", fmt.Sprintf("$%d::uuid", argIndex+1), fmt.Sprintf("AND t = ANY($%d)", argIndex))))
+			args = append(args, pq.Array(filter.Tags), filter.ProgramTagViewer.String())
+			argIndex += 2
+		}
 	}
 
 	// Full-text search across name, description, and aliases (RFC-001)
@@ -1339,7 +1348,15 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// Bug-bounty program assets (RFC-065 §16.5).
 	switch filter.ProgramAssets {
 	case "only":
-		conditions = append(conditions, "'bug-bounty' = ANY(a.system_tags)")
+		if filter.ProgramTagViewer == nil {
+			conditions = append(conditions, "'bug-bounty' = ANY(a.system_tags)")
+		} else {
+			// Every program link gives 'bug-bounty'; a non-owner counts only
+			// the links of programs not hidden from them.
+			conditions = append(conditions, visibleProgramLinkSQL("a.id", "a.tenant_id", fmt.Sprintf("$%d::uuid", argIndex), ""))
+			args = append(args, filter.ProgramTagViewer.String())
+			argIndex++
+		}
 	case "exclude":
 		conditions = append(conditions, "NOT a.program_only")
 	}
@@ -1945,12 +1962,22 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 	return created, updated, persistedIDs, nil
 }
 
-// ListDistinctTags returns distinct tags across all assets for a tenant.
-// Supports prefix filtering for autocomplete and a limit for result size.
-func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error) {
-	query := `SELECT DISTINCT tag FROM assets, unnest(tags) AS tag WHERE deleted_at IS NULL AND tenant_id = $1`
+// ListDistinctTags returns distinct tags across the assets of a tenant that
+// access admits. Supports prefix filtering for autocomplete and a limit for
+// result size.
+func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, access asset.AccessScope, prefix string, types []string, limit int) ([]string, error) {
+	query := `SELECT DISTINCT tag FROM assets a, unnest(a.tags) AS tag WHERE a.deleted_at IS NULL AND a.tenant_id = $1`
 	args := []any{tenantID.String()}
 	argIdx := 2
+
+	// Layer 2 data scope: the tags of assets the caller may not list
+	// (out of scope, or a private program asset hidden from them) are not
+	// suggested either.
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), argIdx); cond != "" {
+		query += " AND " + cond
+		args = append(args, scopeArgs...)
+		argIdx += len(scopeArgs)
+	}
 
 	if len(types) > 0 {
 		query += fmt.Sprintf(` AND asset_type = ANY($%d)`, argIdx)

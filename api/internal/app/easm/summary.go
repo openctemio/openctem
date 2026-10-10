@@ -16,7 +16,7 @@ import (
 
 // SummaryReader is the aggregate query the overview needs.
 type SummaryReader interface {
-	Summary(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, now time.Time, topN int) (*SummaryData, error)
+	Summary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, now time.Time, topN int) (*SummaryData, error)
 }
 
 // SummaryData is the raw summary the repository returns.
@@ -142,7 +142,9 @@ type MonitoringBlock struct {
 
 // Summary returns the overview for the caller, narrowed to its data scope.
 func (s *Service) Summary(ctx context.Context, tenantID shared.ID) (*Summary, error) {
-	var scopeUser *shared.ID
+	// nil = unrestricted; an Unrestricted scope still leaves the assets
+	// hidden from the caller (private program assets, RFC-065 §15.3) out
+	// of every count and list of the overview.
 	var scope *shared.DataScope
 	if s.dataScope != nil {
 		var err error
@@ -150,51 +152,13 @@ func (s *Service) Summary(ctx context.Context, tenantID shared.ID) (*Summary, er
 		if err != nil {
 			return nil, fmt.Errorf("resolve data scope: %w", err)
 		}
-		if scope.Restricted() {
-			id := scope.UserID
-			scopeUser = &id
-		}
 	}
 	now := s.now()
-	d, err := s.repo.Summary(ctx, tenantID, scopeUser, now, topRisks)
+	d, err := s.repo.Summary(ctx, tenantID, scope, now, topRisks)
 	if err != nil {
 		return nil, err
-	}
-	if scope != nil && scope.Unrestricted {
-		// The rows naming an asset hidden from the viewer (a private
-		// program asset, RFC-065 §15.3) are left out.
-		if d.TopRisks, err = s.visibleRisks(ctx, tenantID, scope, d.TopRisks); err != nil {
-			return nil, err
-		}
 	}
 	return build(d, now), nil
-}
-
-// visibleRisks drops the risk rows whose asset the scope does not admit.
-func (s *Service) visibleRisks(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, rows []RiskRow) ([]RiskRow, error) {
-	ids := make([]shared.ID, 0, len(rows))
-	for _, r := range rows {
-		if r.AssetID != nil {
-			if id, err := shared.IDFromString(*r.AssetID); err == nil {
-				ids = append(ids, id)
-			}
-		}
-	}
-	admit, err := s.dataScope.Filter(ctx, scope, ids)
-	if err != nil {
-		return nil, err
-	}
-	out := rows[:0]
-	for _, r := range rows {
-		if r.AssetID != nil {
-			id, err := shared.IDFromString(*r.AssetID)
-			if err != nil || !admit(id) {
-				continue
-			}
-		}
-		out = append(out, r)
-	}
-	return out, nil
 }
 
 func build(d *SummaryData, now time.Time) *Summary {
