@@ -32,7 +32,8 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	var allValid sql.NullBool
 	if err := db.QueryRowContext(context.Background(), `
 		SELECT COUNT(*), bool_and(convalidated) FROM pg_constraint
-		 WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2`).Scan(&n, &allValid); err != nil {
+		 WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2
+		   AND conparentid = 0`).Scan(&n, &allValid); err != nil {
 		t.Fatal(err)
 	}
 	// 27 from 000921 (scan_sessions dropped by 001148, the type
@@ -41,9 +42,11 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// from CI pipelines (001084), 1 from CI coverage expectations (001099), 1
 	// from CI gate policies (001144), 1 from web endpoints (001270) and 1 from
 	// API descriptions (001299, RFC-056), 1 from software links (001616,
-	// RFC-066), 1 from attribute sources (001652, RFC-069).
-	if n != 37 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 37 validated", n, allValid.Bool)
+	// RFC-066), 1 from attribute sources (001652, RFC-069), 1 from the asset
+	// change timeline (RFC-069; its monthly partitions inherit it and are
+	// not counted).
+	if n != 38 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 38 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing
