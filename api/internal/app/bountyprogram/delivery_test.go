@@ -72,7 +72,7 @@ func TestProgramDeliverySettings(t *testing.T) {
 	if _, err := svc.AttachChannel(ctx, tenant, stranger, p.ID, slack); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("stranger attaches: %v", err)
 	}
-	if _, _, err := svc.SetOrgChannels(ctx, tenant, stranger, p.ID, true, "a long enough reason"); !errors.Is(err, shared.ErrNotFound) {
+	if _, _, err := svc.ChangeOrgChannels(ctx, tenant, stranger, p.ID, true, "a long enough reason"); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("stranger opts in: %v", err)
 	}
 
@@ -90,25 +90,25 @@ func TestProgramDeliverySettings(t *testing.T) {
 	}
 
 	// Only an owner turns organization channels on, with a reason.
-	if _, _, err := svc.SetOrgChannels(ctx, tenant, member, p.ID, true, "a long enough reason"); !errors.Is(err, shared.ErrForbidden) {
+	if _, _, err := svc.ChangeOrgChannels(ctx, tenant, member, p.ID, true, "a long enough reason"); !errors.Is(err, shared.ErrForbidden) {
 		t.Fatalf("member opts in: %v", err)
 	}
 	owner := asOwner(ctx)
-	if _, _, err := svc.SetOrgChannels(owner, tenant, shared.NewID(), p.ID, true, "short"); !errors.Is(err, shared.ErrValidation) {
+	if _, _, err := svc.ChangeOrgChannels(owner, tenant, shared.NewID(), p.ID, true, "short"); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("short reason: %v", err)
 	}
-	if _, _, err := svc.SetOrgChannels(owner, tenant, shared.NewID(), p.ID, true, strings.Repeat("x", maxOptInReason+1)); !errors.Is(err, shared.ErrValidation) {
+	if _, _, err := svc.ChangeOrgChannels(owner, tenant, shared.NewID(), p.ID, true, strings.Repeat("x", maxOptInReason+1)); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("long reason: %v", err)
 	}
 	if st.org[p.ID] {
 		t.Fatal("opt-in stored without a valid reason")
 	}
-	_, reason, err := svc.SetOrgChannels(owner, tenant, shared.NewID(), p.ID, true, "  incident bridge needs it  ")
+	_, reason, err := svc.ChangeOrgChannels(owner, tenant, shared.NewID(), p.ID, true, "  incident bridge needs it  ")
 	if err != nil || !st.org[p.ID] || reason != "incident bridge needs it" {
 		t.Fatalf("owner opt-in: %v %v %q", err, st.org[p.ID], reason)
 	}
 	// Turning it off needs no reason.
-	if _, _, err := svc.SetOrgChannels(owner, tenant, shared.NewID(), p.ID, false, ""); err != nil || st.org[p.ID] {
+	if _, _, err := svc.ChangeOrgChannels(owner, tenant, shared.NewID(), p.ID, false, ""); err != nil || st.org[p.ID] {
 		t.Fatalf("owner opt-out: %v", err)
 	}
 
