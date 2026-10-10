@@ -508,8 +508,10 @@ subscriptions.
   step-up): entries come into effect through `CommitEntries`
   (`program_attestation`), within the program's rules (`forbidden:
   automated_scanning` keeps them at `t0`).
-- Each feed change is applied like a sync (§14): narrowing at once, widening
-  as pending terms; members are notified ("new in-scope asset in program X",
+- Each feed change is applied fail-safe: narrowing alone at once (the
+  program stays in effect); anything that widens, or changed rules or terms,
+  replaces the scope with every entry inactive (`pending_attestation`) until
+  a member accepts the new terms; members are notified ("new in-scope asset in program X",
   "program X changed its terms; accept them again"). A program the feed marks
   closed is suspended.
 - Program-only targets never reach platform sensors (§8, unchanged).
@@ -540,7 +542,39 @@ covers the target.
 - The inventory gets a "Bug bounty" filter and platform/program facets, and a
   "Program target" badge with the program and its attestation state.
 
-### 16.6 Plan
+### 16.6 Implementation notes (feed importer)
+
+- Bundle (until the collector's README fixes it; the record parser is an
+  interface, `programfeed.RecordParser`): `keyset.dsse.json` (payload type
+  `application/vnd.openctem.programfeed.keyset+json`, kind
+  `openctem.programfeed.keyset/v1`), `latest.dsse.json`
+  (`…programfeed.latest+json`, schema `openctem.programfeed.latest/v1`:
+  sequence, snapshot manifest name, created/expires), the snapshot manifest
+  (`…programfeed.manifest+json`, schema `openctem.programfeed/v1`) and
+  `snapshot-programs.jsonl.gz`, one program per line (`id` =
+  `<platform>:<handle>`, name, url, offers_bounty, open, in_scope and
+  out_of_scope `{identifier, type}`, rules, terms_text, source, as_of;
+  unknown fields refused). Deltas follow when the collector publishes them.
+- Verification is shared with other signed feeds (`pkg/feedsign`). Caps:
+  manifest 1 MiB, file 64 MiB, 512 MiB decompressed, 1 MiB per record,
+  50 000 programs, 7-day bundle validity.
+- Source: a directory (`PROGRAM_FEED_DIR`, a mirror or an air-gapped upload)
+  with the pinned root (`PROGRAM_FEED_ROOT_KEY_ID`); both unset, nothing is
+  imported. Controller `program-feed`, hourly.
+- Tables: `public_programs` (global catalog), `program_feed_state` (applied
+  sequence, highest key-set version; the apply locks it and refuses an older
+  sequence), `bounty_programs.public_program_id` (unique per tenant),
+  status `pending_attestation`, source `public_feed` (migration `001710`).
+- Fan-out is a reconcile: every tick, subscribed programs whose terms differ
+  from their catalog program (or that are active while it is closed or
+  removed) are brought up to date, so a failed update is retried.
+- Routes: `GET /programs/catalog` (`programs:read`), `POST
+  /programs/subscriptions {public_program_id}` (`programs:write`, audited
+  `bounty_program.subscribed`); acceptance is `POST
+  /programs/{id}/reactivate` (step-up, terms hash), which records the
+  person's attestation.
+
+### 16.7 Plan
 
 | PR | Content |
 |---|---|

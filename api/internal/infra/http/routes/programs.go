@@ -16,6 +16,11 @@ func registerProgramRoutes(router Router, h *handler.BountyProgramHandler, authM
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 	router.Group("/api/v1/programs", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ProgramsRead))
+		// The public program catalog (public data) and following one of its
+		// programs: entries are created inactive, so no step-up until a
+		// member accepts the terms with /reactivate (RFC-065 §16).
+		r.GET("/catalog", h.Catalog, middleware.Require(permission.ProgramsRead))
+		r.POST("/subscriptions", h.Subscribe, middleware.Require(permission.ProgramsWrite))
 		r.POST("/preview", h.Preview, middleware.Require(permission.ProgramsWrite))
 		r.POST("/", h.Import, middleware.Require(permission.ProgramsWrite), requireStepUp())
 		r.GET("/{id}", h.Get, middleware.Require(permission.ProgramsRead))

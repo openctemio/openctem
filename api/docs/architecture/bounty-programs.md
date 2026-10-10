@@ -130,15 +130,29 @@ scope views (GET /scope/targets[/{id}]) leave out private program entries the ca
 A change of terms locks the program again for everyone until they accept the
 new hash (`POST /programs/{id}/attest`).
 
-## Public program monitor (designed)
+## Public program monitor
 
 Public programs come from a signed feed (`openctemio/programfeed`, built like
-the vulnerability feed of RFC-066 §5.5). The platform verifies and imports it
-into a catalog; an organization subscribes to a program, whose entries stay
-inactive (passive monitoring only) until a member accepts its terms. Feed
-changes apply like a sync: narrowing at once, widening as pending terms.
-Program assets carry provenance and system tags and are left out of the
-organization's own metrics by default (RFC-065 §16).
+the vulnerability feed of RFC-066 §5.5). The platform never calls the
+bug-bounty platforms.
+
+```
+PROGRAM_FEED_DIR ──► programfeed.VerifyDir (pinned root, key-set version ≥ last,
+                     sequence > applied, not expired, size + SHA-256 per file)
+                 ──► ReadPrograms (RecordParser v1, every record validated)
+                 ──► public_programs + program_feed_state (one transaction)
+                 ──► reconcile: subscribed programs whose terms differ
+                        narrowing only  → applied at once, still in effect
+                        widening / rules / terms / pending → entries inactive,
+                                          pending_attestation, admins notified
+                        closed / removed → suspended
+POST /programs/subscriptions ──► tenant program (public_feed), entries inactive
+POST /programs/{id}/reactivate (step-up, terms hash) ──► entries in effect (CommitEntries)
+```
+
+Before acceptance only passive work runs: the active-probe gate finds no
+active entry. Program assets will carry provenance and system tags and be
+left out of the organization's own metrics by default (RFC-065 §16.5).
 
 ## Evidence
 
@@ -168,3 +182,8 @@ the run and hold `scope:read` or `programs:read`.
 | `pkg/domain/bountyprogram/scope_file.go` | scope files: platform CSV, Burp scope JSON, CSV with a column mapping |
 | `internal/app/bountyprogram/access.go` | visibility, per-person attestation, hidden program entries |
 | `migrations/001700_private_programs.*` | visibility, terms text, optional link, attestations |
+| `pkg/feedsign/` | shared verification of signed feed bundles (DSSE, root, key set) |
+| `pkg/programfeed/` | program feed bundle: verify, read records (`V1` parser) |
+| `internal/app/programfeed/`, `internal/infra/controller/program_feed.go` | importer and reconcile |
+| `internal/app/bountyprogram/subscription.go`, `internal/infra/postgres/public_program_repository.go` | subscriptions, catalog |
+| `migrations/001710_public_program_feed.*` | catalog, feed state, subscriptions |

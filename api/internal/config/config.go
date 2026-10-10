@@ -87,6 +87,13 @@ type ScopeConfig struct {
 	// Unset: a public resolver when organizations are self-service (SaaS),
 	// otherwise system.
 	ZoneResolver string
+	// ProgramFeedDir is a directory holding the newest signed public
+	// program feed bundle (PROGRAM_FEED_DIR: a mirror or an upload,
+	// RFC-065 §16); ProgramFeedRootKeyID pins the feed's offline root
+	// (PROGRAM_FEED_ROOT_KEY_ID). Both are needed; unset, no feed is
+	// imported.
+	ProgramFeedDir       string
+	ProgramFeedRootKeyID string
 }
 
 // ScanZoneResolverSystem routes hostnames with the platform's own resolver.
@@ -1395,6 +1402,9 @@ func Load() (*Config, error) {
 			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
 			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
+			// The public program feed (RFC-065 §16).
+			ProgramFeedDir:       getEnv("PROGRAM_FEED_DIR", ""),
+			ProgramFeedRootKeyID: getEnv("PROGRAM_FEED_ROOT_KEY_ID", ""),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
