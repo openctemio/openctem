@@ -125,6 +125,7 @@
   "scope.entry.tierLabel": "Deepest probe allowed",
   "scope.entry.tierTools": "Runs: {tools}.",
   "scope.entry.tierBelow": "Lower tiers are included.",
+  "scope.entry.noTierCeiling": "An entry covers every probe: the scan intensity and the approval rules decide how hard its targets are scanned.",
   "scope.entry.outcomeRequest": "A scope approver reviews it. It authorizes nothing until approved.",
   "scope.entry.outcomeApproval1": "Needs 1 approval from another approver; it authorizes nothing until then.",
   "scope.entry.outcomeApprovalN": "Needs {n} approvals from other approvers; it authorizes nothing until then.",
@@ -198,5 +199,7 @@
   "scope.settings.scanApprovalOpenHint": "Widening takes effect without a second person. Re-authentication, the deny list, audit and notifications still apply.",
   "scope.settings.scanApprovalByPlatform": "Set by your platform administrator.",
   "scope.settings.scanApprovalByOwner": "Set by your owner in Settings > Scan approval.",
-  "scope.approvals.noneNeeded": "Scope entries need no approval while scan approval is not Strict: changes that widen scope take effect at once."
+  "scope.approvals.noneNeeded": "Scope entries need no approval while scan approval is not Strict: changes that widen scope take effect at once.",
+  "scope.refusal.label.constrained": "Limited entry",
+  "scope.refusal.message.constrained": "The scope entries covering this target are limited to some ports or a path, and this job could reach others."
 }

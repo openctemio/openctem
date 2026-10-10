@@ -65,6 +65,7 @@ describe('scope code catalogs', () => {
       'zone_no_sensor',
       'zone_sensor_mismatch',
       'program_platform',
+      'constrained',
     ]
     expect([...SCOPE_REFUSAL_CODES].sort()).toEqual([...server].sort())
   })

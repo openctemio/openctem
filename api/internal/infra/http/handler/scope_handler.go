@@ -310,6 +310,9 @@ type ScopeTargetResponse struct {
 	TenantID   string `json:"tenant_id"`
 	TargetType string `json:"target_type"`
 	Pattern    string `json:"pattern"`
+	// Ports and Protocol limit the entry to a service (empty: none).
+	Ports    string `json:"ports,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
 	// Covers: name, domain_and_subdomains, addresses or pattern.
 	Covers      string `json:"covers"`
 	Description string `json:"description,omitempty"`
@@ -540,6 +543,8 @@ func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 		TenantID:            t.TenantID().String(),
 		TargetType:          t.TargetType().String(),
 		Pattern:             t.Pattern(),
+		Ports:               t.Constraint().Ports,
+		Protocol:            t.Constraint().Protocol,
 		Covers:              t.Covers(),
 		Description:         t.Description(),
 		Reason:              t.Reason(),

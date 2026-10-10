@@ -146,6 +146,19 @@ func TenantMayChoose(m Mode, p PlatformPolicy) bool {
 // target list item; scans are what people approve.
 func ScopeEntriesNeedApproval(m Mode) bool { return m == ModeStrict }
 
+// TierCeilingsEnforced reports whether scope entries' tier ceilings
+// (max_tier) limit what probes their targets may get. Only in Strict: in
+// Off and On an entry names targets, and the scan approval rules decide
+// how hard they may be probed (RFC-073 §6).
+func TierCeilingsEnforced(m Mode) bool { return m == ModeStrict }
+
+// CeilingsChange reports whether moving from mode prev to next turns the
+// tier ceilings on or off, and whether they are enforced after it.
+func CeilingsChange(prev, next Mode) (changed, enforced bool) {
+	enforced = TierCeilingsEnforced(next)
+	return TierCeilingsEnforced(prev) != enforced, enforced
+}
+
 // ErrModeForced refuses an owner's choice the platform policy overrides.
 var ErrModeForced = shared.NewDomainError("SCAN_APPROVAL_FORCED",
 	"your platform administrator sets scan approval for this organization", shared.ErrForbidden)

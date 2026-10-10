@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/component"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/sla"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -46,7 +47,6 @@ func newAssetMutationFixture(t *testing.T) *assetMutationFixture {
 		approvalID:  shared.NewID(),
 	}
 	t.Cleanup(func() {
-		_, _ = db.Exec(`DELETE FROM components WHERE id = $1`, f.componentID.String())
 		for _, id := range []shared.ID{f.owner, f.other} {
 			_, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, id.String())
 		}
@@ -64,11 +64,6 @@ func newAssetMutationFixture(t *testing.T) *assetMutationFixture {
 			[]any{f.slaID.String(), f.owner.String()}},
 		{`INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, 'd11-repo', 'repository')`,
 			[]any{f.assetID.String(), f.owner.String()}},
-		{`INSERT INTO components (id, purl, name, version, ecosystem) VALUES ($1, $2, 'left-pad', '1.0.0', 'npm')`,
-			[]any{f.componentID.String(), "pkg:npm/left-pad@" + f.componentID.String()}},
-		{`INSERT INTO asset_components (id, tenant_id, asset_id, component_id, name, ecosystem, path, dependency_type)
-		  VALUES ($1, $2, $3, $4, 'left-pad', 'npm', 'package.json', 'direct')`,
-			[]any{f.depID.String(), f.owner.String(), f.assetID.String(), f.componentID.String()}},
 		{`INSERT INTO findings (id, tenant_id, source, tool_name, message, severity, fingerprint)
 		  VALUES ($1, $2, 'sast', 'test', 'finding', 'high', $3)`,
 			[]any{findingID.String(), f.owner.String(), "fp-" + findingID.String()}},
@@ -137,34 +132,39 @@ func TestD11_SLAPolicyUpdateAndDeleteStayInTenant(t *testing.T) {
 	}
 }
 
-func TestD11_AssetDependencyStaysInTenant(t *testing.T) {
+// Package links, edges and finding components stay in their tenant: another
+// tenant cannot write a link on the owner's asset, cannot draw an edge
+// between the owner's links, and cannot point its finding at the owner's
+// private package version.
+func TestD11_PackageLinksStayInTenant(t *testing.T) {
 	f := newAssetMutationFixture(t)
 	ctx := context.Background()
-	repo := postgres.NewComponentRepository(&postgres.DB{DB: f.db})
+	productID, versionID := testdb.SeedPackageVersion(t, f.db, f.owner.String(), "pkg:npm/left-pad@1.0.0")
+	link := testdb.SeedPackageLink(t, f.db, f.owner.String(), f.assetID.String(), productID, versionID, "package.json", "direct")
+	otherProduct, otherVersion := testdb.SeedPackageVersion(t, f.db, f.owner.String(), "pkg:npm/right-pad@1.0.0")
+	link2 := testdb.SeedPackageLink(t, f.db, f.owner.String(), f.assetID.String(), otherProduct, otherVersion, "package.json", "transitive")
 
-	if _, err := repo.GetDependency(ctx, f.other, f.depID); err == nil {
-		t.Error("cross-tenant GetDependency returned the owner's row")
+	writer := postgres.NewSoftwarePackageWriter(&postgres.DB{DB: f.db})
+	purl, err := software.ParsePURL("pkg:npm/evil@6.6.6")
+	if err != nil {
+		t.Fatal(err)
 	}
-	now := time.Now()
-	forged := component.ReconstituteAssetDependency(f.depID, f.other, f.assetID, f.componentID,
-		"evil.json", component.DependencyTypeTransitive, "", nil, 1, now, now)
-	if err := repo.UpdateDependency(ctx, forged); !errors.Is(err, shared.ErrNotFound) {
-		t.Errorf("cross-tenant UpdateDependency = %v, want not found", err)
+	if _, err := writer.WritePackages(ctx, f.other, software.PackageSnapshot{
+		AssetID: f.assetID, Packages: []software.PackageNode{{Ref: "e", PURL: purl, Relationship: "direct"}}, Replace: true,
+	}); err == nil {
+		t.Error("another tenant wrote a package link on the owner's asset")
 	}
-	if err := repo.UpdateAssetDependencyParent(ctx, f.other, f.depID, shared.NewID(), 7); !errors.Is(err, shared.ErrNotFound) && err == nil {
-		t.Errorf("cross-tenant UpdateAssetDependencyParent succeeded")
+	if _, err := f.db.Exec(`INSERT INTO asset_software_edges (tenant_id, asset_id, parent_id, child_id) VALUES ($1, $2, $3, $4)`,
+		f.other.String(), f.assetID.String(), link, link2); err == nil {
+		t.Error("another tenant drew an edge between the owner's links")
 	}
-	if err := repo.DeleteDependency(ctx, f.other, f.depID); !errors.Is(err, shared.ErrNotFound) {
-		t.Errorf("cross-tenant DeleteDependency = %v, want not found", err)
+	findingID := shared.NewID()
+	if _, err := f.db.Exec(`INSERT INTO findings (id, tenant_id, source, tool_name, message, severity, fingerprint, component_id)
+		VALUES ($1, $2, 'sca', 'test', 'x', 'high', $3, $4)`, findingID.String(), f.other.String(), "fp-"+findingID.String(), versionID); err == nil {
+		t.Error("another tenant's finding points at the owner's private package version")
 	}
-	if n := f.count(t, `SELECT count(*) FROM asset_components WHERE id = $1 AND path = 'package.json' AND dependency_type = 'direct' AND depth = 0`, f.depID.String()); n != 1 {
-		t.Fatalf("owner's dependency changed by another tenant")
-	}
-	if _, err := repo.GetDependency(ctx, f.owner, f.depID); err != nil {
-		t.Fatalf("owner GetDependency: %v", err)
-	}
-	if err := repo.DeleteDependency(ctx, f.owner, f.depID); err != nil {
-		t.Fatalf("owner DeleteDependency: %v", err)
+	if n := f.count(t, `SELECT count(*) FROM asset_software WHERE asset_id = $1 AND source = 'package'`, f.assetID.String()); n != 2 {
+		t.Fatalf("owner's links changed: %d", n)
 	}
 }
 
