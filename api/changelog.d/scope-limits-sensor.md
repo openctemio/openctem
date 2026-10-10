@@ -1,0 +1,5 @@
+### Security: crawlers and template scanners run inside port- and path-limited scope, enforced by the sensor
+
+- A target that only port- or path-limited scope entries cover (`api.x.com:8443/tcp`, `https://x.com/api/`) can now be crawled, template-scanned or top-ports-scanned by a sensor that reports `scope.limits@1` when jobs are signed. The signed statement carries the target's limits (`limits`: host, ports, protocol, path prefix). The sensor's task forwarder refuses other ports and every HTTP request outside the prefix.
+- The job signer signs a limit only when an approved entry in its ledger allows it: ports a subset, the same protocol, a path at or under the entry's path. It signs a crawler or template scanner on such a target only with limits; malformed limits are `bad_limits`.
+- A sensor without the capability never gets such a job. The claim re-check withholds it for an enforcing sensor instead of narrowing or failing it. Tools that stay on their target (`naabu` with a port list inside the limit, `httpx`) run there on any sensor, as before.

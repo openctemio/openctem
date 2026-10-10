@@ -649,6 +649,16 @@ func (l *Ledger) Check(st *jobsign.Statement, now time.Time) *refusal {
 			"custom template %s is not a version the organization approved", clip(d, 80))
 	}
 	tier := int(stage.ProbeTier(st.Tool))
+	for _, lim := range st.Limits {
+		if !t.limitAllowed(lim, st.Targets, tier, now) {
+			return refuse(http.StatusForbidden, ReasonOutOfLedger,
+				"scope limit on %q (ports %q, path %q) is not within an approved entry", clip(lim.Host, 128), clip(lim.Ports, 64), clip(lim.PathPrefix, 128))
+		}
+	}
+	limitedHosts := map[string]bool{}
+	for _, lim := range st.Limits {
+		limitedHosts[lim.Host] = true
+	}
 	for _, target := range st.Targets {
 		if x := t.excludes(target, now); x != "" {
 			return refuse(http.StatusForbidden, ReasonTargetExcluded, "target %q is excluded (%s)", clip(target, 128), clip(x, 128))
@@ -658,9 +668,12 @@ func (l *Ledger) Check(st *jobsign.Statement, now time.Time) *refusal {
 		}
 		covered, below, limited := t.covers(target, tier, now)
 		switch {
-		case covered && limited != nil && !scopedom.ConstrainedToolAllowed(st.Tool, limited.ports, limited.path):
+		case covered && limited != nil && !scopedom.ConstrainedToolAllowed(st.Tool, limited.ports, limited.path) &&
+			!limitedHosts[jobsign.LimitHost(target)]:
+			// Any tool may run inside a limit the sensor enforces; without
+			// limits in the statement only a tool that stays on its target.
 			return refuse(http.StatusForbidden, ReasonOutOfLedger,
-				"target %q is approved only for some ports or a path, and tool %q could reach others", clip(target, 128), clip(st.Tool, maxToolLength))
+				"target %q is approved only for some ports or a path, and tool %q could reach others without scope limits", clip(target, 128), clip(st.Tool, maxToolLength))
 		case covered:
 		case below:
 			return refuse(http.StatusForbidden, ReasonTierExceedsLedge,
@@ -750,6 +763,32 @@ func (t *tenantLedger) covers(target string, tier int, now time.Time) (covered, 
 		return true, false, lim
 	}
 	return false, below, nil
+}
+
+// limitAllowed reports whether a statement limit lies within an entry in
+// effect at tier that covers one of the statement's targets on the limit's
+// host (an entry without a limit allows any limit: it is narrower).
+func (t *tenantLedger) limitAllowed(lim jobsign.Limit, targets []string, tier int, now time.Time) bool {
+	l := scopedom.EntryLimit{Ports: lim.Ports, Protocol: lim.Protocol, PathPrefix: lim.PathPrefix}
+	for _, target := range targets {
+		if jobsign.LimitHost(target) != lim.Host {
+			continue
+		}
+		forms := scopedom.AuthorityForms(target)
+		for _, e := range t.entries {
+			if jobsign.Expired(e.ExpiresAt, now) || e.MaxTier < tier {
+				continue
+			}
+			tt := scopedom.TargetType(e.Type)
+			c := scopedom.Constraint{Ports: e.Ports, Protocol: e.Protocol}
+			for _, f := range forms {
+				if scopedom.EntryMatches(tt, e.Pattern, c, f) && scopedom.LimitWithin(l, tt, e.Pattern, c) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // ledgerExclusionTypes are the exclusion types that name targets.

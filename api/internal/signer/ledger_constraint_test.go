@@ -84,3 +84,70 @@ func TestLedger_RefusesNonCanonicalPortLimits(t *testing.T) {
 		}
 	}
 }
+
+func signLimited(s *Service, tool string, limits []map[string]any, targets ...string) *refusal {
+	_, ref := s.Sign(statement(func(m map[string]any) {
+		m["tool"], m["targets"] = tool, targets
+		if limits != nil {
+			m["limits"] = limits
+		}
+	}))
+	return ref
+}
+
+// SECURITY: a crawler or template scanner on a target only limited entries
+// cover is signed only with scope limits in the statement, and only limits
+// each within an approved entry that covers the target (the sensor
+// enforces them): never another port, a wider path or another host.
+func TestLedger_LimitedTargetSignedWithLimitsWithinTheLedger(t *testing.T) {
+	s := newService(t, t.TempDir(), newKey(t), enforcing)
+	mustApply(t, s, change(0, nil,
+		putEntry(entry(tEntry, "url", "https://shop.example.com/api*", 1, nil)),
+		putEntry(limited(tEntry2, "domain", "api.example.com", "8443,9000-9010", "tcp"))))
+
+	pathLimit := []map[string]any{{"host": "shop.example.com", "ports": "443", "protocol": "tcp", "path_prefix": "/api"}}
+	if ref := signLimited(s, "katana", pathLimit, "https://shop.example.com/api/"); ref != nil {
+		t.Fatalf("crawler inside the path refused: %+v", ref)
+	}
+	narrower := []map[string]any{{"host": "shop.example.com", "ports": "443", "protocol": "tcp", "path_prefix": "/api/v2"}}
+	if ref := signLimited(s, "katana", narrower, "https://shop.example.com/api/"); ref != nil {
+		t.Fatalf("a narrower path refused: %+v", ref)
+	}
+	if ref := signLimited(s, "nuclei", []map[string]any{{"host": "api.example.com", "ports": "8443", "protocol": "tcp"}}, "api.example.com:8443"); ref != nil {
+		t.Fatalf("template scanner inside the port refused: %+v", ref)
+	}
+	for name, lim := range map[string][]map[string]any{
+		"no limits":    nil,
+		"root path":    {{"host": "shop.example.com", "ports": "443", "protocol": "tcp", "path_prefix": "/"}},
+		"sibling path": {{"host": "shop.example.com", "ports": "443", "protocol": "tcp", "path_prefix": "/apiadmin"}},
+		"no path":      {{"host": "shop.example.com", "ports": "443", "protocol": "tcp"}},
+		"other port":   {{"host": "shop.example.com", "ports": "8443", "protocol": "tcp", "path_prefix": "/api"}},
+		"any protocol": {{"host": "shop.example.com", "ports": "443", "path_prefix": "/api"}},
+	} {
+		if ref := signLimited(s, "katana", lim, "https://shop.example.com/api/"); ref == nil || ref.reason != ReasonOutOfLedger {
+			t.Errorf("%s: %+v", name, ref)
+		}
+	}
+	for name, lim := range map[string][]map[string]any{
+		"wider ports": {{"host": "api.example.com", "ports": "8443-9010", "protocol": "tcp"}},
+		"every port":  {{"host": "api.example.com", "protocol": "tcp"}},
+		"udp":         {{"host": "api.example.com", "ports": "8443", "protocol": "udp"}},
+	} {
+		if ref := signLimited(s, "nuclei", lim, "api.example.com:8443"); ref == nil || ref.reason != ReasonOutOfLedger {
+			t.Errorf("%s: %+v", name, ref)
+		}
+	}
+	// Malformed limits, or limits for a host the job does not target.
+	for name, lim := range map[string][]map[string]any{
+		"other host":     {{"host": "evil.example.org", "ports": "443"}},
+		"not canonical":  {{"host": "shop.example.com", "ports": "443,80"}},
+		"dot segment":    {{"host": "shop.example.com", "ports": "443", "path_prefix": "/api/../admin"}},
+		"encoded":        {{"host": "shop.example.com", "ports": "443", "path_prefix": "/api%2fx"}},
+		"limits nothing": {{"host": "shop.example.com"}},
+		"empty list":     {},
+	} {
+		if ref := signLimited(s, "katana", lim, "https://shop.example.com/api/"); ref == nil || ref.reason != ReasonBadLimits {
+			t.Errorf("%s: %+v", name, ref)
+		}
+	}
+}

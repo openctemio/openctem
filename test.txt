@@ -1,0 +1,7 @@
+ok  	github.com/openctemio/openctem/api/internal/app/scan	0.210s
+ok  	github.com/openctemio/openctem/api/internal/app/easm	0.052s
+ok  	github.com/openctemio/openctem/api/internal/app/ingest	0.187s
+ok  	github.com/openctemio/openctem/api/internal/app/command	0.014s
+ok  	github.com/openctemio/openctem/api/internal/app/scanrun	0.087s
+ok  	github.com/openctemio/openctem/api/internal/app/validation	0.671s
+ok  	github.com/openctemio/openctem/api/internal/app/module	0.036s

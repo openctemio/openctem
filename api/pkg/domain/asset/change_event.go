@@ -88,18 +88,44 @@ func (latest *ChangeEvent) Coalesces(next ChangeEvent, now time.Time) bool {
 	if latest == nil || latest.Attribute != next.Attribute || latest.AssetID != next.AssetID {
 		return false
 	}
-	if len(next.Added) > 0 || len(next.Removed) > 0 || len(latest.Added) > 0 || len(latest.Removed) > 0 {
-		return false // set changes keep their own diff
-	}
 	if latest.Reason != ChangeReasonNewerObservation || next.Reason != ChangeReasonNewerObservation {
 		// Only sources reporting back and forth flap; a person's lock or
 		// release, a TTL expiry or a policy change is always its own entry.
 		return false
 	}
-	if now.Sub(latest.CreatedAt) > FlapWindow || latest.New != next.Old || next.Old == next.New {
+	if now.Sub(latest.CreatedAt) > FlapWindow {
+		return false
+	}
+	if latest.isSetChange() || next.isSetChange() {
+		// A set change folds when it undoes the newest one exactly (the
+		// same elements back and forth); the event then shows the latest
+		// direction with the count.
+		return latest.isSetChange() && next.isSetChange() &&
+			sameElements(next.Added, latest.Removed) && sameElements(next.Removed, latest.Added)
+	}
+	if latest.New != next.Old || next.Old == next.New {
 		return false
 	}
 	return next.New == latest.Old || latest.FlapCount > 1
+}
+
+func (e *ChangeEvent) isSetChange() bool { return len(e.Added) > 0 || len(e.Removed) > 0 }
+
+func sameElements(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, v := range a {
+		seen[v]++
+	}
+	for _, v := range b {
+		if seen[v] == 0 {
+			return false
+		}
+		seen[v]--
+	}
+	return true
 }
 
 // ChangeQuery filters and pages a timeline, newest first.
