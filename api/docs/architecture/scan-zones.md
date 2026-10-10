@@ -154,7 +154,7 @@ Commands without a zone keep the pre-zone rule (pinned to me, or unpinned).
 
 Freeze windows were replaced by scan window policies (RFC-067,
 [scan-windows.md](scan-windows.md)); every freeze window became a blackout
-policy (migration `001660`). A policy whose selector names a zone
+policy (migration `001760`). A policy whose selector names a zone
 (`scan_zone_ids`) governs only the work routed to that zone
 (`commands.scan_zone_id`); a policy without a selector governs the whole
 organization. The claim, the trigger and the scheduler apply them; a manual
