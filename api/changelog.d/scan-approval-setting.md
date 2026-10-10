@@ -14,7 +14,7 @@
   `/api/v1/admin/settings/scan-approval-policy` and
   `/api/v1/admin/tenants/{id}/scan-approval-policy` replace the
   `scope-policy` routes; the body field is `policy` (`tenant_controlled`,
-  `off`, `on`, `strict`). Migration `001830` renames
+  `off`, `on`, `strict`). Migration `001881` renames
   `tenants.scope_approval_policy` to `scan_approval_policy`.
 - **Upgrade note:** an organization override of `disabled` becomes `off`;
   `required` and `tenant_controlled` overrides and a stored platform default
