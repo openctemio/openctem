@@ -402,6 +402,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		AssetSoftware:          handler.NewAssetSoftwareHandler(svc.VulnMatch, repos.Asset, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
