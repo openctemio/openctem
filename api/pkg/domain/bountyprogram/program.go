@@ -227,6 +227,11 @@ type Program struct {
 	// PublicProgramID is the catalog program a subscribed program follows
 	// (scope_source public_feed, RFC-065 §16).
 	PublicProgramID *shared.ID
+	// PublicSyncedSHA256 is the catalog content hash the program was last
+	// brought up to date with; ConfirmedTargets are the feed's inferred
+	// targets a member confirmed.
+	PublicSyncedSHA256 string
+	ConfirmedTargets   []string
 }
 
 // Program errors.

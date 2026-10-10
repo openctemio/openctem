@@ -1178,5 +1178,13 @@
   "programs.source.kinds.program_api": "Platform researcher API",
   "programs.source.kinds.program_file": "Scope file on the program domain",
   "programs.source.kinds.public_feed": "Public program feed",
-  "programs.form.requestFailed": "The request failed."
+  "programs.form.requestFailed": "The request failed.",
+  "programs.suggestions.title": "Suggested targets ({count})",
+  "programs.suggestions.hint": "The feed suggests these targets but the program did not publish them as its own scope. They are never scanned unless you confirm that they belong to the program; confirming asks for a new acceptance of the terms.",
+  "programs.suggestions.byPlatform": "listed by the hosting platform",
+  "programs.suggestions.inferred": "inferred by the feed",
+  "programs.suggestions.confirm": "Confirm selected targets",
+  "programs.suggestions.done": "Targets confirmed: accept the terms again to test them",
+  "programs.catalog.countsSuggested": "{in} in scope, {suggested} suggested, {out} out of scope; from {source}, {date}",
+  "programs.catalog.platformNotice": "Listed by {platform}: the data comes from that platform and stays subject to its terms."
 }

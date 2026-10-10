@@ -88,9 +88,9 @@ type ScopeConfig struct {
 	// otherwise system.
 	ZoneResolver string
 	// ProgramFeedDir is a directory holding the newest signed public
-	// program feed bundle (PROGRAM_FEED_DIR: a mirror or an upload,
+	// program feed bundle (PROGRAMFEED_DIR: a mirror or an upload,
 	// RFC-065 §16); ProgramFeedRootKeyID pins the feed's offline root
-	// (PROGRAM_FEED_ROOT_KEY_ID). Both are needed; unset, no feed is
+	// (PROGRAMFEED_ROOT_KEY_ID). Both are needed; unset, no feed is
 	// imported.
 	ProgramFeedDir       string
 	ProgramFeedRootKeyID string
@@ -1403,8 +1403,8 @@ func Load() (*Config, error) {
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
 			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
 			// The public program feed (RFC-065 §16).
-			ProgramFeedDir:       getEnv("PROGRAM_FEED_DIR", ""),
-			ProgramFeedRootKeyID: getEnv("PROGRAM_FEED_ROOT_KEY_ID", ""),
+			ProgramFeedDir:       getEnv("PROGRAMFEED_DIR", ""),
+			ProgramFeedRootKeyID: getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),

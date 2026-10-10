@@ -137,7 +137,7 @@ the vulnerability feed of RFC-066 §5.5). The platform never calls the
 bug-bounty platforms.
 
 ```
-PROGRAM_FEED_DIR ──► programfeed.VerifyDir (pinned root, key-set version ≥ last,
+PROGRAMFEED_DIR ──► programfeed.VerifyDir (pinned root, key-set version ≥ last,
                      sequence > applied, not expired, size + SHA-256 per file)
                  ──► ReadPrograms (RecordParser v1, every record validated)
                  ──► public_programs + program_feed_state (one transaction)

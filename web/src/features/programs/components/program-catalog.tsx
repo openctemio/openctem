@@ -87,16 +87,26 @@ export function ProgramCatalog({ onFollowed, onError }: ProgramCatalogProps) {
                 </div>
                 <p className="text-muted-foreground text-xs">
                   {t(
-                    'programs.catalog.counts',
-                    '{in} in scope, {out} out of scope; from {source}, {date}',
+                    'programs.catalog.countsSuggested',
+                    '{in} in scope, {suggested} suggested, {out} out of scope; from {source}, {date}',
                     {
                       in: p.in_scope,
+                      suggested: p.suggested,
                       out: p.out_of_scope,
-                      source: p.source,
+                      source: p.provenance?.dataset || p.source,
                       date: new Date(p.as_of).toLocaleDateString(),
                     }
                   )}
                 </p>
+                {p.provenance?.original_platform && (
+                  <p className="text-muted-foreground text-xs">
+                    {t(
+                      'programs.catalog.platformNotice',
+                      'Listed by {platform}: the data comes from that platform and stays subject to its terms.',
+                      { platform: p.provenance.original_platform }
+                    )}
+                  </p>
+                )}
               </div>
               <Button size="sm" disabled={busy !== null} onClick={() => follow(p.id)}>
                 {busy === p.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

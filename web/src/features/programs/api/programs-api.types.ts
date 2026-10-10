@@ -122,6 +122,8 @@ export interface ProgramItem {
   pattern?: string
   asset_type?: string
   note?: string
+  /** Feed programs: published, published_by_platform or inferred. */
+  confidence?: 'published' | 'published_by_platform' | 'inferred'
 }
 
 export type PlannedEntryStatus = 'create' | 'keep' | 'already_covered' | 'refused'
@@ -187,22 +189,39 @@ export interface ProgramDetail extends Program {
 }
 
 /** A program of the public catalog (RFC-065 §16). */
+/** Where a feed record comes from (dataset fields for public datasets). */
+export interface FeedProvenance {
+  source: string
+  source_url: string
+  fetched_at: string
+  dataset?: string
+  dataset_commit?: string
+  original_platform?: string
+  original_url?: string
+}
+
 export interface PublicProgram {
   id: string
   feed_id: string
+  source: string
   platform: string
   handle: string
   name: string
   url: string
+  type: 'bounty' | 'vdp'
+  status: 'open' | 'paused' | 'closed'
   offers_bounty: boolean
+  scope_published: boolean
   in_scope: number
+  suggested: number
   out_of_scope: number
   items: ProgramItem[]
   rules: ProgramRules
   terms_text: string
-  terms_sha256: string
-  source: string
+  terms_url?: string
+  terms_doc_sha256?: string
   as_of: string
+  provenance: FeedProvenance
 }
 
 export interface PublicProgramPage {
