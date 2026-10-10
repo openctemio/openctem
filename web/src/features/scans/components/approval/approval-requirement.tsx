@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * What the organization's scan approval rules ask of a scan (RFC-072): the
+ * What the organization's scan approval rules ask of a scan (RFC-073): the
  * rules that caught it, how many approvers, who, and the evidence. Used by
  * the New Scan review and the approvals inbox.
  */

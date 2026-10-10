@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Settings > Scan approval (RFC-072): the organization's mode (Off, On,
+ * Settings > Scan approval (RFC-073): the organization's mode (Off, On,
  * Strict; owner only) and its approval rules (owner or administrator):
  * apply a preset, turn a rule off, put it in monitor mode, or remove it.
  * Every change asks for a reason; the API asks for re-authentication. The
