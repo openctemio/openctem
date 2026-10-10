@@ -420,6 +420,10 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		}
 	}
 
+	// Subdomain discovery enumerates from the apex of a wildcard selector,
+	// not from the known names the run expanded under it (RFC-068).
+	stepTargets = scanapp.DiscoverySeeds(resolved.Name, stepTargets, run.Context)
+
 	// The hop router: seeds, plus what the predecessors produced that passes
 	// the per-hop gate; recorded once per (run, stage).
 	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets)

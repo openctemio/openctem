@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -66,6 +67,7 @@ type Service struct {
 	compRepo     component.Repository
 	webEndpoints webendpoint.Repository
 	software     *softwareRecorder
+	attributes   AttributeReconciler
 	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
@@ -446,6 +448,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Load tenant settings once for both asset processing and finding processing
 	var tenantRules branch.BranchTypeRules
 	var assetIdentityCfg *CorrelationConfig
+	reconcilePolicy := asset.DefaultReconciliationPolicy()
 	if s.tenantRepo != nil {
 		if t, err := s.tenantRepo.GetByID(ctx, tenantID); err == nil && t != nil {
 			settings := t.TypedSettings()
@@ -456,8 +459,21 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 				aiSettings.StaleAssetDays, aiSettings.MaxIPsPerAsset,
 			)
 			assetIdentityCfg = &cfg
+			if p, perr := settings.AssetReconciliation.Policy(); perr == nil {
+				reconcilePolicy = p
+			}
 		}
 	}
+	// Who this report is for attribute reconciliation (RFC-069), and when
+	// its source saw what it reports.
+	sourceKind, sourceName := reportSource(binding, opts, report)
+	clampReportTimestamp(report, binding, time.Now())
+	observedAt := reportObservedAt(report, time.Now())
+	sourceRun := binding.Run()
+	if binding.Kind == BindingTrusted {
+		sourceRun = opts.SourceRun
+	}
+	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind)
 
 	// Step 1: Process assets using batch operations
 	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
@@ -483,6 +499,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 
 	output.AssetMap = assetMap
+
+	// The tracked values this report states (RFC-069), before findings are
+	// prioritized on the assets' criticality and exposure.
+	s.recordAttributes(ctx, tenantID, scope, attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}, observedAt, report, assetMap)
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
@@ -547,6 +567,14 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		// createIngestAuditLog derives run status from len(output.Errors). Without
 		// this the degraded run was silently audited as a success.
 		addError(output, fmt.Sprintf("cve upsert failed: %v", cveErr))
+	}
+
+	// The version-match tool name belongs to the inventory matcher (RFC-066):
+	// only it may create findings under it, and only its own findings are
+	// closed when software changes. A report claiming it is refused.
+	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
+		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		report.Findings = nil
 	}
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)

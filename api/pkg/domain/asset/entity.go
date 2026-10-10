@@ -583,8 +583,19 @@ func (a *Asset) DecrementFindingCount() {
 // sending a future timestamp. This defends against clock-skewed
 // sensors that would otherwise make an asset "never stale".
 func (a *Asset) MarkSeen() {
+	a.MarkSeenAt(time.Now())
+}
+
+// MarkSeenAt is MarkSeen for an observation made at observedAt (a report's
+// timestamp): last_seen is the time the source saw the asset, not the time
+// the report arrived, so the store can keep the newer of two observations
+// whatever order they arrive in. A time in the future counts as now.
+func (a *Asset) MarkSeenAt(observedAt time.Time) {
 	now := time.Now().UTC()
-	a.lastSeen = now
+	if observedAt.IsZero() || observedAt.After(now) {
+		observedAt = now
+	}
+	a.lastSeen = observedAt.UTC()
 	a.updatedAt = now
 
 	if a.manualStatusOverride || a.status == StatusArchived {

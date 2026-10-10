@@ -44,6 +44,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scopepolicy"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
@@ -82,6 +83,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
@@ -735,6 +737,8 @@ type Services struct {
 
 	// Priority Classification (RFC-004)
 	PriorityClassification *finding.PriorityClassificationService
+	// VulnMatch is inventory vulnerability matching (RFC-066).
+	VulnMatch *vulnmatch.Service
 
 	// B1/B2 reclassification pipeline — memory queue,
 	// publisher (called from control CRUD), reclassifier (consumed
@@ -831,6 +835,9 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// ScopePolicy is the platform policy for scope-widening approvals
+	// (wired in wireScopeApprovers, after the email service exists).
+	ScopePolicy *scopepolicy.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
 	// Plans and limits.
@@ -967,6 +974,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// through the full load-modify-save path.
 	s.Asset.SetLifecycleRepository(repos.Asset)
 	s.Asset.SetStateHistoryRepository(repos.AssetStateHistory)
+	// Which source decides an asset attribute (RFC-069).
+	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
+	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	// Business-aligned risk scoring: score an asset's EFFECTIVE criticality —
 	// MAX(own, its business unit, the business services it powers) — the SAME
 	// floor rule (and the SAME lookup adapter) that finding-priority uses, so
@@ -1782,10 +1792,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
-	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)             // Web endpoints under their origin asset (RFC-056)
-	s.Ingest.SetSoftwareRepository(repos.Software)                   // Software inventory capture (RFC-066)
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
+	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
+	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
+	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)
+	// Inventory vulnerability matching (RFC-066): told by ingest when an
+	// organization's software changes; findings go through the same
+	// priority and SLA enrichment as ingested ones.
+	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
+	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
+	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
@@ -1930,6 +1947,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
+		// A scan refused only because pending scope entries cover its
+		// targets may be saved to start once they are approved (RFC-054 §7).
+		scan.WithScopeWaits(postgres.NewScanScopeWaitRepository(&postgres.DB{DB: deps.DB}), s.Scope),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
@@ -1966,6 +1986,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	// Wildcard domains and inventory-mode CIDRs are expanded from the
+	// inventory at each run start (RFC-068).
+	s.Scan.SetSelectorAssets(repos.ScanSelector)
 	if s.BountyProgram != nil {
 		s.Scan.SetProgramRules(s.BountyProgram) // RFC-065 §12
 	}

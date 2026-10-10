@@ -13,7 +13,15 @@ export const SCAN_TYPES = ['workflow', 'single'] as const
 export type ScanType = (typeof SCAN_TYPES)[number]
 
 // Schedule types
-export const SCHEDULE_TYPES = ['manual', 'daily', 'weekly', 'monthly', 'crontab', 'rrule'] as const
+export const SCHEDULE_TYPES = [
+  'manual',
+  'once',
+  'daily',
+  'weekly',
+  'monthly',
+  'crontab',
+  'rrule',
+] as const
 export type ScheduleType = (typeof SCHEDULE_TYPES)[number]
 
 // Status types
@@ -32,6 +40,7 @@ export const SCAN_TYPE_LABELS: Record<ScanType, string> = {
 
 export const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
   manual: 'Manual',
+  once: 'Once',
   daily: 'Daily',
   weekly: 'Weekly',
   monthly: 'Monthly',
@@ -68,6 +77,32 @@ export interface ScannerConfigWarning {
 }
 
 /**
+ * How each run resolves the dynamic selectors among a scan's targets
+ * (`*.example.com`, CIDRs) from the inventory (RFC-068). All optional:
+ * absent = CIDRs swept, active assets only, no freshness window.
+ */
+export interface ScanTargetOptions {
+  /** `sweep` hands a CIDR to the scanner whole; `inventory` scans the known hosts in it. */
+  cidr_mode?: 'sweep' | 'inventory'
+  /** Only assets seen in the last N days (0-365; 0 or absent = any). */
+  seen_within_days?: number
+  /** Also take assets marked stale or inactive (archived ones never). */
+  include_stale?: boolean
+}
+
+/** What one selector added to a run when it started. */
+export interface RunTargetExpansion {
+  selector: string
+  kind: 'wildcard' | 'cidr'
+  /** Inventory assets it covered (at most the cap). */
+  matched: number
+  /** More assets than one selector may add; the most recently seen were taken. */
+  capped?: boolean
+  /** Up to 10 names, most recently seen first. */
+  sample?: string[]
+}
+
+/**
  * Scan Configuration entity
  */
 export interface ScanConfig {
@@ -80,6 +115,8 @@ export interface ScanConfig {
   asset_group_id?: string // Legacy single asset group
   asset_group_ids?: string[] // Multiple asset groups
   targets?: string[] // Direct targets (individual assets or custom)
+  /** How the run resolves `*.x` and CIDR targets (RFC-068). */
+  target_options?: ScanTargetOptions
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string
@@ -94,6 +131,8 @@ export interface ScanConfig {
   schedule_day?: number
   schedule_time?: string
   schedule_timezone: string
+  /** The one run of a once schedule (RFC 3339, UTC). */
+  schedule_run_at?: string
   next_run_at?: string
   tags?: string[]
   run_on_tenant_runner: boolean
@@ -168,6 +207,8 @@ export interface CreateScanConfigRequest {
   targets?: string[] // Direct targets (domains, IPs, URLs)
   /** Inventory assets to scan, named by the API (at most 1000 with targets). */
   asset_ids?: string[]
+  /** How each run resolves `*.x` and CIDR targets (RFC-068). */
+  target_options?: ScanTargetOptions
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string
@@ -179,6 +220,8 @@ export interface CreateScanConfigRequest {
   schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
+  /** The one run of a once schedule (RFC 3339), a minute to a year ahead. */
+  run_at?: string
   timezone?: string
   tags?: string[]
   run_on_tenant_runner?: boolean
@@ -192,6 +235,12 @@ export interface CreateScanConfigRequest {
   max_retries?: number
   /** Initial backoff seconds (10-86400, default 60). Exponential per attempt. */
   retry_backoff_seconds?: number
+  /**
+   * Save the scan although direct targets are refused, when every refused one
+   * is covered by a scope entry waiting for approval: it starts once they are
+   * approved (RFC-054 §12.8). The response says `starts_when_scope_approved`.
+   */
+  start_when_scope_approved?: boolean
 }
 
 /**
@@ -200,6 +249,8 @@ export interface CreateScanConfigRequest {
 export interface UpdateScanConfigRequest {
   name?: string
   description?: string
+  /** Omitted = unchanged; `{}` resets every option to its default. */
+  target_options?: ScanTargetOptions
   scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
@@ -210,6 +261,8 @@ export interface UpdateScanConfigRequest {
   schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
+  /** The one run of a once schedule (RFC 3339), a minute to a year ahead. */
+  run_at?: string
   timezone?: string
   tags?: string[]
   run_on_tenant_runner?: boolean
@@ -351,6 +404,8 @@ export interface RunDispatch {
   uncovered_targets?: RunUncoveredTarget[]
   zone_routing?: RunZoneRouting
   sensor_routing?: 'tenant' | 'platform'
+  /** What each `*.x` or inventory-mode CIDR target added when the run started (RFC-068). */
+  target_expansion?: RunTargetExpansion[]
 }
 
 /**

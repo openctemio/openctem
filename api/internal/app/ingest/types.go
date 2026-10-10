@@ -120,6 +120,14 @@ type Options struct {
 	// response does not tell a hidden asset from a missing one. Nil means
 	// unrestricted.
 	Actor ActorScope
+	// SourceKind and SourceName say what a server-side ingest is (an
+	// import, an integration) for attribute reconciliation (RFC-069). Only
+	// a trusted binding may set them; every sensor and CI report is a scan.
+	SourceKind asset.SourceKind
+	SourceName string
+	// SourceRun is the import, sync run or feed sequence of a server-side
+	// ingest (trusted binding only; informational).
+	SourceRun string
 }
 
 // ActorScope is the data scope of the person behind an upload.

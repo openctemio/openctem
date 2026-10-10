@@ -22,6 +22,9 @@ type Scan struct {
 	AssetGroupID  shared.ID   // Optional: primary asset group (legacy, for single asset group)
 	AssetGroupIDs []shared.ID // Optional: multiple asset groups (NEW)
 	Targets       []string    // Optional: direct target list (domains, IPs, URLs)
+	// TargetOptions tunes how each run resolves the selectors among Targets
+	// (wildcard domains, CIDRs) against the inventory (RFC-068).
+	TargetOptions TargetOptions
 
 	// Scan Type
 	ScanType       ScanType
@@ -37,7 +40,10 @@ type Scan struct {
 	ScheduleDay      *int       // Day of week (0-6) or month (1-31)
 	ScheduleTime     *time.Time // Time of day to run
 	ScheduleTimezone string
-	NextRunAt        *time.Time // Pre-computed next run time
+	// ScheduleRunAt is the one run of a once schedule (UTC). The timezone
+	// only says how to show it.
+	ScheduleRunAt *time.Time
+	NextRunAt     *time.Time // Pre-computed next run time
 
 	// Routing
 	Tags              []string         // Route to sensors with matching tags
@@ -289,6 +295,7 @@ func (s *Scan) SetSchedule(scheduleType ScheduleType, cron string, day *int, t *
 	s.ScheduleType = scheduleType
 	s.ScheduleCron = cron
 	s.ScheduleRRule = ""
+	s.ScheduleRunAt = nil
 	s.ScheduleDay = day
 	s.ScheduleTime = t
 	s.ScheduleTimezone = timezone
@@ -396,6 +403,12 @@ func (s *Scan) occurrenceAfter(t time.Time) *time.Time {
 	var next time.Time
 
 	switch s.ScheduleType {
+	case ScheduleOnce:
+		// One occurrence: the run time, while it is still ahead of t.
+		if s.ScheduleRunAt == nil || !s.ScheduleRunAt.After(t) {
+			return nil
+		}
+		next = *s.ScheduleRunAt
 	case ScheduleDaily:
 		next = nextAtTimeOfDay(now, s.ScheduleTime, 1)
 	case ScheduleWeekly:
@@ -808,11 +821,14 @@ func (s *Scan) Clone(newName string) *Scan {
 		ScanWorkflowID:      s.ScanWorkflowID,
 		ScannerName:         s.ScannerName,
 		TargetsPerJob:       s.TargetsPerJob,
+		TargetOptions:       s.TargetOptions,
 		ScheduleType:        s.ScheduleType,
 		ScheduleCron:        s.ScheduleCron,
 		ScheduleDay:         s.ScheduleDay,
 		ScheduleTime:        s.ScheduleTime,
 		ScheduleTimezone:    s.ScheduleTimezone,
+		ScheduleRRule:       s.ScheduleRRule,
+		ScheduleRunAt:       s.ScheduleRunAt,
 		Tags:                make([]string, len(s.Tags)),
 		RunOnTenantRunner:   s.RunOnTenantRunner,
 		SensorPreference:    s.SensorPreference,

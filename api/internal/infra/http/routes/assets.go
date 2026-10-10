@@ -33,6 +33,8 @@ func registerAssetRoutes(
 		r.GET("/facets", h.GetFacets, middleware.Require(permission.AssetsRead))
 		r.GET("/overview", h.GetInventoryOverview, middleware.Require(permission.AssetsRead))
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
+		// The organization's recent asset changes (RFC-069 timeline).
+		r.GET("/changes", h.ListTenantChanges, middleware.Require(permission.AssetsRead))
 
 		// Bulk operations (must be before /{id} patterns to avoid route conflicts)
 		r.POST("/bulk/sync", h.BulkSync, middleware.Require(permission.AssetsWrite))
@@ -52,6 +54,12 @@ func registerAssetRoutes(
 		r.PUT("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
 		r.PUT("/{id}/repository", h.UpdateRepository, middleware.Require(permission.AssetsWrite))
 		r.PATCH("/{id}/crown-jewel", h.UpdateCrownJewel, middleware.Require(permission.AssetsWrite))
+
+		// Where the values come from, and a person's locks (RFC-069).
+		r.GET("/{id}/attribute-sources", h.GetAttributeSources, middleware.Require(permission.AssetsRead))
+		r.PUT("/{id}/attribute-sources/{attribute}/lock", h.LockAttribute, middleware.Require(permission.AssetsWrite))
+		r.DELETE("/{id}/attribute-sources/{attribute}/lock", h.ReleaseAttributeLock, middleware.Require(permission.AssetsWrite))
+		r.GET("/{id}/changes", h.ListAssetChanges, middleware.Require(permission.AssetsRead))
 
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))

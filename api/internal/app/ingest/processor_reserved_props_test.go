@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/openctemio/ctis"
 
@@ -46,7 +47,7 @@ func TestMergeCTISIntoAsset_KeepsReservedValues(t *testing.T) {
 	// What an analyst decided in the UI.
 	a.SetProperties(map[string]any{"is_crown_jewel": false, "business_impact_score": 10})
 
-	p.mergeCTISIntoAsset(a, &ctis.Asset{Value: "h.example.com", Type: "host", Properties: hostileProps()}, nil, nil)
+	p.mergeCTISIntoAsset(a, &ctis.Asset{Value: "h.example.com", Type: "host", Properties: hostileProps()}, nil, time.Time{}, nil)
 
 	got := a.Properties()
 	if got["is_crown_jewel"] != false || got["business_impact_score"] != 10 {

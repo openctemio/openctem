@@ -36,6 +36,10 @@ type Settings struct {
 	Scope ScopeSettings `json:"scope,omitempty"`
 	// MCP is the policy for AI applications on the MCP server (RFC-062 §8).
 	MCP MCPSettings `json:"mcp,omitempty"`
+	// VulnMatching is the policy of inventory vulnerability matching (RFC-066 §9).
+	VulnMatching VulnMatchingSettings `json:"vuln_matching,omitempty"`
+	// AssetReconciliation is which source decides an asset attribute (RFC-069).
+	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
 
 	// SubscribedBundles is the set of product-bundle IDs the tenant runs
 	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
@@ -735,6 +739,9 @@ func DefaultSettings() Settings {
 				{Value: "CREST", Label: "CREST"},
 			},
 		},
+		// New organizations get vulnerability matching on (RFC-066 O4);
+		// organizations created before keep it off until an admin enables it.
+		VulnMatching: VulnMatchingSettings{Enabled: true},
 	}
 }
 
@@ -770,6 +777,12 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.Retest.Validate(); err != nil {
 		return fmt.Errorf("retest settings: %w", err)
+	}
+	if err := s.VulnMatching.Validate(); err != nil {
+		return fmt.Errorf("vuln_matching settings: %w", err)
+	}
+	if err := s.AssetReconciliation.Validate(); err != nil {
+		return fmt.Errorf("asset_reconciliation settings: %w", err)
 	}
 	return nil
 }
@@ -1140,6 +1153,16 @@ func (t *Tenant) UpdateRiskScoringSettings(rs RiskScoringSettings) error {
 }
 
 // UpdateRetestSettings updates only the auto-retest settings (RFC-039).
+// UpdateVulnMatchingSettings updates only the vulnerability matching policy.
+func (t *Tenant) UpdateVulnMatchingSettings(vm VulnMatchingSettings) error {
+	if err := vm.Validate(); err != nil {
+		return err
+	}
+	settings := t.TypedSettings()
+	settings.VulnMatching = vm
+	return t.UpdateSettings(settings)
+}
+
 func (t *Tenant) UpdateRetestSettings(rs RetestSettings) error {
 	if err := rs.Validate(); err != nil {
 		return err

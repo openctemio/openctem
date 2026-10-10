@@ -461,6 +461,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	).SetScopeTargetExpirer(repos.ScopeTarget))
 
+	// Asset change timeline (RFC-069): partitions, retention, TTL expiry.
+	w.ControllerManager.Register(controller.NewAssetChangeTimelineController(
+		repos.AssetChangeEvents, svc.Asset, cfg.AssetChangeRetentionDays,
+		log.With("controller", "asset-change-timeline")))
+
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
 		&controller.RoleSyncControllerConfig{
@@ -561,6 +566,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.ReclassifyQueue,
 		log.With("controller", "threat-intel-refresh"),
 	))
+
+	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
+	// each organization's findings.
+	if svc.VulnMatch != nil {
+		w.ControllerManager.Register(controller.NewVulnMatchController(svc.VulnMatch, log.With("controller", "vuln-match")))
+	}
 
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
 	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
