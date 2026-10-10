@@ -3,15 +3,15 @@
 /**
  * Settings > Scan approval (RFC-073): the organization's mode (Off, On,
  * Strict; owner only) and its approval rules (owner or administrator):
- * apply a preset, turn a rule off, put it in monitor mode, or remove it.
- * Every change asks for a reason; the API asks for re-authentication. The
- * full rule builder and the rule tester come later.
+ * apply a preset, add or edit a rule (condition chips and requirement),
+ * reorder by dragging, turn a rule off or remove it, and try the rules on
+ * the existing scans. Every change asks for a reason; the API asks for
+ * re-authentication.
  */
 
 import { useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -26,7 +26,6 @@ import {
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared'
@@ -39,7 +38,10 @@ import {
   type ScanApprovalRule,
 } from '@/lib/api/scan-approval-hooks'
 import { usePermissions } from '@/lib/permissions'
-import { approversText } from './approval-requirement'
+import { moveRule, newRule } from '@/features/scans/lib/approval-rules'
+import { ApprovalRuleEditor } from './approval-rule-editor'
+import { ApprovalRuleList } from './approval-rule-list'
+import { ApprovalRuleTester } from './approval-rule-tester'
 
 type Pending =
   | { kind: 'mode'; mode: ScanApprovalMode }
@@ -57,6 +59,9 @@ export function ScanApprovalSettings() {
   const [pending, setPending] = useState<Pending | null>(null)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
+  // The rule being edited: its index (-1 for a new rule) and the rule.
+  const [editing, setEditing] = useState<{ index: number; rule: ScanApprovalRule } | null>(null)
+  const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     if (data) setChoice(data.organization_mode)
@@ -122,6 +127,23 @@ export function ScanApprovalSettings() {
   const changeRule = (i: number, patch: Partial<ScanApprovalRule>, label: string) => {
     const rules = data.rules.map((r, j) => (j === i ? { ...r, ...patch } : r))
     setPending({ kind: 'rules', rules, label })
+  }
+
+  const saveEdited = (rule: ScanApprovalRule) => {
+    if (!editing) return
+    const rules =
+      editing.index < 0
+        ? [...data.rules, rule]
+        : data.rules.map((r, j) => (j === editing.index ? rule : r))
+    setEditing(null)
+    setPending({
+      kind: 'rules',
+      rules,
+      label:
+        editing.index < 0
+          ? t('scans.approvalSettings.addRuleLabel', 'Add rule "{name}"', { name: rule.name })
+          : t('scans.approvalSettings.toggleRule', 'Change rule "{name}"', { name: rule.name }),
+    })
   }
 
   return (
@@ -222,6 +244,21 @@ export function ScanApprovalSettings() {
               ))}
             </div>
           )}
+          {canRules && (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => setEditing({ index: -1, rule: newRule() })}>
+                {t('scans.approvalSettings.addRule', 'Add rule')}
+              </Button>
+              {data.rules.length > 0 && (
+                <Button size="sm" variant="outline" onClick={() => setTesting((v) => !v)}>
+                  {t('scans.approvalSettings.testRules', 'Try the rules on existing scans')}
+                </Button>
+              )}
+            </div>
+          )}
+          {testing && canRules && data.rules.length > 0 && (
+            <ApprovalRuleTester rules={data.rules} />
+          )}
           {data.rules.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {t(
@@ -230,90 +267,56 @@ export function ScanApprovalSettings() {
               )}
             </p>
           ) : (
-            <ul className="divide-y rounded-md border">
-              {data.rules.map((r, i) => (
-                <li key={r.id} className="flex flex-wrap items-center gap-3 p-3">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{r.name}</span>
-                      {r.monitor && (
-                        <Badge variant="outline">
-                          {t('scans.approvalSettings.monitor', 'Monitor')}
-                        </Badge>
-                      )}
-                      {!r.enabled && (
-                        <Badge variant="secondary">
-                          {t('scans.approvalSettings.disabled', 'Off')}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {approversText(t, {
-                        mode: data.mode,
-                        required: true,
-                        approvals: r.requirement.approvals,
-                        approver_roles: r.requirement.approver_roles,
-                        approver_user_ids: r.requirement.approver_user_ids,
-                      })}
-                    </p>
-                  </div>
-                  {canRules && (
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 text-sm">
-                        <Switch
-                          checked={r.enabled}
-                          onCheckedChange={(v) =>
-                            changeRule(
-                              i,
-                              { enabled: v },
-                              t('scans.approvalSettings.toggleRule', 'Change rule "{name}"', {
-                                name: r.name,
-                              })
-                            )
-                          }
-                          aria-label={t('scans.approvalSettings.enabled', 'Enabled')}
-                        />
-                        {t('scans.approvalSettings.enabled', 'Enabled')}
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <Switch
-                          checked={!!r.monitor}
-                          onCheckedChange={(v) =>
-                            changeRule(
-                              i,
-                              { monitor: v },
-                              t('scans.approvalSettings.toggleRule', 'Change rule "{name}"', {
-                                name: r.name,
-                              })
-                            )
-                          }
-                          aria-label={t('scans.approvalSettings.monitor', 'Monitor')}
-                        />
-                        {t('scans.approvalSettings.monitor', 'Monitor')}
-                      </label>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          setPending({
-                            kind: 'rules',
-                            rules: data.rules.filter((_, j) => j !== i),
-                            label: t('scans.approvalSettings.removeRule', 'Remove rule "{name}"', {
-                              name: r.name,
-                            }),
-                          })
-                        }
-                      >
-                        {t('scans.approvalSettings.remove', 'Remove')}
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <ApprovalRuleList
+              rules={data.rules}
+              mode={data.mode}
+              canEdit={canRules}
+              onMove={(from, to) =>
+                setPending({
+                  kind: 'rules',
+                  rules: moveRule(data.rules, from, to),
+                  label: t(
+                    'scans.approvalSettings.reorderLabel',
+                    'Move rule "{name}" to position {position}',
+                    {
+                      name: data.rules[from]?.name ?? '',
+                      position: to + 1,
+                    }
+                  ),
+                })
+              }
+              onEdit={(i) => setEditing({ index: i, rule: data.rules[i] })}
+              onChange={(i, patch) =>
+                changeRule(
+                  i,
+                  patch,
+                  t('scans.approvalSettings.toggleRule', 'Change rule "{name}"', {
+                    name: data.rules[i]?.name ?? '',
+                  })
+                )
+              }
+              onRemove={(i) =>
+                setPending({
+                  kind: 'rules',
+                  rules: data.rules.filter((_, j) => j !== i),
+                  label: t('scans.approvalSettings.removeRule', 'Remove rule "{name}"', {
+                    name: data.rules[i]?.name ?? '',
+                  }),
+                })
+              }
+            />
           )}
         </CardContent>
       </Card>
+
+      {editing && (
+        <ApprovalRuleEditor
+          open
+          rule={editing.rule}
+          onOpenChange={(o) => !o && setEditing(null)}
+          onSave={saveEdited}
+        />
+      )}
 
       <Dialog open={!!pending} onOpenChange={(o) => !busy && !o && setPending(null)}>
         <DialogContent size="sm">
