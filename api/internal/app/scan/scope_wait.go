@@ -50,37 +50,39 @@ func WithScopeWaits(store ScopeWaitStore, pending PendingScope) ServiceOption {
 	}
 }
 
-// onlyAwaitingScope reports whether the ownership gate refuses some of the
-// targets and every refused one is covered by a pending scope entry, so the
-// scan may be saved to start when the entries are approved. Any other
-// refusal (a rejected asset, no entry at all, the deny list) answers false
-// and the normal refusal follows. A failed check answers false.
-func (s *Service) onlyAwaitingScope(ctx context.Context, tenantID shared.ID, targets []string) bool {
+// awaitingScopeTargets returns the targets the ownership gate refuses when
+// some are refused and every refused one is covered by a pending scope
+// entry, so the scan may be saved to start when the entries are approved;
+// nil otherwise. Any other refusal (a rejected asset, no entry at all, the
+// deny list) or a failed check answers nil and the normal refusal follows.
+func (s *Service) awaitingScopeTargets(ctx context.Context, tenantID shared.ID, targets []string) map[string]bool {
 	if s.scopeWaits == nil || s.pendingScope == nil || s.attributionGate == nil || len(targets) == 0 {
-		return false
+		return nil
 	}
 	blocked, err := s.attributionGate.BlockedTargets(ctx, tenantID, targets)
 	if err != nil || len(blocked) == 0 {
-		return false
+		return nil
 	}
 	refused := make([]string, 0, len(blocked))
 	for t, state := range blocked {
 		if RefusalCodeForState(state) != scopedom.RefusalNoEntry || state == attribution.StatePlatformDenied {
-			return false
+			return nil
 		}
 		refused = append(refused, t)
 	}
 	pending, err := s.pendingScope.PendingCovered(ctx, tenantID, refused)
 	if err != nil {
 		s.logger.Warn("scope wait: pending check failed", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
-		return false
+		return nil
 	}
+	out := make(map[string]bool, len(refused))
 	for _, t := range refused {
 		if !pending[t] {
-			return false
+			return nil
 		}
+		out[t] = true
 	}
-	return true
+	return out
 }
 
 // WaitsForScope reports whether the scan is saved to start when its scope is

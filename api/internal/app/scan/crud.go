@@ -104,14 +104,20 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 
+	// Saved to start when its scope is approved: the targets refused only
+	// because a pending entry covers them (nil = not eligible).
+	var awaiting map[string]bool
+	if input.StartWhenScopeApproved {
+		awaiting = s.awaitingScopeTargets(ctx, tenantID, validatedTargets)
+	}
+	waitForScope := awaiting != nil
 	// The creator may scan only targets in their act scope (D9).
-	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), validatedTargets); err != nil {
+	if err := s.refuseOutOfActScopeAwaiting(ctx, tenantID, userIDPtr(input.CreatedBy), validatedTargets, awaiting); err != nil {
 		return nil, err
 	}
 	// Nothing the tenant has not authorized for active scanning (RFC-036),
 	// unless the caller saves it to start when the pending entries that
 	// cover the refused targets are approved.
-	waitForScope := input.StartWhenScopeApproved && s.onlyAwaitingScope(ctx, tenantID, validatedTargets)
 	if !waitForScope {
 		if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
 			return nil, err

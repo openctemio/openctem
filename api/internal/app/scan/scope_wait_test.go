@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
@@ -65,7 +66,7 @@ func (m *memWaits) Claim(_ context.Context, tenantID, scanID shared.ID) (bool, e
 // A scan may wait only when every refused target is covered by a pending
 // entry; any other refusal (no entry, a rejected asset, the deny list) or a
 // failed check refuses as before.
-func TestOnlyAwaitingScope(t *testing.T) {
+func TestAwaitingScopeTargets(t *testing.T) {
 	tenant := shared.NewID()
 	ctx := context.Background()
 	svc := func(blocked map[string]attribution.State, pending stubPending) *Service {
@@ -93,7 +94,7 @@ func TestOnlyAwaitingScope(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := svc(c.blocked, c.pending).onlyAwaitingScope(ctx, tenant, []string{"*.acme.vn", "app.acme.vn", "other.io"}); got != c.want {
+			if got := svc(c.blocked, c.pending).awaitingScopeTargets(ctx, tenant, []string{"*.acme.vn", "app.acme.vn", "other.io"}) != nil; got != c.want {
 				t.Fatalf("got %v, want %v", got, c.want)
 			}
 		})
@@ -102,13 +103,13 @@ func TestOnlyAwaitingScope(t *testing.T) {
 	// Without the store wired, the option is off.
 	s := svc(cases[0].blocked, pendingAll)
 	s.scopeWaits = nil
-	if s.onlyAwaitingScope(ctx, tenant, []string{"*.acme.vn"}) {
+	if s.awaitingScopeTargets(ctx, tenant, []string{"*.acme.vn"}) != nil {
 		t.Fatal("no store: must not wait")
 	}
 	// A failed ownership check refuses.
 	s = svc(nil, pendingAll)
 	s.attributionGate = &stubGate{err: errors.New("db down")}
-	if s.onlyAwaitingScope(ctx, tenant, []string{"*.acme.vn"}) {
+	if s.awaitingScopeTargets(ctx, tenant, []string{"*.acme.vn"}) != nil {
 		t.Fatal("failed gate: must not wait")
 	}
 }
@@ -175,5 +176,33 @@ func TestStartScansAwaitingScope(t *testing.T) {
 	svc.StartScansAwaitingScope(ctx, tenant)
 	if len(started) != 1 {
 		t.Fatalf("a scan started twice: %+v", started)
+	}
+}
+
+// A scan waiting for its scope is not refused by the act scope for having
+// no entry yet, only for the targets that wait; being outside the data
+// scope (or not an asset for a restricted member) still refuses.
+func TestRefuseOutOfActScopeAwaiting(t *testing.T) {
+	ctx := context.Background()
+	tenant := shared.NewID()
+	act := &stubActScope{targets: map[string]string{
+		"*.acme.vn":    actscope.ReasonNoScopeTarget,
+		"other.io":     actscope.ReasonNoScopeTarget,
+		"hidden.acme":  actscope.ReasonOutOfDataScope,
+		"typed.member": actscope.ReasonNotAnAsset,
+	}}
+	svc := &Service{actScope: act, logger: logger.NewNop()}
+	awaiting := map[string]bool{"*.acme.vn": true, "hidden.acme": true, "typed.member": true}
+
+	if err := svc.refuseOutOfActScopeAwaiting(ctx, tenant, nil, []string{"*.acme.vn"}, awaiting); err != nil {
+		t.Fatalf("a waiting target was refused: %v", err)
+	}
+	if err := svc.refuseOutOfActScopeAwaiting(ctx, tenant, nil, []string{"*.acme.vn"}, nil); err == nil {
+		t.Fatal("without a wait, no entry must refuse")
+	}
+	for _, target := range []string{"other.io", "hidden.acme", "typed.member"} {
+		if err := svc.refuseOutOfActScopeAwaiting(ctx, tenant, nil, []string{"*.acme.vn", target}, awaiting); err == nil {
+			t.Fatalf("%s must still be refused", target)
+		}
 	}
 }
