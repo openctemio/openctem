@@ -23,20 +23,16 @@ import (
 type AssetChangeTimelineStore interface {
 	assetdom.ChangeTimelineMaintainer
 	TenantsWithAttributeSources(ctx context.Context) ([]shared.ID, error)
-	AssetsWithAttributeSources(ctx context.Context, tenantID shared.ID, after *shared.ID, limit int) ([]shared.ID, error)
 }
 
-// AttributeResolver re-resolves assets' reconciled attributes
-// (*assetapp.AssetService).
+// AttributeResolver re-resolves a tenant's reconciled attributes in
+// batches (*assetapp.AssetService).
 type AttributeResolver interface {
-	ResolveAttributes(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, reason assetdom.ChangeReason) (int, error)
+	ReResolveTenant(ctx context.Context, tenantID shared.ID, reason assetdom.ChangeReason) (int, error)
 }
 
 // minAssetChangeRetentionDays is the floor of the configured retention.
 const minAssetChangeRetentionDays = 30
-
-// assetResolveBatch is how many assets one re-resolution transaction locks.
-const assetResolveBatch = 200
 
 // AssetChangeTimelineController keeps the timeline's partitions, retention
 // and TTL expiry.
@@ -100,9 +96,9 @@ func (c *AssetChangeTimelineController) Reconcile(ctx context.Context) (int, err
 	return processed + changed, nil
 }
 
-// sweep re-resolves every asset with a recorded source, tenant by tenant,
-// in batches. The reason is left to the resolver (TTL expiry or a policy
-// change, from the record that decided before).
+// sweep re-resolves every asset with a recorded source, tenant by tenant.
+// The reason is left to the resolver (TTL expiry or a policy change, from
+// the record that decided before).
 func (c *AssetChangeTimelineController) sweep(ctx context.Context) (int, error) {
 	tenants, err := c.store.TenantsWithAttributeSources(ctx)
 	if err != nil {
@@ -110,30 +106,14 @@ func (c *AssetChangeTimelineController) sweep(ctx context.Context) (int, error) 
 	}
 	changed := 0
 	for _, tid := range tenants {
-		var after *shared.ID
-		for {
-			if ctx.Err() != nil {
-				return changed, ctx.Err()
-			}
-			ids, err := c.store.AssetsWithAttributeSources(ctx, tid, after, assetResolveBatch)
-			if err != nil {
-				return changed, err
-			}
-			if len(ids) == 0 {
-				break
-			}
-			n, err := c.resolver.ResolveAttributes(ctx, tid, ids, "")
-			if err != nil {
-				c.logger.Warn("asset attribute sweep failed", "tenant_id", tid.String(), "error", err)
-				break
-			}
-			changed += n
-			last := ids[len(ids)-1]
-			after = &last
-			if len(ids) < assetResolveBatch {
-				break
-			}
+		if ctx.Err() != nil {
+			return changed, ctx.Err()
 		}
+		n, err := c.resolver.ReResolveTenant(ctx, tid, "")
+		if err != nil {
+			c.logger.Warn("asset attribute sweep failed", "tenant_id", tid.String(), "error", err)
+		}
+		changed += n
 	}
 	return changed, nil
 }
