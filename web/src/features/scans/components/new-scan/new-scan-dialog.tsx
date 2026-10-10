@@ -44,6 +44,8 @@ import {
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
+import { probeNewAssetsRequest } from '../../lib/continuous-discovery'
+import { scopeCheckTier } from '../../lib/scan-intensity'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   refusedFromError,
@@ -109,6 +111,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         ? formData.sensorPreference
         : 'auto',
     scanner_name: formData.mode === 'single' ? formData.scannerName || undefined : undefined,
+    tier: scopeCheckTier(formData),
   })
   const awaitingApproval = onlyAwaitingApproval(scopeCheck.results)
 
@@ -253,6 +256,27 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       notifyScannerConfigWarnings(scanConfig, t)
 
       createdConfigIdRef.current = scanConfig.id
+
+      // Continuous discovery: the probing scan is saved with the passive one
+      // (active, only assets new since its last run).
+      if (formData.continuousProbeWorkflowId) {
+        const probe = probeNewAssetsRequest(
+          { ...request, targets: directTargets(formData) },
+          formData.continuousProbeWorkflowId,
+          t('scans.new.continuousSecondName', undefined, { name: formData.name.trim() })
+        )
+        if (probe) {
+          try {
+            await createScanConfig(probe)
+          } catch (probeError) {
+            toast.error(
+              t('scans.new.continuousSecondFailed', undefined, {
+                error: getErrorMessage(probeError, t('scans.new.unknownError')),
+              })
+            )
+          }
+        }
+      }
 
       const waits = !!(scanConfig as { starts_when_scope_approved?: boolean })
         .starts_when_scope_approved
