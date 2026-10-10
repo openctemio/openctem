@@ -149,8 +149,8 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   )
   const whatLabel =
     formData.mode === 'workflow'
-      ? (chosenWorkflow?.name ?? 'Workflow')
-      : formData.scannerName || 'Scanner'
+      ? (chosenWorkflow?.name ?? t('scans.new.workflowFallback'))
+      : formData.scannerName || t('scans.new.scannerFallback')
   const blocked = review.blockers.length > 0
   // Saving to start when the scope is approved: the scope refusal is not a
   // blocker then, every other one still is.
@@ -168,7 +168,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const validateCurrentStep = (): boolean => {
     switch (currentStep) {
       case 'basic': {
-        const problem = basicInfoError(formData)
+        const problem = basicInfoError(formData, t)
         if (problem) {
           toast.error(problem)
           return false
@@ -176,7 +176,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         return true
       }
       case 'targets': {
-        const problem = targetsError(formData)
+        const problem = targetsError(formData, t)
         if (problem) {
           toast.error(problem)
           return false
@@ -186,7 +186,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       case 'options':
         return true
       case 'schedule': {
-        const problem = scheduleError(formData)
+        const problem = scheduleError(formData, undefined, t)
         if (problem) {
           toast.error(problem)
           return false
@@ -219,10 +219,10 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     }
   }
   const startLabel = formData.schedule.runImmediately
-    ? 'Start scan'
+    ? t('scans.new.startScan')
     : formData.schedule.saveOnly
-      ? 'Save scan'
-      : 'Schedule scan'
+      ? t('scans.new.saveScan')
+      : t('scans.new.scheduleScan')
 
   const handleSubmit = async (opts: { waitForScope?: boolean } = {}) => {
     if (!validateCurrentStep()) return
@@ -231,7 +231,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       return
     }
 
-    const targetProblem = targetsError(formData)
+    const targetProblem = targetsError(formData, t)
     if (targetProblem) {
       toast.error(targetProblem)
       setCurrentStep('targets')
@@ -248,20 +248,17 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       const scanConfig = await createScanConfig(request)
 
       if (!scanConfig) {
-        throw new Error('Failed to create scan configuration')
+        throw new Error(t('scans.new.createFailedNoConfig'))
       }
-      notifyScannerConfigWarnings(scanConfig)
+      notifyScannerConfigWarnings(scanConfig, t)
 
       createdConfigIdRef.current = scanConfig.id
 
       const waits = !!(scanConfig as { starts_when_scope_approved?: boolean })
         .starts_when_scope_approved
       if (waits) {
-        toast.success(t('scans.new.savedWaiting', 'Scan "{name}" saved', { name: formData.name }), {
-          description: t(
-            'scans.new.savedWaitingHint',
-            'It starts on its own when the scope entry is approved, and is checked again then.'
-          ),
+        toast.success(t('scans.new.savedWaiting', undefined, { name: formData.name }), {
+          description: t('scans.new.savedWaitingHint'),
         })
       } else if (formData.schedule.runImmediately) {
         // Trigger scan immediately if requested
@@ -271,31 +268,32 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
         try {
           await post(scanEndpoints.trigger(scanConfig.id), {})
-          toast.success(`Scan "${formData.name}" started successfully`)
+          toast.success(t('scans.new.started', undefined, { name: formData.name }))
         } catch (triggerError) {
           // Scan config was created but trigger failed - show specific error
           const triggerRefused = refusedFromError(triggerError)
           const triggerErrorMsg =
             triggerRefused.length > 0
               ? scopeRefusalSummary(t, triggerRefused)
-              : getErrorMessage(triggerError, 'Unknown error')
+              : getErrorMessage(triggerError, t('scans.new.unknownError'))
           console.error('Failed to trigger scan:', triggerError)
 
           // Show a persistent error toast with action buttons
           toast.error(
-            `Scan "${formData.name}" was created but failed to start: ${triggerErrorMsg}`,
+            t('scans.new.createdButNotStarted', undefined, {
+              name: formData.name,
+              error: triggerErrorMsg,
+            }),
             {
               duration: 10000, // Keep visible for 10 seconds
               action: {
-                label: 'View Scan',
+                label: t('scans.new.viewScan'),
                 onClick: () => {
                   // Navigate to the scan detail page
                   window.location.href = `/scans/${scanConfig.id}`
                 },
               },
-              description:
-                triggerErrorHint(triggerError) ??
-                'You can manually trigger the scan from the scan details page.',
+              description: triggerErrorHint(triggerError) ?? t('scans.new.triggerManually'),
             }
           )
 
@@ -310,13 +308,16 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           return
         }
       } else if (formData.schedule.saveOnly) {
-        toast.success(`Scan "${formData.name}" saved: start it from the scan page`)
+        toast.success(t('scans.new.savedStartLater', undefined, { name: formData.name }))
       } else {
         const at = formData.schedule.frequency === 'once' ? onceRunAt(formData) : null
         toast.success(
           at
-            ? `Scan "${formData.name}" will run on ${at.toLocaleString()}`
-            : `Scan "${formData.name}" scheduled successfully`
+            ? t('scans.new.willRunOn', undefined, {
+                name: formData.name,
+                time: at.toLocaleString(),
+              })
+            : t('scans.new.scheduled', undefined, { name: formData.name })
         )
       }
 
@@ -341,7 +342,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         return
       }
       console.error('Failed to create scan:', error)
-      toast.error(getErrorMessage(error, 'Failed to create scan. Please try again.'))
+      toast.error(getErrorMessage(error, t('scans.new.createFailed')))
     } finally {
       setIsSubmitting(false)
     }
@@ -395,8 +396,8 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>New Scan</DialogTitle>
-          <DialogDescription>Configure and launch a new security scan</DialogDescription>
+          <DialogTitle>{t('scans.new.title')}</DialogTitle>
+          <DialogDescription>{t('scans.new.description')}</DialogDescription>
           <ScanStepper
             className="px-0 pt-2 pb-0 sm:px-0"
             currentStep={currentStep}
@@ -414,10 +415,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 className="text-xs text-muted-foreground sm:order-2 sm:max-w-[18rem]"
                 data-testid="scope-wait-notice"
               >
-                {t(
-                  'scans.new.waitNotice',
-                  'Some targets wait for a scope approval (see Targets). The scan is saved now and starts on its own once the entry is approved.'
-                )}
+                {t('scans.new.waitNotice')}
               </p>
             )}
             {isLastStep && blocked && !awaitingApproval && (
@@ -437,7 +435,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 className="w-full sm:w-auto"
               >
                 <ChevronLeft className="me-1 h-4 w-4" />
-                Back
+                {t('scans.common.back')}
               </Button>
             )}
           </div>
@@ -450,7 +448,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               disabled={isLoading}
               className="w-full sm:w-auto order-2 sm:order-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
 
             {isLastStep && awaitingApproval ? (
@@ -466,7 +464,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 ) : (
                   <Clock className="me-2 h-4 w-4 shrink-0" />
                 )}
-                {t('scans.new.createWhenApproved', 'Create scan, start when scope is approved')}
+                {t('scans.new.createWhenApproved')}
               </Button>
             ) : isLastStep ? (
               <Button
@@ -480,7 +478,9 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 {isLoading ? (
                   <>
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    {formData.schedule.runImmediately ? 'Starting...' : 'Saving...'}
+                    {formData.schedule.runImmediately
+                      ? t('scans.common.starting')
+                      : t('scans.common.saving')}
                   </>
                 ) : (
                   <>
@@ -495,7 +495,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 onClick={handleNext}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
-                Next
+                {t('scans.common.next')}
                 <ChevronRight className="ms-1 h-4 w-4" />
               </Button>
             )}

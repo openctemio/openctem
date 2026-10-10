@@ -97,6 +97,7 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     isControlPlane: f.isControlPlane,
     isInternetAccessible: f.isInternetAccessible,
     isCrownJewel: f.isCrownJewel,
+    programAssets: f.programAssets,
     hasFindings: f.hasFindings,
     lastSeenBefore: f.lastSeenBefore,
     lastSeenAfter: f.lastSeenAfter,
