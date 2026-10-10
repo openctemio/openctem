@@ -142,7 +142,7 @@ func (h *BountyProgramHandler) Subscribe(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, ProgramChangeResponse{Program: toProgramResponse(p), Preview: pv})
 }
 
-// ConfirmTargets handles POST /api/v1/programs/{id}/targets/confirm
+// ConfirmTargets handles POST /api/v1/programs/{id}/targets/approve
 // @Summary      Confirm suggested targets
 // @Description  Add targets the program feed only suggested (inferred) for a followed program to its scope. Only the program's own suggestions are accepted (400 PROGRAM_TARGET_NOT_SUGGESTED). It widens the program: every entry waits until a member accepts the new terms (POST /programs/{id}/reactivate). Audited.
 // @Tags         Programs
@@ -154,7 +154,7 @@ func (h *BountyProgramHandler) Subscribe(w http.ResponseWriter, r *http.Request)
 // @Failure      400   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /programs/{id}/targets/confirm [post]
+// @Router       /programs/{id}/targets/approve [post]
 func (h *BountyProgramHandler) ConfirmTargets(w http.ResponseWriter, r *http.Request) {
 	tenantID, actor, ok := h.caller(r)
 	if !ok {

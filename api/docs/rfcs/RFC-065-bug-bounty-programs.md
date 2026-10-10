@@ -570,7 +570,7 @@ covers the target.
 - A feed target is never permission to test. Entries are made only from
   targets with `confidence: published`; `inferred` targets (most records
   have `scope_published: false`) are shown as suggestions and become entries
-  only when a member confirms them (`POST /programs/{id}/targets/confirm`),
+  only when a member confirms them (`POST /programs/{id}/targets/approve`),
   which widens the program and asks for a new acceptance. The terms a person
   accepts are the hash of what they were shown (scope, rules, terms text);
   the terms text carries the terms document URL and its `terms.sha256` when
@@ -589,7 +589,7 @@ covers the target.
   archived) are brought up to date, so a failed update is retried.
 - Routes: `GET /programs/catalog` (`programs:read`), `POST
   /programs/subscriptions {public_program_id}` (`programs:write`, audited
-  `bounty_program.subscribed`), `POST /programs/{id}/targets/confirm`
+  `bounty_program.subscribed`), `POST /programs/{id}/targets/approve`
   (`programs:write`, audited); acceptance is `POST /programs/{id}/reactivate`
   (step-up, terms hash), which records the person's attestation.
 - Owner decision (option A, 2026-10-10): the project does not republish
