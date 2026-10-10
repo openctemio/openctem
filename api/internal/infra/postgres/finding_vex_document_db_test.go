@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/testdb"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -17,17 +19,17 @@ func TestFindingVEXDocument_DB(t *testing.T) {
 	ctx := context.Background()
 	repo := NewFindingRepository(&DB{DB: f.db})
 
-	comp := func(purl, version string) shared.ID {
-		id := shared.NewID()
-		f.exec(t, `INSERT INTO components (id, purl, name, version, ecosystem) VALUES ($1, $2, 'lodash', $3, 'npm')`, id, purl, version)
-		t.Cleanup(func() { _, _ = f.db.ExecContext(ctx, `DELETE FROM components WHERE id = $1`, id.String()) })
-		return id
+	// Global package versions (the feed's): findings of two tenants name them.
+	comp := func(purl, _ string) shared.ID {
+		product, id := testdb.SeedPackageVersion(t, f.db, "", purl)
+		t.Cleanup(func() { _, _ = f.db.ExecContext(ctx, `DELETE FROM software_products WHERE id = $1`, product) })
+		return shared.MustIDFromString(id)
 	}
 	lodash20 := comp("pkg:npm/lodash@4.17.20-"+shared.NewID().String()[28:], "4.17.20")
 	// The base of the component purl above is pkg:npm/lodash; its version is
-	// unique per run so the global purl constraint holds across runs.
+	// unique per run so runs do not share a version.
 	var ver string
-	if err := f.db.QueryRowContext(ctx, `SELECT split_part(purl, '@', 2) FROM components WHERE id = $1`, lodash20.String()).Scan(&ver); err != nil {
+	if err := f.db.QueryRowContext(ctx, `SELECT split_part(purl, '@', 2) FROM software_versions WHERE id = $1`, lodash20.String()).Scan(&ver); err != nil {
 		t.Fatal(err)
 	}
 	other := comp("pkg:npm/express@4.0.0-"+shared.NewID().String()[28:], "4.0.0")

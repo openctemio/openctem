@@ -1,0 +1,13 @@
+- id: executive_summary
+  const: ModuleExecutiveSummary
+  slug: "executive-summary"
+  name: Executive Summary
+  description: "Board-ready PDF rollup of risk, breaches, SLAs"
+  icon: FileText
+  category: insights
+  order: 53
+  user_facing: true
+  permission: "reports:read"
+  depends:
+    - {id: findings, kind: hard, reason: "exec summary rolls up finding metrics"}
+    - {id: scans, kind: soft, reason: "scan coverage metrics appear on the summary"}

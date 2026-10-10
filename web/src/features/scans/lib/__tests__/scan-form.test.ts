@@ -443,3 +443,15 @@ describe('dynamic targets (RFC-068)', () => {
     ).toEqual(['*.a.io', '*.b.io'])
   })
 })
+
+describe('scan intensity (RFC-071)', () => {
+  it('sends the chosen intensity on create and on edit, default active', () => {
+    expect(formDataToCreateRequest(form()).intensity).toBe('active')
+    expect(formDataToCreateRequest(form({ intensity: 'passive' })).intensity).toBe('passive')
+    const edited = scanConfigToFormData({ ...config(), intensity: 'intrusive' })
+    expect(edited.intensity).toBe('intrusive')
+    expect(formDataToUpdateRequest(edited, config(), { canSetZone: false }).intensity).toBe(
+      'intrusive'
+    )
+  })
+})

@@ -1,0 +1,7 @@
+{
+  "criticality.critical": "Critical",
+  "criticality.high": "High",
+  "criticality.medium": "Medium",
+  "criticality.low": "Low",
+  "criticality.none": "Not rated"
+}

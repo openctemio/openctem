@@ -6,7 +6,7 @@ import { Module } from '../route-permissions'
 
 /**
  * The console names modules only by ids the registry declares
- * (api/configs/modules.yaml, generated into modules.generated.ts). A
+ * (api/configs/modules/<id>.yaml, generated into modules.generated.ts). A
  * retired or misspelled id would hide a page for good or gate nothing
  * (RFC-064 R5): the route map once gated /remediation on a module that the
  * API did not use.

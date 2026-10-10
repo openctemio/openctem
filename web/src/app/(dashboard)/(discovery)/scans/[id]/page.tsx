@@ -7,6 +7,7 @@
  * drawer, and the numbers the same formulas (lib/format, lib/run-display).
  */
 
+import { IntensityBadge, IntensityLabel } from '@/features/scans/components/intensity-badge'
 import { useMemo, useState } from 'react'
 import { useSWRConfig } from 'swr'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -39,6 +40,7 @@ import {
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-controls'
+import { ScanApprovalPanel } from '@/features/scans/components/approval/scan-approval-panel'
 import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
@@ -435,6 +437,10 @@ export default function ScanDetailPage() {
 
       <MetricStrip className="mt-5" items={metrics} />
 
+      <div className="mt-5 empty:hidden">
+        <ScanApprovalPanel scanId={config.id} onRan={() => void refetchAll()} />
+      </div>
+
       <Tabs value={tab} onValueChange={setTabParam} className="mt-5">
         <TabsList>
           <TabsTrigger value="runs">Runs</TabsTrigger>
@@ -506,6 +512,9 @@ export default function ScanDetailPage() {
             <DetailSection title="Execution">
               <DetailFieldGrid>
                 <DetailField label="Scan type">{SCAN_TYPE_LABELS[config.scan_type]}</DetailField>
+                <DetailField label={<IntensityLabel />}>
+                  <IntensityBadge intensity={config.intensity} />
+                </DetailField>
                 <DetailField label="Sensor preference">
                   {SENSOR_PREFERENCE_LABELS[config.sensor_preference]}
                 </DetailField>

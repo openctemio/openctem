@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -218,6 +219,7 @@ func validateLocalToken(ctx context.Context, tokenString string, validator *jwt.
 	ctx = context.WithValue(ctx, PermissionsKey, claims.Permissions)
 	ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
 	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderLocal)
+	ctx = scangov.WithOrigin(ctx, scangov.OriginUI)
 	ctx = context.WithValue(ctx, LocalClaimsKey, claims)
 
 	// Add tenant memberships to context for authorization
@@ -255,6 +257,7 @@ func validateOIDCToken(ctx context.Context, tokenString string, validator *keycl
 	ctx = context.WithValue(ctx, UsernameKey, claims.PreferredUsername)
 	ctx = context.WithValue(ctx, TenantIDKey, claims.GetTenantID())
 	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderOIDC)
+	ctx = scangov.WithOrigin(ctx, scangov.OriginUI)
 	ctx = context.WithValue(ctx, ClaimsKey, claims)
 
 	return ctx, nil

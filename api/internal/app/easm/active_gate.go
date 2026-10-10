@@ -75,7 +75,21 @@ type ActiveGate struct {
 	// proofAll requires a verified domain for every active probe (§8.1).
 	guardrails *scopedom.Guardrails
 	proofAll   bool
+	// tiers answers whether a tenant's entry tier ceilings are in force
+	// (only in the Strict scan approval mode, RFC-073 §6); nil enforces
+	// them for every tenant.
+	tiers TierPolicy
 }
+
+// TierPolicy answers whether a tenant's scope entry tier ceilings are in
+// force (*scanpolicy.Service). It fails closed (enforced).
+type TierPolicy interface {
+	TierCeilingsEnforced(ctx context.Context, tenantID shared.ID) bool
+}
+
+// SetTierPolicy wires the scan approval mode: outside Strict a scope entry
+// covers its targets at every tier.
+func (g *ActiveGate) SetTierPolicy(p TierPolicy) { g.tiers = p }
 
 // WithPlatformPolicy sets the operator's guardrails and whether every active
 // probe needs a verified domain (SCOPE_ACTIVE_PROOF=all).
@@ -244,13 +258,52 @@ func (g *ActiveGate) UnverifiedTargets(ctx context.Context, tenantID shared.ID, 
 	return out, nil
 }
 
+// ConstraintRefused returns the targets that only port- or path-limited
+// entries cover at tier and that the job may not probe within those limits
+// (scopedom.ConstrainedJobRefusal), with the refusal reason. Targets nothing
+// covers, and internal ones, are left to the other checks. Part of
+// scan.ConstraintGate.
+func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier, job scopedom.JobShape) (map[string]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	if tier <= scopedom.TierPassive || len(targets) == 0 {
+		return out, nil
+	}
+	if len(targets) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many targets for one constraint check", shared.ErrValidation)
+	}
+	var auth *scopeauth.Authority
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		free, ports, path, covered := auth.Limits(t, tier)
+		if !covered || free {
+			continue
+		}
+		if reason := scopedom.ConstrainedJobRefusal(job.Tool, ports, path, job.Ports, job.TopPorts); reason != "" {
+			out[t] = reason
+		}
+	}
+	return out, nil
+}
+
 // TierExceeded returns the targets the tenant's scope authority covers, but
 // not at tier (RFC-054 §4.2 step 6, refusal tier_exceeds): every covering
 // scope target has a lower max_tier, or only a seed or verified domain
 // covers it and tier is above t1. Each is mapped to the covering entry with
 // the highest ceiling (nil for a seed or verified domain). Targets nothing
 // covers, and private or internal targets (scan zones gate them), are not
-// listed: the ownership gate answers for them. Part of scan.AttributionGate.
+// listed: the ownership gate answers for them. Outside the Strict scan
+// approval mode nothing exceeds (SetTierPolicy). Part of scan.AttributionGate.
 func (g *ActiveGate) TierExceeded(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
 	if err := g.ready(); err != nil {
 		return nil, err
@@ -261,6 +314,9 @@ func (g *ActiveGate) TierExceeded(ctx context.Context, tenantID shared.ID, targe
 	}
 	if len(targets) > maxGateItems {
 		return nil, fmt.Errorf("%w: too many targets for one tier check", shared.ErrValidation)
+	}
+	if g.tiers != nil && !g.tiers.TierCeilingsEnforced(ctx, tenantID) {
+		return out, nil
 	}
 	var auth *scopeauth.Authority
 	for _, t := range targets {
