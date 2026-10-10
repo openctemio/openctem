@@ -2909,6 +2909,10 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 			-- which is "fix marked, NOT yet verified" — such a KEV/critical finding
 			-- is still a live exposure and must stay on the attack path.
 			AND status IN ('new','confirmed','in_progress','fix_applied')
+			-- A version-based match below the likely threshold is a
+			-- potential vulnerability, not an attack-path hop (RFC-066 §4).
+			AND NOT (tool_name = 'version-match' AND COALESCE(last_seen_tool, tool_name) = 'version-match'
+				AND COALESCE(confidence, 0) < 80)
 		GROUP BY asset_id
 		HAVING COUNT(*) FILTER (WHERE is_in_kev) > 0
 			OR COUNT(*) FILTER (WHERE severity = 'critical') > 0`

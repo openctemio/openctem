@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -561,6 +562,14 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		// createIngestAuditLog derives run status from len(output.Errors). Without
 		// this the degraded run was silently audited as a success.
 		addError(output, fmt.Sprintf("cve upsert failed: %v", cveErr))
+	}
+
+	// The version-match tool name belongs to the inventory matcher (RFC-066):
+	// only it may create findings under it, and only its own findings are
+	// closed when software changes. A report claiming it is refused.
+	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
+		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		report.Findings = nil
 	}
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
