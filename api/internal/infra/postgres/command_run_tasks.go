@@ -6,10 +6,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanwindow"
 
 	"github.com/lib/pq"
 
@@ -111,7 +113,8 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		            THEN commands.result->'metadata'->'refused_targets' END,
 		       CASE WHEN jsonb_typeof(commands.result->'metadata'->'refused_targets_total') = 'number'
 		            THEN LEAST(GREATEST((commands.result->'metadata'->>'refused_targets_total')::numeric, 0), `+strconv.Itoa(scanrun.MaxSkippedTargetsTotal)+`)::bigint
-		            ELSE 0 END
+		            ELSE 0 END,
+		       CASE WHEN commands.status = 'pending' THEN commands.window_hold END
 		FROM commands
 		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
 		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND NOT s.is_platform_sensor
@@ -131,16 +134,22 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 			stepRunID, sensorID   sql.NullString
 			status                string
 			startedAt, completeAt sql.NullTime
-			skipped               []byte
+			skipped, hold         []byte
 			skippedTotal          int
 		)
 		if err := rows.Scan(&id, &stepRunID, &t.StepKey, &t.Tool, &status, &sensorID, &t.SensorName,
 			&t.Platform, &t.Targets, &t.Attempts, &t.CreatedAt, &startedAt, &completeAt, &t.ErrorMessage,
-			&skipped, &skippedTotal); err != nil {
+			&skipped, &skippedTotal, &hold); err != nil {
 			return nil, fmt.Errorf("failed to scan run task: %w", err)
 		}
 		// Sensor-supplied: parsed defensively, bounded and cleaned.
 		t.Skipped, t.SkippedTotal = scanrun.ParseSkippedTargets(skipped, skippedTotal)
+		if len(hold) > 0 {
+			var h scanwindow.Hold
+			if json.Unmarshal(hold, &h) == nil {
+				t.WindowHold = &h
+			}
+		}
 		t.ID, _ = shared.IDFromString(id)
 		t.Status = scanrun.TaskStatus(status)
 		if stepRunID.Valid {
