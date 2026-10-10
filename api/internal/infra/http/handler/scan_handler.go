@@ -138,9 +138,6 @@ type UpdateScanRequest struct {
 // TriggerScanRequest represents the request body for triggering a scan.
 type TriggerScanExecRequest struct {
 	Context map[string]any `json:"context"`
-	// OverrideFreeze starts the scan although a scan freeze window is
-	// active. Needs scans:freeze:override (403 otherwise); audited.
-	OverrideFreeze bool `json:"override_freeze,omitempty"`
 }
 
 // CloneScanRequest represents the request body for cloning a scan.
@@ -864,9 +861,9 @@ func formatBulkMessage(action string, successful, failed int) string {
 // @Param        request  body      TriggerScanExecRequest  false  "Trigger context"
 // @Success      201  {object}  RunResponse
 // @Failure      400  {object}  apierror.Error
-// @Failure      403  {object}  apierror.Error  "override_freeze without scans:freeze:override"
+// @Failure      403  {object}  apierror.Error  "caller may not start this scan"
 // @Failure      404  {object}  apierror.Error
-// @Failure      409  {object}  apierror.Error  "SCAN_FREEZE_ACTIVE: a scan freeze window is active"
+// @Failure      409  {object}  apierror.Error  "SCAN_WINDOW_NEVER_OPENS: a target's scan window never opens"
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /scans/{id}/trigger [post]
@@ -881,17 +878,11 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.OverrideFreeze && !middleware.HasPermission(r.Context(), permission.ScanFreezeOverride.String()) {
-		apierror.Forbidden("Overriding a scan freeze window needs the scans:freeze:override permission").WriteJSON(w)
-		return
-	}
-
 	input := scansvc.TriggerScanExecInput{
-		TenantID:       tenantID,
-		ScanID:         scanID,
-		TriggeredBy:    userID,
-		Context:        req.Context,
-		FreezeOverride: req.OverrideFreeze,
+		TenantID:    tenantID,
+		ScanID:      scanID,
+		TriggeredBy: userID,
+		Context:     req.Context,
 		// A member's own "Run now": allowed on a paused scan (schedule off).
 		Interactive: true,
 	}
@@ -1507,10 +1498,10 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 			e.Details = d
 		}
 		e.WriteJSON(w)
-	case scansvc.AsFrozen(err) != nil:
-		// A scan freeze window is active: 409 with its own code, so the
-		// console can offer the override to those who hold it.
-		apierror.New(http.StatusConflict, apierror.Code(scansvc.CodeScanFrozen), scansvc.AsFrozen(err).Error()).WriteJSON(w)
+	case scanWindowNeverOpens(err) != nil:
+		// A target's scan windows never open: 409 with its own code, naming
+		// the targets and the windows.
+		apierror.New(http.StatusConflict, apierror.Code(scansvc.CodeWindowNeverOpens), scanWindowNeverOpens(err).Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
@@ -1781,4 +1772,14 @@ func toolUnavailableDetails(err error) *ToolUnavailableDetails {
 	}
 	return &ToolUnavailableDetails{Tool: tu.Tool, Step: tu.Step, Status: tu.Status,
 		SensorsTotal: tu.SensorsTotal, SensorsOnline: tu.SensorsOnline, SensorsExcluded: tu.SensorsExcluded, ZoneID: tu.ZoneID}
+}
+
+// scanWindowNeverOpens returns the trigger refusal for targets whose scan
+// windows never open, or nil.
+func scanWindowNeverOpens(err error) *scansvc.NeverOpensError {
+	var ne *scansvc.NeverOpensError
+	if errors.As(err, &ne) {
+		return ne
+	}
+	return nil
 }

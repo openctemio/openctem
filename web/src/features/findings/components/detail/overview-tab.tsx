@@ -54,6 +54,8 @@ import { FINDING_TYPE_CONFIG } from '../../types'
 import { CodeHighlighter } from './code-highlighter'
 import { MetadataViewer } from './source-panels/metadata-viewer'
 import { SourceDataSection } from './source-data-section'
+import { VersionMatchPanel } from '@/features/vuln-matching/components/version-match-panel'
+import { VERSION_MATCH_TOOL } from '@/features/vuln-matching/types'
 import { findingTypeSections } from './finding-type-details'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
@@ -141,6 +143,8 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
       )}
 
       {finding.scannerOutput && <ScannerOutputSection output={finding.scannerOutput} />}
+
+      {finding.toolName === VERSION_MATCH_TOOL && <VersionMatchPanel metadata={finding.metadata} />}
 
       {finding.sourceData && <SourceDataSection data={finding.sourceData} />}
 

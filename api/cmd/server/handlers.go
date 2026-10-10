@@ -402,6 +402,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		AssetSoftware:          handler.NewAssetSoftwareHandler(svc.VulnMatch, repos.Asset, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
@@ -451,7 +452,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		ScanFreeze:      handler.NewScanFreezeWindowHandler(svc.ScanFreeze, log),
+		ScanWindow:      newScanWindowHandler(svc, log),
 		Ingest:          ingestHandler,
 		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
 		SensorPairing:   newSensorPairingHandler(svc, log),
@@ -629,6 +630,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	// A scan window override needs a fresh authenticator code (RFC-067 §8).
+	wireScanWindowTOTP(svc)
 	if svc.EASMSweep != nil {
 		handlers.Scope.SetSweeper(svc.EASMSweep)
 	}

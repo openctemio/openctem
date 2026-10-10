@@ -17,6 +17,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 )
@@ -93,7 +94,7 @@ func connectorDispatchGate(sc *scan.Scan, triggeredBy string) *command.DispatchG
 // connector_scan command is queued for the connector's sensor.
 func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resolved *resolvedTargets,
 	triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int,
-	scheduledFor *time.Time, freezeOverride bool) (*scanrun.Run, error) {
+	scheduledFor *time.Time) (*scanrun.Run, error) {
 	if s.connectorScans == nil {
 		return nil, ErrConnectorScansUnavailable
 	}
@@ -118,8 +119,7 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 	}
 
 	// A connector scan is active work outside any zone.
-	override, err := s.checkFreeze(ctx, sc, freezeRequest{triggerType, triggeredBy, freezeOverride}, nil, true)
-	if err != nil {
+	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, gated.Allowed, nil, swdom.TierActive, runContext); err != nil {
 		return nil, err
 	}
 
@@ -128,7 +128,6 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 	if err != nil {
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
-	run.FreezeOverride = override
 	run.SetTotalSteps(1)
 	run.RetryAttempt = retryAttempt
 	run.ScheduledFor = scheduledFor
@@ -150,7 +149,6 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 	}
 	cmd, err := s.connectorScans.NewScanCommand(ctx, sc.TenantID, sc.ScannerConfig, gated.Allowed, bk)
 	if err == nil {
-		cmd.FreezeOverride = run.FreezeOverride
 		cmd.DispatchGate = connectorDispatchGate(sc, triggeredBy)
 		err = s.commandRepo.Create(ctx, cmd)
 	}

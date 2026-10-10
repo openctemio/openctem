@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -168,6 +169,9 @@ func (f *fakeStore) DequeueTenants(context.Context, int) ([]shared.ID, error) {
 	return ids, nil
 }
 func (f *fakeStore) TenantMatches(context.Context, shared.ID, time.Time, int) ([]softwarematch.Match, error) {
+	return f.matches, nil
+}
+func (f *fakeStore) AssetMatches(context.Context, shared.ID, shared.ID) ([]softwarematch.Match, error) {
 	return f.matches, nil
 }
 func (f *fakeStore) MatcherFindings(context.Context, shared.ID) ([]softwarematch.MatcherFinding, error) {
@@ -395,5 +399,46 @@ func TestSoftwareChangedQueues(t *testing.T) {
 	svc.SoftwareChanged(id, nil)
 	if len(store.queued) != 1 || store.queued[0] != id {
 		t.Fatal(store.queued)
+	}
+}
+
+type fakeLinks struct{ links []software.AssetLink }
+
+func (f fakeLinks) ListAssetLinks(context.Context, shared.ID, shared.ID) ([]software.AssetLink, error) {
+	return f.links, nil
+}
+
+func TestAssetSoftware_ScoresAndFlagsPolicy(t *testing.T) {
+	asset := shared.NewID()
+	strong := match(asset, "CVE-STRONG", 80)
+	weak := match(asset, "CVE-WEAK", 80)
+	weak.VersionID, weak.Location = strong.VersionID, strong.Location
+	weak.Result.AllVersions = true
+	store := newFakeStore()
+	store.matches = []softwarematch.Match{weak, strong}
+	svc, _ := newSvc(store, true)
+	now := time.Now()
+	svc.SetLinkReader(fakeLinks{[]software.AssetLink{
+		{VersionID: strong.VersionID, Location: strong.Location, Product: "nginx", LastSeen: now},
+		{VersionID: shared.NewID(), Product: "old", LastSeen: now.Add(-40 * 24 * time.Hour)},
+	}})
+	items, err := svc.AssetSoftware(context.Background(), shared.NewID(), asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || len(items[0].Matches) != 2 || items[0].Stale || !items[1].Stale {
+		t.Fatalf("items %+v", items)
+	}
+	first, second := items[0].Matches[0], items[0].Matches[1]
+	if first.CVEID != "CVE-STRONG" || !first.InPolicy || first.Label != vulnmatch.LabelLikely {
+		t.Fatalf("first %+v", first)
+	}
+	if second.CVEID != "CVE-WEAK" || second.InPolicy || second.Confidence > vulnmatch.AllVersionsCap {
+		t.Fatalf("second %+v", second)
+	}
+	// Without the reader the list is refused, not empty.
+	svc2, _ := newSvc(newFakeStore(), true)
+	if _, err := svc2.AssetSoftware(context.Background(), shared.NewID(), asset); err == nil {
+		t.Fatal("no error without a reader")
 	}
 }

@@ -320,6 +320,8 @@ export interface ScanRun {
   tasks_truncated?: boolean
   /** Continues the task list after `tasks` (GET /scan-runs/{id}/tasks?cursor=). */
   tasks_next_cursor?: string
+  /** The targets that waited for their scan windows when the run started (RFC-067). */
+  window_waits?: Schemas['internal_infra_http_handler.RunWindowWaitsResponse']
 }
 
 // ============================================

@@ -4,11 +4,12 @@
  * Everything the Review step shows and the reasons Start is disabled, from
  * the server's answers only: the scope check of the direct targets (the same
  * request the selection summary made, so it is cached), the workflow preview
- * (readiness, blocking steps, an active freeze window) and the form's own
+ * (readiness, blocking steps, targets waiting for their scan windows) and the form's own
  * completeness. The create request is re-validated by the API anyway.
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { useScopeCheck } from '@/features/scope'
 import { useDebounce } from '@/hooks/use-debounce'
 import type { NewScanFormData } from '../types'
@@ -47,6 +48,7 @@ export function useScanReview(
     scanner_name: form.mode === 'single' ? form.scannerName || undefined : undefined,
   })
   const workflow = useWorkflowPreview(workflowRequest, enabled && form.mode === 'workflow')
+  const { t } = useTranslation()
 
   return useMemo(() => {
     const blockers: string[] = []
@@ -75,9 +77,24 @@ export function useScanReview(
         why ? `The workflow would not start: ${why}` : 'The workflow would not start as it is'
       )
     }
-    if (wf?.freeze) {
+    const windows = wf?.targets?.windows
+    if ((windows?.never_count ?? 0) > 0) {
+      // The trigger refuses a run with a target whose windows never open.
+      blockers.push(
+        t(
+          'scanWindows.review.never',
+          '{n} targets have scan windows that never open: starting the scan is refused until a policy changes',
+          { n: windows?.never_count ?? 0 }
+        )
+      )
+    }
+    if ((windows?.waiting_count ?? 0) > 0) {
       warnings.push(
-        `Freeze window ${wf.freeze.window ?? ''} is active${wf.freeze.until ? ` until ${new Date(wf.freeze.until).toLocaleString()}` : ''}: starting the scan now is refused until it ends (a scheduled run is moved to its end).`
+        t(
+          'scanWindows.review.waiting',
+          '{n} targets wait for their scan windows; they are scanned when their windows open',
+          { n: windows?.waiting_count ?? 0 }
+        )
       )
     }
     if (form.targets.assetGroupIds.length > 0) {
@@ -91,5 +108,5 @@ export function useScanReview(
       )
     }
     return { blockers, warnings, refused, scope, workflow, targets }
-  }, [form, scope, workflow, targets])
+  }, [form, scope, workflow, targets, t])
 }

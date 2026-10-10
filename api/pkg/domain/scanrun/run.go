@@ -122,11 +122,6 @@ type Run struct {
 	// occurrence: UNIQUE(scan_id, scheduled_for).
 	ScheduledFor *time.Time
 
-	// FreezeOverride: a member with scans:freeze:override started this run
-	// while a scan freeze window was active (audited). Its commands carry
-	// the override, so the claim-time freeze hold lets them through.
-	FreezeOverride bool
-
 	// DeadlineAt is when the reaper settles the run if it is still open:
 	// started_at plus the scan timeout, capped at 24 h, fixed when the run
 	// starts (RFC-046 §6.3). Nil for runs started before migration 000674.

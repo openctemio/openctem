@@ -1,6 +1,8 @@
 package bountyprogram
 
-// Testing windows and the rules a job carries (RFC-065 §12).
+// Testing windows and the rules a job carries (RFC-065 §12). When testing is
+// allowed is decided with every other scan window by the scan window
+// evaluator (RFC-067; internal/app/scanwindow.ProgramSource).
 
 import (
 	"fmt"
@@ -52,20 +54,6 @@ func (w TestingWindow) Validate() error {
 	return nil
 }
 
-// Open reports whether now falls inside the window.
-func (w TestingWindow) Open(now time.Time) bool {
-	loc, err := time.LoadLocation(w.Timezone)
-	if err != nil {
-		return false
-	}
-	t := now.In(loc)
-	if !slices.Contains(lower(w.Days), windowDays[t.Weekday()]) {
-		return false
-	}
-	hm := t.Format("15:04")
-	return hm >= w.Start && hm < w.End
-}
-
 func lower(in []string) []string {
 	out := make([]string, len(in))
 	for i, s := range in {
@@ -74,26 +62,10 @@ func lower(in []string) []string {
 	return out
 }
 
-// TestingOpen reports whether the rules allow testing now: no window means
-// any time.
-func (r Rules) TestingOpen(now time.Time) bool {
-	if len(r.TestingWindows) == 0 {
-		return true
-	}
-	for _, w := range r.TestingWindows {
-		if w.Open(now) {
-			return true
-		}
-	}
-	return false
-}
-
 // Errors of the rules a job carries.
 var (
 	ErrRulesConflict = shared.NewDomainError("PROGRAM_RULES_CONFLICT",
 		"the targets belong to programs whose rules conflict (headers or User-Agent); scan one program at a time", shared.ErrValidation)
-	ErrOutsideWindow = shared.NewDomainError("PROGRAM_OUTSIDE_WINDOW",
-		"a program of these targets does not allow testing now (testing windows)", shared.ErrValidation)
 )
 
 // JobRules are the rules a job carries: the union of the rules of the

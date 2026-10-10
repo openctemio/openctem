@@ -407,6 +407,15 @@ func (s *SyncStatus) MarkSyncFailed(err string) {
 	s.updatedAt = now
 }
 
+// SetMetadata replaces the metadata (a feed's own progress).
+func (s *SyncStatus) SetMetadata(m map[string]any) {
+	s.metadata = make(map[string]any, len(m))
+	for k, v := range m {
+		s.metadata[k] = v
+	}
+	s.updatedAt = time.Now().UTC()
+}
+
 // SetEnabled sets the enabled status.
 func (s *SyncStatus) SetEnabled(enabled bool) {
 	s.isEnabled = enabled

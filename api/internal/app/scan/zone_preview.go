@@ -74,6 +74,9 @@ type ZoneRoutingPreviewInput struct {
 	ScannerName   string
 	TargetsPerJob int
 	ScanZoneID    string // "" = Automatic
+	// Tier is the probe tier the scan windows are evaluated at; nil: the
+	// scanner's tier (single), or active (workflow).
+	Tier *int
 }
 
 // PreviewTarget is where one target would go.
@@ -121,6 +124,9 @@ type ZoneRoutingPreview struct {
 	SelectedZoneID   string          `json:"selected_zone_id,omitempty"`
 	Warnings         []string        `json:"warnings"`
 	Error            *PreviewError   `json:"error,omitempty"`
+	// Windows: what the scan windows mean for the targets now (nil: none
+	// applies).
+	Windows *WindowPreview `json:"windows,omitempty"`
 }
 
 // PreviewZoneRouting shows, for a scan about to be created, which targets go
@@ -227,6 +233,9 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 	out.Targets = previewTargets(resolved.Targets, plan, rejected)
 	sortByInputOrder(out.Targets, in.Targets)
 	out.UncoveredTargets = len(rejected)
+	if err := s.previewWindows(ctx, sc, in, resolved.Targets, plan, out); err != nil {
+		return nil, err
+	}
 	if plan == nil {
 		out.UnzonedTargets = len(resolved.Targets)
 		if len(resolved.Targets) > 0 {

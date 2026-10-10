@@ -2,8 +2,9 @@ package scan
 
 // Bug-bounty program rules at trigger (RFC-065 §12). Command delivery
 // enforces them for every job; the trigger refuses up front a run whose
-// targets belong to programs whose rules conflict, or that a program does
-// not allow testing now, so the person sees why instead of a queued job.
+// targets belong to programs whose rules conflict, so the person sees why
+// instead of a failed job. Program testing windows are scan windows
+// (windows.go).
 
 import (
 	"context"
@@ -23,15 +24,15 @@ type ProgramRuleChecker interface {
 // SetProgramRules makes the trigger refuse runs the programs' rules forbid.
 func (s *Service) SetProgramRules(c ProgramRuleChecker) { s.programRules = c }
 
-// refuseProgramRules returns bp.ErrRulesConflict or bp.ErrOutsideWindow for
-// targets the programs' rules forbid now. A lookup error is returned too
-// (fail closed: the run is not started).
+// refuseProgramRules returns bp.ErrRulesConflict for targets whose
+// programs' rules conflict. A lookup error is returned too (fail closed: the
+// run is not started).
 func (s *Service) refuseProgramRules(ctx context.Context, tenantID shared.ID, targets []string) error {
 	if s.programRules == nil || len(targets) == 0 {
 		return nil
 	}
 	_, err := s.programRules.JobRules(ctx, tenantID, targets, time.Now())
-	if err == nil || errors.Is(err, bp.ErrRulesConflict) || errors.Is(err, bp.ErrOutsideWindow) {
+	if err == nil || errors.Is(err, bp.ErrRulesConflict) {
 		return err
 	}
 	return shared.NewDomainError("PROGRAM_RULES_UNAVAILABLE",

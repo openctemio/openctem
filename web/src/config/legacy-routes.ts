@@ -85,6 +85,12 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   },
   // Scanning catalogs: configured at onboarding, rarely touched, so they live
   // in Settings › Scanning (owner decision D3). Detail and sub-pages follow.
+  // Scan freeze windows became blackout policies of Scan windows (RFC-067).
+  {
+    source: '/settings/scanning/freeze-windows',
+    destination: '/settings/scanning/scan-windows',
+    permanent: true,
+  },
   {
     source: '/scan-profiles/:path*',
     destination: '/settings/scanning/profiles/:path*',
