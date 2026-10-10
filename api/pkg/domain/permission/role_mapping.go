@@ -20,7 +20,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Assets
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
@@ -99,7 +99,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Assets
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,

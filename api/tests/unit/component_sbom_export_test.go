@@ -18,7 +18,7 @@ import (
 )
 
 func TestListSBOMEntries_WholeInventory(t *testing.T) {
-	repo := &mockComponentRepo{sbomEntries: []component.SBOMEntry{{ID: shared.NewID(), Name: "lodash"}}}
+	repo := &mockComponentRepo{sbomEntries: []component.SBOMEntry{{ID: shared.NewID().String(), Name: "lodash"}}}
 	svc := asset.NewComponentService(repo, nil, logger.NewNop())
 	tenant := shared.NewID()
 
@@ -88,7 +88,7 @@ func TestListSBOMEntries_InvalidIDs(t *testing.T) {
 
 func TestComponentHandler_ExportSBOM(t *testing.T) {
 	repo := &mockComponentRepo{sbomEntries: []component.SBOMEntry{
-		{ID: shared.NewID(), Name: "lodash", Version: "4.17.21", Ecosystem: "npm", PURL: "pkg:npm/lodash@4.17.21", Licenses: []string{"MIT"}},
+		{ID: shared.NewID().String(), Name: "lodash", Version: "4.17.21", Ecosystem: "npm", PURL: "pkg:npm/lodash@4.17.21", Licenses: []string{"MIT"}},
 	}}
 	h := handler.NewComponentHandler(asset.NewComponentService(repo, nil, logger.NewNop()), nil, validator.New(), logger.NewNop())
 
