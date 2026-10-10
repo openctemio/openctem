@@ -2,9 +2,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -103,6 +105,13 @@ type ScopeConfig struct {
 	// `programfeed build --local-only`); read only while a platform
 	// administrator has the source enabled. Never set from the UI.
 	ProgramFeedLocalBundleDir string
+	// ProgramFeedURLs are the release URL and mirrors of the chunked (v2)
+	// program feed (PROGRAMFEED_URL, then PROGRAMFEED_MIRRORS, comma
+	// separated), tried in order before ProgramFeedDir. https only.
+	ProgramFeedURLs []string
+	// FeedCacheDir holds verified feed chunks between imports
+	// (FEED_CACHE_DIR; default a directory under the system temp dir).
+	FeedCacheDir string
 }
 
 // ScanZoneResolverSystem routes hostnames with the platform's own resolver.
@@ -1427,6 +1436,8 @@ func Load() (*Config, error) {
 			ProgramFeedDir:            getEnv("PROGRAMFEED_DIR", ""),
 			ProgramFeedRootKeyID:      getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
 			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
+			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
+			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
@@ -1542,6 +1553,12 @@ func (c *Config) validateStorage() error {
 
 // validateBasic validates basic configuration regardless of environment.
 func (c *Config) validateBasic() error {
+	for _, u := range c.Scope.ProgramFeedURLs {
+		pu, err := url.Parse(u)
+		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+			return errors.New("PROGRAMFEED_URL and PROGRAMFEED_MIRRORS must be https URLs without credentials, query or fragment")
+		}
+	}
 	if c.Scope.ActiveProof == "" {
 		c.Scope.ActiveProof = ScopeProofOff
 		if c.Auth.SelfServiceTenantCreation() {
@@ -2204,4 +2221,15 @@ func splitAndTrim(s, sep string) []string {
 		}
 	}
 	return parts
+}
+
+// feedURLs joins a feed's release URL and its comma-separated mirrors.
+func feedURLs(primary, mirrors string) []string {
+	var out []string
+	for _, u := range append([]string{primary}, strings.Split(mirrors, ",")...) {
+		if u = strings.TrimSpace(u); u != "" {
+			out = append(out, strings.TrimRight(u, "/"))
+		}
+	}
+	return out
 }

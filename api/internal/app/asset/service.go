@@ -1309,6 +1309,9 @@ type ListAssetsInput struct {
 	// CoveredBy: assets the scope join confirmed through this scope entry
 	// (RFC-054 §4.3), the link behind "N assets confirmed".
 	CoveredBy string `validate:"omitempty,uuid"`
+	// ProgramAssets: only (bug-bounty program assets) or exclude (leave
+	// out program-only assets), RFC-065 §16.5.
+	ProgramAssets string `validate:"omitempty,oneof=only exclude"`
 
 	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page    int    `validate:"min=0"`
@@ -1469,6 +1472,7 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		}
 		filter.CoveredByScopeTarget = &id
 	}
+	filter.ProgramAssets = input.ProgramAssets
 	if len(input.DataClassifications) > 0 {
 		filter = filter.WithDataClassifications(input.DataClassifications...)
 	}
