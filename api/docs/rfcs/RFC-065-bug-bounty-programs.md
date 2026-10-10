@@ -612,6 +612,42 @@ covers the target.
   programs. Controller `program-feed-local`, hourly. Fetching allowlisted
   public datasets directly from the platform is a later option.
 
+### 16.8 Program targets as collected assets (owner direction, 2026-10-10; next change)
+
+The feed importer is an asset collector, not a second asset pipeline:
+
+1. **Standard ingest.** Feed records are converted to the platform's CTIS
+   asset ingest (the path every collector uses) with `source = programfeed`,
+   `observed_at` = the record's `last_changed` (or `provenance.fetched_at`)
+   and `source_run` = the feed sequence, so program targets get dedup, the
+   attribute-source reconciliation (RFC-069), the change timeline, system
+   tags and vulnerability matching unchanged. Program metadata (rules,
+   terms, eligibility) stays in the program tables and links to the assets
+   (`asset_program_links`). Re-importing the same data produces no timeline
+   events.
+2. **Typed scope items.** Every target type maps to an asset type and a
+   scope entry: domain and wildcard to domain/subdomain; ip and cidr to
+   ip_address and cidr; host:port and service targets (`api.x.com:8443/tcp`,
+   `10.0.0.5:22`) to a host plus a service (open port) asset and a scope
+   entry constrained to that port and protocol — scope entries gain the
+   minimal port/protocol constraint, enforced at dispatch so a
+   port-restricted item never authorizes a scan of other ports; a URL with a
+   path to a web application/url entry with the path prefix; API endpoints
+   (OpenAPI, GraphQL) to an api asset; mobile apps, source repositories,
+   executables, smart contracts, AI models, hardware and other to their
+   asset types where they exist, otherwise program targets without an asset
+   (never scanned).
+3. **Per-item qualifiers** carried through: in or out of scope (out of scope
+   becomes an exclusion that wins), bounty eligibility, maximum severity,
+   environment, testing instructions, required headers and test-account
+   notes, and trust (published, published_by_platform, inferred).
+4. **Tests**: each type maps correctly; a port-restricted item cannot start
+   a scan of other ports; out of scope wins; an identical re-import makes no
+   timeline events; tenant isolation.
+
+The record parser ignores fields the collector adds within v1, so the typed
+fields can ship in the collector first.
+
 ### 16.7 Plan
 
 | PR | Content |
@@ -620,5 +656,6 @@ covers the target.
 | Private programs (web) | `/programs/new` source picker (Enter manually / Import file), visibility, locked view and acceptance |
 | Feed importer | §16.2–16.3: catalog, verification, sequence and freshness, subscriptions, fan-out, notifications (fixture bundles; no network in CI) |
 | Program assets | §16.5: provenance links, system tags, inventory filter, default exclusion from organization metrics |
-| External dataset source | owner option A: admin-enabled, allowlisted public datasets fetched by the platform (§16.6) |
+| Local bundle source | owner option A: the operator's local-only bundle, enabled by a platform administrator (§16.6) |
+| Program targets as assets | §16.8: CTIS ingest, typed scope items with port/protocol constraints, per-item qualifiers |
 | Later | per-user researcher API connector (P7), passive sweep of unaccepted program targets (§16.4) |
