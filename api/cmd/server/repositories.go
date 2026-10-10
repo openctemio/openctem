@@ -15,6 +15,7 @@ type Repositories struct {
 	Asset                  *postgres.AssetRepository
 	RepoExt                *postgres.RepositoryExtensionRepository
 	Component              *postgres.ComponentRepository
+	VEXStatement           *postgres.VEXStatementRepository
 	AssetGroup             *postgres.AssetGroupRepository
 	AssetType              *postgres.AssetTypeRepository
 	AssetTypeCat           *postgres.AssetTypeCategoryRepository
@@ -194,7 +195,8 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin         *postgres.AdminRepository
 	SignupPolicy  *postgres.SignupPolicyRepository
-	ScopePolicy   *postgres.ScopePolicyRepository
+	ScanPolicy    *postgres.ScanPolicyRepository
+	ScanApproval  *postgres.ScanApprovalRepository
 	AccessRequest *postgres.AccessRequestRepository
 	Plan          *postgres.PlanRepository
 	IdleLifecycle *postgres.IdleLifecycleRepository
@@ -300,6 +302,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Asset:                  postgres.NewAssetRepository(db),
 		RepoExt:                postgres.NewRepositoryExtensionRepository(db),
 		Component:              postgres.NewComponentRepository(db),
+		VEXStatement:           postgres.NewVEXStatementRepository(db),
 		AssetGroup:             postgres.NewAssetGroupRepository(db),
 		AssetType:              postgres.NewAssetTypeRepository(db),
 		AssetTypeCat:           postgres.NewAssetTypeCategoryRepository(db),
@@ -458,7 +461,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:         postgres.NewAdminRepository(db),
 		SignupPolicy:  postgres.NewSignupPolicyRepository(db),
-		ScopePolicy:   postgres.NewScopePolicyRepository(db),
+		ScanPolicy:    postgres.NewScanPolicyRepository(db),
+		ScanApproval:  postgres.NewScanApprovalRepository(db),
 		AccessRequest: postgres.NewAccessRequestRepository(db),
 		Plan:          postgres.NewPlanRepository(db),
 		IdleLifecycle: postgres.NewIdleLifecycleRepository(db),

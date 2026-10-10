@@ -70,6 +70,7 @@ Signer (`openctem-signer serve`):
 | `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
 | `SIGNER_LEDGER` | scope ledger mode: `enforce`, `audit` or `off` ([Scope ledger](#scope-ledger)) | the recorded default: `enforce` on a signer that had never signed, `audit` on one upgraded to the ledger |
 | `SIGNER_LEDGER_MIN_APPROVALS` | the operator's floor under every widening's approval count (0, 1 or 2) | 0 |
+| `SIGNER_LEDGER_T2_MIN_APPROVALS` | the operator's floor for a widening that puts an intrusive (t2) entry into the ledger (0, 1 or 2; RFC-073 §7) | 0 |
 
 API:
 
@@ -378,7 +379,7 @@ API process that asks for anything, gets a refusal.
 
 | Item | Fields | From |
 |---|---|---|
-| entry | `id`, `type` (scope target type), `pattern`, `max_tier` (0, 1, 2), `expires_at` | a scope entry in effect (active, unexpired) |
+| entry | `id`, `type` (scope target type), `pattern`, `max_tier` (0, 1, 2), `expires_at`, `ports` and `protocol` (the port limit, canonical form; absent: none) | a scope entry in effect (active, unexpired) |
 | exclusion | `id`, `type` (domain, subdomain, ip_address, ip_range, cidr, url, repository), `pattern`, `expires_at` | a target exclusion in effect (approved, active) |
 
 At sign time, for every target of the statement, with the API's matching
@@ -394,7 +395,19 @@ and `NeedsAuthority` the API's authority check uses):
    CGNAT addresses (zones gate them), as in RFC-054 §4.2;
 3. otherwise an unexpired entry covering the target with `max_tier` at or
    above the tier: covered only below it is `tier_exceeds_ledger`, not at all
-   `out_of_ledger`.
+   `out_of_ledger`. Matching is `scope.EntryMatches`: a port-limited entry
+   covers only a target that names an allowed port (`host:port`, or a URL
+   whose port is allowed), a URL entry with a path only URLs under it;
+4. a target covered only by port- or path-limited entries is signed only for
+   a tool that stays on the target it is given
+   (`scope.ConstrainedToolAllowed`; otherwise `out_of_ledger`). The job's
+   port list is checked by the API at claim (the signer does not see the
+   payload).
+
+The port limit is part of an entry like its pattern: dropping or relaxing
+it is a widening (approvals as for a new entry), and a sync from the
+database removes an entry whose limit differs instead of taking the new
+one. A limit that is not in canonical form is malformed.
 
 Expiry is applied with the signer's clock: an expired entry stops
 authorizing without any message from the API.
@@ -434,7 +447,8 @@ narrows, and identical puts are a no-op.
 A widening needs, counted by the signer: distinct approvers (lower-case
 UUIDs, `approved_at` not in the future), **not the requester**, at least
 `max(policy_required_approvals, SIGNER_LEDGER_MIN_APPROVALS)`, and at least
-one when an entry is t2 (RFC-054 S3: never zero for intrusive). A
+`SIGNER_LEDGER_T2_MIN_APPROVALS` when an entry is t2 (the organization's
+policy is 0 in scan approval Off and On, RFC-073 §7). A
 requester's plain approval never counts; a `self_approved` approval (RFC-054
 §12 A2, a sole owner with a fresh second factor) counts once and only for
 the requester. A t2 entry without an expiry is malformed. The approval count

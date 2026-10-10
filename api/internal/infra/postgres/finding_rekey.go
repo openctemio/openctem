@@ -80,7 +80,7 @@ func (r *FindingRekeyRepository) ListCandidates(ctx context.Context, tenantID sh
 		       COALESCE(f.misconfig_policy_id, ''), COALESCE(f.misconfig_resource_type, ''),
 		       COALESCE(f.misconfig_resource_name, ''), COALESCE(f.partial_fingerprints, '{}'::jsonb)
 		FROM findings f
-		LEFT JOIN components c ON c.id = f.component_id
+		LEFT JOIN software_versions c ON c.id = f.component_id
 		WHERE f.tenant_id = $1 AND f.fingerprint_version < $2 AND f.status <> 'duplicate'
 		  AND f.id > $3::uuid
 		ORDER BY f.id
