@@ -34,6 +34,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { TagInput } from '@/components/ui/tag-input'
 import { useTranslation } from '@/context/i18n-provider'
+import { RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { useRoles } from '@/features/access-control/api/use-roles'
 import { useServiceAccounts } from '@/features/service-accounts/api/use-service-accounts'
@@ -168,7 +169,7 @@ export function ApprovalRuleEditor({ open, rule, onOpenChange, onSave }: Approva
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {(['low', 'medium', 'high', 'critical'] as const).map((v) => (
+              {[...RATED_CRITICALITY_LEVELS].reverse().map((v) => (
                 <SelectItem key={v} value={v}>
                   {t(`scans.ruleEditor.criticality.${v}`, v)}
                 </SelectItem>
