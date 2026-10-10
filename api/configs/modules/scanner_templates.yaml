@@ -1,0 +1,16 @@
+- id: scanner_templates
+  const: ModuleScannerTemplates
+  slug: "scanner-templates"
+  name: Scanner Templates
+  description: Catalogue of Nuclei / Betterleaks / Semgrep templates
+  icon: FileCode
+  category: settings
+  order: 10
+  user_facing: true
+  permission: "scans:templates:read"
+  depends:
+    - {id: scans, kind: hard, reason: "templates are consumed by scans"}
+  routes:
+    - "/api/v1/scanner-templates"
+    - "/api/v1/content-packs"
+    - "/api/v1/platform-content-packs"
