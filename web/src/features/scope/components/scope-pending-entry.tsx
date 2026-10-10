@@ -127,14 +127,18 @@ export function ScopePendingEntry({
       toast.success(t('scope.pending.approved', 'Approval recorded'))
       onApplied?.()
     } catch (err) {
-      toast.error(scopeErrorMessage(t, err, 'The change was not saved.'))
+      toast.error(
+        scopeErrorMessage(t, err, t('scope.pending.notSaved', 'The change was not saved.'))
+      )
     } finally {
       setBusy(false)
     }
   }
 
-  const probeLabel = TIER_LABEL[`t${probeTier ?? 1}`] ?? ''
-  const entryLabel = TIER_LABEL[entry.max_tier ?? 't1'] ?? ''
+  const probeKey = `t${probeTier ?? 1}`
+  const entryKey = entry.max_tier ?? 't1'
+  const probeLabel = t(`scope.tier.label.${probeKey}`, TIER_LABEL[probeKey] ?? '')
+  const entryLabel = t(`scope.tier.label.${entryKey}`, TIER_LABEL[entryKey] ?? '')
 
   return (
     <div className="space-y-1.5 rounded-md border bg-muted/30 p-2" data-testid="pending-entry">
@@ -158,7 +162,7 @@ export function ScopePendingEntry({
                   pattern: entry.pattern ?? '',
                 })}{' '}
             <span className="text-muted-foreground" data-testid="pending-approvers">
-              {approversText(entry)}
+              {approversText(entry, t)}
             </span>
           </p>
           <div className="flex flex-wrap items-center gap-1.5">
