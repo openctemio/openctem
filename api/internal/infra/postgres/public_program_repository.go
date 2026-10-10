@@ -236,7 +236,7 @@ func (r *PublicProgramRepository) ListPublic(ctx context.Context, search string,
 		return nil, 0, fmt.Errorf("list catalog: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]bountyprogram.PublicProgram, 0, limit)
+	out := make([]bountyprogram.PublicProgram, 0, 16)
 	for rows.Next() {
 		p, err := scanPublicProgram(rows)
 		if err != nil {
