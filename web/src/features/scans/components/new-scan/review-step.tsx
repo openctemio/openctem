@@ -36,6 +36,8 @@ interface ReviewStepProps {
   zones: ScanZone[]
   canReadZones: boolean
   zoneRequest: ScanZonePreviewRequest
+  /** Scan approval (RFC-072): what the organization's rules ask, if anything. */
+  approvalBlock?: React.ReactNode
 }
 
 function Row({
@@ -115,6 +117,7 @@ export function ReviewStep({
   zones,
   canReadZones,
   zoneRequest,
+  approvalBlock,
 }: ReviewStepProps) {
   const { t } = useTranslation()
   const tgt = data.targets
@@ -299,6 +302,7 @@ export function ReviewStep({
           ))}
         </ul>
       )}
+      {approvalBlock}
     </div>
   )
 }
