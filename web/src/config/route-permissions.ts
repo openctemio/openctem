@@ -543,7 +543,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.ScopeConfig,
   },
-  '/settings/scanning/freeze-windows': {
+  '/settings/scanning/scan-windows': {
     permission: Permission.ScansRead,
     module: Module.Scans,
   },

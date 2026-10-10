@@ -74,7 +74,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
-	scanfreezeapp "github.com/openctemio/openctem/api/internal/app/scanfreeze"
+	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
@@ -665,9 +665,12 @@ type Services struct {
 	// SensorGrant manages per-sensor grants (RFC-052 §5).
 	SensorGrant *sensorgrant.Service
 	ScanZone    *scanzoneapp.Service
-	// ScanFreeze manages scan freeze windows.
-	ScanFreeze *scanfreezeapp.Service
-	Command    *command.Service
+	// ScanWindow manages scan window policies and overrides (RFC-067);
+	// ScanWindowResolver finds what governs targets for the claim, the
+	// trigger and the API.
+	ScanWindow         *scanwindowapp.Service
+	ScanWindowResolver *scanwindowapp.Resolver
+	Command            *command.Service
 	// SensorContent is the scanner content policy and refresh (RFC-031).
 	SensorContent *sensorapp.ContentService
 	// TenableSC queues and follows Tenable.sc connector syncs (RFC-047).
@@ -1040,6 +1043,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-040 §11.5: program entries reach the job signer's ledger through
 	// the scope service's hook (a no-op without a signer).
 	s.BountyProgram.SetLedger(s.Scope)
+	// Scan windows (RFC-067): policies selected by assets, scope entries,
+	// zones and programs; program testing windows are a source.
+	s.ScanWindowResolver = scanwindowapp.NewResolver(repos.ScanWindowPolicy, repos.ScanWindowOverride)
+	s.ScanWindowResolver.SetAssets(repos.ScanWindowAsset)
+	s.ScanWindowResolver.SetScope(s.Scope, programRepo)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
@@ -1722,9 +1730,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// the scan service exists the gate refuses (fail closed).
 		command.WithScopeRecheck(probeGate)}
 	if s.BountyProgram != nil {
-		// RFC-065 §12: program testing windows, headers, User-Agent and
-		// rate caps travel with each job a program covers.
+		// RFC-065 §12: program headers, User-Agent and rate caps travel
+		// with each job a program covers.
 		cmdOpts = append(cmdOpts, command.WithProgramRules(s.BountyProgram))
+	}
+	if s.ScanWindowResolver != nil {
+		// RFC-067: jobs outside their scan windows wait (program testing
+		// windows included).
+		cmdOpts = append(cmdOpts, command.WithScanWindows(s.ScanWindowResolver))
 	}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
@@ -1963,9 +1976,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
-		// Freeze windows: a scheduled run is deferred to the window's end,
-		// any other trigger refused unless overridden (audited).
-		scan.WithFreezeWindows(repos.ScanFreezeWindow),
+		// Scan windows (RFC-067): never-opening targets refuse the run, a
+		// scheduled run with nothing open is deferred to the next opening.
+		scan.WithScanWindows(s.ScanWindowResolver),
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
@@ -2002,7 +2015,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Scan.SetProgramRules(s.BountyProgram) // RFC-065 §12
 	}
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
-	s.ScanFreeze = scanfreezeapp.NewService(repos.ScanFreezeWindow, s.Audit, log)
+	if s.ScanWindowResolver != nil {
+		s.ScanWindow = scanwindowapp.NewService(repos.ScanWindowPolicy, repos.ScanWindowPolicy, repos.ScanWindowOverride, s.ScanWindowResolver, log)
+		s.ScanWindow.SetAudit(s.Audit)
+		s.ScanWindow.SetAssets(repos.ScanWindowAsset, s.DataScope)
+		s.ScanWindow.SetHoldReleaser(repos.Command)
+	}
 	// The validate-command dispatcher gates every probe through the scan
 	// service from here on.
 	probeGate.set(s.Scan)
@@ -2666,6 +2684,16 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// every administrator (RFC-054 §7).
 	if s.Scope != nil {
 		s.Scope.SetEntryPolicy(s.Tenant, repos.MemberLifecycle, s.Notification)
+	}
+
+	// Scan window overrides notify every administrator in the app and on
+	// the security-alert channel (RFC-067 §8).
+	if s.ScanWindow != nil {
+		var channels scanwindowapp.ChannelEnqueuer
+		if s.Outbox != nil {
+			channels = s.Outbox
+		}
+		s.ScanWindow.SetNotifications(repos.MemberLifecycle, s.Notification, channels)
 	}
 }
 

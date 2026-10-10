@@ -11,8 +11,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// A trigger that is refused before anything is dispatched (scope gate, freeze
-// window, unavailable tool or sensor, no target, paused scan, ...) is recorded
+// A trigger that is refused before anything is dispatched (scope gate, scan
+// window that never opens, unavailable tool or sensor, no target, paused scan, ...) is recorded
 // as a run with status blocked, its refusal code and message. Before, a
 // refused manual trigger left no trace on the scan, and a refused scheduled
 // trigger moved last_run_at with no run behind it, so the list read "Last
@@ -56,11 +56,8 @@ func refusal(err error) (code, message string, ok bool) {
 	var started *runStartError
 	if errors.As(err, &started) ||
 		errors.Is(err, ErrScanRunInProgress) ||
-		errors.Is(err, scanrun.ErrOccurrenceAlreadyRun) {
+		errors.Is(err, scanrun.ErrOccurrenceAlreadyRun) || AsWindowDefer(err) != nil {
 		return "", "", false
-	}
-	if fe := AsFrozen(err); fe != nil {
-		return CodeScanFrozen, fe.Error(), true
 	}
 	var de *shared.DomainError
 	if errors.As(err, &de) {
