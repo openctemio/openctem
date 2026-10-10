@@ -31,7 +31,27 @@ export interface ProgramRules {
   testing_windows?: TestingWindow[]
 }
 
-export type ProgramScopeSource = 'paste' | 'program_api' | 'program_file'
+export type ProgramScopeSource = 'paste' | 'file_import' | 'program_api' | 'program_file'
+
+/** Who sees a program (RFC-065 §15): private = members and owners only. */
+export type ProgramVisibility = 'private' | 'public'
+
+export type ScopeFileFormat = 'auto' | 'platform_csv' | 'burp_json' | 'generic_csv' | 'text'
+
+/** Columns of a generic CSV: identifier required, type and in-scope optional. */
+export interface ScopeFileMapping {
+  identifier: string
+  type?: string
+  in_scope?: string
+}
+
+/** A scope file read in the browser and sent as text (at most 256 KiB). */
+export interface ScopeFileInput {
+  format: ScopeFileFormat
+  name: string
+  content: string
+  mapping?: ScopeFileMapping
+}
 
 /** Where a program's scope comes from; the API token is never returned. */
 export interface ProgramSync {
@@ -72,6 +92,10 @@ export interface Program {
   platform: string
   handle: string
   program_url: string
+  visibility: ProgramVisibility
+  terms_text: string
+  /** Private and the caller has not accepted its current terms: details hidden. */
+  locked: boolean
   status: ProgramStatus
   scope_source: string
   authoritative: boolean
@@ -137,6 +161,11 @@ export interface ProgramInput {
   handle: string
   program_url: string
   scope_text: string
+  /** Replaces scope_text when set. */
+  scope_file?: ScopeFileInput
+  terms_text: string
+  /** Read on import only. */
+  visibility?: ProgramVisibility
   rules: ProgramRules
   accept_terms_sha256?: string
 }

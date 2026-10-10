@@ -45,24 +45,37 @@ import { scopeTargetTypeLabel } from './scope-target-type'
 import { ScopeSelfApproveDialog } from './scope-self-approve-dialog'
 import { ScopeAttestations } from './scope-attestations'
 
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+/** English with `{var}` filled: the default when no catalog is passed. */
+const english: Translate = (_key, fallback = '', vars = {}) =>
+  Object.entries(vars).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), fallback)
+
 /** Who can still approve a pending entry, as one sentence. */
-export function approversText(entry: ApiScopeTarget): string | null {
+export function approversText(entry: ApiScopeTarget, t: Translate = english): string | null {
   const a = entry.approval
   if (!a) return null
   const left = a.remaining ?? 0
-  const needs = `Needs ${left} more ${left === 1 ? 'approval' : 'approvals'}`
+  const needs =
+    left === 1
+      ? t('scope.approvers.needs1', 'Needs 1 more approval')
+      : t('scope.approvers.needsN', 'Needs {n} more approvals', { n: left })
   const count = a.eligible_approver_count ?? 0
   if (count === 0) {
-    return `${needs}. Nobody else in your organization can approve it.`
+    return `${needs}. ${t('scope.approvers.nobody', 'Nobody else in your organization can approve it.')}`
   }
   const names = (a.eligible_approvers ?? []).map((p) => p.name).filter(Boolean)
   if (names.length > 0) {
-    return `${needs}. Can approve: ${names.join(', ')}.`
+    return `${needs}. ${t('scope.approvers.names', 'Can approve: {names}.', { names: names.join(', ') })}`
   }
-  return `${needs}. ${count} ${count === 1 ? 'member' : 'members'} can approve it.`
+  return `${needs}. ${
+    count === 1
+      ? t('scope.approvers.count1', '1 member can approve it.')
+      : t('scope.approvers.countN', '{n} members can approve it.', { n: count })
+  }`
 }
 
-function RemindButton({ entry }: { entry: ApiScopeTarget }) {
+export function RemindButton({ entry }: { entry: ApiScopeTarget }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   // The API sends can_remind_at only while the next reminder is not due yet.
@@ -80,17 +93,25 @@ function RemindButton({ entry }: { entry: ApiScopeTarget }) {
           const res = await remindScopeApprovers(entry.id ?? '')
           await invalidateScopeCache()
           toast.success(
-            `Reminded ${res?.reminded ?? 0} ${res?.reminded === 1 ? 'approver' : 'approvers'}`
+            res?.reminded === 1
+              ? t('scope.approvers.reminded1', 'Reminded 1 approver')
+              : t('scope.approvers.remindedN', 'Reminded {n} approvers', { n: res?.reminded ?? 0 })
           )
         } catch (err) {
-          toast.error(scopeErrorMessage(t, err, 'Could not send the reminder.'))
+          toast.error(
+            scopeErrorMessage(
+              t,
+              err,
+              t('scope.approvers.remindFailed', 'Could not send the reminder.')
+            )
+          )
         } finally {
           setBusy(false)
         }
       }}
     >
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
-      Remind approvers
+      {t('scope.approvers.remind', 'Remind approvers')}
     </Button>
   )
 }
@@ -296,9 +317,9 @@ export function ScopeApprovals() {
                       </span>
                     ))}
                   </div>
-                  {isEntry && approversText(c.item) && (
+                  {isEntry && approversText(c.item, t) && (
                     <p className="text-xs text-muted-foreground" data-testid="approvers-line">
-                      {approversText(c.item)}
+                      {approversText(c.item, t)}
                     </p>
                   )}
                   {isEntry && (canWrite || c.item.approval?.self_approval_available) && (

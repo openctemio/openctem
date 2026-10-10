@@ -70,6 +70,11 @@ export function reimportProgram(id: string, input: ProgramInput) {
   return put<ProgramChange>(`${BASE}/${id}/scope`, input)
 }
 
+/** Accept a program's current terms and confidentiality (unlocks a private program). */
+export function attestProgram(id: string, acceptTermsSha256: string) {
+  return post<Program>(`${BASE}/${id}/attest`, { accept_terms_sha256: acceptTermsSha256 })
+}
+
 export function suspendProgram(id: string) {
   return post<Program>(`${BASE}/${id}/suspend`, {})
 }
