@@ -41,10 +41,6 @@ security-endpoints.analyticsEndpoints.findingTrend
 security-endpoints.analyticsEndpoints.mttr
 security-endpoints.analyticsEndpoints.riskTrend
 security-endpoints.assetEndpoints.scans
-security-endpoints.componentEndpoints.byEcosystem
-security-endpoints.componentEndpoints.ecosystemStats
-security-endpoints.componentEndpoints.licenseStats
-security-endpoints.componentEndpoints.sources
 security-endpoints.findingEndpoints.bySeverity
 security-endpoints.findingEndpoints.history
 security-endpoints.remediationEndpoints.assign

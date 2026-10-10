@@ -305,6 +305,35 @@ func (a *Authority) Ceiling(name string) *scopedom.Target {
 	return best
 }
 
+// Limits describes how the entries in effect at tier cover name: free when
+// an entry without a port or path limit covers it; otherwise the port
+// constraints of the limited entries that cover it and whether a
+// path-limited URL entry does. covered is false when nothing covers name at
+// tier. A job on a name that is not free must stay within the limits
+// (scopedom.ConstrainedJobRefusal).
+func (a *Authority) Limits(name string, tier scopedom.Tier) (free bool, ports []scopedom.Constraint, path, covered bool) {
+	if a == nil {
+		return false, nil, false, false
+	}
+	for _, f := range MatchForms(name) {
+		for _, t := range a.targets {
+			if t == nil || t.MaxTier() < tier || !a.coversForm(t, f) {
+				continue
+			}
+			covered = true
+			switch {
+			case !t.Constrained():
+				return true, nil, false, true
+			case scopedom.URLPathLimited(t.TargetType(), t.Pattern()):
+				path = true
+			default:
+				ports = append(ports, t.Constraint())
+			}
+		}
+	}
+	return false, ports, path, covered
+}
+
 // Verified reports whether name is at or under one of the tenant's verified
 // domains (the ownership proof RFC-054 §8.1 asks for).
 func (a *Authority) Verified(name string) bool {

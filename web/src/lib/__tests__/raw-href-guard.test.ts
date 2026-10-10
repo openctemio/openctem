@@ -95,7 +95,6 @@ const REVIEWED = new Set([
   'features/auth/components/legal-notice.tsx|a|href={termsUrl}',
   'features/auth/components/legal-notice.tsx|a|href={privacyUrl}',
   // Same-origin paths built in the component from route builders/literals.
-  'app/(dashboard)/(discovery)/components/page.tsx|Link|href={href}',
   'features/assets/components/linked-assets-panel.tsx|Link|href={viewAllHref}',
   'features/attack-surface/components/path-graph.tsx|Link|href={node.href}',
   'features/dashboard/components/ctem/fix-next-queue.tsx|Link|href={it.href}',

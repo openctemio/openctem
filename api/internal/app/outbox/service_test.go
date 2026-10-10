@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -51,5 +53,32 @@ func TestAlertIfDeadLettered_SilentForNonDead(t *testing.T) {
 		if buf.Len() != 0 {
 			t.Fatalf("status %q must not dead-letter, got: %s", st, buf.String())
 		}
+	}
+}
+
+// The names of private programs are scrubbed from the message for an
+// integration not attached to them, before the template (RFC-065 §15.4).
+func TestBuildMessageScrubsPrivateProgramNames(t *testing.T) {
+	program := shared.NewID()
+	orgWide := integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "org", "",
+		integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
+		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), nil)
+	attached := integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "prog", "",
+		integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
+		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), nil)
+	d := bountyprogram.Delivery{
+		Programs: []bountyprogram.DeliveryProgram{{ID: program, Name: "Hush Corp", Tag: "program:h1:hush"}},
+		Channels: map[shared.ID]map[shared.ID]bool{attached.Integration.ID(): {program: true}},
+	}
+	entry := outboxdom.Reconstitute(outboxdom.NewID(), shared.NewID(), "new_finding", "finding", nil,
+		"Hush Corp: XSS on shop", "tags: program:h1:hush", outboxdom.SeverityHigh, "",
+		nil, outboxdom.OutboxStatusPending, 0, 3, "", time.Time{}, nil, "", time.Time{}, time.Time{}, nil)
+	s := &Service{}
+	m := s.buildMessage(orgWide, entry, d)
+	if strings.Contains(m.Title+m.Body, "Hush") || strings.Contains(m.Body, "program:h1") {
+		t.Fatalf("org-wide message leaks the program: %q / %q", m.Title, m.Body)
+	}
+	if m := s.buildMessage(attached, entry, d); m.Title != "Hush Corp: XSS on shop" {
+		t.Fatalf("program channel message scrubbed: %q", m.Title)
 	}
 }
