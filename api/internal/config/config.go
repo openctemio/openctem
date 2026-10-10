@@ -48,6 +48,10 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AssetChangeRetentionDays is how long the asset change timeline keeps
+	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
+	AssetChangeRetentionDays int
+
 	// AuditRetention controls the tenant audit log retention (hash-chain
 	// prefix archive and prune).
 	AuditRetention AuditRetentionConfig
@@ -1385,6 +1389,7 @@ func Load() (*Config, error) {
 			Public: getEnvBool("METRICS_PUBLIC", false),
 			Token:  getEnv("METRICS_TOKEN", ""),
 		},
+		AssetChangeRetentionDays: getEnvInt("ASSET_CHANGE_RETENTION_DAYS", 400),
 		AuditRetention: AuditRetentionConfig{
 			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
 			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),

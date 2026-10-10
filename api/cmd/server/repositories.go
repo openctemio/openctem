@@ -25,6 +25,7 @@ type Repositories struct {
 	Software               *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
 	SoftwareMatch          *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources  *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
+	AssetChangeEvents      *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
 	APISpec                *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
@@ -306,6 +307,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Software:               postgres.NewSoftwareRepository(db),
 		SoftwareMatch:          postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:  postgres.NewAssetAttributeSourceRepository(db),
+		AssetChangeEvents:      postgres.NewAssetChangeEventRepository(db),
 		APISpec:                postgres.NewAPISpecRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph

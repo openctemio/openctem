@@ -28,6 +28,7 @@ func TestResolve(t *testing.T) {
 		wantLocked   bool
 		wantConflict bool
 		wantStatus   map[string]CandidateStatus // by source name
+		current      string                     // the value the asset shows
 	}{
 		{
 			name: "higher precedence wins over a more recent lower one",
@@ -36,7 +37,8 @@ func TestResolve(t *testing.T) {
 				ob(AttrCriticality, SourceKindImport, "csv", "low", ago(time.Hour)),
 				ob(AttrCriticality, SourceKindIntegration, "cmdb", "high", ago(5*day)),
 			},
-			wantValue: "high", wantConflict: true,
+			// different ranks disagreeing is precedence at work, not a conflict
+			wantValue:  "high",
 			wantStatus: map[string]CandidateStatus{"cmdb": CandidateWinner, "csv": CandidateOutranked},
 		},
 		{
@@ -67,7 +69,7 @@ func TestResolve(t *testing.T) {
 				ob(AttrExposure, SourceKindScan, "httpx", "public", ago(time.Minute)),
 				ob(AttrExposure, SourceKindManual, "user-1", "private", ago(400*day)),
 			},
-			wantValue: "private", wantLocked: true, wantConflict: true,
+			wantValue: "private", wantLocked: true,
 		},
 		{
 			name:      "a lock never goes stale",
@@ -114,7 +116,7 @@ func TestResolve(t *testing.T) {
 				ob(AttrExposure, SourceKindIntegration, "cloud", "private", ago(time.Hour)),
 				ob(AttrExposure, SourceKindScan, "naabu", "public", ago(2*day)),
 			},
-			wantValue: "public", wantConflict: true,
+			wantValue: "public",
 		},
 		{
 			name: "tenant policy reorders and drops kinds",
@@ -151,7 +153,38 @@ func TestResolve(t *testing.T) {
 				ob(AttrOwnerRef, SourceKindIntegration, "cmdb", "someone@x.io", ago(time.Hour)),
 				ob(AttrOwnerRef, SourceKindManual, "u", "", ago(day)),
 			},
-			wantValue: "", wantLocked: true, wantConflict: true,
+			wantValue: "", wantLocked: true,
+		},
+		{
+			name: "equal rank conflict: the value the asset shows keeps winning (no flapping)",
+			attr: AttrExposure,
+			obs: []AttributeObservation{
+				ob(AttrExposure, SourceKindScan, "naabu", "public", ago(time.Hour)),
+				ob(AttrExposure, SourceKindScan, "httpx", "private", ago(2*time.Hour)),
+			},
+			current:   "private",
+			wantValue: "private", wantConflict: true,
+			wantStatus: map[string]CandidateStatus{"httpx": CandidateWinner, "naabu": CandidateOutranked},
+		},
+		{
+			name: "equal rank conflict, nobody reports the shown value: the newest wins",
+			attr: AttrExposure,
+			obs: []AttributeObservation{
+				ob(AttrExposure, SourceKindScan, "naabu", "public", ago(time.Hour)),
+				ob(AttrExposure, SourceKindScan, "httpx", "private", ago(2*time.Hour)),
+			},
+			current:   "unknown",
+			wantValue: "public", wantConflict: true,
+		},
+		{
+			name: "the shown value held only by a lower rank does not stick",
+			attr: AttrExposure,
+			obs: []AttributeObservation{
+				ob(AttrExposure, SourceKindScan, "naabu", "public", ago(time.Hour)),
+				ob(AttrExposure, SourceKindIntegration, "cloud", "private", ago(time.Minute)),
+			},
+			current:   "private",
+			wantValue: "public",
 		},
 	}
 	for _, tc := range tests {
@@ -160,7 +193,7 @@ func TestResolve(t *testing.T) {
 			if p.Precedence == nil {
 				p = def
 			}
-			res := Resolve(tc.attr, tc.obs, p, now)
+			res := ResolveFrom(tc.attr, tc.obs, p, now, tc.current)
 			if tc.wantNone {
 				if res.Winner != nil {
 					t.Fatalf("want no winner, got %q from %s", res.Winner.Value, res.Winner.Name)
