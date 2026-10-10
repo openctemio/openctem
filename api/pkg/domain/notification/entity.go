@@ -71,6 +71,9 @@ const (
 	// TypeScanWindowOverride tells administrators that scan windows were
 	// overridden (RFC-067).
 	TypeScanWindowOverride = "scan_window_override"
+	// TypeScanApproval tells approvers that a scan waits for their approval,
+	// and requesters that it was approved or rejected (RFC-072).
+	TypeScanApproval = "scan_approval"
 )
 
 // Notification represents an in-app notification.

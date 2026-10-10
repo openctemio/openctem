@@ -463,6 +463,15 @@ func registerScanRoutes(
 		// Scan stage catalog: static platform data (must be before /{id})
 		r.GET("/stages", h.ListStages, middleware.Require(permission.ScansRead))
 
+		// Scan approval (RFC-072): the New Scan preview, a scan's approval
+		// state, submission and emergency runs.
+		if ah := h.Approvals(); ah != nil {
+			r.POST("/approval-preview", ah.Preview, middleware.Require(permission.ScansWrite))
+			r.GET("/{id}/approval", ah.ScanStatus, middleware.Require(permission.ScansRead))
+			r.POST("/{id}/approval", ah.Submit, middleware.Require(permission.ScansWrite))
+			r.POST("/{id}/emergency-run", ah.Emergency, middleware.RequireAll(permission.ScansApprove, permission.ScansExecute), requireStepUp())
+		}
+
 		// Read operations
 		r.GET("/", h.ListScans, middleware.Require(permission.ScansRead))
 		r.GET("/{id}", h.GetScan, middleware.Require(permission.ScansRead))

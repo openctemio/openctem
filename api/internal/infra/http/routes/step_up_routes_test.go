@@ -75,6 +75,7 @@ var stepUpRoutes = []string{
 	// Scan approval governance (RFC-072): loosening it is the guarded direction.
 	"PUT /api/v1/organization/settings/scan-governance/mode",
 	"PUT /api/v1/organization/settings/scan-governance/rules",
+	"POST /api/v1/scans/{id}/emergency-run",
 	"POST /api/v1/scope/targets/{id}/approve",
 	"POST /api/v1/scope/exclusions/{id}/deactivate",
 	"POST /api/v1/scope/exclusions/bulk/delete",
@@ -156,6 +157,9 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
+			scanH := &handler.ScanHandler{}
+			scanH.SetApprovals(&handler.ScanApprovalHandler{})
+			registerScanRoutes(router, scanH, nil, auth, nil, nil)
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {

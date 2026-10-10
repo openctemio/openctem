@@ -193,6 +193,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/vulnerabilities/active":      {classScoped, "aggregated over in-scope findings, REST and MCP (L-10)"},
 	"GET /api/v1/groups/{groupId}/assets": {classScoped, "only the group's assets in the caller's scope (L-10)"},
 	"/api/v1/scans":                       {classGap, "L-06 (scan reads and targets; D9)"},
+	"/api/v1/scan-approvals":              {classGap, "L-06 (scan approval requests carry the scan definition and targets, as scan reads; D9)"},
 	"/api/v1/commands":                    {classGap, "L-06 (command payloads)"},
 	"/api/v1/scan-workflows":              {classGap, "L-06 (scan workflow reads)"},
 	"POST /api/v1/scan-workflows/verify":  {classConfig, "draft graph check against the capability catalog; reads no asset or finding data"},
