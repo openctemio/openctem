@@ -83,6 +83,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
@@ -733,6 +734,8 @@ type Services struct {
 
 	// Priority Classification (RFC-004)
 	PriorityClassification *finding.PriorityClassificationService
+	// VulnMatch is inventory vulnerability matching (RFC-066).
+	VulnMatch *vulnmatch.Service
 
 	// B1/B2 reclassification pipeline — memory queue,
 	// publisher (called from control CRUD), reclassifier (consumed
@@ -1775,11 +1778,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
-	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)             // Web endpoints under their origin asset (RFC-056)
-	s.Ingest.SetSoftwareRepository(repos.Software)                   // Software inventory capture (RFC-066)
-	s.Ingest.SetAttributeReconciler(s.Asset)                         // Per-source asset attribute values (RFC-069)
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
+	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
+	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
+	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)
+	// Inventory vulnerability matching (RFC-066): told by ingest when an
+	// organization's software changes; findings go through the same
+	// priority and SLA enrichment as ingested ones.
+	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
+	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
+	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
