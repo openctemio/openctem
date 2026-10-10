@@ -1933,6 +1933,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
+		// A scan refused only because pending scope entries cover its
+		// targets may be saved to start once they are approved (RFC-054 §7).
+		scan.WithScopeWaits(postgres.NewScanScopeWaitRepository(&postgres.DB{DB: deps.DB}), s.Scope),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).

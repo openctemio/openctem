@@ -630,6 +630,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.EASMSweep != nil {
 		handlers.Scope.SetSweeper(svc.EASMSweep)
 	}
+	if svc.Scan != nil {
+		handlers.Scope.SetScopeWaitStarter(svc.Scan)
+	}
 	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
 	if svc.Scan != nil && svc.ActiveGate != nil {
 		handlers.Scope.SetDryRun(svc.Scan, svc.ActiveGate)

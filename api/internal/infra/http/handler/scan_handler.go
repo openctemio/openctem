@@ -93,6 +93,11 @@ type CreateScanRequest struct {
 	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	// StartWhenScopeApproved saves the scan although some direct targets are
+	// refused, when every refused one is covered by a scope entry that waits
+	// for approval; the scan starts once those entries are approved, as the
+	// caller, and every gate runs again then. Any other refusal still refuses.
+	StartWhenScopeApproved bool `json:"start_when_scope_approved"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
@@ -182,6 +187,9 @@ type QuickScanResponse struct {
 type CreateScanResponse struct {
 	*ScanDetailResponse
 	CompatibilityWarning *AssetCompatibilityPreviewResponse `json:"compatibility_warning,omitempty"`
+	// StartsWhenScopeApproved: the scan was saved to start once the pending
+	// scope entries covering its targets are approved (do not trigger it now).
+	StartsWhenScopeApproved bool `json:"starts_when_scope_approved,omitempty"`
 }
 
 // AssetCompatibilityPreviewResponse represents asset-scanner compatibility info.
@@ -275,7 +283,7 @@ type ScanStatsResponse struct {
 
 // CreateScan handles POST /api/v1/scans
 // @Summary      Create scan
-// @Description  Create a new scan configuration with scheduling options
+// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -372,6 +380,8 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		MaxRetries:          req.MaxRetries,
 		RetryBackoffSeconds: req.RetryBackoffSeconds,
 		CreatedBy:           userID,
+
+		StartWhenScopeApproved: req.StartWhenScopeApproved,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)
@@ -383,6 +393,9 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	// Build response
 	response := &CreateScanResponse{
 		ScanDetailResponse: h.toScanResponse(r.Context(), s),
+	}
+	if req.StartWhenScopeApproved {
+		response.StartsWhenScopeApproved = h.service.WaitsForScope(r.Context(), s.TenantID, s.ID)
 	}
 
 	// Check compatibility for single scanner scans with asset groups
