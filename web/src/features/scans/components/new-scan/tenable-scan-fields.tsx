@@ -8,6 +8,7 @@
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import Link from '@/components/link'
 
 import { Label } from '@/components/ui/label'
@@ -34,6 +35,7 @@ interface TenableScanFieldsProps {
 }
 
 export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
+  const { t } = useTranslation()
   const { data, isLoading } = useIntegrationsApi({ category: 'security', per_page: 50 })
   const connectors = useMemo(() => (data?.data ?? []).filter(isTenableSCConnector), [data?.data])
   const cfg = readTenableScanConfig(value)
@@ -47,7 +49,7 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
     <div className="space-y-3 rounded-lg border p-3">
       <div className="space-y-2">
         <Label htmlFor="tsc-scan-connector">
-          Tenable.sc connector <span className="text-destructive">*</span>
+          {t('scans.tenable.connector')} <span className="text-destructive">*</span>
         </Label>
         <Select
           value={cfg.integrationId || undefined}
@@ -56,14 +58,14 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
             set({ integrationId, policyId: 0, repositoryId: 0, zoneId: 0 })
           }
         >
-          <SelectTrigger id="tsc-scan-connector" aria-label="Tenable.sc connector">
+          <SelectTrigger id="tsc-scan-connector" aria-label={t('scans.tenable.connector')}>
             <SelectValue
               placeholder={
                 isLoading
-                  ? 'Loading connectors…'
+                  ? t('scans.tenable.loading')
                   : connectors.length === 0
-                    ? 'No Tenable.sc connector'
-                    : 'Choose a connector'
+                    ? t('scans.tenable.none')
+                    : t('scans.tenable.choose')
               }
             />
           </SelectTrigger>
@@ -77,11 +79,9 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
         </Select>
         {!isLoading && connectors.length === 0 && (
           <p className="text-muted-foreground text-xs">
-            Connect one under{' '}
             <Link href="/settings/integrations/scanners" className="underline">
-              Vulnerability scanners
+              {t('scans.tenable.connectLink')}
             </Link>
-            .
           </p>
         )}
       </div>
@@ -90,7 +90,7 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
         <>
           <CatalogSelect
             id="tsc-scan-policy"
-            label="Scan policy"
+            label={t('scans.tenable.policy')}
             items={catalog?.policies}
             value={cfg.policyId}
             onChange={(policyId) => set({ policyId })}
@@ -98,7 +98,7 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
           />
           <CatalogSelect
             id="tsc-scan-repo"
-            label="Repository"
+            label={t('scans.tenable.repository')}
             items={catalog?.scanRepositories}
             value={cfg.repositoryId}
             onChange={(repositoryId) => set({ repositoryId })}
@@ -107,17 +107,14 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
           {(catalog?.scanZones.length ?? 0) > 0 && (
             <CatalogSelect
               id="tsc-scan-zone"
-              label="Scan zone"
+              label={t('scans.tenable.zone')}
               items={catalog?.scanZones}
               value={cfg.zoneId}
               onChange={(zoneId) => set({ zoneId })}
               optional
             />
           )}
-          <p className="text-muted-foreground text-xs">
-            The scan runs in Tenable.sc, launched by the connector&apos;s sensor; its results arrive
-            like any scan&apos;s. Targets still pass the scope, exclusion and data-scope checks.
-          </p>
+          <p className="text-muted-foreground text-xs">{t('scans.tenable.note')}</p>
         </>
       )}
     </div>

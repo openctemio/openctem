@@ -75,6 +75,10 @@ export interface AssetSearchFilters {
   // Crown jewel filter (the assets.is_crown_jewel column)
   isCrownJewel?: boolean
 
+  // Bug-bounty program assets (RFC-065 §16.5): only = assets a program
+  // lists or covers; exclude = leave out the program-only ones.
+  programAssets?: string
+
   // CTEM inventory filter dimensions (api: all-assets-inventory).
   // All optional; multi-select where an array.
   businessUnitIds?: string[]
@@ -125,6 +129,8 @@ interface BackendAsset {
   impact_availability?: string
   is_control_plane?: boolean // CTEM Scoping: asset governs other assets (api #467)
   is_crown_jewel?: boolean // the assets.is_crown_jewel column
+  system_tags?: string[] // derived from bug-bounty program links; never editable
+  program_only?: boolean // came with a program; no own scope covers it
   risk_score: number // 0-100
   finding_count: number
   finding_severity_counts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
@@ -177,6 +183,8 @@ function transformAsset(backend: BackendAsset): Asset {
     impactAvailability: (backend.impact_availability as ImpactRating) || undefined,
     isControlPlane: backend.is_control_plane ?? undefined,
     isCrownJewel: backend.is_crown_jewel ?? undefined,
+    systemTags: backend.system_tags,
+    programOnly: backend.program_only ?? undefined,
     riskScore: backend.risk_score,
     findingCount: backend.finding_count,
     // Detail fields the API always sent but the transform used to drop, so the
@@ -410,6 +418,9 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
 
   // Crown jewel
   if (filters.isCrownJewel !== undefined) params.is_crown_jewel = String(filters.isCrownJewel)
+
+  // Bug-bounty program assets
+  if (filters.programAssets) params.program_assets = filters.programAssets
 
   // CTEM inventory dimensions
   if (filters.businessUnitIds?.length) params.business_unit_ids = filters.businessUnitIds.join(',')

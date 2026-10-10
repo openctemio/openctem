@@ -99,8 +99,10 @@ func registerDashboardRoutes(
 	// through this router with the caller's credentials, so it passes its own
 	// endpoint's gates; this route itself needs dashboard:read.
 	overview := handler.NewDashboardOverviewHandler(router.Handler, log)
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token. Program-only assets
+	// (RFC-065 §16.5) are left out of every dashboard number unless the
+	// request asks for them with include_program_assets=true.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), includeProgramAssets)
 
 	// Dashboard routes
 	router.Group("/api/v1/dashboard", func(r Router) {
@@ -503,4 +505,21 @@ func registerIncomingWebhookRoutes(
 		log,
 	)
 	router.POST("/api/v1/webhooks/incoming/jira", jiraHandler.IncomingJiraWebhook, hmacMW)
+}
+
+// includeProgramAssets puts include_program_assets=true into the request
+// context (shared.WithProgramAssets); any other value keeps the default.
+func includeProgramAssets(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("include_program_assets") == "true" {
+			ctx := shared.WithProgramAssets(r.Context())
+			// Private program assets stay hidden from non-members who are
+			// not owners (RFC-065 §15.3); an unparseable user is a member
+			// of nothing.
+			uid, _ := shared.IDFromString(middleware.GetUserID(ctx))
+			ctx = shared.WithProgramViewer(ctx, shared.ProgramViewer{UserID: uid, Owner: middleware.IsOwner(ctx)})
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
