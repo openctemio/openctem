@@ -162,7 +162,6 @@ export {
   securityEndpoints,
   assetEndpoints,
   assetGroupEndpoints,
-  componentEndpoints,
   findingEndpoints,
   scanEndpoints,
   runnerEndpoints,
@@ -179,7 +178,6 @@ export type {
   PaginationParams,
   AssetFilters,
   FindingFilters,
-  ComponentFilters,
   ScanFilters,
 } from './security-endpoints'
 
@@ -232,15 +230,6 @@ export {
   useCreateAssetGroup,
   useUpdateAssetGroup,
   useDeleteAssetGroup,
-
-  // Component (SBOM) hooks
-  useComponents,
-  useComponent,
-  useVulnerableComponents,
-  useComponentsByEcosystem,
-  useComponentStats,
-  useEcosystemStats,
-  useLicenseStats,
 
   // Scan hooks
   useScans,

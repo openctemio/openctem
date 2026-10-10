@@ -1,0 +1,13 @@
+- id: business_impact
+  const: ModuleBusinessImpact
+  slug: "business-impact"
+  name: Business Impact
+  description: "Business impact scoring weighted by business-services mapping"
+  icon: Building
+  category: prioritization
+  order: 26
+  user_facing: true
+  permission: "ctem:business_services:read"
+  depends:
+    - {id: business_services, kind: hard, reason: "impact scoring is weighted by business-service mapping"}
+    - {id: findings, kind: hard, reason: "impact is computed from finding severity × service weight"}

@@ -24,6 +24,9 @@ type SnapshotEntry struct {
 	MaxTier    string     `json:"max_tier"`
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	ApprovedAt *time.Time `json:"approved_at,omitempty"`
+	// Ports and Protocol are the entry's port limit (absent: none).
+	Ports    string `json:"ports,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
 }
 
 // SnapshotProgram is the attestation in force for a program whose entries

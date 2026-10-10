@@ -1,4 +1,4 @@
-// Command gen-modules reads configs/modules.yaml (the module registry,
+// Command gen-modules reads configs/modules/*.yaml (the module registry,
 // RFC-064) and emits the generated Go and TypeScript files and the SQL block
 // that writes the `modules` rows.
 //
@@ -14,6 +14,31 @@
 // newest migration that carries the module-registry markers differs from
 // what the YAML produces. The generator never edits a migration: a registry
 // change that touches the catalog rows needs a new migration with the block.
+//
+// The registry is one file per top-level module, configs/modules/<id>.yaml,
+// holding that module and its sub-modules (<id>.<name>), so pull requests
+// that add or change different modules touch different files. The merged
+// order is fixed: top-level modules by (order, id), each followed by its
+// sub-modules by (order, id).
+//
+// Fields
+//   id           module id; a sub-module is <parent>.<name>
+//   const        Go constant name
+//   slug, name, description, icon, category, order   catalog presentation
+//   core         always on, cannot be switched off (rule R4: no other tier)
+//   parent       parent module id (sub-modules)
+//   release      released | beta | coming_soon | deprecated
+//   user_facing  listed on Settings > Modules
+//   permission   read permission that shows the module (sidebar filter)
+//   depends      [{id, kind: hard|soft, reason}]
+//   routes       REST path prefixes the module gates ({} = a path parameter);
+//                tests/unit/module_route_coverage_test.go checks every route
+//                against them (a prefix here is gated by RequireModule(id),
+//                and every RequireModule gate is declared here)
+//   mcp          MCP tools and prompts that belong to the module
+//   jobs         background controllers (internal/infra/controller) it owns;
+//                every controller the server registers is listed once
+
 package main
 
 import (
@@ -34,7 +59,7 @@ import (
 
 // Paths, relative to the api/ directory.
 const (
-	yamlPath      = "configs/modules.yaml"
+	yamlDir       = "configs/modules"
 	goPath        = "pkg/domain/module/registry_generated.go"
 	tsPath        = "../web/src/config/modules.generated.ts"
 	migrationsDir = "migrations"
@@ -76,7 +101,7 @@ func main() {
 	check := flag.Bool("check", false, "fail if a generated file or the migration block drifted")
 	flag.Parse()
 
-	mods, err := load(yamlPath)
+	mods, err := load(yamlDir)
 	if err != nil {
 		fail(err)
 	}
@@ -129,8 +154,28 @@ var (
 
 var releases = map[string]bool{"released": true, "beta": true, "coming_soon": true, "deprecated": true}
 
-// load reads and validates the registry.
-func load(path string) ([]module, error) {
+// load reads every configs/modules/<id>.yaml, merges them in registry order
+// and validates the result.
+func load(dir string) ([]module, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	var mods []module
+	for _, path := range files {
+		part, err := loadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		mods = append(mods, part...)
+	}
+	sortRegistry(mods)
+	return mods, validate(mods)
+}
+
+// loadFile reads one module file: the top-level module the file is named
+// after and its sub-modules, nothing else.
+func loadFile(path string) ([]module, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -141,7 +186,54 @@ func load(path string) ([]module, error) {
 	if err := dec.Decode(&mods); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	return mods, validate(mods)
+	top := strings.TrimSuffix(filepath.Base(path), ".yaml")
+	seenTop := false
+	for _, m := range mods {
+		switch {
+		case m.ID == top && m.Parent == "":
+			seenTop = true
+		case m.Parent == top && strings.HasPrefix(m.ID, top+"."):
+		default:
+			return nil, fmt.Errorf("%s: %q does not belong here: the file holds module %q and its sub-modules (%s.<name>)", path, m.ID, top, top)
+		}
+	}
+	if !seenTop {
+		return nil, fmt.Errorf("%s: module %q is missing", path, top)
+	}
+	return mods, nil
+}
+
+// sortRegistry orders modules as the generated files list them: top-level
+// modules by (order, id), each followed by its sub-modules by (order, id).
+func sortRegistry(mods []module) {
+	order := map[string]int{}
+	for _, m := range mods {
+		if m.Parent == "" {
+			order[m.ID] = m.Order
+		}
+	}
+	top := func(m module) string {
+		if m.Parent != "" {
+			return m.Parent
+		}
+		return m.ID
+	}
+	sort.SliceStable(mods, func(i, j int) bool {
+		a, b := mods[i], mods[j]
+		if ta, tb := top(a), top(b); ta != tb {
+			if order[ta] != order[tb] {
+				return order[ta] < order[tb]
+			}
+			return ta < tb
+		}
+		if (a.Parent == "") != (b.Parent == "") {
+			return a.Parent == ""
+		}
+		if a.Order != b.Order {
+			return a.Order < b.Order
+		}
+		return a.ID < b.ID
+	})
 }
 
 func validate(mods []module) error {
