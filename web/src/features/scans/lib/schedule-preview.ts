@@ -30,6 +30,7 @@ export function schedulePreviewRequestFromConfig(
     | 'schedule_day'
     | 'schedule_time'
     | 'schedule_timezone'
+    | 'schedule_run_at'
   >,
   count = DEFAULT_PREVIEW_COUNT
 ): SchedulePreviewRequest | null {
@@ -45,6 +46,7 @@ export function schedulePreviewRequestFromConfig(
     request.schedule_day = config.schedule_day
   }
   if (config.schedule_time) request.schedule_time = config.schedule_time.slice(0, 5)
+  if (config.schedule_run_at) request.run_at = config.schedule_run_at
   return request
 }
 
@@ -62,14 +64,7 @@ export function schedulePreviewKey(request: SchedulePreviewRequest): string {
   ])
 }
 
-/** The viewer's IANA timezone, or UTC when the browser does not say. */
-export function viewerTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  } catch {
-    return 'UTC'
-  }
-}
+export { viewerTimeZone } from './zoned-time'
 
 /**
  * "Mon, 12 Oct 2026, 09:00 GMT-4" in timeZone. An unknown zone falls back to
@@ -126,6 +121,7 @@ export function schedulePreviewRequestFromForm(
       schedule_day: request.schedule_day,
       schedule_time: request.schedule_time,
       schedule_timezone: request.timezone ?? 'UTC',
+      schedule_run_at: request.run_at,
     },
     count
   )

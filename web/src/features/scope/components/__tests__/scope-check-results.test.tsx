@@ -19,6 +19,7 @@ vi.mock('@/context/tenant-provider', () => ({
 }))
 const toast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
+vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'u-me' }) }))
 
 const { ScopeCheckList, refusedFromError, fixHref, viaText } =
   await import('../scope-check-results')
@@ -75,7 +76,20 @@ describe('ScopeCheckList', () => {
     expect(rows[1]).toHaveTextContent('Allowed by *.acme.io')
   })
 
-  it('an approve fix approves the entry in place', async () => {
+  it('another approver approves a pending entry in place', async () => {
+    api.get.mockImplementation(async (url: string) =>
+      url === '/api/v1/scope/targets/e1'
+        ? {
+            id: 'e1',
+            pattern: '*.acme.io',
+            target_type: 'domain',
+            status: 'pending',
+            created_by: { id: 'u-other' },
+            approvals: [],
+            approval: { remaining: 1, eligible_approver_count: 1 },
+          }
+        : { one_off_targets: 'admins_and_requests', one_off_max_days: 7 }
+    )
     api.post.mockResolvedValue({ status: 'active' })
     const onApplied = vi.fn()
     const user = userEvent.setup()
@@ -94,7 +108,7 @@ describe('ScopeCheckList', () => {
       />
     )
     expect(screen.getByText(/waiting for approval\. \(\*\.acme\.io\)/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Approve the entry' }))
+    await user.click(await screen.findByRole('button', { name: 'Approve the entry' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e1/approve', {})
     )

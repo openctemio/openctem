@@ -1,0 +1,4 @@
+### Added: private bug-bounty programs
+
+- A program can be entered by hand or imported from a file: the platform CSV export, a Burp Suite target scope (JSON) or any CSV with a column mapping. The link to the program is optional. A Burp host expression becomes a scope entry only when it names exactly one host or one domain and its subdomains; anything wider is shown and never imported. RFC-065 §15.
+- Programs are private by default. A private program, its scope, rules and terms are visible only to its members and the organization owners (others get 404), and each person accepts its terms and confidentiality before seeing them (`POST /api/v1/programs/{id}/attest`); changed terms ask everyone again. Every view of a private program is audited, and the scope list leaves out the entries of private programs the caller may not see.
