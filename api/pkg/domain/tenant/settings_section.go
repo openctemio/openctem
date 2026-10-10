@@ -58,6 +58,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionMCP:                 &s.MCP,
 		SectionAssetReconciliation: &s.AssetReconciliation,
 		SectionVulnMatching:        &s.VulnMatching,
+		SectionScanGovernance:      &s.ScanGovernance,
 	}
 }
 

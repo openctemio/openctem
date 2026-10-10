@@ -40,6 +40,13 @@ type TargetOptions struct {
 	// IncludeStale also takes assets the lifecycle marked stale or inactive
 	// (not seen for a while). Archived assets are never taken.
 	IncludeStale bool `json:"include_stale,omitempty"`
+	// NewSinceLastRun keeps only the inventory assets that came into the
+	// organization's scope since the scan's previous successful run: their
+	// attribution was confirmed since then, or they were first seen since
+	// then without an attribution record (the dispatch gate still decides
+	// each). The first run takes every such asset. Never a typed host
+	// (RFC-071, continuous discovery).
+	NewSinceLastRun bool `json:"new_since_last_run,omitempty"`
 }
 
 // Validate refuses an unknown CIDR mode or an out-of-range window.
@@ -65,7 +72,7 @@ func (o TargetOptions) EffectiveCIDRMode() CIDRMode {
 
 // IsZero reports whether every option is the default.
 func (o TargetOptions) IsZero() bool {
-	return o.EffectiveCIDRMode() == CIDRModeSweep && o.SeenWithinDays == 0 && !o.IncludeStale
+	return o.EffectiveCIDRMode() == CIDRModeSweep && o.SeenWithinDays == 0 && !o.IncludeStale && !o.NewSinceLastRun
 }
 
 // SetTargetOptions sets the options after validating them.
@@ -93,6 +100,11 @@ type SelectorQuery struct {
 	SeenSince *time.Time
 	// IncludeStale also returns stale and inactive assets.
 	IncludeStale bool
+	// NewOnly keeps only assets whose attribution is confirmed, or that have
+	// no attribution record; with NewSince, only those confirmed (or first
+	// seen without a record) at or after it.
+	NewOnly  bool
+	NewSince *time.Time
 	// Limit bounds the rows, freshest first.
 	Limit int
 }

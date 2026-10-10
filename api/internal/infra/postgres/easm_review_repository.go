@@ -22,7 +22,7 @@ var _ easm.ReviewStore = (*AttributionRepository)(nil)
 
 // ListForReview returns one page of assets whose attribution is in q.States,
 // most confident first, with their evidence.
-func (r *AttributionRepository) ListForReview(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, q easm.ReviewQuery) (*easm.ReviewPage, error) {
+func (r *AttributionRepository) ListForReview(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, q easm.ReviewQuery) (*easm.ReviewPage, error) {
 	states := make([]string, len(q.States))
 	for i, s := range q.States {
 		states[i] = string(s)
@@ -44,7 +44,7 @@ func (r *AttributionRepository) ListForReview(ctx context.Context, tenantID shar
 		args = append(args, q.Reason)
 		where = append(where, fmt.Sprintf("aa.reason = $%d", len(args)))
 	}
-	sc, args := scopeClause("a.id", scopeUserID, tenantID, args)
+	sc, args := scopeClause("a.id", scope, args)
 	from := " FROM asset_attributions aa JOIN assets a ON a.id = aa.asset_id WHERE " + strings.Join(where, " AND ") + sc
 
 	page := &easm.ReviewPage{Items: []easm.ReviewItem{}}
