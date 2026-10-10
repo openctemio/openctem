@@ -73,7 +73,14 @@ type Statement struct {
 	// base64-decoded), in payload order; absent when it carries none. The
 	// signer signs only digests in its ledger, and a sensor that verified
 	// the statement trusts exactly these template bytes.
-	Templates  []string  `json:"templates,omitempty"`
+	Templates []string `json:"templates,omitempty"`
+	// Limits are the port, protocol and path limits of the targets only
+	// limited scope entries cover (limits.go), for a sensor that enforces
+	// them (CapabilityScopeLimits). The signer signs a limit only when an
+	// entry of its ledger that covers the target allows it, and a crawler
+	// or template scanner on such a target only with limits. A sensor that
+	// does not know the field refuses the statement.
+	Limits     []Limit   `json:"limits,omitempty"`
 	LeaseEpoch int       `json:"lease_epoch"`
 	IssuedAt   time.Time `json:"issued_at"`
 	ExpiresAt  time.Time `json:"expires_at"`

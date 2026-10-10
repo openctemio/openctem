@@ -631,7 +631,12 @@ covers the target.
 > Status: points 2 and 3 are built (typed scope items, port/protocol and
 > path limits on entries enforced at dispatch, claim and in the signer's
 > ledger, per-item qualifiers; migration `001800`). Point 1 (CTIS ingest)
-> and the confidentiality of private-program assets follow.
+> and the confidentiality of private-program assets follow. Crawlers,
+> template scanners and top-ports scans run inside a limit on sensors that
+> enforce it: the signed job carries the limits, the sensor's task
+> forwarder refuses other ports and out-of-prefix requests, and the sensor
+> reports `scope.limits@1` (docs/architecture/job-signing.md, "Scope
+> limits"; sdk-go `pkg/scopelimit`).
 
 The feed importer is an asset collector, not a second asset pipeline:
 

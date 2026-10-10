@@ -55,6 +55,12 @@ const CapabilityValidate = "validate"
 // retest). It is kept only for a known tool.
 const CapabilityRetest = "retest"
 
+// CapabilityScopeLimits is the capability of a sensor that enforces the
+// port and path limits of a signed job's targets (jobsign.Limit) in its
+// task sandbox; only such a sensor gets crawlers, template scanners and
+// top-ports scans on targets that only limited scope entries cover.
+const CapabilityScopeLimits = "scope.limits@1"
+
 // Tool kinds a sensor reports (sdk-go core.ToolKind).
 const (
 	ToolKindScanner   = "scanner"
@@ -385,7 +391,7 @@ func sanitizeToolCapabilities(in []string, knownTools, knownCaps map[string]bool
 }
 
 func knownCapability(c string, knownTools, knownCaps map[string]bool) bool {
-	if knownCaps[c] || knownTools[c] || c == CapabilityValidate {
+	if knownCaps[c] || knownTools[c] || c == CapabilityValidate || c == CapabilityScopeLimits {
 		return true
 	}
 	// A capability of the OpenCTEM taxonomy (ctis/capability), as sensors on
