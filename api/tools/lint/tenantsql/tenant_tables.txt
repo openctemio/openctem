@@ -34,6 +34,7 @@ authorization_letters
 automation_runs
 automations
 bounty_program_attestations
+bounty_program_channels
 bounty_program_exclusions
 bounty_programs
 business_service_assets
@@ -183,6 +184,7 @@ user_dashboards
 user_roles
 validation_evidence
 verified_domains
+vex_statements
 vuln_match_queue
 vulnerabilities
 web_endpoint_events

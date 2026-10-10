@@ -271,6 +271,9 @@
     - "/api/v1/assets/{}/components"
     - "/api/v1/assets/{}/dependency-paths"
     - "/api/v1/assets/{}/dependency-graph"
+    - /api/v1/vex-statements
+  jobs:
+    - VEXStatementExpiryController
 - id: template_sources
   const: ModuleTemplateSources
   slug: "template-sources"

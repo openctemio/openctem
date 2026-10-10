@@ -83,6 +83,12 @@ var assetMergeRefs = []mergeRef{
 	// Package dependency edges follow their links (moved just above; a
 	// duplicate link was dropped and its edges with it).
 	{table: "asset_software_edges", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid"},
+	// VEX statements for one asset (RFC-070) follow it; a statement the kept
+	// asset already has for the same subject wins. Findings that carried a
+	// dropped statement lose it (ON DELETE SET NULL) and are re-decided on
+	// the next ingest or statement change.
+	{table: "vex_statements", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"vuln_id", "product_id", "versions", "version_range"}, nullSafe: []string{"version_range"}}}},
 	// Per-source attribute values (RFC-069): the kept asset's own value of a
 	// source wins; a merged asset's value from a source the kept one never
 	// heard from moves.

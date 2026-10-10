@@ -228,6 +228,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return map[string]any{"parent_id": first["id"], "child_id": second, "asset_id": first["asset_id"]}
 	},
+	"vex_statements": func(*schemaSeeder) map[string]any {
+		return map[string]any{"vuln_id": "CVE-2026-0001", "status": "affected", "origin": "manual",
+			"justification": nil, "versions": "{}", "version_range": nil}
+	},
 	"asset_relationships": func(s *schemaSeeder) map[string]any {
 		var second string
 		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO assets (tenant_id, name, asset_type) VALUES ($1, $2, 'host') RETURNING id`,

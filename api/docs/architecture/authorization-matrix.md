@@ -188,6 +188,8 @@ Details: [api-keys.md](./api-keys.md).
 | `GET /api/v1/components/sbom` | `components:read` (one in-scope asset, or every in-scope asset) |
 | `POST /api/v1/components/import` | `components:write` (target asset in scope; rate limited) |
 | `GET /api/v1/assets/{id}/components`, `/dependency-paths`, `/dependency-graph` | `components:read` (asset in scope) |
+| `GET /api/v1/vex-statements`, `/{id}` | `components:read` (asset-bound statements: asset in scope; statements for every asset: an in-scope asset uses the package; else 404) |
+| `POST /api/v1/vex-statements`, `PATCH`/`DELETE /{id}`, `POST /import` | `findings:approve` (closes findings: asset-bound needs the asset in scope, 404 otherwise; a statement for every asset needs full data access, 403 otherwise; import rate limited) |
 
 The inventory has no manual create, update or delete (RFC-070): sensors, CI
 and SBOM import write it.
