@@ -649,7 +649,7 @@ covers the target.
 
 > Status: points 2 and 3 are built (typed scope items, port/protocol and
 > path limits on entries enforced at dispatch, claim and in the signer's
-> ledger, per-item qualifiers; migration `001800`). Point 1 (CTIS ingest)
+> ledger, per-item qualifiers; migration `001910`). Point 1 (CTIS ingest)
 > and the confidentiality of private-program assets follow.
 
 The feed importer is an asset collector, not a second asset pipeline:

@@ -126,7 +126,7 @@ force when it started.
 ## Port- and path-limited entries (RFC-065 §16.8)
 
 An entry can be limited to ports and a protocol (`scope_targets.ports`,
-`protocol`, migration `001800`; part of the entry's identity, never changed
+`protocol`, migration `001910`; part of the entry's identity, never changed
 after creation) and a URL entry with a path is limited to that path.
 `scope.EntryMatches` is the one coverage test (`Target.Matches`, the
 authority, the signer's ledger):
