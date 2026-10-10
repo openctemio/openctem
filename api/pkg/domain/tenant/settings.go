@@ -40,6 +40,8 @@ type Settings struct {
 	VulnMatching VulnMatchingSettings `json:"vuln_matching,omitempty"`
 	// AssetReconciliation is which source decides an asset attribute (RFC-069).
 	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
+	// ScanGovernance is scan approval governance (RFC-072).
+	ScanGovernance ScanGovernanceSettings `json:"scan_governance,omitempty"`
 
 	// SubscribedBundles is the set of product-bundle IDs the tenant runs
 	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the

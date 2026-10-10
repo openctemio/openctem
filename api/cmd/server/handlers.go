@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
@@ -734,9 +735,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
 	}
-	// The platform policy for scope-widening approvals (RFC-054 §12.6).
-	if svc.ScopePolicy != nil {
-		handlers.AdminScopePolicy = handler.NewAdminScopePolicyHandler(svc.ScopePolicy, adminConsoleSvc, log)
+	// The platform policy for scan approval (RFC-072).
+	if svc.ScanPolicy != nil {
+		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
+		if svc.Tenant != nil {
+			handlers.ScanGovernance = handler.NewScanGovernanceHandler(scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log), log)
+		}
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
