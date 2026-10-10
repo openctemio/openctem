@@ -311,25 +311,34 @@ func TestAssetTimeline_PartitionsAndRetention(t *testing.T) {
 	g := newReconcileRig(t)
 	ctx := context.Background()
 	repo := postgres.NewAssetChangeEventRepository(&postgres.DB{DB: g.r.db})
-	old := time.Date(2019, 3, 1, 0, 0, 0, 0, time.UTC)
-	if n, err := repo.EnsurePartitions(ctx, old, 1); err != nil || n != 1 {
-		t.Fatalf("EnsurePartitions = %d, %v", n, err)
+	const name = "tl-retention.example.com"
+	g.importReport(asset.SourceKindImport, "", time.Now().UTC().Add(-time.Hour), withClaims(reconHost(name), "low", "", ""))
+	aid := g.assetID(name)
+	insert := func(at time.Time) {
+		if _, err := g.r.db.ExecContext(ctx, `
+			INSERT INTO asset_change_events (id, tenant_id, asset_id, at, attribute, old_value, new_value, source_kind, reason)
+			VALUES ($1, $2, $3, $4, 'criticality', 'low', 'high', 'import', 'newer_observation')`,
+			shared.NewID().String(), g.tn.tenant.String(), aid, at); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if n, err := repo.EnsurePartitions(ctx, old, 1); err != nil || n != 0 {
-		t.Fatalf("EnsurePartitions is not idempotent: %d, %v", n, err)
+	old := time.Date(2019, 3, 1, 0, 0, 0, 0, time.UTC) // before every monthly partition: default partition
+	insert(old)
+	insert(time.Now().UTC()) // this month's partition
+	// The migration created this month and the next two years.
+	var months int
+	_ = g.r.db.QueryRowContext(ctx, `SELECT count(*) FROM pg_inherits WHERE inhparent = 'asset_change_events'::regclass`).Scan(&months)
+	if months < 25 {
+		t.Fatalf("partitions = %d, want the default plus at least two years of months", months)
 	}
-	parts, _, err := repo.DropBefore(ctx, time.Date(2019, 4, 1, 0, 0, 0, 0, time.UTC))
-	if err != nil || parts < 1 {
-		t.Fatalf("DropBefore = %d, %v", parts, err)
+	n, err := repo.DeleteBefore(ctx, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil || n < 1 {
+		t.Fatalf("DeleteBefore = %d, %v", n, err)
 	}
-	var exists bool
-	_ = g.r.db.QueryRowContext(ctx, `SELECT to_regclass('asset_change_events_2019_03') IS NOT NULL`).Scan(&exists)
-	if exists {
-		t.Fatal("the expired partition is still there")
-	}
-	// The current month is never dropped by a cutoff in the past.
-	_ = g.r.db.QueryRowContext(ctx, `SELECT to_regclass('asset_change_events_' || to_char(now(), 'YYYY_MM')) IS NOT NULL`).Scan(&exists)
-	if !exists {
-		t.Fatal("the current month's partition is missing")
+	var left int
+	_ = g.r.db.QueryRowContext(ctx, `SELECT count(*) FROM asset_change_events WHERE tenant_id = $1 AND asset_id = $2`,
+		g.tn.tenant.String(), aid).Scan(&left)
+	if left != 1 {
+		t.Fatalf("events left = %d, want the recent one", left)
 	}
 }
