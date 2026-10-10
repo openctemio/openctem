@@ -97,3 +97,38 @@ func PayloadTemplateDigests(payload json.RawMessage) ([]string, error) {
 	}
 	return out, nil
 }
+
+// PayloadPortSettings are a scan command's port settings: "ports" (a list,
+// "full" or "top-N") and "top_ports" (100, 1000), from its "config" or
+// "scanner_config"; "" when absent. Ingest reads them as the coverage of a
+// port scan.
+func PayloadPortSettings(payload json.RawMessage) (ports, topPorts string) {
+	if len(payload) == 0 {
+		return "", ""
+	}
+	var p struct {
+		Config        map[string]any `json:"config"`
+		ScannerConfig map[string]any `json:"scanner_config"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return "", ""
+	}
+	str := func(v any) string {
+		switch x := v.(type) {
+		case string:
+			return strings.TrimSpace(x)
+		case float64:
+			return fmt.Sprintf("%d", int64(x))
+		}
+		return ""
+	}
+	for _, cfg := range []map[string]any{p.Config, p.ScannerConfig} {
+		if ports == "" {
+			ports = str(cfg["ports"])
+		}
+		if topPorts == "" {
+			topPorts = str(cfg["top_ports"])
+		}
+	}
+	return ports, topPorts
+}
