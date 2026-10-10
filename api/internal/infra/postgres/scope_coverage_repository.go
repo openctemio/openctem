@@ -93,7 +93,7 @@ WITH inv AS (
 		     THEN trim(split_part(r.p, '-', 2))::inet END AS hi
 	FROM (
 		SELECT 'in' AS side, t.target_type AS kind, lower(rtrim(trim(t.pattern), '.')) AS p
-		FROM scope_targets t WHERE t.tenant_id = $1 AND t.status = 'active'
+		FROM scope_targets t WHERE t.tenant_id = $1 AND t.status = 'active' AND t.ports = '' AND t.protocol = ''
 		UNION ALL
 		SELECT 'out', e.exclusion_type, lower(rtrim(trim(e.pattern), '.'))
 		FROM scope_exclusions e
