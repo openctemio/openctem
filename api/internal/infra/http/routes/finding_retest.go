@@ -63,3 +63,18 @@ func registerAssetReconciliationSettingsRoutes(router Router, h *handler.TenantH
 		r.POST("/preview", h.PreviewAssetReconciliationSettings, middleware.RequireAdmin())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
+
+// registerScanGovernanceRoutes wires the organization's scan approval
+// settings (RFC-073) under the token singleton /api/v1/organization. Reads:
+// scans:read. The mode: owner only; the rules: owner or administrator; both
+// need step-up re-authentication and a reason, and are audited.
+func registerScanGovernanceRoutes(router Router, h *handler.ScanGovernanceHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/scan-governance", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.ScansRead))
+		r.PUT("/mode", h.UpdateMode, middleware.RequireOwner(), requireStepUp())
+		r.PUT("/rules", h.UpdateRules, middleware.RequireAdmin(), requireStepUp())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
