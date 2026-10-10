@@ -14,7 +14,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
-	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
@@ -739,8 +738,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// The platform policy for scan approval (RFC-073).
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
-		if svc.Tenant != nil {
-			handlers.ScanGovernance = handler.NewScanGovernanceHandler(scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log), log)
+	}
+	// Scan approval governance (RFC-073): settings, requests, the inbox and
+	// the scan list badge.
+	if svc.ScanGovernance != nil {
+		handlers.ScanGovernance = handler.NewScanGovernanceHandler(svc.ScanGovernance, log)
+		if handlers.Scan != nil {
+			handlers.Scan.SetApprovals(handler.NewScanApprovalHandler(svc.ScanGovernance, log))
 		}
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).

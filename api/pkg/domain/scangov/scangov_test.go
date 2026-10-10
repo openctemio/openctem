@@ -3,6 +3,7 @@ package scangov
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -122,5 +123,150 @@ func TestEvaluateMergesRules(t *testing.T) {
 	// Monitor rules alone never block.
 	if ev := Evaluate(ModeOn, rules[:1], Facts{}); ev.Required || len(ev.Monitored) != 1 {
 		t.Fatalf("a monitor rule records without blocking: %+v", ev)
+	}
+}
+
+func TestDigestAndDiff(t *testing.T) {
+	a := Definition{Targets: []string{"b.example.com", "a.example.com"}, ScanType: "single", ScannerName: "nuclei",
+		ScannerConfig: map[string]any{"z": 1, "a": "x"}, Intensity: "active", ScheduleType: "manual"}
+	b := a
+	b.Targets = []string{"a.example.com", "b.example.com", " a.example.com "}
+	if a.Digest() != b.Digest() {
+		t.Fatal("target order and duplicates must not change the digest")
+	}
+	if d := Diff(a, b); len(d) != 0 {
+		t.Fatalf("no change: %+v", d)
+	}
+	c := b
+	c.Intensity = "intrusive"
+	c.Targets = append(c.Targets, "*.example.com")
+	if a.Digest() == c.Digest() {
+		t.Fatal("intensity and targets change the digest")
+	}
+	d := Diff(a, c)
+	if len(d) != 2 || d[0].Field != "targets" || d[1].Field != "intensity" {
+		t.Fatalf("diff: %+v", d)
+	}
+}
+
+func TestRequestLifecycle(t *testing.T) {
+	now := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
+	tid, sid := shared.NewID(), shared.NewID()
+	def := Definition{Targets: []string{"x.example.com"}, ScanType: "single", ScannerName: "nuclei", Intensity: "intrusive"}
+	ev := Evaluation{Mode: ModeStrict, Required: true, Approvals: 2, Validity: ValidityDefinition}
+	r := NewRequest(tid, sid, def, ev, "req", "pentest", "", true, 0, now)
+	if !r.IsPending(now) || r.ExpiresAt.Sub(now) != DefaultPendingDays*24*time.Hour {
+		t.Fatalf("new request: %+v", r)
+	}
+	if err := r.Approve("req", "", now); !errors.Is(err, ErrOwnRequest) {
+		t.Fatalf("the requester never approves: %v", err)
+	}
+	if err := r.Approve("a1", "ok", now); err != nil || r.Status != StatusPending || r.Remaining() != 1 {
+		t.Fatalf("first approval: %v %+v", err, r)
+	}
+	if err := r.Approve("a1", "", now); !errors.Is(err, ErrAlreadyApproved) {
+		t.Fatalf("the same person counts once: %v", err)
+	}
+	if r.Authorizes(def.Digest(), now) {
+		t.Fatal("a pending request authorizes nothing")
+	}
+	if err := r.Approve("a2", "", now); err != nil || r.Status != StatusApproved {
+		t.Fatalf("second approval: %v %+v", err, r)
+	}
+	if !r.Authorizes(def.Digest(), now.Add(365*24*time.Hour)) {
+		t.Fatal("until the definition changes")
+	}
+	changed := def
+	changed.Targets = []string{"y.example.com"}
+	if r.Authorizes(changed.Digest(), now) {
+		t.Fatal("a changed definition is not authorized")
+	}
+	if err := r.Reject("a3", "", now); !errors.Is(err, ErrNotPending) {
+		t.Fatalf("an approved request cannot be rejected: %v", err)
+	}
+
+	// Expiry, rejection, cancel.
+	p := NewRequest(tid, sid, def, ev, "req", "", "", false, 2, now)
+	if p.IsPending(now.Add(49*time.Hour)) || p.Approve("a1", "", now.Add(49*time.Hour)) == nil {
+		t.Fatal("an expired request takes no approvals")
+	}
+	if err := p.Reject("req", "", now); !errors.Is(err, ErrOwnRequest) {
+		t.Fatalf("the requester cancels, not rejects: %v", err)
+	}
+	if err := p.Cancel("other", now); err == nil {
+		t.Fatal("only the requester cancels")
+	}
+	if err := p.Reject("a1", "too wide", now); err != nil || p.Status != StatusRejected {
+		t.Fatalf("reject: %v", err)
+	}
+
+	// Validity: run-only and days.
+	runOnly := NewRequest(tid, sid, def, Evaluation{Approvals: 1, Validity: ValidityRun}, "req", "", "", false, 0, now)
+	_ = runOnly.Approve("a1", "", now)
+	if !runOnly.Authorizes(def.Digest(), now) {
+		t.Fatal("run-only before use")
+	}
+	runOnly.ConsumedAt = &now
+	if runOnly.Authorizes(def.Digest(), now) {
+		t.Fatal("run-only after use")
+	}
+	days := NewRequest(tid, sid, def, Evaluation{Approvals: 1, Validity: ValidityDays, ValidityDays: 3}, "req", "", "", false, 0, now)
+	_ = days.Approve("a1", "", now)
+	if !days.Authorizes(def.Digest(), now.Add(71*time.Hour)) || days.Authorizes(def.Digest(), now.Add(73*time.Hour)) {
+		t.Fatal("days validity")
+	}
+}
+
+func TestEligibilityAndSelfApproval(t *testing.T) {
+	now := time.Now()
+	all := []Approver{{UserID: "owner", Role: RoleOwner}, {UserID: "adm", Role: RoleAdmin}, {UserID: "lead", Role: "member"}}
+	r := NewRequest(shared.NewID(), shared.NewID(), Definition{}, Evaluation{Approvals: 1, ApproverRoles: []string{"admin"}}, "owner", "", "", false, 0, now)
+	if got := r.Eligible(all); len(got) != 1 || got[0].UserID != "adm" {
+		t.Fatalf("rule names admins: %+v", got)
+	}
+	if r.SelfApprovalAllowed("owner", all, now) {
+		t.Fatal("no self-approval while another approver can approve")
+	}
+	r.Evaluation.ApproverUserIDs = []string{"lead"}
+	if got := r.Eligible(all); len(got) != 2 {
+		t.Fatalf("role or named person: %+v", got)
+	}
+
+	solo := []Approver{{UserID: "owner", Role: RoleOwner}}
+	s := NewRequest(shared.NewID(), shared.NewID(), Definition{}, Evaluation{Approvals: 1}, "owner", "", "", false, 0, now)
+	if !s.SelfApprovalAllowed("owner", solo, now) {
+		t.Fatal("the sole owner may self-approve")
+	}
+	if s.SelfApprovalAllowed("other", solo, now) {
+		t.Fatal("only the requester self-approves")
+	}
+	if err := s.SelfApprove("owner", "only owner", now); err != nil || s.Status != StatusApproved || !s.Approvals[0].Self {
+		t.Fatalf("self-approve: %v %+v", err, s)
+	}
+	m := NewRequest(shared.NewID(), shared.NewID(), Definition{}, Evaluation{Approvals: 1}, "adm", "", "", false, 0, now)
+	if m.SelfApprovalAllowed("adm", []Approver{{UserID: "adm", Role: RoleAdmin}}, now) {
+		t.Fatal("an administrator who is not an owner never self-approves")
+	}
+	// Strict with one other approver: the other gives one, the owner the second.
+	two := NewRequest(shared.NewID(), shared.NewID(), Definition{}, Evaluation{Approvals: 2}, "owner", "", "", false, 0, now)
+	pair := []Approver{{UserID: "owner", Role: RoleOwner}, {UserID: "adm", Role: RoleAdmin}}
+	if !two.SelfApprovalAllowed("owner", pair, now) {
+		t.Fatal("one other approver cannot give two approvals")
+	}
+	_ = two.Approve("adm", "", now)
+	if two.SelfApprovalAllowed("owner", pair, now) != true || two.Remaining() != 1 {
+		t.Fatal("after the other approved, the owner gives the last")
+	}
+}
+
+func TestEmergency(t *testing.T) {
+	now := time.Now()
+	def := Definition{Targets: []string{"x"}}
+	e := NewEmergency(shared.NewID(), shared.NewID(), def, Evaluation{Approvals: 2}, "adm", "outage", 99, now)
+	if !e.Emergency || e.Status != StatusApproved || e.ValidUntil.Sub(now.UTC()) != DefaultEmergencyHours*time.Hour {
+		t.Fatalf("emergency: %+v", e)
+	}
+	if !e.Authorizes(def.Digest(), now.Add(time.Hour)) || e.Authorizes(def.Digest(), now.Add(5*time.Hour)) {
+		t.Fatal("an emergency approval is time-boxed")
 	}
 }

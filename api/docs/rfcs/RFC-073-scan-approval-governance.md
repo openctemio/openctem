@@ -179,7 +179,7 @@ forces Strict through the platform policy; a widening without the
 approvals is then refused (`SCOPE_LEDGER_REFUSED`), never silently
 accepted.
 
-## 8. Scan approval requests (next slice)
+## 8. Scan approval requests
 
 A request records the definition (canonical JSON and digest), the matched
 rules and merged requirement, justification and ticket, `run_on_approval`,
@@ -197,11 +197,28 @@ self-approves with a fresh authenticator code and a reason; Remind at most
 hourly; pending requests expire. An emergency run: owner or administrator,
 step-up, reason, 1-24 hours, audited critical, administrators told.
 
+Routes (migration `001921`: `scans:approve` for owners and administrators,
+`scan_approval_requests`):
+
+| Route | Gate |
+|---|---|
+| `POST /api/v1/scans/approval-preview` | `scans:write`; evaluates an unsaved scan (New Scan review) |
+| `GET /api/v1/scans/{id}/approval` | `scans:read`; required, approved, the current request, changes since the last approval |
+| `POST /api/v1/scans/{id}/approval` | `scans:write`; submit (`justification`, `ticket`, `run_on_approval`) |
+| `POST /api/v1/scans/{id}/emergency-run` | `scans:approve` + `scans:execute`, owner or administrator, step-up |
+| `GET /api/v1/scan-approvals[/{id}]` | `scans:read`; the inbox (`status`, `scan_id`, paging), `can_approve` and the eligible approvers per request |
+| `POST /api/v1/scan-approvals/{id}/approve`, `/reject`, `/self-approve` | `scans:approve`; the rule's approvers, never the requester |
+| `POST /api/v1/scan-approvals/{id}/remind`, `/cancel` | `scans:write`; reminders hourly at most; only the requester withdraws |
+
+The scan list carries `approval_status` (the newest request's status).
+The definition's intensity is the highest tier the scan's tool or workflow
+steps probe at; when RFC-071 lands it is the scan's declared intensity.
+
 ## 9. Plan
 
 | PR | Content |
 |---|---|
 | Setting | modes, platform policy renamed to scans, rules and presets (validation, evaluation), settings API, scope entries Strict-only, signer t2 floor, admin console and scope page texts (migration `001881`) |
-| Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge |
+| Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge (migration `001921`) |
 | Web | Settings > Scanning (mode, rule builder, presets), New Scan review "needs approval by…", Submit for approval, Approvals inbox, scan list badge |
 | Later | monitor-mode report, rule tester, the §4.1 later conditions, asset-owner approvers |
