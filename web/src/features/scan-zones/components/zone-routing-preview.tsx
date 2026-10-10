@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SCAN_WINDOW_NEVER_OPENS, WindowWaits } from '@/features/scan-windows'
 import { previewScanZoneRouting } from '@/lib/api/scan-zone-hooks'
 import type {
   ScanZone,
@@ -168,7 +169,17 @@ export function ZoneRoutingPreview({ request }: ZoneRoutingPreviewProps) {
 
   return (
     <div className="space-y-3" data-testid="zone-routing-preview">
-      {data.error && (
+      {data.windows && (
+        <WindowWaits
+          waitingCount={data.windows.waiting_count}
+          waiting={data.windows.waiting}
+          nextOpenAt={data.windows.next_open_at}
+          neverCount={data.windows.never_count}
+          never={data.windows.never}
+        />
+      )}
+
+      {data.error && !(data.windows && data.error.code === SCAN_WINDOW_NEVER_OPENS) && (
         <Alert variant="destructive" data-testid="zone-preview-refusal">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>This scan would not start</AlertTitle>

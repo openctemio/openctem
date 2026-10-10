@@ -1,6 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { useTenant } from '@/context/tenant-provider'
 import { post } from '@/lib/api/client'
@@ -21,6 +22,7 @@ import {
  * same message saving the scan would give.
  */
 export function useSchedulePreview(request: SchedulePreviewRequest | null) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const key =
     request && currentTenant
@@ -39,6 +41,6 @@ export function useSchedulePreview(request: SchedulePreviewRequest | null) {
   return {
     preview: error ? undefined : data,
     isLoading,
-    errorMessage: error ? getErrorMessage(error, 'Could not preview this schedule') : null,
+    errorMessage: error ? getErrorMessage(error, t('scans.preview.failed')) : null,
   }
 }

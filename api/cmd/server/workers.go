@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
+	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
@@ -372,6 +373,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 	w.ControllerManager.Register(scanTimeout)
 
+	// Scan windows (RFC-067 §6.4): a running job whose window closed gets
+	// its grace, then goes back to the queue for the next opening.
+	if svc.Command != nil && repos.ScanWindowPolicy != nil {
+		w.ControllerManager.Register(controller.NewScanWindowClosingController(
+			svc.Command, repos.ScanWindowPolicy, time.Minute, log.With("controller", "scan-window-closing")))
+	}
+
 	// Stalled run repair (research/62 SG-10): a run whose chained step waits
 	// for a report that failed or expired, or whose plan was saved without
 	// its commands, is advanced again.
@@ -560,6 +568,20 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "threat-intel-refresh"),
 	))
 
+	// Vulnerability bundles (RFC-066 §5.5): verified and imported into the
+	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
+	// platform admin enables the "vulnfeed" source.
+	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
+		im, err := vulnfeed.NewImporter(vulnfeed.Config{
+			RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
+		}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log.With("component", "vulnfeed"))
+		if err != nil {
+			log.Error("vulnerability bundle import disabled", "error", err)
+		} else {
+			w.ControllerManager.Register(controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import")))
+		}
+	}
+
 	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
 	// each organization's findings.
 	if svc.VulnMatch != nil {
@@ -585,6 +607,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
 		if svc.BountyProgram != nil {
 			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
+		}
+		// The public program feed (RFC-065 §16), when a bundle directory and
+		// the root key id are configured.
+		if svc.ProgramFeed != nil {
+			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed", svc.ProgramFeed))
+		}
+		// The operator's local bundle (owner option A): imported only while
+		// a platform administrator has the source enabled.
+		if svc.ProgramFeedLocal != nil {
+			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed-local", svc.ProgramFeedLocal))
 		}
 		// Program data scope: assets a program covers stay assigned to its
 		// group (RFC-065 §7), also those that arrived by discovery.

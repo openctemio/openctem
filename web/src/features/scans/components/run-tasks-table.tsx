@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
+import { enTranslate, type Translate } from '../lib/translate'
 import useSWRInfinite from 'swr/infinite'
 import { AlertTriangle, FileText, Info, Loader2 } from 'lucide-react'
 
@@ -12,17 +14,19 @@ import type { RunTask, RunTaskPage } from '@/lib/api/generated'
 import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs } from '@/features/scans/lib/run-display'
 import { RunTaskLogsDialog } from '@/features/scans/components/run-task-logs-dialog'
+import { holdText } from '@/features/scan-windows'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
  * tenant sensor's name, or nobody yet.
  */
 export function taskSensorLabel(
-  task: Pick<RunTask, 'sensor_name' | 'platform' | 'status'>
+  task: Pick<RunTask, 'sensor_name' | 'platform' | 'status'>,
+  t: Translate = enTranslate
 ): string {
-  if (task.platform) return 'Platform scanning'
+  if (task.platform) return t('scans.tasks.platformScanning')
   if (task.sensor_name) return task.sensor_name
-  return task.status === 'queued' ? 'Waiting for a sensor' : '-'
+  return task.status === 'queued' ? t('scans.tasks.waitingForSensor') : '-'
 }
 
 /** What the API writes into a command handed back by its sensor (RFC-030 §5.12). */
@@ -32,11 +36,16 @@ const RELEASED_PREFIX = 'released by sensor'
  * The line under a task's status. A queued task that its sensor handed back
  * (busy host, politeness, draining) carries the sensor's reason in its
  * message: that is why it waits, not an error, so it reads as information.
- * Any other message is the task's error.
+ * A queued task that waits for its scan window says which window and when
+ * it opens (window_hold, RFC-067). Any other message is the task's error.
  */
 export function taskStatusNote(
-  task: Pick<RunTask, 'status' | 'error_message'>
+  task: Pick<RunTask, 'status' | 'error_message' | 'window_hold'>,
+  t: Translate = enTranslate
 ): { kind: 'waiting' | 'error'; text: string } | null {
+  if (task.status === 'queued' && task.window_hold) {
+    return { kind: 'waiting', text: holdText(task.window_hold) }
+  }
   const msg = task.error_message?.trim()
   if (!msg) return null
   if (task.status === 'queued' && msg.toLowerCase().startsWith(RELEASED_PREFIX)) {
@@ -46,19 +55,21 @@ export function taskStatusNote(
       .trim()
     return {
       kind: 'waiting',
-      text: reason ? `Handed back: ${reason}` : 'Handed back by its sensor',
+      text: reason
+        ? t('scans.tasks.handedBackWhy', undefined, { reason })
+        : t('scans.tasks.handedBack'),
     }
   }
   return { kind: 'error', text: msg }
 }
 
-/** How a skipped target's reason reads. */
-const SKIP_REASON_LABELS: Record<string, string> = {
-  unresolvable: 'does not resolve',
-  wildcard_pattern: 'wildcard pattern',
-  denied_by_policy: "outside the sensor's policy",
-  invalid_target: 'not a valid target',
-}
+/** Skip reasons that have a translated label. */
+const SKIP_REASONS = new Set([
+  'unresolvable',
+  'wildcard_pattern',
+  'denied_by_policy',
+  'invalid_target',
+])
 
 /** Skipped targets named in the note before "and N more". */
 const SKIPPED_NAMED = 3
@@ -71,18 +82,24 @@ const SKIPPED_NAMED = 3
  * sensor-supplied text; TruncatedText shows them as plain text.
  */
 export function taskSkippedNote(
-  task: Pick<RunTask, 'skipped_targets' | 'skipped_targets_total'>
+  task: Pick<RunTask, 'skipped_targets' | 'skipped_targets_total'>,
+  t: Translate = enTranslate
 ): string | null {
   const list = task.skipped_targets ?? []
   const total = Math.max(task.skipped_targets_total ?? 0, list.length)
   if (total <= 0) return null
   const named = list
     .slice(0, SKIPPED_NAMED)
-    .map((s) => `${s.target ?? '?'} (${SKIP_REASON_LABELS[s.reason ?? ''] ?? 'refused'})`)
+    .map(
+      (s) =>
+        `${s.target ?? '?'} (${t(SKIP_REASONS.has(s.reason ?? '') ? `scans.tasks.skip.${s.reason}` : 'scans.tasks.skip.refused')})`
+    )
   const more = total - named.length
-  let text = `Completed with ${total} target${total === 1 ? '' : 's'} skipped`
+  let text = t(total === 1 ? 'scans.tasks.skippedOne' : 'scans.tasks.skippedMany', undefined, {
+    count: total,
+  })
   if (named.length > 0) text += `: ${named.join(', ')}`
-  if (named.length > 0 && more > 0) text += `, and ${more} more`
+  if (named.length > 0 && more > 0) text += t('scans.tasks.andMore', undefined, { count: more })
   return text
 }
 
@@ -107,6 +124,7 @@ export function RunTasksTable({
   /** Continues after `tasks` (the run read's tasks_next_cursor); none when all are shown. */
   nextCursor?: string
 }) {
+  const { t } = useTranslation()
   // Nothing is fetched until the first "Load more".
   const [started, setStarted] = useState(false)
   // The task whose logs are open (one dialog for the table).
@@ -132,77 +150,79 @@ export function RunTasksTable({
       <div className="overflow-x-auto rounded-md border">
         <table className="w-full text-sm">
           <caption className="sr-only">
-            Tasks of this run: {rows.length} of {total} shown
+            {t('scans.tasks.caption', undefined, { shown: rows.length, total })}
           </caption>
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th scope="col" className="px-3 py-2 text-start font-medium">
-                Status
+                {t('scans.tasks.colStatus')}
               </th>
               <th scope="col" className="px-3 py-2 text-start font-medium">
-                Tool
+                {t('scans.tasks.colTool')}
               </th>
               <th scope="col" className="px-3 py-2 text-start font-medium">
-                Sensor
+                {t('scans.tasks.colSensor')}
               </th>
               <th scope="col" className="px-3 py-2 text-end font-medium">
-                Targets
+                {t('scans.tasks.colTargets')}
               </th>
               <th scope="col" className="px-3 py-2 text-end font-medium">
-                Duration
+                {t('scans.tasks.colDuration')}
               </th>
               <th scope="col" className="px-3 py-2 text-end font-medium">
-                <span className="sr-only">Logs</span>
+                <span className="sr-only">{t('scans.tasks.colLogs')}</span>
               </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((t, i) => {
-              const ms = elapsedMs(t)
-              const note = taskStatusNote(t)
-              const skipped = taskSkippedNote(t)
+            {rows.map((task, i) => {
+              const ms = elapsedMs(task)
+              const note = taskStatusNote(task, t)
+              const skipped = taskSkippedNote(task, t)
               return (
-                <tr key={t.id ?? i} className="border-t align-top">
+                <tr key={task.id ?? i} className="border-t align-top">
                   <td className="px-3 py-2">
-                    <RunStatusBadge status={t.status ?? ''} />
+                    <RunStatusBadge status={task.status ?? ''} />
                     {note?.kind === 'waiting' && (
                       <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
                         <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-                        <TruncatedText value={note.text} label="Waiting" />
+                        <TruncatedText value={note.text} label={t('scans.tasks.waiting')} />
                       </div>
                     )}
                     {note?.kind === 'error' && (
                       <TruncatedText
                         value={note.text}
-                        label="Task error"
+                        label={t('scans.tasks.error')}
                         className="mt-1 max-w-[220px] text-xs text-muted-foreground"
                       />
                     )}
                     {skipped && (
                       <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
                         <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-                        <TruncatedText value={skipped} label="Skipped targets" />
+                        <TruncatedText value={skipped} label={t('scans.tasks.skippedTargets')} />
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2">{t.tool || '-'}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{taskSensorLabel(t)}</td>
-                  <td className="px-3 py-2 text-end tabular-nums">{t.targets ?? 0}</td>
+                  <td className="px-3 py-2">{task.tool || '-'}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{taskSensorLabel(task, t)}</td>
+                  <td className="px-3 py-2 text-end tabular-nums">{task.targets ?? 0}</td>
                   <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">
                     {ms === undefined ? '-' : ms < 1000 ? '<1s' : formatScanDuration(ms)}
-                    {ms !== undefined && !t.completed_at && ' so far'}
+                    {ms !== undefined && !task.completed_at && t('scans.tasks.soFar')}
                   </td>
                   <td className="px-3 py-2 text-end">
-                    {t.id && (
+                    {task.id && (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 gap-1 px-2 text-xs"
-                        aria-label={`Logs of the ${t.tool || 'task'} task`}
-                        onClick={() => setLogsOf(t)}
+                        aria-label={t('scans.tasks.logsOf', undefined, {
+                          tool: task.tool || t('scans.tasks.task'),
+                        })}
+                        onClick={() => setLogsOf(task)}
                       >
                         <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                        Logs
+                        {t('scans.tasks.colLogs')}
                       </Button>
                     )}
                   </td>
@@ -215,7 +235,7 @@ export function RunTasksTable({
       {rows.length < total && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span aria-live="polite">
-            Showing {rows.length} of {total} tasks.
+            {t('scans.tasks.showing', undefined, { shown: rows.length, total })}
           </span>
           {hasMore && (
             <Button
@@ -231,10 +251,10 @@ export function RunTasksTable({
               {loading && (
                 <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
               )}
-              Load {Math.min(TASK_PAGE_SIZE, remaining)} more
+              {t('scans.tasks.loadMore', undefined, { count: Math.min(TASK_PAGE_SIZE, remaining) })}
             </Button>
           )}
-          {error && <span className="text-destructive">Could not load more tasks.</span>}
+          {error && <span className="text-destructive">{t('scans.tasks.loadFailed')}</span>}
         </div>
       )}
       {logsOf?.id && (

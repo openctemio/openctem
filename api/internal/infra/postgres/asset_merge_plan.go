@@ -100,6 +100,11 @@ var assetMergeRefs = []mergeRef{
 	// asset by a grant sees the kept one.
 	{table: "asset_access_grants", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"user_id"}}}},
+	// Program provenance (RFC-065 §16.5) follows the asset; a program the
+	// kept asset is already linked to keeps the kept link. The program
+	// assignment pass derives system tags and program_only again.
+	{table: "asset_program_links", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"program_id"}}}},
 	{table: "business_service_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"service_id", "dependency_type"}}}},
 	{table: "compensating_control_assets", column: "asset_id", idCol: "ctid",
