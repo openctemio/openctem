@@ -24,8 +24,10 @@ import (
 	"io"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -68,10 +70,70 @@ type Item struct {
 	// Confidence is the program feed's confidence in the target
 	// (published or inferred, RFC-065 §16); empty for other sources.
 	Confidence string `json:"confidence,omitempty"`
+	// Ports and Protocol limit an in-scope entry to a service
+	// ("api.example.com:8443/tcp"): the entry covers only those ports
+	// (scope.Constraint). An out-of-scope item excludes its whole host.
+	Ports    string `json:"ports,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+
+	// Per-target qualifiers a program publishes (shown, never used to
+	// authorize).
+	EligibleForBounty *bool  `json:"eligible_for_bounty,omitempty"`
+	MaxSeverity       string `json:"max_severity,omitempty"`
+	Environment       string `json:"environment,omitempty"`
+	Instructions      string `json:"instructions,omitempty"`
+	Requires          string `json:"requires,omitempty"`
 }
+
+// Bounds of the per-target qualifiers.
+const (
+	MaxItemInstructions = 1000
+	MaxItemRequires     = 500
+)
 
 // Scannable reports whether the item becomes a scope entry or exclusion.
 func (i Item) Scannable() bool { return i.Kind != KindOther && i.Pattern != "" }
+
+// Constraint is the port limit of the entry an in-scope item becomes.
+func (i Item) Constraint() scope.Constraint {
+	if !i.InScope {
+		return scope.Constraint{}
+	}
+	return scope.Constraint{Ports: i.Ports, Protocol: i.Protocol}
+}
+
+// EntryKey identifies the entry or exclusion an item becomes: type,
+// pattern and, for a port-limited entry, its limit.
+func (i Item) EntryKey() string {
+	return EntryKey(i.TargetType, i.Pattern, i.Constraint())
+}
+
+// EntryKey is "type:pattern", followed by "|ports/protocol" for a
+// constrained entry (unconstrained keys are unchanged, so terms hashes of
+// existing programs stay the same).
+func EntryKey(t scope.TargetType, pattern string, c scope.Constraint) string {
+	k := string(t) + ":" + pattern
+	if !c.IsZero() {
+		k += "|" + c.Ports + "/" + c.Protocol
+	}
+	return k
+}
+
+// LimitItem limits a scannable in-scope item to ports and a protocol;
+// an invalid limit leaves the item not scannable (never wider).
+func LimitItem(it Item, ports []string, protocol string) Item {
+	if !it.Scannable() || (len(ports) == 0 && protocol == "") {
+		return it
+	}
+	c, err := scope.NormalizeConstraint(it.TargetType, ports, protocol)
+	if err != nil {
+		it.Kind, it.TargetType, it.Pattern = KindOther, "", ""
+		it.Note = "a port or protocol limit that cannot be enforced"
+		return it
+	}
+	it.Ports, it.Protocol = c.Ports, c.Protocol
+	return it
+}
 
 // ErrScopeTooLarge refuses an oversized paste.
 var ErrScopeTooLarge = shared.NewDomainError("PROGRAM_SCOPE_TOO_LARGE",
@@ -113,7 +175,7 @@ func dedupe(items []Item) []Item {
 	seen := make(map[string]bool, len(items))
 	out := items[:0]
 	for _, it := range items {
-		key := fmt.Sprintf("%t|%s|%s", it.InScope, it.TargetType, strings.ToLower(it.Pattern))
+		key := fmt.Sprintf("%t|%s", it.InScope, strings.ToLower(it.EntryKey()))
 		if it.Pattern == "" {
 			key = fmt.Sprintf("%t|raw|%s", it.InScope, strings.ToLower(it.Raw))
 		}
@@ -339,6 +401,12 @@ func Classify(raw string) Item {
 	if strings.Contains(raw, "://") {
 		return classifyURL(it)
 	}
+	if h, port, proto, ok := asset.SplitServiceName(raw); ok {
+		// "api.example.com:8443/tcp", "10.0.0.5:22": the host, limited to
+		// that port. The port is never dropped: that would authorize the
+		// whole host.
+		return LimitItem(classifyName(it, h), []string{strconv.Itoa(port)}, proto)
+	}
 	host, path, _ := strings.Cut(raw, "/")
 	if path != "" && strings.Trim(path, "*") != "" {
 		// "example.com/api/*": a path-limited target.
@@ -364,11 +432,13 @@ func classifyURL(it Item) Item {
 	host := u.Hostname()
 	path := strings.Trim(u.EscapedPath(), "/*")
 	if path == "" {
-		// The whole host: the entry is its name (or address).
-		if a, err := netip.ParseAddr(host); err == nil {
-			return withPattern(it, KindIP, scope.TargetTypeIPAddress, a.Unmap().String())
+		// The whole host: the entry is its name (or address), limited to
+		// the URL's port when it names one.
+		named := classifyName(it, host)
+		if p := u.Port(); p != "" {
+			return LimitItem(named, []string{p}, scope.ProtocolTCP)
 		}
-		return classifyHost(it, host)
+		return named
 	}
 	if strings.Contains(host, "*") {
 		it.Note = "wildcard host with a path; add it by hand"
@@ -376,6 +446,14 @@ func classifyURL(it Item) Item {
 	}
 	pattern := strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + "/" + path + "*"
 	return withPattern(it, KindURL, scope.TargetTypeURL, pattern)
+}
+
+// classifyName is an address or a host name.
+func classifyName(it Item, host string) Item {
+	if a, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+		return withPattern(it, KindIP, scope.TargetTypeIPAddress, a.Unmap().String())
+	}
+	return classifyHost(it, host)
 }
 
 func classifyHost(it Item, host string) Item {

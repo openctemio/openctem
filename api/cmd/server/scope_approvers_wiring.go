@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
 	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -72,6 +73,14 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 			svc.ScanPolicy.SetSettings(svc.Tenant)
 		}
 		svc.Scope.SetGovernance(svc.ScanPolicy)
+		// Scope entry tier ceilings are in force only in Strict: the
+		// dispatch gate reads the mode, and a mode change that crosses
+		// Strict is recorded with the job signer's ledger.
+		svc.ScanPolicy.SetTierCeilings(svc.Scope)
+		if svc.ActiveGate != nil {
+			svc.ActiveGate.SetTierPolicy(svc.ScanPolicy)
+		}
+		wireScanGovernance(svc, repos, log)
 	}
 	var totp scopeapp.TOTPVerifier
 	if svc.Auth != nil {
@@ -112,4 +121,36 @@ func (m scopePolicyMailer) NotifyScopePolicyChanged(_ context.Context, to []stri
 			m.log.Warn("scan policy email failed", "error", logger.SanitizeError(err))
 		}
 	}()
+}
+
+// wireScanGovernance builds scan approval governance (RFC-073): the settings,
+// the approval requests, the approver directory, the authenticator check for
+// an owner's own approval, notifications and audit, and the gate every scan
+// run passes.
+func wireScanGovernance(svc *Services, repos *Repositories, log *logger.Logger) {
+	if svc.Tenant == nil {
+		return
+	}
+	svc.ScanGovernance = scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log)
+	svc.ScanGovernance.SetTierCeilings(svc.Scope)
+	if repos.ScanApproval != nil {
+		svc.ScanGovernance.SetRequests(repos.ScanApproval)
+		var totp scangovapp.TOTPVerifier
+		if svc.Auth != nil {
+			totp = scopeTOTP{auth: svc.Auth}
+		}
+		svc.ScanGovernance.SetApprovers(repos.ScanApproval, totp)
+		svc.ScanGovernance.SetRequesters(repos.ScanApproval, svc.Tenant)
+	}
+	if svc.Notification != nil {
+		svc.ScanGovernance.SetNotifier(svc.Notification)
+	}
+	if svc.Audit != nil {
+		svc.ScanGovernance.SetAudit(svc.Audit)
+	}
+	if svc.Scan != nil {
+		svc.ScanGovernance.SetScans(svc.Scan)
+		svc.ScanGovernance.SetScanLister(svc.Scan)
+		svc.Scan.SetApprovalGate(svc.ScanGovernance, repos.ScanApproval)
+	}
 }
