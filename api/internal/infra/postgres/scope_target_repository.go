@@ -30,7 +30,8 @@ const scopeTargetSelectQuery = `
 	       created_by, created_at, updated_at,
 	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at, origin, discovery,
 	       authorization_source, program_id, letter_id,
-	       approval_reminded_at, attested_at, attested_by, attestation_requested_at
+	       approval_reminded_at, attested_at, attested_by, attestation_requested_at,
+	       ports, protocol
 	FROM scope_targets
 `
 
@@ -63,6 +64,8 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		attestedAt  sql.NullTime
 		attestedBy  sql.NullString
 		attestReqAt sql.NullTime
+		ports       string
+		protocol    string
 	)
 
 	err := row.Scan(
@@ -71,6 +74,7 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt, &origin, &discovery,
 		&authSource, &programID, &letterID,
 		&remindedAt, &attestedAt, &attestedBy, &attestReqAt,
+		&ports, &protocol,
 	)
 	if err != nil {
 		return nil, err
@@ -110,6 +114,9 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		}
 	}
 	if err := t.SetAuthorization(scope.AuthorizationSource(authSource), pid); err != nil {
+		return nil, fmt.Errorf("scope target %s: %w", id, err)
+	}
+	if err := t.SetConstraint(scope.Constraint{Ports: ports, Protocol: protocol}); err != nil {
 		return nil, fmt.Errorf("scope target %s: %w", id, err)
 	}
 	t.RestoreRemindedAt(scopeTimePtr(remindedAt))
@@ -203,8 +210,8 @@ func insertScopeTarget(ctx context.Context, exec sqlExecer, target *scope.Target
 			id, tenant_id, target_type, pattern, description, priority, status, tags,
 			created_by, created_at, updated_at,
 			expires_at, reason, max_tier, approvals_required, approved_at, origin, discovery,
-			authorization_source, program_id, letter_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+			authorization_source, program_id, letter_id, ports, protocol
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
 	`
 	var programID, letterID any
 	if pid := target.ProgramID(); pid != nil {
@@ -235,6 +242,8 @@ func insertScopeTarget(ctx context.Context, exec sqlExecer, target *scope.Target
 		string(target.AuthorizationSource()),
 		programID,
 		letterID,
+		target.Constraint().Ports,
+		target.Constraint().Protocol,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -544,7 +553,7 @@ func (r *ScopeTargetRepository) Count(ctx context.Context, filter scope.TargetFi
 
 // ExistsByPattern checks if a target with the given pattern exists.
 func (r *ScopeTargetRepository) ExistsByPattern(ctx context.Context, tenantID shared.ID, targetType scope.TargetType, pattern string) (bool, error) {
-	query := "SELECT EXISTS(SELECT 1 FROM scope_targets WHERE tenant_id = $1 AND target_type = $2 AND pattern = $3)"
+	query := "SELECT EXISTS(SELECT 1 FROM scope_targets WHERE tenant_id = $1 AND target_type = $2 AND pattern = $3 AND ports = '' AND protocol = '')"
 	var exists bool
 	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), targetType.String(), pattern).Scan(&exists); err != nil {
 		return false, fmt.Errorf("failed to check scope target existence: %w", err)
