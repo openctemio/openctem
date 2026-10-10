@@ -134,6 +134,9 @@ const (
 	ModuleReasonNotEntitled = "not_entitled"
 	// ModuleReasonUnavailable: the entitlement could not be read (503).
 	ModuleReasonUnavailable = "unavailable"
+	// ModuleReasonReadOnlyGrace: the organization lost the module recently:
+	// reads (and export) pass, writes are refused.
+	ModuleReasonReadOnlyGrace = "read_only_grace"
 )
 
 // ModuleNotEnabledDetails is the details object of a MODULE_NOT_ENABLED error:
@@ -152,6 +155,9 @@ func (g *ModuleGate) RequireModule(moduleID string) func(http.Handler) http.Hand
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			reason := g.offReason(r.Context(), GetTenantID(r.Context()), moduleID)
+			if reason == ModuleReasonReadOnlyGrace && isSafeMethod(r.Method) {
+				reason = ""
+			}
 			switch reason {
 			case "":
 				next.ServeHTTP(w, r)
@@ -161,8 +167,11 @@ func (g *ModuleGate) RequireModule(moduleID string) func(http.Handler) http.Hand
 					WriteJSON(w)
 			default:
 				msg := "This module is not enabled for your team"
-				if reason == ModuleReasonNotEntitled {
+				switch reason {
+				case ModuleReasonNotEntitled:
 					msg = "This module is not included in your organization's plan"
+				case ModuleReasonReadOnlyGrace:
+					msg = "Your organization's plan no longer includes this module: it is read-only for now"
 				}
 				apierror.ModuleNotEnabled(msg).
 					WithDetails(ModuleNotEnabledDetails{Module: moduleID, Reason: reason}).

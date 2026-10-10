@@ -32,7 +32,8 @@ const (
 	SourcePlan  = "plan"
 	SourceGrant = "grant"
 	SourceDeny  = "deny"
-	SourceNone  = "none" // the plan does not include it and nothing grants it
+	SourceNone  = "none"  // the plan does not include it and nothing grants it
+	SourceGrace = "grace" // lost recently: read-only until ReadOnlyUntil
 )
 
 // ModulesChangeNotifier is told when entitlements change so every cache of
@@ -82,6 +83,9 @@ type ModuleEntitlement struct {
 	InPlan         bool       `json:"in_plan"`
 	GrantReason    string     `json:"grant_reason,omitempty"`
 	GrantExpiresAt *time.Time `json:"grant_expires_at,omitempty"`
+	// ReadOnlyUntil: the organization lost the module and keeps read access
+	// (and export) until then; writes are refused and its jobs are stopped.
+	ReadOnlyUntil *time.Time `json:"read_only_until,omitempty"`
 }
 
 // ModuleEntitlements returns every top-level module of the registry with the
@@ -95,17 +99,26 @@ func (s *Service) ModuleEntitlements(ctx context.Context, tenantID shared.ID) (p
 	if err != nil {
 		return "", nil, err
 	}
+	now := s.now()
 	grants := map[string]plan.ModuleGrant{}
+	// An expired trial grant gives read-only grace from its expiry.
+	expiredGrant := map[string]time.Time{}
+	grace := map[string]time.Time{}
 	if s.modules != nil {
 		list, lerr := s.modules.ListModuleGrants(ctx, tenantID)
 		if lerr != nil {
 			return "", nil, lerr
 		}
-		now := s.now()
 		for _, g := range list {
-			if g.Active(now) {
+			switch {
+			case g.Active(now):
 				grants[g.ModuleID] = g
+			case g.Kind == plan.GrantAdd && g.ExpiresAt != nil:
+				expiredGrant[g.ModuleID] = g.ExpiresAt.Add(plan.GracePeriod)
 			}
+		}
+		if grace, lerr = s.modules.ListModuleGrace(ctx, tenantID); lerr != nil {
+			return "", nil, lerr
 		}
 	}
 	out := make([]ModuleEntitlement, 0, len(moduledom.Registry))
@@ -130,15 +143,26 @@ func (s *Service) ModuleEntitlements(ctx context.Context, tenantID shared.ID) (p
 		if granted && !d.Core {
 			e.GrantReason, e.GrantExpiresAt = g.Reason, g.ExpiresAt
 		}
+		if !e.Entitled {
+			until, ok := grace[d.ID]
+			if t, eok := expiredGrant[d.ID]; eok && (!ok || t.After(until)) {
+				until, ok = t, true
+			}
+			if ok && now.Before(until) {
+				u := until
+				e.Source, e.ReadOnlyUntil = SourceGrace, &u
+			}
+		}
 		out = append(out, e)
 	}
 	return p, out, nil
 }
 
 // NotEntitled returns the modules the organization may not use: top-level
-// modules and their sub-modules. An error means the entitlement could not be
-// read; the caller treats every non-core module as unavailable.
-func (s *Service) NotEntitled(ctx context.Context, tenantID string) (map[string]bool, error) {
+// modules and their sub-modules. The value is the end of the read-only grace
+// (nil: no access at all). An error means the entitlement could not be read;
+// the caller treats every non-core module as unavailable.
+func (s *Service) NotEntitled(ctx context.Context, tenantID string) (map[string]*time.Time, error) {
 	id, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, err
@@ -147,18 +171,77 @@ func (s *Service) NotEntitled(ctx context.Context, tenantID string) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	off := map[string]bool{}
+	off := map[string]*time.Time{}
 	for _, e := range list {
 		if !e.Entitled {
-			off[e.Module] = true
+			off[e.Module] = e.ReadOnlyUntil
 		}
 	}
 	for _, d := range moduledom.Registry {
-		if d.Parent != "" && off[d.Parent] {
-			off[d.ID] = true
+		if until, ok := off[d.Parent]; ok && d.Parent != "" {
+			off[d.ID] = until
 		}
 	}
 	return off, nil
+}
+
+// lostAndRegained runs change and returns the top-level modules the
+// organization lost and regained by it (grace aside). When the entitlement
+// cannot be read around the change, no grace is started: the change stands.
+func (s *Service) lostAndRegained(ctx context.Context, tenantID shared.ID, change func() error) (lost, regained []string, err error) {
+	before := s.entitledSet(ctx, tenantID)
+	if err := change(); err != nil {
+		return nil, nil, err
+	}
+	if before == nil {
+		return nil, nil, nil
+	}
+	after := s.entitledSet(ctx, tenantID)
+	if after == nil {
+		return nil, nil, nil
+	}
+	for id := range before {
+		if !after[id] {
+			lost = append(lost, id)
+		}
+	}
+	for id := range after {
+		if !before[id] {
+			regained = append(regained, id)
+		}
+	}
+	return lost, regained, nil
+}
+
+// entitledSet returns the non-core modules the organization is entitled to,
+// or nil when the entitlement cannot be read (logged).
+func (s *Service) entitledSet(ctx context.Context, tenantID shared.ID) map[string]bool {
+	_, list, err := s.ModuleEntitlements(ctx, tenantID)
+	if err != nil {
+		s.log.Error("read module entitlements for grace", "tenant_id", tenantID.String(), "error", err)
+		return nil
+	}
+	set := map[string]bool{}
+	for _, e := range list {
+		if e.Entitled && !e.Core {
+			set[e.Module] = true
+		}
+	}
+	return set
+}
+
+// applyGrace starts read-only grace for lost modules and ends it for
+// regained ones. Best effort: a failure is logged, the change stands.
+func (s *Service) applyGrace(ctx context.Context, tenantID shared.ID, lost, regained []string) {
+	if s.modules == nil {
+		return
+	}
+	if err := s.modules.StartModuleGrace(ctx, tenantID, lost, s.now().UTC().Add(plan.GracePeriod)); err != nil {
+		s.log.Error("start module grace", "tenant_id", tenantID.String(), "error", err)
+	}
+	if err := s.modules.EndModuleGrace(ctx, tenantID, regained); err != nil {
+		s.log.Error("end module grace", "tenant_id", tenantID.String(), "error", err)
+	}
 }
 
 // UpdatePlanModules saves the plan to module map (the caller checked super
@@ -175,9 +258,13 @@ func (s *Service) UpdatePlanModules(ctx context.Context, actor *admin.AdminUser,
 		return 0, err
 	}
 	m = m.Normalized()
+	old, _, oerr := s.PlanModules(ctx)
 	v, err := s.modules.SavePlanModules(ctx, m, expectedVersion, actor.ID(), s.now().UTC())
 	if err != nil {
 		return 0, err
+	}
+	if oerr == nil {
+		s.applyPlanGrace(ctx, old, m)
 	}
 	s.mu.Lock()
 	s.cachedModules, s.modulesVersion, s.modulesCachedAt = m, v, s.now()
@@ -236,9 +323,11 @@ func (s *Service) PutModuleGrant(ctx context.Context, actor *admin.AdminUser, te
 	id := actor.ID()
 	g := plan.ModuleGrant{TenantID: tenantID, ModuleID: in.Module, Kind: in.Kind, Reason: reason,
 		ExpiresAt: in.ExpiresAt, SetBy: &id, SetAt: now}
-	if err := s.modules.SetModuleGrant(ctx, g); err != nil {
+	lost, regained, err := s.lostAndRegained(ctx, tenantID, func() error { return s.modules.SetModuleGrant(ctx, g) })
+	if err != nil {
 		return err
 	}
+	s.applyGrace(ctx, tenantID, lost, regained)
 	body := map[string]any{"module": in.Module, "kind": string(in.Kind), "reason": reason}
 	if in.ExpiresAt != nil {
 		body["expires_at"] = in.ExpiresAt.UTC().Format(time.RFC3339)
@@ -259,12 +348,43 @@ func (s *Service) DeleteModuleGrant(ctx context.Context, actor *admin.AdminUser,
 	if _, known := moduledom.Lookup(moduleID); !known || !ValidGrantReason(reason) {
 		return plan.ErrInvalid
 	}
-	if err := s.modules.DeleteModuleGrant(ctx, tenantID, moduleID); err != nil {
+	lost, regained, err := s.lostAndRegained(ctx, tenantID, func() error {
+		return s.modules.DeleteModuleGrant(ctx, tenantID, moduleID)
+	})
+	if err != nil {
 		return err
 	}
+	s.applyGrace(ctx, tenantID, lost, regained)
 	s.writeAudit(ctx, actor, ActionModuleGrantRemoved, &tenantID, "tenant", map[string]any{"module": moduleID, "reason": strings.TrimSpace(reason)}, ip, ua)
 	if s.modulesChanged != nil {
 		s.modulesChanged(tenantID.String())
 	}
 	return nil
+}
+
+// applyPlanGrace starts read-only grace for the organizations of each plan
+// that lost a module, and ends it where a plan includes the module again.
+func (s *Service) applyPlanGrace(ctx context.Context, old, next plan.PlanModules) {
+	until := s.now().UTC().Add(plan.GracePeriod)
+	for _, p := range plan.All {
+		var lost, regained []string
+		for _, d := range moduledom.Registry {
+			if d.Core || d.Parent != "" {
+				continue
+			}
+			was, is := old.Includes(p, d.ID), next.Includes(p, d.ID)
+			switch {
+			case was && !is:
+				lost = append(lost, d.ID)
+			case !was && is:
+				regained = append(regained, d.ID)
+			}
+		}
+		if err := s.modules.StartPlanModuleGrace(ctx, p, lost, until); err != nil {
+			s.log.Error("start plan module grace", "plan", string(p), "error", err)
+		}
+		if err := s.modules.EndPlanModuleGrace(ctx, p, regained); err != nil {
+			s.log.Error("end plan module grace", "plan", string(p), "error", err)
+		}
+	}
 }

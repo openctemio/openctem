@@ -134,3 +134,19 @@ func TestPlanHandler_ModuleGrantsNeedStepUp(t *testing.T) {
 		}
 	})
 }
+
+func (m *moduleMemRepo) ListModuleGrace(context.Context, shared.ID) (map[string]time.Time, error) {
+	return map[string]time.Time{}, nil
+}
+
+func (m *moduleMemRepo) StartModuleGrace(context.Context, shared.ID, []string, time.Time) error {
+	return nil
+}
+
+func (m *moduleMemRepo) EndModuleGrace(context.Context, shared.ID, []string) error { return nil }
+
+func (m *moduleMemRepo) StartPlanModuleGrace(context.Context, plan.Plan, []string, time.Time) error {
+	return nil
+}
+
+func (m *moduleMemRepo) EndPlanModuleGrace(context.Context, plan.Plan, []string) error { return nil }

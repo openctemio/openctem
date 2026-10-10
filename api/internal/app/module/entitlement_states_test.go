@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
@@ -51,11 +52,24 @@ const tid = "00000000-0000-0000-0000-0000000000aa"
 
 type fakeEntitlements struct {
 	off map[string]bool
-	err error
+	// grace maps a module to the end of its read-only grace.
+	grace map[string]time.Time
+	err   error
 }
 
-func (f fakeEntitlements) NotEntitled(context.Context, string) (map[string]bool, error) {
-	return f.off, f.err
+func (f fakeEntitlements) NotEntitled(context.Context, string) (map[string]*time.Time, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := map[string]*time.Time{}
+	for id := range f.off {
+		out[id] = nil
+	}
+	for id, until := range f.grace {
+		u := until
+		out[id] = &u
+	}
+	return out, nil
 }
 
 func newStatesService(ent EntitlementReader, overrides ...*moduledom.TenantModuleOverride) *ModuleService {
@@ -159,5 +173,35 @@ func TestTenantModuleConfig_ReportsEntitlement(t *testing.T) {
 	}
 	if seen != 2 {
 		t.Fatalf("modules missing from the config: %d", seen)
+	}
+}
+
+// A module in read-only grace: off for jobs and writes, still listed for
+// the console (read-only), and it cannot be switched on.
+func TestModuleStates_ReadOnlyGrace(t *testing.T) {
+	until := time.Now().Add(48 * time.Hour)
+	s := newStatesService(fakeEntitlements{grace: map[string]time.Time{moduledom.ModulePentest: until}})
+	ctx := context.Background()
+	if r := s.TenantModuleStates(ctx, tid)[moduledom.ModulePentest]; r != ReasonReadOnlyGrace {
+		t.Fatalf("reason %q, want %q", r, ReasonReadOnlyGrace)
+	}
+	if !s.TenantDisabledModules(ctx, tid)[moduledom.ModulePentest] {
+		t.Fatal("jobs must see a module in grace as off")
+	}
+	out, err := s.GetTenantEnabledModules(ctx, tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := false
+	for _, id := range out.ModuleIDs {
+		listed = listed || id == moduledom.ModulePentest
+	}
+	if !listed || !out.ReadOnlyModules[moduledom.ModulePentest].Equal(until) {
+		t.Fatalf("listed=%v read-only=%v, want listed read-only until %v", listed, out.ReadOnlyModules, until)
+	}
+	_, err = s.UpdateTenantModules(ctx, tid,
+		[]moduledom.TenantModuleUpdate{{ModuleID: moduledom.ModulePentest, IsEnabled: true}}, auditapp.AuditContext{})
+	if !errors.Is(err, moduledom.ErrModuleNotEntitled) {
+		t.Fatalf("enable in grace: %v, want ErrModuleNotEntitled", err)
 	}
 }

@@ -73,6 +73,11 @@ export interface TenantModulesResponse {
   beta_module_ids?: string[]
   /** Modules the organization's plan does not include (not just switched off). */
   not_entitled_module_ids?: string[]
+  /**
+   * Modules the organization lost recently, with the end of their read-only
+   * grace (RFC 3339): pages still read and export, writes are refused.
+   */
+  read_only_modules?: Record<string, string>
 }
 
 // ============================================

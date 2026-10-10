@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -137,6 +138,9 @@ type TenantModulesResponse struct {
 	// NotEntitledModuleIDs are modules the organization's plan does not
 	// include: a page of one says "not in your plan", not "turned off".
 	NotEntitledModuleIDs []string `json:"not_entitled_module_ids,omitempty"`
+	// ReadOnlyModules are modules the organization lost recently, with the end
+	// of their read-only grace: pages read, writes are refused.
+	ReadOnlyModules map[string]time.Time `json:"read_only_modules,omitempty"`
 }
 
 // LicensingModuleResponse represents a module in the response.
@@ -224,6 +228,7 @@ func (h *BootstrapHandler) buildModulesResponse(
 		ComingSoonModuleIDs:  comingSoonIDs,
 		BetaModuleIDs:        betaIDs,
 		NotEntitledModuleIDs: enabledModules.NotEntitledModuleIDs,
+		ReadOnlyModules:      enabledModules.ReadOnlyModules,
 	}
 }
 
