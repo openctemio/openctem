@@ -115,18 +115,18 @@ type Handlers struct {
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
 	DataScope     middleware.DataScopeAsserter
-	Sensor        *handler.SensorHandler           // nil if not initialized (no database)
-	SensorContent *handler.SensorContentHandler    // scanner content policy + refresh (RFC-031); nil without a database
-	SensorResults *handler.SensorResultHandler     // unsolicited results policy + quarantine review (RFC-040); nil without a database
-	ScanZone      *handler.ScanZoneHandler         // nil if not initialized (no database)
-	ScanFreeze    *handler.ScanFreezeWindowHandler // nil if not initialized (no database)
-	ScanWorkflow  *handler.ScanWorkflowHandler     // nil if not initialized (no database)
-	ScanProfile   *handler.ScanProfileHandler      // nil if not initialized (no database)
-	Tool          *handler.ToolHandler             // nil if not initialized (no database)
-	ToolCategory  *handler.ToolCategoryHandler     // nil if not initialized (no database)
-	Capability    *handler.CapabilityHandler       // nil if not initialized (no database)
-	Scan          *handler.ScanHandler             // nil if not initialized (no database)
-	CI            *handler.CIHandler               // nil if not initialized (no database) - CI/CD snippet generator
+	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
+	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
+	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
+	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
+	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
+	ScanWorkflow  *handler.ScanWorkflowHandler  // nil if not initialized (no database)
+	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
+	Tool          *handler.ToolHandler          // nil if not initialized (no database)
+	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
+	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
+	Scan          *handler.ScanHandler          // nil if not initialized (no database)
+	CI            *handler.CIHandler            // nil if not initialized (no database) - CI/CD snippet generator
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
@@ -150,6 +150,7 @@ type Handlers struct {
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
+	AssetSoftware          *handler.AssetSoftwareHandler          // RFC-066; nil if not initialized
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
 	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
 	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
@@ -556,6 +557,7 @@ func Register(
 	if h.AssetIdentifier != nil {
 		registerAssetIdentifierRoutes(router, h.AssetIdentifier, authMiddleware, userSync)
 	}
+	registerAssetSoftwareRoutes(router, h.AssetSoftware, authMiddleware, userSync)
 	if h.AssetStateHistory != nil {
 		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync)
 	}
@@ -860,8 +862,8 @@ func Register(
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
 	}
-	if h.ScanFreeze != nil {
-		registerScanFreezeWindowRoutes(router, h.ScanFreeze, authMiddleware, userSync)
+	if h.ScanWindow != nil {
+		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
 	}
 
 	// Initialize trigger rate limiter for scan workflow/scan trigger endpoints

@@ -1,10 +1,9 @@
 package command
 
 // Bug-bounty program rules at delivery (RFC-065 §12). Before a sensor gets
-// a job whose targets a program covers:
+// a job whose targets a program covers (outside a program's testing windows
+// the scan window hold already kept it back, window_hold.go):
 //
-//   - outside the program's testing windows, the job is not handed out; it
-//     stays pending and leaves when a window opens;
 //   - when the covering programs' rules conflict (two values for one header,
 //     two User-Agents), the job is failed with PROGRAM_RULES_CONFLICT;
 //   - otherwise the delivered copy carries the programs' identification
@@ -58,9 +57,8 @@ var ErrSensorCannotHonorProgram = shared.NewDomainError("PROGRAM_RULES_UNSUPPORT
 	"this sensor cannot send the program's identification headers (update the sensor)", shared.ErrValidation)
 
 // programHold decides each command before it is claimed: kept (with the
-// rules it carries, if any), withheld (outside a testing window, a sensor
-// that cannot honor the rules, or rules that could not be read) or failed
-// (conflicting rules).
+// rules it carries, if any), withheld (a sensor that cannot honor the
+// rules, or rules that could not be read) or failed (conflicting rules).
 func (s *Service) programHold(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, cmds []*commanddom.Command) ([]*commanddom.Command, map[shared.ID]*bp.JobRules) {
 	if s.programRules == nil || len(cmds) == 0 {
 		return cmds, nil
@@ -87,9 +85,9 @@ func (s *Service) programHold(ctx context.Context, tenantID shared.ID, sensorID 
 }
 
 // programDecide answers the rules one command carries (nil: none), or why it
-// does not leave now: bp.ErrOutsideWindow, bp.ErrRulesConflict (the command
-// is failed), ErrSensorCannotHonorProgram, or ErrScopeRecheckUnavailable
-// when the rules could not be read (fail closed).
+// does not leave now: bp.ErrRulesConflict (the command is failed),
+// ErrSensorCannotHonorProgram, or ErrScopeRecheckUnavailable when the rules
+// could not be read (fail closed).
 func (s *Service) programDecide(ctx context.Context, c *commanddom.Command, now time.Time, honors func() bool) (*bp.JobRules, error) {
 	targets := payloadTargets(c.Payload)
 	if len(targets) == 0 {
@@ -97,8 +95,6 @@ func (s *Service) programDecide(ctx context.Context, c *commanddom.Command, now 
 	}
 	r, err := s.programRules.JobRules(ctx, c.TenantID, targets, now)
 	switch {
-	case errors.Is(err, bp.ErrOutsideWindow):
-		return nil, err // stays pending until a window opens
 	case errors.Is(err, bp.ErrRulesConflict):
 		s.failAtClaim(ctx, c, FailureProgramRules+": "+err.Error(), FailureProgramRules)
 		return nil, err
