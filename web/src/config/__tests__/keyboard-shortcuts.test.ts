@@ -8,8 +8,7 @@ import { join } from 'node:path'
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { KEYBOARD_SHORTCUTS, shortcutsForShell } from '../keyboard-shortcuts'
 import { getAppVersion } from '@/lib/app-version'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi_ from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi as vi_ } from '@/lib/i18n/dictionaries'
 
 const src = (p: string) => readFileSync(join(process.cwd(), 'src', p), 'utf8')
 

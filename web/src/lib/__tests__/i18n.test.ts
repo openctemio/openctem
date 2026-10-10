@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getDictionary, translate, getDirFromLocale } from '../i18n'
-import en from '../i18n/dictionaries/en.json'
-import vi from '../i18n/dictionaries/vi.json'
+import { en, vi } from '../i18n/dictionaries'
 
 describe('i18n translate', () => {
   it('resolves a key from the requested locale catalog', () => {
