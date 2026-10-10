@@ -116,6 +116,7 @@ var v1ChangeKinds = map[string]bool{"program_added": true, "program_reopened": t
 // Classifier labels used more than once.
 const (
 	labelURL       = "url"
+	labelDomain    = "domain"
 	labelIPAddress = "ip_address"
 )
 
@@ -162,7 +163,7 @@ func v1Item(t v1Target, inScope bool) (bp.Item, error) {
 func v1AssetLabel(assetType string) string {
 	switch strings.ToLower(strings.TrimSpace(assetType)) {
 	case "domain", "subdomain", "wildcard":
-		return "domain"
+		return labelDomain
 	case "ip_address", "ip":
 		return labelIPAddress
 	case "cidr", "ip_range":
