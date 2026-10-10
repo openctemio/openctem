@@ -20,7 +20,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Assets
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
@@ -32,7 +32,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
 		// Scans
-		ScansRead, ScansWrite, ScansDelete, ScansExecute,
+		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
 		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
@@ -99,7 +99,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Assets
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
@@ -111,7 +111,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
 		// Scans
-		ScansRead, ScansWrite, ScansDelete, ScansExecute,
+		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
 		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,

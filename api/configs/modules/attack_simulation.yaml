@@ -1,0 +1,15 @@
+- id: attack_simulation
+  const: ModuleAttackSimulation
+  slug: "attack-simulation"
+  name: Attack Simulation
+  description: "Breach & Attack Simulation (BAS) — automated adversary emulation to test security controls effectiveness"
+  icon: Swords
+  category: validation
+  order: 31
+  release: beta
+  user_facing: true
+  depends:
+    - {id: attacker_profiles, kind: hard, reason: "simulation requires an attacker profile to emulate"}
+    - {id: assets, kind: hard, reason: "simulation needs target assets"}
+  routes:
+    - /api/v1/simulations

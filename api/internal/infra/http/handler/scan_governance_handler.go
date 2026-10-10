@@ -165,6 +165,40 @@ func (h *ScanGovernanceHandler) UpdateRules(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, governanceResponse(v))
 }
 
+// TestScanGovernanceRulesRequest is a rule set to try.
+type TestScanGovernanceRulesRequest struct {
+	Rules []scangov.Rule `json:"rules"`
+}
+
+// TestRules handles POST /api/v1/organization/settings/scan-governance/test.
+// @Summary      Try scan approval rules on existing scans
+// @Description  Owner or administrator. Evaluates a proposed rule set (validated as a save would be, nothing is written) against the organization's saved scans (at most 200, newest first), each as a run its creator starts from the console at its next scheduled time: which scans it would hold for approval, which only monitor rules catch, and how many scans each rule catches. Off is evaluated as On.
+// @Tags         Scans
+// @Accept       json
+// @Produce      json
+// @Param        body  body      TestScanGovernanceRulesRequest  true  "Rules to try"
+// @Success      200   {object}  scangovapp.RuleTest
+// @Failure      400   {object}  apierror.Error
+// @Failure      403   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/scan-governance/test [post]
+func (h *ScanGovernanceHandler) TestRules(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tenantID(w, r)
+	if !ok {
+		return
+	}
+	var req TestScanGovernanceRulesRequest
+	if !decodeGovernanceBody(w, r, &req) {
+		return
+	}
+	out, err := h.svc.TestRules(r.Context(), tid, req.Rules)
+	if err != nil {
+		h.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func decodeGovernanceBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256*1024))
 	dec.DisallowUnknownFields()
