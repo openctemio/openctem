@@ -32,6 +32,10 @@ const (
 // ScopeSourcePaste: the scope was pasted by a person (not authoritative).
 const ScopeSourcePaste = "paste"
 
+// ScopeSourceFileImport is a scope read from a file the person imported
+// (RFC-065 §15.2).
+const ScopeSourceFileImport = "file_import"
+
 // Bounds.
 const (
 	MaxNameLength     = 200
@@ -44,7 +48,32 @@ const (
 	MaxUserAgent      = 200
 	MaxNotes          = 4000
 	MaxRateLimitRPS   = 1000
+	// MaxTermsText bounds the program terms a person pastes (policy,
+	// confidentiality terms).
+	MaxTermsText = 20000
 )
+
+// Visibility of a program (RFC-065 §15.3).
+type Visibility string
+
+// Visibilities. A private program, its scope, rules and terms are visible
+// only to its members and the organization's owners, and every view of its
+// details is audited; a public one follows the program data scope.
+const (
+	VisibilityPrivate Visibility = "private"
+	VisibilityPublic  Visibility = "public"
+)
+
+// ParseVisibility reads a visibility; "" is private (the safe default).
+func ParseVisibility(s string) (Visibility, error) {
+	switch Visibility(strings.TrimSpace(s)) {
+	case "", VisibilityPrivate:
+		return VisibilityPrivate, nil
+	case VisibilityPublic:
+		return VisibilityPublic, nil
+	}
+	return "", fmt.Errorf("%w: visibility must be private or public", shared.ErrValidation)
+}
 
 // Forbidden techniques a program may list.
 const (
@@ -168,12 +197,16 @@ func hasControl(s string) bool {
 
 // Program is one program the organization follows.
 type Program struct {
-	ID            shared.ID
-	TenantID      shared.ID
-	Name          string
-	Platform      string
-	Handle        string
-	ProgramURL    string
+	ID         shared.ID
+	TenantID   shared.ID
+	Name       string
+	Platform   string
+	Handle     string
+	ProgramURL string
+	Visibility Visibility
+	// TermsText is the program's own terms as the person pasted them
+	// (policy, confidentiality terms); part of the attested terms.
+	TermsText     string
 	Status        Status
 	ScopeSource   string
 	Rules         Rules
@@ -191,6 +224,14 @@ type Program struct {
 	Sync Sync
 	// Pending is a widening a sync found, waiting for a member.
 	Pending *PendingTerms
+	// PublicProgramID is the catalog program a subscribed program follows
+	// (scope_source public_feed, RFC-065 §16).
+	PublicProgramID *shared.ID
+	// PublicSyncedSHA256 is the catalog content hash the program was last
+	// brought up to date with; ConfirmedTargets are the feed's inferred
+	// targets a member confirmed.
+	PublicSyncedSHA256 string
+	ConfirmedTargets   []string
 }
 
 // Program errors.
@@ -201,7 +242,14 @@ var (
 	ErrTermsRequired = shared.NewDomainError("PROGRAM_TERMS_REQUIRED", "accept the program's terms (accept_terms_sha256 from the preview)", shared.ErrValidation)
 	ErrNotActive     = shared.NewDomainError("PROGRAM_NOT_ACTIVE", "the program is not active", shared.ErrConflict)
 	ErrEnded         = shared.NewDomainError("PROGRAM_ENDED", "the program has ended", shared.ErrConflict)
+	// ErrAttestationRequired: a private program's details need the
+	// caller's own acceptance of its current terms (RFC-065 §15.3).
+	ErrAttestationRequired = shared.NewDomainError("PROGRAM_ATTESTATION_REQUIRED",
+		"accept this program's terms and confidentiality before working with it", shared.ErrConflict)
 )
+
+// IsPrivate reports whether the program is private (anything but public).
+func (p *Program) IsPrivate() bool { return p.Visibility != VisibilityPublic }
 
 // ValidateDetails checks the descriptive fields of a program.
 func ValidateDetails(name, platform, handle, programURL string) error {
@@ -215,9 +263,22 @@ func ValidateDetails(name, platform, handle, programURL string) error {
 	case len(programURL) > MaxURLLength:
 		return fmt.Errorf("%w: program_url must be at most %d characters", shared.ErrValidation, MaxURLLength)
 	}
+	if strings.TrimSpace(programURL) == "" {
+		// A private program's page is behind its platform's login; the
+		// link is optional.
+		return nil
+	}
 	u, err := url.Parse(strings.TrimSpace(programURL))
 	if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.User != nil {
 		return fmt.Errorf("%w: program_url must be an https:// link to the program's policy", shared.ErrValidation)
+	}
+	return nil
+}
+
+// ValidateTermsText checks the pasted terms.
+func ValidateTermsText(s string) error {
+	if len(s) > MaxTermsText || strings.ContainsRune(s, 0) {
+		return fmt.Errorf("%w: terms must be at most %d characters", shared.ErrValidation, MaxTermsText)
 	}
 	return nil
 }
@@ -232,6 +293,15 @@ type Terms struct {
 	Rules      Rules    `json:"rules"`
 	InScope    []string `json:"in_scope"`
 	OutOfScope []string `json:"out_of_scope"`
+	// Text is the program's own terms text; absent when there is none, so
+	// programs without one keep their hash.
+	Text string `json:"text,omitempty"`
+}
+
+// WithText adds the program's terms text.
+func (t Terms) WithText(text string) Terms {
+	t.Text = strings.TrimSpace(text)
+	return t
 }
 
 // NewTerms builds the terms of a program from its parsed items.

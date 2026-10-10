@@ -66,6 +66,8 @@ var assetMergeRefs = []mergeRef{
 	{table: "ci_pipelines", column: "repository_asset_id", tenantCol: "tenant_id"},
 	{table: "web_endpoint_events", column: "origin_asset_id", tenantCol: "tenant_id"},
 	{table: "api_specs", column: "origin_asset_id", tenantCol: "tenant_id"},
+	// The merged asset's change timeline (RFC-069) joins the kept asset's.
+	{table: "asset_change_events", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",

@@ -48,6 +48,10 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AssetChangeRetentionDays is how long the asset change timeline keeps
+	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
+	AssetChangeRetentionDays int
+
 	// AuditRetention controls the tenant audit log retention (hash-chain
 	// prefix archive and prune).
 	AuditRetention AuditRetentionConfig
@@ -87,6 +91,18 @@ type ScopeConfig struct {
 	// Unset: a public resolver when organizations are self-service (SaaS),
 	// otherwise system.
 	ZoneResolver string
+	// ProgramFeedDir is a directory holding the newest signed public
+	// program feed bundle (PROGRAMFEED_DIR: a mirror or an upload,
+	// RFC-065 §16); ProgramFeedRootKeyID pins the feed's offline root
+	// (PROGRAMFEED_ROOT_KEY_ID). Both are needed; unset, no feed is
+	// imported.
+	ProgramFeedDir       string
+	ProgramFeedRootKeyID string
+	// ProgramFeedLocalBundleDir is the directory of the operator's own
+	// unsigned local-only bundle (PROGRAMFEED_LOCAL_BUNDLE_DIR, output of
+	// `programfeed build --local-only`); read only while a platform
+	// administrator has the source enabled. Never set from the UI.
+	ProgramFeedLocalBundleDir string
 }
 
 // ScanZoneResolverSystem routes hostnames with the platform's own resolver.
@@ -1396,6 +1412,7 @@ func Load() (*Config, error) {
 			Public: getEnvBool("METRICS_PUBLIC", false),
 			Token:  getEnv("METRICS_TOKEN", ""),
 		},
+		AssetChangeRetentionDays: getEnvInt("ASSET_CHANGE_RETENTION_DAYS", 400),
 		AuditRetention: AuditRetentionConfig{
 			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
 			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
@@ -1406,6 +1423,10 @@ func Load() (*Config, error) {
 			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
 			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
+			// The public program feed (RFC-065 §16).
+			ProgramFeedDir:            getEnv("PROGRAMFEED_DIR", ""),
+			ProgramFeedRootKeyID:      getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
+			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),

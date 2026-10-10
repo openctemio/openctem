@@ -20,6 +20,7 @@ import type {
 } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
 import { parsePastedTargets } from './target-format'
+import { instantToZonedWallTime, viewerTimeZone, zonedWallTimeToInstant } from './zoned-time'
 import {
   TENABLE_SC_TOOL,
   readTenableScanConfig,
@@ -28,9 +29,15 @@ import {
 } from '@/features/integrations/lib/tenable-sc'
 import { apiTargetOptions, isWildcardTarget, toWildcards } from './dynamic-targets'
 
-/** Form schedule frequency -> API schedule type ("once" is manual). */
+/** The scan has no schedule: it runs now, or is saved to start by hand. */
+export function onDemand(schedule: NewScanFormData['schedule']): boolean {
+  return schedule.runImmediately || !!schedule.saveOnly
+}
+
+/** Form schedule frequency -> API schedule type. */
 export function frequencyToScheduleType(frequency: ScheduleFrequency | undefined): ScheduleType {
   switch (frequency) {
+    case 'once':
     case 'daily':
     case 'weekly':
     case 'monthly':
@@ -40,15 +47,16 @@ export function frequencyToScheduleType(frequency: ScheduleFrequency | undefined
   }
 }
 
-/** API schedule type -> form frequency (manual and unknown are "once"). */
+/** API schedule type -> form frequency (unknown types show as weekly). */
 export function scheduleTypeToFrequency(scheduleType?: string): ScheduleFrequency {
   switch (scheduleType) {
+    case 'once':
     case 'daily':
     case 'weekly':
     case 'monthly':
       return scheduleType
     default:
-      return 'once'
+      return 'weekly'
   }
 }
 
@@ -68,17 +76,55 @@ export function basicInfoError(form: NewScanFormData): string | null {
   return null
 }
 
+/** The instant of a once schedule's run, or null when its date/time is incomplete. */
+export function onceRunAt(form: NewScanFormData): Date | null {
+  const { schedule } = form
+  if (!schedule.runAtDate || !schedule.runAtTime) return null
+  return zonedWallTimeToInstant(
+    { date: schedule.runAtDate, time: schedule.runAtTime },
+    schedule.timezone || viewerTimeZone()
+  )
+}
+
+/**
+ * First problem with the Schedule step, or null. A one-off run needs a date
+ * and time; a new one must be at least a minute ahead (the API refuses
+ * otherwise). An edit may send back a run that has already happened.
+ */
+export function scheduleError(
+  form: NewScanFormData,
+  opts: { requireFuture?: boolean; now?: Date } = {}
+): string | null {
+  const { schedule } = form
+  if (schedule.runImmediately || schedule.saveOnly || schedule.frequency !== 'once') return null
+  const at = onceRunAt(form)
+  if (!at) return 'Choose the date and time of the run'
+  const now = opts.now ?? new Date()
+  if (opts.requireFuture !== false && at.getTime() < now.getTime() + 60_000) {
+    return 'The run must be at least a minute from now (to run now, choose Run immediately)'
+  }
+  return null
+}
+
 function applySchedule(
   form: NewScanFormData,
   request: CreateScanConfigRequest | UpdateScanConfigRequest
 ) {
   const { schedule } = form
-  if (schedule.runImmediately || schedule.frequency === 'once') return
+  if (schedule.runImmediately || schedule.saveOnly) return
+  // The time is in this zone (the viewer's by default); without it the API
+  // read every time as UTC.
+  request.timezone = schedule.timezone || viewerTimeZone()
+  if (schedule.frequency === 'once') {
+    const at = onceRunAt(form)
+    if (at) request.run_at = at.toISOString().replace(/\.\d{3}Z$/, 'Z')
+    return
+  }
   if (schedule.time) request.schedule_time = schedule.time
   if (schedule.frequency === 'weekly' && schedule.dayOfWeek !== undefined) {
     request.schedule_day = schedule.dayOfWeek
   }
-  if (schedule.frequency === 'monthly') request.schedule_day = 1 // first of the month
+  if (schedule.frequency === 'monthly') request.schedule_day = schedule.dayOfMonth ?? 1
 }
 
 /** Direct targets a scan takes at most (the API refuses more). */
@@ -145,7 +191,7 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   const request: CreateScanConfigRequest = {
     name: form.name.trim(),
     scan_type: scanType,
-    schedule_type: schedule.runImmediately ? 'manual' : frequencyToScheduleType(schedule.frequency),
+    schedule_type: onDemand(schedule) ? 'manual' : frequencyToScheduleType(schedule.frequency),
     sensor_preference: toApiSensorPreference(form.sensorPreference),
     targets_per_job: form.maxConcurrent || 10,
     timeout_seconds: form.timeoutSeconds,
@@ -180,6 +226,26 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   return request
 }
 
+/** A configuration's schedule as the wizard shows it (in the scan's zone). */
+function scheduleFromConfig(config: ScanConfig): NewScanFormData['schedule'] {
+  const timezone = config.schedule_timezone || undefined
+  const frequency = scheduleTypeToFrequency(config.schedule_type)
+  const runAt =
+    config.schedule_type === 'once' && config.schedule_run_at
+      ? instantToZonedWallTime(config.schedule_run_at, timezone ?? 'UTC')
+      : null
+  return {
+    runImmediately: config.schedule_type === 'manual',
+    frequency,
+    dayOfWeek: frequency === 'weekly' ? config.schedule_day : DEFAULT_NEW_SCAN.schedule.dayOfWeek,
+    dayOfMonth: frequency === 'monthly' ? config.schedule_day : undefined,
+    time: config.schedule_time?.slice(0, 5) ?? DEFAULT_NEW_SCAN.schedule.time,
+    runAtDate: runAt?.date,
+    runAtTime: runAt?.time,
+    timezone,
+  }
+}
+
 /** Edit: an existing configuration -> wizard form data. */
 export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
   return {
@@ -203,12 +269,7 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
     timeoutSeconds: config.timeout_seconds || 3600,
     maxRetries: config.max_retries ?? 0,
     retryBackoffSeconds: config.retry_backoff_seconds || 60,
-    schedule: {
-      runImmediately: config.schedule_type === 'manual',
-      frequency: scheduleTypeToFrequency(config.schedule_type),
-      dayOfWeek: config.schedule_day,
-      time: config.schedule_time,
-    },
+    schedule: scheduleFromConfig(config),
     scanZoneId: config.scan_zone_id ?? null,
   }
 }
@@ -235,7 +296,7 @@ export function formDataToUpdateRequest(
     timeout_seconds: form.timeoutSeconds,
     max_retries: form.maxRetries,
     retry_backoff_seconds: form.retryBackoffSeconds,
-    schedule_type: schedule.runImmediately ? 'manual' : frequencyToScheduleType(schedule.frequency),
+    schedule_type: onDemand(schedule) ? 'manual' : frequencyToScheduleType(schedule.frequency),
     sensor_preference: toApiSensorPreference(form.sensorPreference),
   }
   // Only someone who can see the zones may change the zone: otherwise an

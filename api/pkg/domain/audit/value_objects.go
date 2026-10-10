@@ -29,6 +29,9 @@ const (
 	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
 	// settings (RFC-039).
 	ActionTenantRetestUpdated Action = "tenant.retest_updated"
+	// ActionTenantVulnMatchingUpdated records a change to the organization's
+	// vulnerability matching policy (RFC-066).
+	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
 
 	// Idle Free workspaces (docs/architecture/idle-workspaces.md).
 	ActionTenantIdleReminded         Action = "tenant.idle_reminded"
@@ -75,6 +78,11 @@ const (
 	// from, and a sync that narrowed it or suspended it (RFC-065 §14).
 	ActionBountyProgramSourceSet Action = "bounty_program.source_set"
 	ActionBountyProgramSynced    Action = "bounty_program.synced"
+	// ActionBountyProgramViewed: someone read a private program (RFC-065 §15.3).
+	ActionBountyProgramViewed Action = "bounty_program.viewed"
+	// ActionBountyProgramSubscribed: an organization follows a public program
+	// (RFC-065 §16).
+	ActionBountyProgramSubscribed Action = "bounty_program.subscribed"
 	// Authorization letters (RFC-065 §13).
 	ActionScopeLetterUploaded Action = "scope_letter.uploaded"
 	ActionScopeLetterRevoked  Action = "scope_letter.revoked"
@@ -601,7 +609,7 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
@@ -610,7 +618,7 @@ func (a Action) IsValid() bool {
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
-		ActionBountyProgramSourceSet, ActionBountyProgramSynced,
+		ActionBountyProgramSourceSet, ActionBountyProgramSynced, ActionBountyProgramViewed, ActionBountyProgramSubscribed,
 		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
@@ -1034,7 +1042,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed,
