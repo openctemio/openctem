@@ -19,8 +19,7 @@ import { matchRoutePermission } from '../route-permissions'
 import { checkIsActive } from '@/components/layout/nav-active'
 import type { NavCollapsible, NavItem, NavLink } from '@/components/types'
 import { rowUrlForSections, visibleSections } from '@/lib/permissions/use-filtered-sidebar'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 
 const APP = join(process.cwd(), 'src', 'app')
 

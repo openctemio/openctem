@@ -1,0 +1,12 @@
+- id: risk_scoring
+  const: ModuleRiskScoring
+  slug: "risk-scoring"
+  name: Risk Scoring
+  description: Risk scoring config — CVSS / EPSS / KEV / custom weights
+  icon: TrendingUp
+  category: prioritization
+  order: 27
+  user_facing: true
+  permission: "settings:read"
+  depends:
+    - {id: findings, kind: hard, reason: "risk scoring operates on findings"}

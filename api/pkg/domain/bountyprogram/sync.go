@@ -120,7 +120,9 @@ func (d SyncDiff) Widens() bool { return len(d.AddedEntries) > 0 || len(d.Remove
 // Narrows reports whether the fetched scope removes anything.
 func (d SyncDiff) Narrows() bool { return len(d.RemovedEntries) > 0 || len(d.AddedExclusion) > 0 }
 
-func plannedKey(p Planned) string { return string(p.TargetType) + "|" + strings.ToLower(p.Pattern) }
+func plannedKey(p Planned) string {
+	return strings.ToLower(EntryKey(p.TargetType, p.Pattern, p.Constraint))
+}
 
 // DiffPlans compares the accepted plan with a fetched one.
 func DiffPlans(accepted, fetched Plan) SyncDiff {

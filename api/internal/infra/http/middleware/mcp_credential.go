@@ -9,6 +9,7 @@ import (
 	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -90,6 +91,7 @@ func MCPCredentialAuth(apiKeyAuth func(http.Handler) http.Handler, tokens MCPTok
 			ctx = context.WithValue(ctx, PermissionsKey, perms)
 			ctx = context.WithValue(ctx, IsAdminKey, false)
 			ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderMCPOAuth)
+			ctx = scangov.WithOrigin(ctx, scangov.OriginMCP)
 			ctx = context.WithValue(ctx, MCPPrincipalKey, p)
 			if ctxLogger := logger.FromContext(ctx); ctxLogger != nil {
 				ctx = logger.ToContext(ctx, ctxLogger.WithContext(ctx))

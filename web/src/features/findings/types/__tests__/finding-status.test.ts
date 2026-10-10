@@ -15,8 +15,7 @@ import {
   isFindingStatus,
 } from '../finding.types'
 import type { FindingStatus } from '../finding.types'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 
 // The Go list (vulnerability.AllFindingStatuses) and the DB CHECK
 // (migration 001378). Change all three together.
