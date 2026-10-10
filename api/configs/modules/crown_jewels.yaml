@@ -1,0 +1,12 @@
+- id: crown_jewels
+  const: ModuleCrownJewels
+  slug: "crown-jewels"
+  name: Crown Jewels
+  description: "Business-critical assets flagged for heightened prioritisation and monitoring"
+  icon: Crown
+  category: scoping
+  order: 12
+  user_facing: true
+  permission: "assets:read"
+  depends:
+    - {id: assets, kind: hard, reason: "crown jewels are assets flagged as business-critical"}

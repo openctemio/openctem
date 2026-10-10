@@ -478,6 +478,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// VEX statements past their expiry are withdrawn: their findings reopen.
+	if svc.VEX != nil {
+		w.ControllerManager.Register(controller.NewVEXStatementExpiryController(
+			svc.VEX, log.With("controller", "vex-statement-expiry")))
+	}
+
 	// Access requests: unconfirmed ones go after 24 h, decided ones after 90 days.
 	if svc.AccessRequest != nil {
 		w.ControllerManager.Register(controller.NewAccessRequestRetentionController(

@@ -1,9 +1,14 @@
 package handler
 
+// Software components inventory API. Design:
+// api/docs/rfcs/RFC-070-software-components-inventory.md.
+
 import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,11 +20,12 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 	"github.com/openctemio/openctem/api/pkg/version"
 )
 
-// ComponentHandler handles component-related HTTP requests.
+// ComponentHandler serves the software components inventory.
 type ComponentHandler struct {
 	service    *asset.ComponentService
 	sbomImport *asset.SBOMImportService
@@ -29,297 +35,360 @@ type ComponentHandler struct {
 
 // NewComponentHandler creates a new component handler.
 func NewComponentHandler(svc *asset.ComponentService, sbomImport *asset.SBOMImportService, v *validator.Validator, log *logger.Logger) *ComponentHandler {
-	return &ComponentHandler{
-		service:    svc,
-		sbomImport: sbomImport,
-		validator:  v,
-		logger:     log,
-	}
+	return &ComponentHandler{service: svc, sbomImport: sbomImport, validator: v, logger: log}
 }
 
-// ComponentResponse represents a component in API responses.
-type ComponentResponse struct {
-	ID                 string         `json:"id"`
-	TenantID           string         `json:"tenant_id"`
-	AssetID            string         `json:"asset_id"`
-	Name               string         `json:"name"`
-	Version            string         `json:"version"`
-	Ecosystem          string         `json:"ecosystem"`
-	PackageManager     string         `json:"package_manager,omitempty"`
-	Namespace          string         `json:"namespace,omitempty"`
-	ManifestFile       string         `json:"manifest_file,omitempty"`
-	ManifestPath       string         `json:"manifest_path,omitempty"`
-	DependencyType     string         `json:"dependency_type"`
-	License            string         `json:"license,omitempty"`
-	PURL               string         `json:"purl"`
-	VulnerabilityCount int            `json:"vulnerability_count"`
-	Status             string         `json:"status"`
-	Metadata           map[string]any `json:"metadata,omitempty"`
-	CreatedAt          time.Time      `json:"created_at"`
-	UpdatedAt          time.Time      `json:"updated_at"`
-
-	// Dependency hierarchy fields (CycloneDX component model)
-	Depth             int     `json:"depth"`                         // 1 = direct, 2+ = transitive depth
-	ParentComponentID *string `json:"parent_component_id,omitempty"` // asset_components.id of parent dependency
-	IsDirect          bool    `json:"is_direct"`                     // Convenience: depth == 1
+// ComponentListResponse is a page of packages with optional facets.
+type ComponentListResponse struct {
+	ListResponse[component.Package]
+	Facets component.Facets `json:"facets,omitempty"`
 }
 
-// CreateComponentRequest represents the request to create a component.
-type CreateComponentRequest struct {
-	AssetID        string `json:"asset_id" validate:"required,uuid"`
-	Name           string `json:"name" validate:"required,min=1,max=255"`
-	Version        string `json:"version" validate:"required,max=100"`
-	Ecosystem      string `json:"ecosystem" validate:"required"`
-	PackageManager string `json:"package_manager" validate:"max=50"`
-	Namespace      string `json:"namespace" validate:"max=255"`
-	ManifestFile   string `json:"manifest_file" validate:"max=255"`
-	ManifestPath   string `json:"manifest_path" validate:"max=500"`
-	DependencyType string `json:"dependency_type" validate:"omitempty"`
-	License        string `json:"license" validate:"max=100"`
-}
-
-// UpdateComponentRequest represents the request to update a component.
-type UpdateComponentRequest struct {
-	Version            *string `json:"version" validate:"omitempty,max=100"`
-	PackageManager     *string `json:"package_manager" validate:"omitempty,max=50"`
-	Namespace          *string `json:"namespace" validate:"omitempty,max=255"`
-	ManifestFile       *string `json:"manifest_file" validate:"omitempty,max=255"`
-	ManifestPath       *string `json:"manifest_path" validate:"omitempty,max=500"`
-	DependencyType     *string `json:"dependency_type" validate:"omitempty"`
-	License            *string `json:"license" validate:"omitempty,max=100"`
-	Status             *string `json:"status" validate:"omitempty"`
-	VulnerabilityCount *int    `json:"vulnerability_count" validate:"omitempty,min=0"`
-}
-
-// toComponentResponse converts a domain component to API response (Global view).
-func toComponentResponse(c *component.Component) ComponentResponse {
-	// Extract metadata fields
-	meta := c.Metadata()
-	pm, _ := meta["package_manager"].(string)
-	ns, _ := meta["namespace"].(string)
-
-	return ComponentResponse{
-		ID:                 c.ID().String(),
-		TenantID:           "", // Global
-		AssetID:            "", // Global
-		Name:               c.Name(),
-		Version:            c.Version(),
-		Ecosystem:          c.Ecosystem().String(),
-		PackageManager:     pm,
-		Namespace:          ns,
-		ManifestFile:       "", // Contextual
-		ManifestPath:       "", // Contextual
-		DependencyType:     "", // Contextual
-		License:            c.License(),
-		PURL:               c.PURL(),
-		VulnerabilityCount: c.VulnerabilityCount(),
-		Status:             "", // Contextual/Calculated?
-		Metadata:           c.Metadata(),
-		CreatedAt:          c.CreatedAt(),
-		UpdatedAt:          c.UpdatedAt(),
-	}
-}
-
-// handleValidationError converts validation errors to API errors and writes response.
-func (h *ComponentHandler) handleValidationError(w http.ResponseWriter, err error) {
-	var validationErrors validator.ValidationErrors
-	if errors.As(err, &validationErrors) {
-		apiErrors := make([]apierror.ValidationError, len(validationErrors))
-		for i, ve := range validationErrors {
-			apiErrors[i] = apierror.ValidationError{
-				Field:   ve.Field,
-				Message: ve.Message,
-			}
-		}
-		apierror.ValidationFailed("Validation failed", apiErrors).WriteJSON(w)
-		return
-	}
-	apierror.BadRequest("Validation error").WriteJSON(w)
-}
-
-// handleServiceError converts service errors to API errors and writes response.
 func (h *ComponentHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Component").WriteJSON(w)
-	case errors.Is(err, shared.ErrAlreadyExists):
-		apierror.Conflict("Component already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, pagination.ErrInvalid):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
-		h.logger.Error("service error", "error", err)
+		h.logger.Error("component service error", "error", strings.NewReplacer("\n", " ", "\r", " ").Replace(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }
 
+func writeComponentJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func listInputFromRequest(r *http.Request) asset.ListComponentsInput {
+	q := r.URL.Query()
+	return asset.ListComponentsInput{
+		TenantID:     middleware.MustGetTenantID(r.Context()),
+		Query:        q.Get("q"),
+		Ecosystems:   parseQueryArray(q.Get("ecosystem")),
+		Licenses:     parseQueryArray(q.Get("license")),
+		Severities:   parseQueryArray(q.Get("severity")),
+		KEV:          parseQueryBool(q.Get("kev")),
+		HasFix:       parseQueryBool(q.Get("has_fix")),
+		HasVulns:     parseQueryBool(q.Get("has_vulnerabilities")),
+		Relationship: parseQueryArray(q.Get("relationship")),
+		Scopes:       parseQueryArray(q.Get("scope")),
+		AssetID:      q.Get("asset_id"),
+		OwnerID:      q.Get("owner_id"),
+		Sort:         q.Get("sort"),
+	}
+}
+
 // List handles GET /api/v1/components
-// @Summary      List components
-// @Description  Retrieves a paginated list of components for the current tenant
+// @Summary      List software components
+// @Description  Packages used by the caller's in-scope assets, one row per package, with versions in use, assets, open findings by severity, KEV, fix availability, licenses and risk. Optional facets.
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
-// @Param        asset_id           query     string  false  "Filter by asset ID"
-// @Param        name               query     string  false  "Filter by name"
-// @Param        ecosystems         query     string  false  "Filter by ecosystems (comma-separated)"
-// @Param        statuses           query     string  false  "Filter by statuses (comma-separated)"
-// @Param        dependency_types   query     string  false  "Filter by dependency types"
-// @Param        has_vulnerabilities query    bool    false  "Filter by has vulnerabilities"
-// @Param        licenses           query     string  false  "Filter by licenses (comma-separated)"
-// @Param        page               query     int     false  "Page number"  default(1)
-// @Param        per_page           query     int     false  "Items per page"  default(20)
-// @Success      200  {object}  map[string]interface{}
-// @Failure      400  {object}  map[string]string
-// @Failure      401  {object}  map[string]string
+// @Param        q                    query  string  false  "Search name or namespace"
+// @Param        ecosystem            query  string  false  "Ecosystems (comma list)"
+// @Param        license              query  string  false  "Licenses (comma list)"
+// @Param        severity             query  string  false  "Has open findings of severity (comma list: critical,high,medium,low)"
+// @Param        kev                  query  bool    false  "Has a known exploited vulnerability"
+// @Param        has_fix              query  bool    false  "A fix is known"
+// @Param        has_vulnerabilities  query  bool    false  "Has open findings"
+// @Param        relationship         query  string  false  "direct, transitive, unknown (comma list)"
+// @Param        scope                query  string  false  "runtime, development, test, optional, build, provided (comma list)"
+// @Param        asset_id             query  string  false  "Used by this asset"
+// @Param        owner_id             query  string  false  "Used by assets this user owns"
+// @Param        sort                 query  string  false  "name, assets, versions, risk, vulns, last_seen; prefix - for descending"
+// @Param        facets               query  bool    false  "Include facets"
+// @Param        page                 query  int     false  "Page"
+// @Param        per_page             query  int     false  "Page size (max 100)"
+// @Success      200  {object}  ComponentListResponse
+// @Failure      400  {object}  apierror.Error
 // @Router       /components [get]
 func (h *ComponentHandler) List(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	query := r.URL.Query()
-
-	hasVulnerabilities := parseQueryBool(query.Get("has_vulnerabilities"))
-
-	paging, ok := listPage(w, r, 20)
-	if !ok {
-		return
-	}
-	input := asset.ListComponentsInput{
-		TenantID:           tenantID,
-		AssetID:            query.Get("asset_id"),
-		Name:               query.Get("name"),
-		Ecosystems:         parseQueryArray(query.Get("ecosystems")),
-		Statuses:           parseQueryArray(query.Get("statuses")),
-		DependencyTypes:    parseQueryArray(query.Get("dependency_types")),
-		HasVulnerabilities: hasVulnerabilities,
-		Licenses:           parseQueryArray(query.Get("licenses")),
-		Page:               paging.Page,
-		PerPage:            paging.PerPage,
-	}
-
-	if err := h.validator.Validate(input); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	result, err := h.service.ListComponents(r.Context(), input)
+	page, err := pagination.FromRequest(r.URL.Query(), 25)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-
-	data := make([]ComponentResponse, len(result.Data))
-	for i, c := range result.Data {
-		data[i] = toComponentResponse(c)
+	withFacets := r.URL.Query().Get("facets") == "true"
+	res, facets, err := h.service.ListComponents(r.Context(), listInputFromRequest(r), page, withFacets)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
 	}
-
-	response := ListResponse[ComponentResponse]{
-		Data:       data,
-		Total:      result.Total,
-		Page:       result.Page,
-		PerPage:    result.PerPage,
-		TotalPages: result.TotalPages,
-		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
+	writeComponentJSON(w, ComponentListResponse{
+		ListResponse: ListResponse[component.Package]{
+			Data: res.Data, Total: res.Total, Page: res.Page, PerPage: res.PerPage, TotalPages: res.TotalPages,
+			Links: NewPaginationLinks(r, res.Page, res.PerPage, res.TotalPages),
+		},
+		Facets: facets,
+	})
 }
 
-// GetStats handles GET /api/v1/components/stats
-// @Summary      Get component statistics
-// @Description  Retrieves aggregated component statistics for the tenant
+// Summary handles GET /api/v1/components/summary
+// @Summary      Software components summary
+// @Description  KPI strip of the inventory for the same filters as the list.
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  component.ComponentStats
-// @Failure      400  {object}  map[string]string
-// @Failure      401  {object}  map[string]string
-// @Router       /components/stats [get]
-func (h *ComponentHandler) GetStats(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	stats, err := h.service.GetComponentStats(r.Context(), tenantID)
+// @Success      200  {object}  component.Summary
+// @Failure      400  {object}  apierror.Error
+// @Router       /components/summary [get]
+func (h *ComponentHandler) Summary(w http.ResponseWriter, r *http.Request) {
+	s, err := h.service.Summary(r.Context(), listInputFromRequest(r))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(stats)
+	writeComponentJSON(w, s)
 }
 
-// GetEcosystemStats handles GET /api/v1/components/ecosystems
-// @Summary      Get ecosystem statistics
-// @Description  Retrieves per-ecosystem statistics for the tenant
+// Get handles GET /api/v1/components/{id}
+// @Summary      Get a software component
+// @Description  A package used by an in-scope asset (404 otherwise).
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {array}   component.EcosystemStats
-// @Failure      400  {object}  map[string]string
-// @Failure      401  {object}  map[string]string
-// @Router       /components/ecosystems [get]
-func (h *ComponentHandler) GetEcosystemStats(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	stats, err := h.service.GetEcosystemStats(r.Context(), tenantID)
+// @Param        id   path  string  true  "Component (package) ID"
+// @Success      200  {object}  component.PackageDetail
+// @Failure      404  {object}  apierror.Error
+// @Router       /components/{id} [get]
+func (h *ComponentHandler) Get(w http.ResponseWriter, r *http.Request) {
+	d, err := h.service.GetComponent(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("id"))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-
-	// Return empty array instead of null
-	if stats == nil {
-		stats = []component.EcosystemStats{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(stats)
+	writeComponentJSON(w, d)
 }
 
-// GetVulnerableComponents handles GET /api/v1/components/vulnerable
-// @Summary      Get vulnerable components
-// @Description  Retrieves components with vulnerability details for the tenant
+// ComponentVersionResponse is one package version.
+type ComponentVersionResponse struct {
+	ID          string `json:"id"`
+	ComponentID string `json:"component_id"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Ecosystem   string `json:"ecosystem"`
+	PURL        string `json:"purl"`
+}
+
+// GetVersion handles GET /api/v1/components/versions/{version_id}
+// @Summary      Get a package version
+// @Description  A package version (the id findings carry as component_id) seen through an in-scope asset or finding; 404 otherwise.
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page      query     int  false  "Page number"     default(1)
-// @Param        per_page  query     int  false  "Items per page"  default(20)
-// @Success      200  {object}  ListResponse[component.VulnerableComponent]
-// @Failure      400  {object}  map[string]string
-// @Failure      401  {object}  map[string]string
-// @Router       /components/vulnerable [get]
-func (h *ComponentHandler) GetVulnerableComponents(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	page, ok := listPage(w, r, 20)
-	if !ok {
-		return
-	}
-
-	result, err := h.service.GetVulnerableComponents(r.Context(), tenantID, page)
+// @Param        version_id  path  string  true  "Package version ID"
+// @Success      200  {object}  ComponentVersionResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /components/versions/{version_id} [get]
+func (h *ComponentHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetVersion(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("version_id"))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(result)
+	writeComponentJSON(w, ComponentVersionResponse{ID: v.VersionID, ComponentID: v.ProductID, Name: v.Name,
+		Version: v.Version, Ecosystem: v.Ecosystem, PURL: v.PURL})
 }
 
-// ExportSBOM handles GET /api/v1/components/sbom.
+// ComponentVersionsResponse lists versions in use.
+type ComponentVersionsResponse struct {
+	Data []component.Version `json:"data"`
+}
+
+// ListVersions handles GET /api/v1/components/{id}/versions
+// @Summary      Versions of a component in use
+// @Description  In-scope versions with assets, open findings by severity, KEV, fixed versions and upgrade advice.
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path  string  true  "Component (package) ID"
+// @Success      200  {object}  ComponentVersionsResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /components/{id}/versions [get]
+func (h *ComponentHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
+	vs, err := h.service.ListVersions(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("id"))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeComponentJSON(w, ComponentVersionsResponse{Data: vs})
+}
+
+// ListAssets handles GET /api/v1/components/{id}/assets
+// @Summary      Where a component is used
+// @Description  In-scope assets using the package: version, relationship, scope, location, depth, open findings.
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id            path   string  true   "Component (package) ID"
+// @Param        version_id    query  string  false  "Only this version"
+// @Param        relationship  query  string  false  "direct, transitive, unknown (comma list)"
+// @Param        scope         query  string  false  "Dependency scopes (comma list)"
+// @Param        page          query  int     false  "Page"
+// @Param        per_page      query  int     false  "Page size (max 100)"
+// @Success      200  {object}  ListResponse[component.Usage]
+// @Failure      404  {object}  apierror.Error
+// @Router       /components/{id}/assets [get]
+func (h *ComponentHandler) ListAssets(w http.ResponseWriter, r *http.Request) {
+	page, err := pagination.FromRequest(r.URL.Query(), 25)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	q := r.URL.Query()
+	res, err := h.service.ListUsages(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("id"), asset.UsageInput{
+		VersionID: q.Get("version_id"), Relationship: parseQueryArray(q.Get("relationship")), Scopes: parseQueryArray(q.Get("scope")),
+	}, page)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeComponentJSON(w, ListResponse[component.Usage]{
+		Data: res.Data, Total: res.Total, Page: res.Page, PerPage: res.PerPage, TotalPages: res.TotalPages,
+		Links: NewPaginationLinks(r, res.Page, res.PerPage, res.TotalPages),
+	})
+}
+
+// ListVulnerabilities handles GET /api/v1/components/{id}/vulnerabilities
+// @Summary      Vulnerabilities of a component
+// @Description  Vulnerabilities of the package's in-scope findings grouped across versions.
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id                path   string  true   "Component (package) ID"
+// @Param        include_resolved  query  bool    false  "Include closed findings"
+// @Param        page              query  int     false  "Page"
+// @Param        per_page          query  int     false  "Page size (max 100)"
+// @Success      200  {object}  ListResponse[component.Vulnerability]
+// @Failure      404  {object}  apierror.Error
+// @Router       /components/{id}/vulnerabilities [get]
+func (h *ComponentHandler) ListVulnerabilities(w http.ResponseWriter, r *http.Request) {
+	page, err := pagination.FromRequest(r.URL.Query(), 25)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	includeResolved := r.URL.Query().Get("include_resolved") == "true"
+	res, err := h.service.ListVulnerabilities(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("id"), includeResolved, page)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeComponentJSON(w, ListResponse[component.Vulnerability]{
+		Data: res.Data, Total: res.Total, Page: res.Page, PerPage: res.PerPage, TotalPages: res.TotalPages,
+		Links: NewPaginationLinks(r, res.Page, res.PerPage, res.TotalPages),
+	})
+}
+
+// ListByAsset handles GET /api/v1/assets/{id}/components
+// @Summary      Components of an asset
+// @Description  The asset's package links (404 when the asset is outside the caller's scope).
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id        path   string  true   "Asset ID"
+// @Param        page      query  int     false  "Page"
+// @Param        per_page  query  int     false  "Page size (max 100)"
+// @Success      200  {object}  ListResponse[component.Usage]
+// @Failure      404  {object}  apierror.Error
+// @Router       /assets/{id}/components [get]
+func (h *ComponentHandler) ListByAsset(w http.ResponseWriter, r *http.Request) {
+	page, err := pagination.FromRequest(r.URL.Query(), 50)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	res, err := h.service.ListAssetComponents(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("id"), page)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeComponentJSON(w, ListResponse[component.Usage]{
+		Data: res.Data, Total: res.Total, Page: res.Page, PerPage: res.PerPage, TotalPages: res.TotalPages,
+		Links: NewPaginationLinks(r, res.Page, res.PerPage, res.TotalPages),
+	})
+}
+
+// DependencyPathsResponse lists introduction paths, root first.
+type DependencyPathsResponse struct {
+	Data []component.Path `json:"data"`
+}
+
+func queryInt(r *http.Request, name string) int {
+	n, err := strconv.Atoi(r.URL.Query().Get(name))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// DependencyPaths handles GET /api/v1/assets/{id}/dependency-paths
+// @Summary      Dependency paths to a package version
+// @Description  Up to 20 shortest paths from a root package to the version on the asset.
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id          path   string  true   "Asset ID"
+// @Param        version_id  query  string  true   "Package version ID"
+// @Param        limit       query  int     false  "At most this many paths (max 20)"
+// @Success      200  {object}  DependencyPathsResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /assets/{id}/dependency-paths [get]
+func (h *ComponentHandler) DependencyPaths(w http.ResponseWriter, r *http.Request) {
+	versionID := r.URL.Query().Get("version_id")
+	if versionID == "" {
+		apierror.BadRequest("version_id is required").WriteJSON(w)
+		return
+	}
+	paths, err := h.service.DependencyPaths(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("id"), versionID, queryInt(r, "limit"))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if paths == nil {
+		paths = []component.Path{}
+	}
+	writeComponentJSON(w, DependencyPathsResponse{Data: paths})
+}
+
+// DependencyGraph handles GET /api/v1/assets/{id}/dependency-graph
+// @Summary      Dependency graph of an asset
+// @Description  A bounded part of the asset's package graph: from the roots, or around a focus version. truncated tells whether the bounds cut it.
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id     path   string  true   "Asset ID"
+// @Param        focus  query  string  false  "Package version ID to center on"
+// @Param        depth  query  int     false  "Hops (max 10)"
+// @Param        limit  query  int     false  "Nodes (max 500)"
+// @Success      200  {object}  component.Graph
+// @Failure      404  {object}  apierror.Error
+// @Router       /assets/{id}/dependency-graph [get]
+func (h *ComponentHandler) DependencyGraph(w http.ResponseWriter, r *http.Request) {
+	g, err := h.service.DependencyGraph(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("id"),
+		r.URL.Query().Get("focus"), queryInt(r, "depth"), queryInt(r, "limit"))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeComponentJSON(w, g)
+}
+
+// ExportSBOM handles GET /api/v1/components/sbom
 // @Summary      Export an SBOM
-// @Description  Downloads a software bill of materials of the components the organization's assets use (or one asset's, with asset_id), as CycloneDX 1.6 JSON (default) or SPDX 2.3 JSON. A restricted member gets only components of assets in their data scope; an asset outside it is not found. Refused with 400 above 10000 components (export one asset at a time).
+// @Description  CycloneDX 1.6 or SPDX 2.3 JSON of one asset's packages, or of every in-scope asset's.
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
-// @Param        format    query     string  false  "Output format"  Enums(cyclonedx, spdx)
-// @Param        asset_id  query     string  false  "Only this asset's components"
-// @Success      200  {file}    file
-// @Failure      400  {object}  map[string]string
-// @Failure      404  {object}  map[string]string
+// @Param        asset_id  query  string  false  "Asset ID"
+// @Param        format    query  string  false  "cyclonedx (default) or spdx"
+// @Success      200  {file}  file
+// @Failure      400  {object}  apierror.Error
 // @Router       /components/sbom [get]
 func (h *ComponentHandler) ExportSBOM(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -328,13 +397,11 @@ func (h *ComponentHandler) ExportSBOM(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
-
 	export, err := h.service.ListSBOMEntries(r.Context(), tenantID, r.URL.Query().Get("asset_id"))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-
 	doc := sbomexport.Document{
 		Subject:     export.Subject,
 		SerialUUID:  uuid.NewString(),
@@ -347,13 +414,8 @@ func (h *ComponentHandler) ExportSBOM(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, e := range export.Entries {
 		doc.Components = append(doc.Components, sbomexport.Component{
-			ID:                 e.ID.String(),
-			Name:               e.Name,
-			Version:            e.Version,
-			Ecosystem:          string(e.Ecosystem),
-			PURL:               e.PURL,
-			Licenses:           e.Licenses,
-			VulnerabilityCount: e.VulnerabilityCount,
+			ID: e.ID, Name: e.Name, Version: e.Version, Ecosystem: e.Ecosystem, PURL: e.PURL,
+			Licenses: e.Licenses, VulnerabilityCount: e.VulnerabilityCount,
 		})
 	}
 	body, err := sbomexport.Encode(format, doc)
@@ -361,7 +423,6 @@ func (h *ComponentHandler) ExportSBOM(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-
 	filename := "sbom-" + doc.Created.Format("20060102-150405") + format.FileExtension()
 	w.Header().Set("Content-Type", format.ContentType())
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
@@ -371,8 +432,18 @@ func (h *ComponentHandler) ExportSBOM(w http.ResponseWriter, r *http.Request) {
 }
 
 // ImportSBOM handles POST /api/v1/components/import
-// Accepts CycloneDX JSON or SPDX JSON file upload.
-// Requires asset_id query parameter to link imported components.
+// @Summary      Import an SBOM
+// @Description  CycloneDX (1.4-1.6) or SPDX (2.2, 2.3) JSON for one asset, at most 50 MB and 100000 components. With dry_run=true the preview (counts, skipped entries with reasons, diff with the current inventory) is returned and nothing is written; otherwise the asset's packages at the locations the document names are replaced.
+// @Tags         Components
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        asset_id  query  string  true   "Asset ID"
+// @Param        dry_run   query  bool    false  "Preview only"
+// @Success      200  {object}  asset.SBOMImportResult
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /components/import [post]
 func (h *ComponentHandler) ImportSBOM(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	assetID := r.URL.Query().Get("asset_id")
@@ -380,457 +451,11 @@ func (h *ComponentHandler) ImportSBOM(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("asset_id query parameter is required").WriteJSON(w)
 		return
 	}
-
-	// Limit to 50MB
-	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024)
-
-	result, err := h.sbomImport.ImportSBOM(r.Context(), tenantID, assetID, r.Body)
+	r.Body = http.MaxBytesReader(w, r.Body, asset.MaxSBOMBytes+1)
+	res, err := h.sbomImport.ImportSBOM(r.Context(), tenantID, assetID, r.Body, r.URL.Query().Get("dry_run") == "true")
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(result)
-}
-
-// GetLicenseStats handles GET /api/v1/components/licenses
-// @Summary      Get license statistics
-// @Description  Retrieves license distribution statistics for the tenant
-// @Tags         Components
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200  {array}   component.LicenseStats
-// @Failure      401  {object}  map[string]string
-// @Router       /components/licenses [get]
-func (h *ComponentHandler) GetLicenseStats(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	stats, err := h.service.GetLicenseStats(r.Context(), tenantID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Return empty array instead of null
-	if stats == nil {
-		stats = []component.LicenseStats{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(stats)
-}
-
-// Create handles POST /api/v1/components
-// @Summary      Create component
-// @Description  Creates a new component
-// @Tags         Components
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        request  body      CreateComponentRequest  true  "Component data"
-// @Success      201  {object}  ComponentResponse
-// @Failure      400  {object}  map[string]string
-// @Failure      401  {object}  map[string]string
-// @Failure      409  {object}  map[string]string
-// @Router       /components [post]
-func (h *ComponentHandler) Create(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	var req CreateComponentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := asset.CreateComponentInput{
-		TenantID:       tenantID,
-		AssetID:        req.AssetID,
-		Name:           req.Name,
-		Version:        req.Version,
-		Ecosystem:      req.Ecosystem,
-		PackageManager: req.PackageManager,
-		Namespace:      req.Namespace,
-		ManifestFile:   req.ManifestFile,
-		ManifestPath:   req.ManifestPath,
-		DependencyType: req.DependencyType,
-		License:        req.License,
-	}
-
-	c, err := h.service.CreateComponent(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(toComponentResponse(c))
-}
-
-// Get handles GET /api/v1/components/{id}
-// @Summary      Get component
-// @Description  Retrieves a component by ID
-// @Tags         Components
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id   path      string  true  "Component ID"
-// @Success      200  {object}  ComponentResponse
-// @Failure      400  {object}  map[string]string
-// @Failure      404  {object}  map[string]string
-// @Router       /components/{id} [get]
-func (h *ComponentHandler) Get(w http.ResponseWriter, r *http.Request) {
-	// Get tenant ID from JWT token
-	// tenantID := middleware.MustGetTenantID(r.Context())
-
-	id := r.PathValue("id")
-	if id == "" {
-		apierror.BadRequest("Component ID is required").WriteJSON(w)
-		return
-	}
-
-	c, err := h.service.GetComponent(r.Context(), id)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	// GetComponent returns (nil, nil) for a not-found component (the repo maps
-	// sql.ErrNoRows to a nil component, a contract other callers rely on). Guard
-	// it here — otherwise toComponentResponse(nil) dereferences nil and turns a
-	// missing component into a 500 instead of a 404.
-	if c == nil {
-		apierror.NotFound("Component not found").WriteJSON(w)
-		return
-	}
-
-	// Global components are not tenant-scoped currently.
-	// We might restrict based on "is this component used by any of my assets", but for now it's a global catalog lookup.
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toComponentResponse(c))
-}
-
-// Update handles PUT /api/v1/components/{id}
-// @Summary      Update component
-// @Description  Updates a component
-// @Tags         Components
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id       path      string                   true  "Component ID"
-// @Param        request  body      UpdateComponentRequest   true  "Component data"
-// @Success      200  {object}  ComponentResponse
-// @Failure      400  {object}  map[string]string
-// @Failure      404  {object}  map[string]string
-// @Router       /components/{id} [put]
-func (h *ComponentHandler) Update(w http.ResponseWriter, r *http.Request) {
-	// Get tenant ID from JWT token
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	id := r.PathValue("id")
-	if id == "" {
-		apierror.BadRequest("Component ID is required").WriteJSON(w)
-		return
-	}
-
-	var req UpdateComponentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := asset.UpdateComponentInput{
-		Version:            req.Version,
-		PackageManager:     req.PackageManager,
-		Namespace:          req.Namespace,
-		ManifestFile:       req.ManifestFile,
-		ManifestPath:       req.ManifestPath,
-		DependencyType:     req.DependencyType,
-		License:            req.License,
-		Status:             req.Status,
-		VulnerabilityCount: req.VulnerabilityCount,
-	}
-
-	dep, err := h.service.UpdateComponent(r.Context(), id, tenantID, input)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toAssetComponentResponse(dep))
-}
-
-// Delete handles DELETE /api/v1/components/{id}
-// @Summary      Delete component
-// @Description  Deletes a component
-// @Tags         Components
-// @Security     BearerAuth
-// @Param        id   path      string  true  "Component ID"
-// @Success      204  "No Content"
-// @Failure      400  {object}  map[string]string
-// @Failure      404  {object}  map[string]string
-// @Router       /components/{id} [delete]
-func (h *ComponentHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	// Get tenant ID from JWT token
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	id := r.PathValue("id")
-	if id == "" {
-		apierror.BadRequest("Component ID is required").WriteJSON(w)
-		return
-	}
-
-	if err := h.service.DeleteComponent(r.Context(), id, tenantID); err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// toAssetComponentResponse converts domain AssetDependency to API response.
-func toAssetComponentResponse(d *component.AssetDependency) ComponentResponse {
-	// Re-use ComponentResponse structure but flatten the linkage info.
-	// A bit hacky: we mix dependency properties (Path, Type) into the Component object response.
-	// This matches the previous API behavior of returning "Components for an Asset" as a list of components with context.
-
-	c := d.Component()
-	if c == nil {
-		// Fallback if joined component is missing (should not happen in correct DB state)
-		var parentID *string
-		if d.ParentComponentID() != nil {
-			pid := d.ParentComponentID().String()
-			parentID = &pid
-		}
-		return ComponentResponse{
-			ID:                d.ID().String(),
-			TenantID:          d.TenantID().String(),
-			AssetID:           d.AssetID().String(),
-			DependencyType:    d.DependencyType().String(),
-			ManifestPath:      d.Path(),
-			ManifestFile:      d.ManifestFile(),
-			Depth:             d.Depth(),
-			ParentComponentID: parentID,
-			IsDirect:          d.Depth() == 1,
-			CreatedAt:         d.CreatedAt(),
-			UpdatedAt:         d.UpdatedAt(),
-			Status:            "orphaned",
-		}
-	}
-
-	// Get parent component ID as string pointer
-	var parentID *string
-	if d.ParentComponentID() != nil {
-		pid := d.ParentComponentID().String()
-		parentID = &pid
-	}
-
-	return ComponentResponse{
-		// IMPORTANT: For "Asset Components", the ID should be the DEPENDENCY ID so simple Update/Delete operations on the UI work targeting the link.
-		// However, if the UI navigates to "Global Component Details", it might expect the Global ID.
-		// Given the UI is "Asset Components" tab, returning the Link ID is safer for operations.
-		ID:       d.ID().String(),
-		TenantID: d.TenantID().String(),
-		AssetID:  d.AssetID().String(),
-
-		// Component Details
-		Name:               c.Name(),
-		Version:            c.Version(),
-		Ecosystem:          c.Ecosystem().String(),
-		PURL:               c.PURL(),
-		License:            c.License(),
-		VulnerabilityCount: c.VulnerabilityCount(),
-
-		// Contextual Details
-		DependencyType: d.DependencyType().String(),
-		ManifestPath:   d.Path(),
-		ManifestFile:   d.ManifestFile(),
-
-		// Dependency hierarchy (CycloneDX component model)
-		Depth:             d.Depth(),
-		ParentComponentID: parentID,
-		IsDirect:          d.Depth() == 1,
-
-		Status:    "active", // Default status; global component status mapping planned for Phase 2
-		Metadata:  c.Metadata(),
-		CreatedAt: d.CreatedAt(), // Use Link creation time
-		UpdatedAt: d.UpdatedAt(),
-	}
-}
-
-// ListVulnerabilities handles GET /api/v1/components/{id}/vulnerabilities
-// @Summary      List CVEs that affect a component
-// @Description  Returns CVEs affecting a global component within the current tenant.
-//
-//	One row per CVE with affected_assets_count rolled up.
-//
-// @Tags         Components
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id                path     string  true   "Global component ID"
-// @Param        include_resolved  query    bool    false  "Include CVEs only seen in closed findings"
-// @Param        page              query    int     false  "Page number"  default(1)
-// @Param        per_page          query    int     false  "Items per page"  default(20)
-// @Success      200  {object}  map[string]interface{}
-// @Failure      400  {object}  map[string]string
-// @Failure      404  {object}  map[string]string
-// @Router       /components/{id}/vulnerabilities [get]
-func (h *ComponentHandler) ListVulnerabilities(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	componentID := r.PathValue("id")
-	if componentID == "" {
-		apierror.BadRequest("Component ID is required").WriteJSON(w)
-		return
-	}
-
-	query := r.URL.Query()
-	includeResolved := parseQueryBool(query.Get("include_resolved"))
-	paging, ok := listPage(w, r, 20)
-	if !ok {
-		return
-	}
-	page, perPage := paging.Page, paging.PerPage
-
-	result, err := h.service.ListVulnerabilitiesByComponent(r.Context(), tenantID, componentID,
-		includeResolved != nil && *includeResolved, page, perPage)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	response := ListResponse[component.ComponentVulnerability]{
-		Data:       result.Data,
-		Total:      result.Total,
-		Page:       result.Page,
-		PerPage:    result.PerPage,
-		TotalPages: result.TotalPages,
-		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
-}
-
-// ListAssets handles GET /api/v1/components/{id}/assets
-// @Summary      List assets that use a component
-// @Description  Returns the assets in the current tenant that use the given global component
-//
-//	(blast-radius reverse lookup).
-//
-// @Tags         Components
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id            path      string  true   "Global component ID"
-// @Param        at_risk_only  query     bool    false  "Only return assets with open findings for this component"
-// @Param        page          query     int     false  "Page number"  default(1)
-// @Param        per_page      query     int     false  "Items per page"  default(20)
-// @Success      200  {object}  map[string]interface{}
-// @Failure      400  {object}  map[string]string
-// @Failure      404  {object}  map[string]string
-// @Router       /components/{id}/assets [get]
-func (h *ComponentHandler) ListAssets(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	componentID := r.PathValue("id")
-	if componentID == "" {
-		apierror.BadRequest("Component ID is required").WriteJSON(w)
-		return
-	}
-
-	query := r.URL.Query()
-	atRiskOnly := parseQueryBool(query.Get("at_risk_only"))
-	paging, ok := listPage(w, r, 20)
-	if !ok {
-		return
-	}
-	page, perPage := paging.Page, paging.PerPage
-
-	result, err := h.service.ListAssetUsageByComponent(r.Context(), tenantID, componentID,
-		atRiskOnly != nil && *atRiskOnly, page, perPage)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	response := ListResponse[component.ComponentAssetUsage]{
-		Data:       result.Data,
-		Total:      result.Total,
-		Page:       result.Page,
-		PerPage:    result.PerPage,
-		TotalPages: result.TotalPages,
-		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
-}
-
-// ListByAsset handles GET /api/v1/assets/{id}/components
-// @Summary      List asset components
-// @Description  Retrieves all components for an asset
-// @Tags         Components
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id        path      string  true   "Asset ID"
-// @Param        page      query     int     false  "Page number"  default(1)
-// @Param        per_page  query     int     false  "Items per page"  default(20)
-// @Success      200  {object}  map[string]interface{}
-// @Failure      400  {object}  map[string]string
-// @Failure      404  {object}  map[string]string
-// @Router       /assets/{id}/components [get]
-func (h *ComponentHandler) ListByAsset(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	assetID := r.PathValue("id")
-	if assetID == "" {
-		apierror.BadRequest("Asset ID is required").WriteJSON(w)
-		return
-	}
-
-	paging, ok := listPage(w, r, 20)
-	if !ok {
-		return
-	}
-	page, perPage := paging.Page, paging.PerPage
-
-	result, err := h.service.ListAssetComponents(r.Context(), tenantID, assetID, page, perPage)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	data := make([]ComponentResponse, len(result.Data))
-	for i, c := range result.Data {
-		data[i] = toAssetComponentResponse(c)
-	}
-
-	response := ListResponse[ComponentResponse]{
-		Data:       data,
-		Total:      result.Total,
-		Page:       result.Page,
-		PerPage:    result.PerPage,
-		TotalPages: result.TotalPages,
-		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
+	writeComponentJSON(w, res)
 }
