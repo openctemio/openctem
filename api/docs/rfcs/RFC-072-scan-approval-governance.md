@@ -220,5 +220,6 @@ steps probe at; when RFC-071 lands it is the scan's declared intensity.
 |---|---|
 | Setting | modes, platform policy renamed to scans, rules and presets (validation, evaluation), settings API, scope entries Strict-only, signer t2 floor, admin console and scope page texts (migration `001830`) |
 | Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge (migration `001831`) |
-| Web | Settings > Scanning (mode, rule builder, presets), New Scan review "needs approval by…", Submit for approval, Approvals inbox, scan list badge |
+| Web | Settings > Scanning > Scan approval (mode; presets; rules on, off, monitor, remove), New Scan review "needs approval by…" with the evidence the rules ask and Submit for approval, Scans > Approvals inbox (details, diff, approve, reject, own approval with an authenticator code, remind, withdraw), scan list badge |
+| Web, next | the rule builder (conditions and requirement editor), the rule tester, emergency run and approval state on the scan page |
 | Later | monitor-mode report, rule tester, the §4.1 later conditions, asset-owner approvers |
