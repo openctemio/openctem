@@ -1391,5 +1391,7 @@
   "scanWindows.waits.neverOpens": "never opens",
   "scanWindows.waits.one": "1 target waits for its scan window",
   "scanWindows.waits.opens": "opens {at}",
-  "scanWindows.waits.range": "the first opens {first}, the last {last}"
+  "scanWindows.waits.range": "the first opens {first}, the last {last}",
+  "scanWindows.review.never": "{n} targets have scan windows that never open: starting the scan is refused until a policy changes",
+  "scanWindows.review.waiting": "{n} targets wait for their scan windows; they are scanned when their windows open"
 }

@@ -1391,5 +1391,7 @@
   "scanWindows.waits.neverOpens": "không bao giờ mở",
   "scanWindows.waits.one": "1 mục tiêu chờ khung giờ quét",
   "scanWindows.waits.opens": "mở lúc {at}",
-  "scanWindows.waits.range": "lần đầu mở lúc {first}, lần cuối lúc {last}"
+  "scanWindows.waits.range": "lần đầu mở lúc {first}, lần cuối lúc {last}",
+  "scanWindows.review.never": "{n} mục tiêu có khung giờ quét không bao giờ mở: việc khởi động lần quét bị từ chối cho đến khi chính sách thay đổi",
+  "scanWindows.review.waiting": "{n} mục tiêu đang chờ khung giờ quét; chúng sẽ được quét khi khung giờ mở"
 }
