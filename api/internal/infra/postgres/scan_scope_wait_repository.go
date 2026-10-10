@@ -1,7 +1,7 @@
 package postgres
 
 // Scans saved to start when their scope is approved (RFC-054 §7,
-// migration 001701). Every query carries the tenant.
+// migration 001727). Every query carries the tenant.
 
 import (
 	"context"
