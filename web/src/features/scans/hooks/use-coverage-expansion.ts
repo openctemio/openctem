@@ -57,8 +57,10 @@ export function useCoverageExpansion(typed: string[], level: CoverageLevel) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const roots = useMemo(() => domainRoots(typed).slice(0, MAX_COVERAGE_ROOTS), [typed])
+  // Only the addresses are listed: subdomains are a *.domain target the API
+  // resolves at every run (RFC-068).
   const key =
-    level !== 'host' && currentTenant && can(Permission.AssetsRead) && roots.length > 0
+    level === 'subdomains_ips' && currentTenant && can(Permission.AssetsRead) && roots.length > 0
       ? coverageURL(roots, 1)
       : null
   const { data, isLoading, error } = useSWR<InventoryName[]>(key, () => loadUnder(roots), {

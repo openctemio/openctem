@@ -44,6 +44,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scopepolicy"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
@@ -828,6 +829,9 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// ScopePolicy is the platform policy for scope-widening approvals
+	// (wired in wireScopeApprovers, after the email service exists).
+	ScopePolicy *scopepolicy.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
 	// Plans and limits.
@@ -964,6 +968,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// through the full load-modify-save path.
 	s.Asset.SetLifecycleRepository(repos.Asset)
 	s.Asset.SetStateHistoryRepository(repos.AssetStateHistory)
+	// Which source decides an asset attribute (RFC-069).
+	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
 	// Business-aligned risk scoring: score an asset's EFFECTIVE criticality —
 	// MAX(own, its business unit, the business services it powers) — the SAME
 	// floor rule (and the SAME lookup adapter) that finding-priority uses, so
@@ -1773,6 +1779,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)             // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)                   // Software inventory capture (RFC-066)
+	s.Ingest.SetAttributeReconciler(s.Asset)                         // Per-source asset attribute values (RFC-069)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
@@ -1953,6 +1960,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	// Wildcard domains and inventory-mode CIDRs are expanded from the
+	// inventory at each run start (RFC-068).
+	s.Scan.SetSelectorAssets(repos.ScanSelector)
 	if s.BountyProgram != nil {
 		s.Scan.SetProgramRules(s.BountyProgram) // RFC-065 §12
 	}
