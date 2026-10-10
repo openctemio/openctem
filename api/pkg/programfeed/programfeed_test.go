@@ -192,7 +192,6 @@ func TestReadRefusesBadRecords(t *testing.T) {
 		}
 	}
 	bad := map[string]func(r map[string]any){
-		"unknown field":     func(r map[string]any) { r["cookie"] = "x" },
 		"bad id":            func(r map[string]any) { r["id"] = "../../etc" },
 		"source mismatch":   func(r map[string]any) { r["source"] = "other" },
 		"javascript url":    func(r map[string]any) { r["url"] = "javascript:alert(1)" },
@@ -345,5 +344,21 @@ func TestLocalBundles(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(d, "latest.json"), make([]byte, programfeed.MaxManifestBytes+1), 0o600)
 	if _, err := programfeed.VerifyLocalDir(d, programfeed.Options{Now: now}); err == nil {
 		t.Fatal("oversized pointer accepted")
+	}
+}
+
+// Fields the collector adds within v1 are ignored, not refused.
+func TestRecordToleratesAddedFields(t *testing.T) {
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	b := programfeedtest.New(t, now)
+	rec := programfeedtest.Record("disclose", "acme", []string{"api.acme.io"}, nil, now)
+	rec["environment"] = "production"
+	rec["in_scope"] = []map[string]any{{"type": "domain", "value": "api.acme.io", "confidence": "published", "port": 8443, "protocol": "tcp"}}
+	v, err := programfeed.VerifyDir(b.Write(t, 3, []map[string]any{rec}), programfeed.Options{PinnedRoot: b.RootKeyID(), Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progs, _, err := v.Read(programfeed.V1{}); err != nil || len(progs) != 1 {
+		t.Fatalf("added fields: %d %v", len(progs), err)
 	}
 }
