@@ -187,7 +187,8 @@ func TestAttributeReconciliation_ScanDecidesExposureButNotOwner(t *testing.T) {
 	for _, v := range views {
 		switch v.Attribute {
 		case asset.AttrExposure:
-			if !v.Conflict || v.Winner == nil || v.Winner.Kind != asset.SourceKindScan {
+			// scan outranks the inventory for exposure: precedence, not a conflict
+			if v.Conflict || v.Winner == nil || v.Winner.Kind != asset.SourceKindScan {
 				t.Errorf("exposure: conflict %v winner %+v", v.Conflict, v.Winner)
 			}
 		case asset.AttrOwnerRef:
@@ -276,7 +277,7 @@ func TestAttributeReconciliation_TenantIsolation(t *testing.T) {
 			Kind: asset.SourceKindIntegration, Name: "x", Value: "critical", ObservedAt: time.Now(), Confidence: 100}},
 		Policy: asset.DefaultReconciliationPolicy(), Now: time.Now(),
 	})
-	if err != nil || len(changes) != 0 {
+	if err != nil || len(changes.Changes) != 0 || changes.Events != 0 {
 		t.Fatalf("cross-tenant apply: %v %v", changes, err)
 	}
 	var crit string
