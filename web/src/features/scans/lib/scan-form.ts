@@ -19,8 +19,8 @@ import type {
   UpdateScanConfigRequest,
 } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
-import { instantToZonedWallTime, viewerTimeZone, zonedWallTimeToInstant } from './zoned-time'
 import { parsePastedTargets } from './target-format'
+import { instantToZonedWallTime, viewerTimeZone, zonedWallTimeToInstant } from './zoned-time'
 import {
   TENABLE_SC_TOOL,
   readTenableScanConfig,
@@ -28,6 +28,11 @@ import {
   tenableScanConfigToApi,
 } from '@/features/integrations/lib/tenable-sc'
 import { apiTargetOptions, isWildcardTarget, toWildcards } from './dynamic-targets'
+
+/** The scan has no schedule: it runs now, or is saved to start by hand. */
+export function onDemand(schedule: NewScanFormData['schedule']): boolean {
+  return schedule.runImmediately || !!schedule.saveOnly
+}
 
 /** Form schedule frequency -> API schedule type. */
 export function frequencyToScheduleType(frequency: ScheduleFrequency | undefined): ScheduleType {
@@ -91,7 +96,7 @@ export function scheduleError(
   opts: { requireFuture?: boolean; now?: Date } = {}
 ): string | null {
   const { schedule } = form
-  if (schedule.runImmediately || schedule.frequency !== 'once') return null
+  if (schedule.runImmediately || schedule.saveOnly || schedule.frequency !== 'once') return null
   const at = onceRunAt(form)
   if (!at) return 'Choose the date and time of the run'
   const now = opts.now ?? new Date()
@@ -106,7 +111,7 @@ function applySchedule(
   request: CreateScanConfigRequest | UpdateScanConfigRequest
 ) {
   const { schedule } = form
-  if (schedule.runImmediately) return
+  if (schedule.runImmediately || schedule.saveOnly) return
   // The time is in this zone (the viewer's by default); without it the API
   // read every time as UTC.
   request.timezone = schedule.timezone || viewerTimeZone()
@@ -186,7 +191,7 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   const request: CreateScanConfigRequest = {
     name: form.name.trim(),
     scan_type: scanType,
-    schedule_type: schedule.runImmediately ? 'manual' : frequencyToScheduleType(schedule.frequency),
+    schedule_type: onDemand(schedule) ? 'manual' : frequencyToScheduleType(schedule.frequency),
     sensor_preference: toApiSensorPreference(form.sensorPreference),
     targets_per_job: form.maxConcurrent || 10,
     timeout_seconds: form.timeoutSeconds,
@@ -291,7 +296,7 @@ export function formDataToUpdateRequest(
     timeout_seconds: form.timeoutSeconds,
     max_retries: form.maxRetries,
     retry_backoff_seconds: form.retryBackoffSeconds,
-    schedule_type: schedule.runImmediately ? 'manual' : frequencyToScheduleType(schedule.frequency),
+    schedule_type: onDemand(schedule) ? 'manual' : frequencyToScheduleType(schedule.frequency),
     sensor_preference: toApiSensorPreference(form.sensorPreference),
   }
   // Only someone who can see the zones may change the zone: otherwise an

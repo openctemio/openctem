@@ -96,6 +96,8 @@ export type ScheduleFrequency = 'once' | 'daily' | 'weekly' | 'monthly'
 
 export interface ScanSchedule {
   runImmediately: boolean
+  /** New scan: save it without running or scheduling it (started later, by hand). */
+  saveOnly?: boolean
   frequency?: ScheduleFrequency
   dayOfWeek?: number // 0 = Sunday, 1 = Monday, etc.
   /** Monthly: day of the month, 1-31 (a shorter month runs on its last day). */
