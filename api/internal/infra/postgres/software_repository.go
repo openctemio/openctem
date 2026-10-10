@@ -316,7 +316,8 @@ func clipStr(s string, n int) string {
 }
 
 // ListAssetLinks (see software.Repository). The catalog rows come only
-// through the tenant's own links.
+// through the tenant's own links. Packages (source package) are listed by
+// the components inventory, not here.
 func (r *SoftwareRepository) ListAssetLinks(ctx context.Context, tenantID, assetID shared.ID) ([]software.AssetLink, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT s.id, p.id, p.name, p.vendor, COALESCE(p.cpe_vendor || ':' || p.cpe_product, ''), p.tenant_id IS NULL,
@@ -325,7 +326,7 @@ func (r *SoftwareRepository) ListAssetLinks(ctx context.Context, tenantID, asset
 		FROM asset_software s
 		JOIN software_products p ON p.id = s.product_id
 		JOIN software_versions v ON v.id = s.software_version_id
-		WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL
+		WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL AND s.source <> 'package'
 		ORDER BY s.last_seen_at DESC, p.name
 		LIMIT $3`, tenantID.String(), assetID.String(), software.MaxAssetLinks)
 	if err != nil {
