@@ -986,6 +986,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
+	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
+	// A precedence change re-resolves the organization's assets (RFC-069).
+	s.Tenant.SetAssetPolicyListener(s.Asset)
 	// Business-aligned risk scoring: score an asset's EFFECTIVE criticality —
 	// MAX(own, its business unit, the business services it powers) — the SAME
 	// floor rule (and the SAME lookup adapter) that finding-priority uses, so

@@ -98,6 +98,10 @@ type AssetService struct {
 	attrSources assetdom.AttributeSourceRepository
 	attrTenants ReconciliationSettingsReader
 	changes     assetdom.ChangeEventRepository
+	attrLister  AttributeSourceLister
+	// Background re-resolution after a precedence change, per tenant.
+	reresolving    sync.Map
+	reresolveAgain sync.Map
 }
 
 // UserMatcher resolves external references (email, username) to user IDs.
