@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-09, delegated; D1–D3 adopted as recommended, §10). P0 in implementation |
+| Status | Accepted (2026-10-09, delegated; D1–D3 adopted as recommended, §10). P0 delivered; §11 (ordering, change timeline) in implementation |
 | Scope | api (`pkg/domain/asset`, `internal/app/asset`, `internal/app/ingest`, the asset repository, migration `asset_attribute_sources`), web (asset "Where values come from" section, Settings › Asset sources) |
 | Architecture | [asset-attribute-reconciliation.md](../architecture/asset-attribute-reconciliation.md) |
 | Related | RFC-005 (asynchronous ingest), RFC-040 (sensor result binding), RFC-042 (inventory v2), RFC-043 (identity), RFC-066 (software inventory), [asset-source-priority.md](../architecture/asset-source-priority.md) (RFC-003, withdrawn), [data-sources.md](../architecture/data-sources.md) |
@@ -144,7 +144,10 @@ For one attribute of one asset:
 4. The rest rank by precedence, then `observed_at` (newest first), then
    confidence, then `ingested_at`, then name (deterministic).
 5. No candidate: the asset keeps its current value.
-6. Two or more counted rows with different values: **conflict**.
+6. The most trusted fresh rank holds different values: **conflict**. The
+   value the asset already shows then keeps winning while a source of that
+   rank still reports it: equal sources disagreeing are shown, not flapped
+   between (§11). Different ranks disagreeing is precedence, not a conflict.
 
 Defaults (`asset.DefaultReconciliationPolicy`):
 
@@ -267,3 +270,70 @@ owner and classification of assets nobody locked.
   classification by default. Adopted; an organization can trust them.
 - D2: values people set before the upgrade become locks. Adopted.
 - D3: TTLs scan 30 d, integration 30 d, import 90 d. Adopted.
+
+## 11. Observation ordering and the change timeline (owner requirements, 2026-10-10)
+
+### 11.1 Ordering
+
+- Every observation carries source kind and name, `source_run` (scan task,
+  CI run, import or feed sequence), `observed_at`, `received_at`
+  (`ingested_at`) and confidence.
+- Per source, an observation is applied only when it was made strictly
+  after the source's stored one (`asset.ClassifyObservation`); older ones
+  (`out_of_order`) and same-time ones (`replay`) are ignored and counted
+  (`openctem_asset_attribute_observations_total{verdict}`).
+- A re-sighting of the same value refreshes `observed_at` at most once an
+  hour (`refresh`); within the hour nothing is written (`resighted`).
+- A sensor report's observation time is its timestamp clamped to
+  [the bound command's dispatch time (acknowledgement, else creation),
+  arrival], once for the whole report.
+- The resolver marks the deciding row (`winner`), so a change of the deciding
+  source is known even when the value stays.
+
+### 11.2 Timeline
+
+`asset_change_events` (monthly partitions on `at`, default partition,
+indexes `(tenant_id, asset_id, at desc, id desc)` and `(tenant_id, at desc,
+id desc)`): one event per change of the shown value or of the deciding
+source, written in the reconciliation transaction. Fields: tenant, asset,
+`at`, attribute, old → new (`added`/`removed` for set attributes), source
+kind/name/run, actor (lock, release), reason (`newer_observation`,
+`manual_lock`, `lock_released`, `ttl_expiry`, `policy_change`,
+`source_removed`), `flap_count`.
+
+- No event for a re-sighting.
+- A value flipping back and forth between sources within an hour is one
+  event with a count (`ChangeEvent.Coalesces`); a person's lock or release,
+  a TTL expiry and a policy change are always their own events.
+- Retention: `ASSET_CHANGE_RETENTION_DAYS` (default 400, minimum 30); the
+  `asset-change-timeline` controller creates partitions ahead, drops expired
+  months, and once a day re-resolves every asset with a recorded source so a
+  value whose deciding source passed its TTL moves on (`ttl_expiry`).
+- Events cascade with the asset and the tenant (organization deletion erases
+  them) and move with the asset in a merge. They hold only values the asset
+  itself holds.
+
+API: `GET /api/v1/assets/{id}/changes` (asset timeline) and `GET
+/api/v1/assets/changes` (organization feed, data-scope filtered; filters
+attribute, source kind, source name, tag), both `assets:read`, keyset
+pagination (`cursor`, `limit` ≤ 200).
+
+### 11.3 Threat model additions
+
+| Threat | Control | Test |
+|---|---|---|
+| A sensor future-dates its report to win, or back-dates it before the job existed | timestamp clamped to [dispatch, arrival] for every consumer | `TestClampReportTimestamp`, `TestAssetTimeline_SensorClockIsClamped` |
+| A replayed or reordered report rewrites history | strictly-newer rule per source; replay and out-of-order counted, never applied | `TestClassifyObservation`, `TestAssetTimeline_EventOnlyWhenTheValueChanges` |
+| Two equal sources disagreeing make the value (and the timeline) flap | incumbent kept on an equal-rank conflict; reversals within an hour folded | `TestResolve` (equal rank), `TestChangeEventCoalesces`, `TestAssetTimeline_FlappingFoldsIntoOneEvent` |
+| Write amplification from frequent re-sightings | no event; `observed_at` refreshed at most hourly | `TestAssetTimeline_EventOnlyWhenTheValueChanges` |
+| Reading another tenant's or an out-of-scope asset's history | every query `WHERE tenant_id`; asset timeline behind `GetAssetInCallerScope` (404); feed narrowed to `user_accessible_assets` | `TestAssetChanges_*`, `TestAssetTimeline_ListIsTenantAndScopeIsolated` |
+| History outliving erasure | FK cascade from assets (and so tenants); retention by month | `TestAssetTimeline_ListIsTenantAndScopeIsolated`, `TestAssetTimeline_PartitionsAndRetention` |
+
+### 11.4 Status
+
+Delivered here: ordering, clock clamp, `source_run`, winner flag, equal-rank
+conflicts, timeline table, API, controller. Next: the web Timeline tab and
+the organization feed; precedence per attribute class with per-source rows
+and a preview; per-source set attributes (IP addresses, program targets) with
+per-element `last_seen`; feed bundle sequence and expiry checks for
+programfeed sources.

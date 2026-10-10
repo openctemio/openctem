@@ -29,6 +29,7 @@ func assetReferenceColumns(t *testing.T, db *sql.DB) map[string]string {
 		JOIN pg_attribute a ON a.attrelid = c.conrelid
 		 AND a.attnum = c.conkey[array_position(c.confkey, (SELECT attnum FROM pg_attribute WHERE attrelid = 'assets'::regclass AND attname = 'id'))]
 		WHERE c.contype = 'f' AND c.confrelid = 'assets'::regclass
+		  AND c.conparentid = 0 -- a partition's copy of its parent's key is covered by the parent
 		UNION
 		SELECT col.table_name || '.' || col.column_name, 'no fk'
 		FROM information_schema.columns col

@@ -125,6 +125,9 @@ type Options struct {
 	// a trusted binding may set them; every sensor and CI report is a scan.
 	SourceKind asset.SourceKind
 	SourceName string
+	// SourceRun is the import, sync run or feed sequence of a server-side
+	// ingest (trusted binding only; informational).
+	SourceRun string
 }
 
 // ActorScope is the data scope of the person behind an upload.
