@@ -37,7 +37,7 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 	// Seed a tenant (sensors.tenant_id is NOT NULL REFERENCES tenants). Deleting
 	// it CASCADE-removes the sensor, so the test leaves no residue.
 	tenantID := shared.NewID()
-	slug := "keyexp-" + tenantID.String()[:8]
+	slug := "keyexp-" + tenantID.String()[28:]
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
 		tenantID.String(), "key-expiry-test", slug); err != nil {
@@ -179,7 +179,7 @@ func TestSensorUpdate_DoesNotRevertKeyColumns(t *testing.T) {
 
 	tenantID := shared.NewID()
 	if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
-		tenantID.String(), "sensor-update-keys", "suk-"+tenantID.String()[:8]); err != nil {
+		tenantID.String(), "sensor-update-keys", "suk-"+tenantID.String()[28:]); err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()

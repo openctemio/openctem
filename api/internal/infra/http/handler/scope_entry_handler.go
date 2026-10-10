@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -24,6 +25,7 @@ import (
 type ScopeSettingsStore interface {
 	GetScopeSettings(ctx context.Context, tenantID string) (*tenant.ScopeSettings, error)
 	UpdateScopeSettings(ctx context.Context, tenantID string, ss tenant.ScopeSettings, actx auditapp.AuditContext) (*tenant.ScopeSettings, error)
+	UpdateIntrusiveScopeSettings(ctx context.Context, tenantID string, in tenant.IntrusiveScopeSettings, reason string, actx auditapp.AuditContext) (*tenant.ScopeSettings, error)
 }
 
 // SetSettingsStore wires GET/PUT /scope/settings.
@@ -112,6 +114,28 @@ type ScopeSettingsResponse struct {
 	// ActiveProof is the operator's setting: off, platform_sensors or all.
 	// Read-only; no tenant setting changes it.
 	ActiveProof string `json:"active_proof"`
+	// T2MaxDuration is the longest an intrusive (t2) entry may last: 7d,
+	// 30d, 90d, 365d or permanent. Owner-only (PUT /scope/settings/intrusive).
+	T2MaxDuration string `json:"t2_max_duration" enums:"7d,30d,90d,365d,permanent"`
+	// T2MaxDays is the most expires_in_days a t2 entry may ask for.
+	T2MaxDays int `json:"t2_max_days"`
+	// T2PermanentAllowed: a t2 entry may be permanent.
+	T2PermanentAllowed bool `json:"t2_permanent_allowed"`
+	// T2AttestationDays: how often a long t2 entry is confirmed (30..180).
+	// Owner-only.
+	T2AttestationDays int `json:"t2_attestation_days"`
+	// ApprovalPolicy is the platform administrator's policy for widening
+	// approvals (read-only; RFC-054 §12.6).
+	ApprovalPolicy ScopeApprovalPolicyView `json:"approval_policy"`
+}
+
+// ScopeApprovalPolicyView is the platform approval policy as the tenant
+// sees it.
+type ScopeApprovalPolicyView struct {
+	// Mode: required, tenant_controlled or disabled.
+	Mode string `json:"mode" enums:"required,tenant_controlled,disabled"`
+	// Source: platform_default or organization_override.
+	Source string `json:"source" enums:"platform_default,organization_override"`
 }
 
 // ScopeSettingsRequest replaces the settings. There is no field that turns
@@ -129,11 +153,16 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 	if err != nil {
 		return ScopeSettingsResponse{}, err
 	}
+	t2Days, t2Permanent := ss.T2Max()
+	mode, source := h.service.ApprovalPolicy(ctx, tenantID)
 	return ScopeSettingsResponse{
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
-		ActiveProof: activeProofOrOff(h.activeProof),
+		ActiveProof:   activeProofOrOff(h.activeProof),
+		T2MaxDuration: ss.T2Duration(), T2MaxDays: t2Days, T2PermanentAllowed: t2Permanent,
+		T2AttestationDays: ss.AttestationDays(),
+		ApprovalPolicy:    ScopeApprovalPolicyView{Mode: string(mode), Source: source},
 	}, nil
 }
 
@@ -203,6 +232,20 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		h.handleValidationError(w, err)
 		return
 	}
+	// Under a tenant-controlled policy the approval count may go to 0 for
+	// every tier: only an owner changes it then (RFC-054 §12.6).
+	if mode, _ := h.service.ApprovalPolicy(ctx, tenantID); mode == tenant.ScopeApprovalTenantControlled && !middleware.IsOwner(ctx) {
+		cur, err := h.settings.GetScopeSettings(ctx, tenantID)
+		if err != nil {
+			h.handleServiceError(w, "Scope settings", err)
+			return
+		}
+		if !sameApprovals(cur.WideningApprovals, req.WideningApprovals) {
+			apierror.New(http.StatusForbidden, "OWNER_REQUIRED",
+				"Your platform administrator lets the organization's owner set the approval count; ask an owner").WriteJSON(w)
+			return
+		}
+	}
 	ss := tenant.ScopeSettings{
 		AutoJoinDisabled: req.AutoJoinDiscovered != nil && !*req.AutoJoinDiscovered,
 		OneOffTargets:    req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
@@ -228,4 +271,73 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// ScopeIntrusiveSettingsRequest changes the owner-only scope settings.
+type ScopeIntrusiveSettingsRequest struct {
+	// T2MaxDuration: 7d, 30d, 90d, 365d or permanent.
+	T2MaxDuration string `json:"t2_max_duration" validate:"required,oneof=7d 30d 90d 365d permanent"`
+	// T2AttestationDays: how often a long t2 entry is confirmed, 30..180
+	// (omitted: 90).
+	T2AttestationDays int `json:"t2_attestation_days" validate:"omitempty,min=30,max=180"`
+	// Reason is kept in the audit log.
+	Reason string `json:"reason" validate:"required,max=1000"`
+}
+
+// UpdateIntrusiveSettings handles PUT /api/v1/scope/settings/intrusive
+// @Summary      Change the intrusive (t2) scope settings
+// @Description  The longest an intrusive (t2) scope entry may last: 7d, 30d (default), 90d, 365d or permanent (RFC-054 §12.4). Owner only, with a recent re-authentication (403 STEP_UP_REQUIRED) and a reason. A t2 entry still needs a verified domain and an approval. Audited at high severity; every administrator is notified. PUT /scope/settings never changes it.
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        body body ScopeIntrusiveSettingsRequest true "Settings"
+// @Success      200  {object}  ScopeSettingsResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/settings/intrusive [put]
+func (h *ScopeHandler) UpdateIntrusiveSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
+	if h.settings == nil {
+		apierror.InternalServerError("scope settings are not available").WriteJSON(w)
+		return
+	}
+	var req ScopeIntrusiveSettingsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid JSON").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+	}
+	out, err := h.settings.UpdateIntrusiveScopeSettings(ctx, tenantID, tenant.IntrusiveScopeSettings{T2MaxDuration: req.T2MaxDuration, T2AttestationDays: req.T2AttestationDays}, req.Reason, actx)
+	if err != nil {
+		h.handleServiceError(w, "Scope settings", err)
+		return
+	}
+	if id, err := shared.IDFromString(tenantID); err == nil {
+		h.service.NotifyAdmins(ctx, id, "Intrusive scope settings changed",
+			"An owner changed how long intrusive (t2) scope entries may last to "+out.T2Duration()+". Reason: "+strings.TrimSpace(req.Reason))
+	}
+	resp, err := h.settingsResponse(ctx, tenantID, *out)
+	if err != nil {
+		h.logger.Error("scope settings: approvals", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func sameApprovals(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }

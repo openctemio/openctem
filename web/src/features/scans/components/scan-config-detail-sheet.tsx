@@ -35,6 +35,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import { formatScanDate, scanSuccessRate } from '../lib/format'
 import { schedulePreviewRequestFromConfig } from '../lib/schedule-preview'
 import { SchedulePreview } from './schedule-preview'
+import { describeTargetOptions, hasCidrTarget, hasDynamicTargets } from '../lib/dynamic-targets'
 
 type Tab = 'overview' | 'config' | 'details'
 const TABS: DetailTab<Tab>[] = [
@@ -239,6 +240,22 @@ function Details({ config }: { config: ScanConfig }) {
                     </Badge>
                   )}
                 </span>
+              </DetailField>
+            )}
+            {(hasDynamicTargets(targets, config.target_options) || hasCidrTarget(targets)) && (
+              <DetailField label="Dynamic targets" full>
+                <span className="block text-sm" data-testid="scan-dynamic-targets">
+                  {hasDynamicTargets(targets, config.target_options)
+                    ? config.schedule_type === 'manual'
+                      ? '*.domain targets are resolved from the inventory each time the scan runs.'
+                      : 'Targets are re-resolved from the inventory at each run, so names found since the last run are scanned too.'
+                    : 'Address ranges are swept whole.'}
+                </span>
+                {describeTargetOptions(targets, config.target_options).length > 0 && (
+                  <span className="block text-xs text-muted-foreground">
+                    {describeTargetOptions(targets, config.target_options).join(' · ')}
+                  </span>
+                )}
               </DetailField>
             )}
           </DetailFieldGrid>

@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -28,6 +30,19 @@ type AssetOwnerHandler struct {
 	assetRepo    asset.Repository
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
+	// attrLocker records a cleared owner_ref as the person's lock (RFC-069),
+	// so a source does not bring the removed owner back. Optional.
+	attrLocker OwnerRefLocker
+}
+
+// OwnerRefLocker sets and locks an asset attribute for a person.
+type OwnerRefLocker interface {
+	LockAttribute(ctx context.Context, tenantID, assetID, attribute, value, actorID string) (*assetapp.AttributeSourcesView, error)
+}
+
+// SetAttributeLocker wires the owner_ref lock. Nil-safe.
+func (h *AssetOwnerHandler) SetAttributeLocker(l OwnerRefLocker) {
+	h.attrLocker = l
 }
 
 // SetAuditService wires the audit logger for access grant changes. Nil-safe.
@@ -483,6 +498,15 @@ func (h *AssetOwnerHandler) clearOwnerRef(r *http.Request, assetID shared.ID) {
 		return
 	}
 	if a.OwnerRef() == "" {
+		return
+	}
+	if h.attrLocker != nil {
+		// The person removed the owner: keep owner_ref empty until they
+		// release it, whatever a source reports later.
+		if _, err := h.attrLocker.LockAttribute(r.Context(), tenantID.String(), assetID.String(),
+			string(asset.AttrOwnerRef), "", middleware.GetUserID(r.Context())); err != nil {
+			h.logger.Warn("failed to clear owner_ref", "asset_id", assetID.String(), "error", err)
+		}
 		return
 	}
 	a.SetOwnerRef("")

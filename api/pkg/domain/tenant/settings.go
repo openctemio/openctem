@@ -36,6 +36,8 @@ type Settings struct {
 	Scope ScopeSettings `json:"scope,omitempty"`
 	// MCP is the policy for AI applications on the MCP server (RFC-062 §8).
 	MCP MCPSettings `json:"mcp,omitempty"`
+	// AssetReconciliation is which source decides an asset attribute (RFC-069).
+	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.
@@ -763,6 +765,9 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.Retest.Validate(); err != nil {
 		return fmt.Errorf("retest settings: %w", err)
+	}
+	if err := s.AssetReconciliation.Validate(); err != nil {
+		return fmt.Errorf("asset_reconciliation settings: %w", err)
 	}
 	return nil
 }
