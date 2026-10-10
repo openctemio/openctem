@@ -190,10 +190,13 @@ const (
 	CIWrite    Permission = "scans:ci:write"
 	CIOverride Permission = "scans:ci:override"
 
-	// ScanFreezeOverride starts a scan by hand while a scan freeze window
-	// is active (audited). Managing the windows themselves needs
-	// sensors:zones:write / sensors:zones:delete.
-	ScanFreezeOverride Permission = "scans:freeze:override"
+	// ScanWindowsManage creates, edits and deletes scan window policies
+	// (RFC-067): when scans may touch which targets.
+	ScanWindowsManage Permission = "scans:windows:manage"
+	// ScanWindowsOverride suspends scan window policies for a short time,
+	// with a fresh authenticator code and a reason (audited, notified).
+	// Program testing windows are never suspended.
+	ScanWindowsOverride Permission = "scans:windows:override"
 )
 
 // =============================================================================
@@ -462,7 +465,7 @@ func AllPermissions() []Permission {
 		ContentPacksRead, ContentPacksWrite,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIOverride,
-		ScanFreezeOverride,
+		ScanWindowsManage, ScanWindowsOverride,
 
 		// Sensors module
 		SensorsRead, SensorsWrite, SensorsDelete,

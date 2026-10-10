@@ -64,6 +64,9 @@ type Repository interface {
 	DependencyPaths(ctx context.Context, tenantID, assetID, versionID shared.ID, limit int) ([]Path, error)
 	DependencyGraph(ctx context.Context, tenantID, assetID shared.ID, focus *shared.ID, depth, limit int) (*Graph, error)
 	ListSBOMEntries(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope, limit int) ([]SBOMEntry, error)
+	// GetVersion returns a package version the caller sees through an
+	// in-scope link or an in-scope finding (shared.ErrNotFound otherwise).
+	GetVersion(ctx context.Context, tenantID, versionID shared.ID, scope *shared.DataScope) (*FindingComponent, error)
 	// GetFindingComponent returns the version a finding names (global or
 	// the tenant's own) and, when assetID is set, how that asset uses it.
 	GetFindingComponent(ctx context.Context, tenantID, versionID shared.ID, assetID *shared.ID) (*FindingComponent, error)

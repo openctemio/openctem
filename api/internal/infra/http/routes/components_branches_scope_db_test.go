@@ -267,6 +267,13 @@ func TestComponents_DataScope_DB(t *testing.T) {
 	h.expect(h.admin, true, http.MethodGet, "/api/v1/components/"+h.bOnly, nil, http.StatusNotFound)
 	h.expect(h.scoped, false, http.MethodGet, "/api/v1/components/"+h.shared+"/versions", nil, http.StatusOK)
 
+	// A version (the id findings carry): visible through an in-scope link only.
+	h.expect(h.scoped, false, http.MethodGet, "/api/v1/components/versions/"+h.outOnlyV, nil, http.StatusNotFound)
+	h.expect(h.admin, true, http.MethodGet, "/api/v1/components/versions/"+h.outOnlyV, nil, http.StatusOK)
+	if body := h.expect(h.scoped, false, http.MethodGet, "/api/v1/components/versions/"+h.sharedV, nil, http.StatusOK); !strings.Contains(body, h.shared) {
+		t.Errorf("version detail = %.300s", body)
+	}
+
 	// Where used: the member sees only the in-scope repository.
 	body := h.expect(h.scoped, false, http.MethodGet, "/api/v1/components/"+h.shared+"/assets", nil, http.StatusOK)
 	if strings.Contains(body, h.outName) || strings.Contains(body, h.repoOut) || !strings.Contains(body, h.repoIn) {

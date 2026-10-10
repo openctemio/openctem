@@ -1,0 +1,48 @@
+{
+  "schema": "openctem.programfeed/v1",
+  "sequence": 1,
+  "kind": "snapshot",
+  "created_at": "2026-10-10T05:42:34Z",
+  "expires_at": "2026-10-17T05:42:34Z",
+  "sources": [
+    {
+      "name": "bounty-targets",
+      "url": "https://github.com/arkadiyt/bounty-targets-data",
+      "as_of": "2026-10-10T04:42:34Z",
+      "terms": "",
+      "licence": "MIT",
+      "attribution": "",
+      "programs": 0
+    }
+  ],
+  "files": [
+    {
+      "name": "snapshot-programs.jsonl.gz",
+      "sha256": "9529a029168d2aa3662a63df492a746e41f44f0bd1ad3661c18aa0dd27858c27",
+      "size": 490,
+      "records": 2
+    },
+    {
+      "name": "snapshot-changes.jsonl.gz",
+      "sha256": "10c2221846da8b4250e556aa520c86d6674614d7c5874d8b9cb7f26d62835036",
+      "size": 23,
+      "records": 0
+    }
+  ],
+  "stats": {
+    "programs": 2,
+    "open": 2,
+    "bounty": 2,
+    "targets": 2,
+    "rejected": 0,
+    "changes": 0,
+    "added": 0,
+    "closed": 0,
+    "dropped": 0
+  },
+  "collector": {
+    "version": "fixture",
+    "commit": "",
+    "local_only": true
+  }
+}

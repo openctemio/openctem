@@ -2,7 +2,7 @@
  * Bug-bounty programs API types (RFC-065, /api/v1/programs).
  */
 
-export type ProgramStatus = 'active' | 'paused' | 'ended'
+export type ProgramStatus = 'active' | 'paused' | 'ended' | 'pending_attestation'
 
 export type ForbiddenTechnique =
   'dos' | 'automated_scanning' | 'intrusive' | 'social_engineering' | 'physical' | 'bruteforce'
@@ -31,7 +31,8 @@ export interface ProgramRules {
   testing_windows?: TestingWindow[]
 }
 
-export type ProgramScopeSource = 'paste' | 'file_import' | 'program_api' | 'program_file'
+export type ProgramScopeSource =
+  'paste' | 'file_import' | 'program_api' | 'program_file' | 'public_feed'
 
 /** Who sees a program (RFC-065 §15): private = members and owners only. */
 export type ProgramVisibility = 'private' | 'public'
@@ -121,6 +122,8 @@ export interface ProgramItem {
   pattern?: string
   asset_type?: string
   note?: string
+  /** Feed programs: published, published_by_platform or inferred. */
+  confidence?: 'published' | 'published_by_platform' | 'inferred'
 }
 
 export type PlannedEntryStatus = 'create' | 'keep' | 'already_covered' | 'refused'
@@ -183,6 +186,49 @@ export interface ProgramDetail extends Program {
   items: ProgramItem[]
   entries: ProgramEntry[]
   exclusions: PlannedExclusion[]
+}
+
+/** A program of the public catalog (RFC-065 §16). */
+/** Where a feed record comes from (dataset fields for public datasets). */
+export interface FeedProvenance {
+  source: string
+  source_url: string
+  fetched_at: string
+  dataset?: string
+  dataset_commit?: string
+  original_platform?: string
+  original_url?: string
+}
+
+export interface PublicProgram {
+  id: string
+  feed_id: string
+  source: string
+  platform: string
+  handle: string
+  name: string
+  url: string
+  type: 'bounty' | 'vdp'
+  status: 'open' | 'paused' | 'closed'
+  offers_bounty: boolean
+  scope_published: boolean
+  in_scope: number
+  suggested: number
+  out_of_scope: number
+  items: ProgramItem[]
+  rules: ProgramRules
+  terms_text: string
+  terms_url?: string
+  terms_doc_sha256?: string
+  as_of: string
+  provenance: FeedProvenance
+}
+
+export interface PublicProgramPage {
+  data: PublicProgram[]
+  total: number
+  page: number
+  per_page: number
 }
 
 export interface ProgramChange {

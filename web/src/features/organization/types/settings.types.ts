@@ -258,6 +258,7 @@ export type SettingsSectionKey =
   | 'asset_identity'
   | 'asset_lifecycle'
   | 'retest'
+  | 'vuln_matching'
 
 export interface TenantSettings {
   general: GeneralSettings

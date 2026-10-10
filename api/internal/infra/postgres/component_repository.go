@@ -268,17 +268,18 @@ func scanPackage(row rowScanner) (component.Package, error) {
 // PackageFacets returns the facet values of the filtered package set.
 func (r *ComponentRepository) PackageFacets(ctx context.Context, f component.Filter) (component.Facets, error) {
 	out := component.Facets{}
+	// Each query runs after packagesCTE (pkgs, links): fragments, not statements.
 	queries := map[string]string{
-		"ecosystem": `SELECT purl_type, count(*) FROM pkgs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 50`,
-		"license":   `SELECT lic, count(*) FROM pkgs, unnest(licenses) AS lic GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 30`,
-		"severity": `SELECT s, n FROM (SELECT 'critical' AS s, count(*) FILTER (WHERE critical > 0) AS n FROM pkgs
+		"ecosystem": `/* over the packagesCTE relations */ SELECT purl_type, count(*) FROM pkgs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 50`,
+		"license":   `/* over the packagesCTE relations */ SELECT lic, count(*) FROM pkgs, unnest(licenses) AS lic GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 30`,
+		"severity": `/* over the packagesCTE relations */ SELECT s, n FROM (SELECT 'critical' AS s, count(*) FILTER (WHERE critical > 0) AS n FROM pkgs
 			UNION ALL SELECT 'high', count(*) FILTER (WHERE high > 0) FROM pkgs
 			UNION ALL SELECT 'medium', count(*) FILTER (WHERE medium > 0) FROM pkgs
 			UNION ALL SELECT 'low', count(*) FILTER (WHERE low > 0) FROM pkgs) x WHERE n > 0`,
-		"kev":          `SELECT 'true', count(*) FROM pkgs WHERE kev > 0 HAVING count(*) > 0`,
-		"has_fix":      `SELECT 'true', count(*) FROM pkgs WHERE fix HAVING count(*) > 0`,
-		"relationship": `SELECT l.relationship, count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
-		"scope":        `SELECT COALESCE(l.dep_scope, 'runtime'), count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
+		"kev":          `/* over the packagesCTE relations */ SELECT 'true', count(*) FROM pkgs WHERE kev > 0 HAVING count(*) > 0`,
+		"has_fix":      `/* over the packagesCTE relations */ SELECT 'true', count(*) FROM pkgs WHERE fix HAVING count(*) > 0`,
+		"relationship": `/* over the packagesCTE relations */ SELECT l.relationship, count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
+		"scope":        `/* over the packagesCTE relations */ SELECT COALESCE(l.dep_scope, 'runtime'), count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
 	}
 	keys := make([]string, 0, len(queries))
 	for k := range queries {
@@ -828,6 +829,38 @@ func (r *ComponentRepository) ListSBOMEntries(ctx context.Context, tenantID shar
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// GetVersion returns a version visible through an in-scope link or finding.
+func (r *ComponentRepository) GetVersion(ctx context.Context, tenantID, versionID shared.ID, scope *shared.DataScope) (*component.FindingComponent, error) {
+	args := &sqlArgs{}
+	tenant := args.add(tenantID.String())
+	version := args.add(versionID.String())
+	linkScope := args.scope("s.asset_id", scope)
+	findingScope := ""
+	if scope != nil {
+		cond, _ := dataScopeCondAt("f.asset_id", scope, len(args.vals)-1)
+		findingScope = " AND " + cond
+	}
+	var c component.FindingComponent
+	var ptype string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT sv.id, p.id, p.name, sv.raw, p.purl_type, COALESCE(sv.purl, '')
+		FROM software_versions sv
+		JOIN software_products p ON p.id = sv.product_id
+		WHERE sv.id = `+version+` AND (sv.tenant_id IS NULL OR sv.tenant_id = `+tenant+`) AND p.purl_type IS NOT NULL
+		  AND (EXISTS (SELECT 1 FROM asset_software s WHERE s.tenant_id = `+tenant+` AND s.software_version_id = sv.id`+linkScope+`)
+		    OR EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = `+tenant+` AND f.component_id = sv.id`+findingScope+`))`,
+		args.vals...).Scan(&c.VersionID, &c.ProductID, &c.Name, &c.Version, &ptype, &c.PURL)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, component.ErrComponentNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get package version: %w", err)
+	}
+	c.Ecosystem = software.EcosystemForType(ptype)
+	c.Licenses = []string{}
+	return &c, nil
 }
 
 // GetFindingComponent returns the version a finding names, when it is global

@@ -68,6 +68,9 @@ const (
 	// TypeScopeChange tells administrators that the organization's scope
 	// grew, or that a scope entry waits for their approval (RFC-054).
 	TypeScopeChange = "scope_change"
+	// TypeScanWindowOverride tells administrators that scan windows were
+	// overridden (RFC-067).
+	TypeScanWindowOverride = "scan_window_override"
 )
 
 // Notification represents an in-app notification.
