@@ -15,7 +15,6 @@ export const SECURITY_API_BASE = {
   // Discovery
   ASSETS: '/api/v1/assets',
   ASSET_GROUPS: '/api/v1/asset-groups',
-  COMPONENTS: '/api/v1/components',
   CREDENTIALS: '/api/v1/credentials',
   SCANS: '/api/v1/scans',
   RUNNERS: '/api/v1/runners',
@@ -67,15 +66,6 @@ export interface FindingFilters extends PaginationParams {
   assetId?: string
   search?: string
   category?: string
-}
-
-export interface ComponentFilters extends PaginationParams {
-  ecosystem?: string
-  hasVulnerabilities?: boolean
-  isOutdated?: boolean
-  isDirect?: boolean
-  search?: string
-  licenseRisk?: string
 }
 
 export interface ScanFilters extends PaginationParams {
@@ -160,50 +150,6 @@ export const assetGroupEndpoints = {
   removeAssets: (groupId: string) => `${SECURITY_API_BASE.ASSET_GROUPS}/${groupId}/assets`,
 
   stats: () => `${SECURITY_API_BASE.ASSET_GROUPS}/stats`,
-} as const
-
-// ============================================
-// COMPONENT (SBOM) ENDPOINTS
-// ============================================
-
-export const componentEndpoints = {
-  list: (filters?: ComponentFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${SECURITY_API_BASE.COMPONENTS}${queryString}`
-  },
-
-  get: (componentId: string) => `${SECURITY_API_BASE.COMPONENTS}/${componentId}`,
-
-  // Get vulnerable components
-  vulnerable: (filters?: ComponentFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${SECURITY_API_BASE.COMPONENTS}/vulnerable${queryString}`
-  },
-
-  // Get components by ecosystem
-  byEcosystem: (ecosystem: string, filters?: ComponentFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${SECURITY_API_BASE.COMPONENTS}/ecosystem/${ecosystem}${queryString}`
-  },
-
-  // Get component vulnerabilities
-  vulnerabilities: (componentId: string) =>
-    `${SECURITY_API_BASE.COMPONENTS}/${componentId}/vulnerabilities`,
-
-  // Get component sources (where it's used)
-  sources: (componentId: string) => `${SECURITY_API_BASE.COMPONENTS}/${componentId}/sources`,
-
-  // Get component statistics
-  stats: () => `${SECURITY_API_BASE.COMPONENTS}/stats`,
-
-  // Get ecosystem statistics
-  ecosystemStats: () => `${SECURITY_API_BASE.COMPONENTS}/ecosystems/stats`,
-
-  // Get license statistics
-  licenseStats: () => `${SECURITY_API_BASE.COMPONENTS}/licenses/stats`,
-
-  // Export SBOM
-  exportSbom: (format: string) => `${SECURITY_API_BASE.COMPONENTS}/export?format=${format}`,
 } as const
 
 // ============================================
@@ -534,7 +480,6 @@ export const integrationEndpoints = {
 export const securityEndpoints = {
   assets: assetEndpoints,
   assetGroups: assetGroupEndpoints,
-  components: componentEndpoints,
   findings: findingEndpoints,
   scans: scanEndpoints,
   runners: runnerEndpoints,

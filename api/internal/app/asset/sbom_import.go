@@ -1,368 +1,193 @@
 package asset
 
+// SBOM upload into the software components inventory. Design:
+// api/docs/rfcs/RFC-070-software-components-inventory.md.
+
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
+	"sort"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// assetTenantChecker verifies that an asset belongs to a tenant. SBOM import
-// links components to a caller-supplied asset_id, so without this check a user
-// could attach components to another tenant's asset (IDOR). The tenant-scoped
-// GetByID returns ErrNotFound when the asset is not in the tenant.
+// assetTenantChecker resolves an asset of the tenant (ErrNotFound otherwise).
 type assetTenantChecker interface {
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*assetdom.Asset, error)
 }
 
-// SPDX specifies "NOASSERTION" as the string used when a licence
-// cannot be determined. Treat it like an empty value.
-//
-// CycloneDX uses "optional" and "excluded" for scope values that mean
-// the component is not a direct runtime dependency — mapped to
-// transitive on import.
-const (
-	spdxLicenseNoAssertion  = "NOASSERTION"
-	cycloneDXScopeOptional  = "optional"
-	cycloneDXScopeExcluded  = "excluded"
-	cycloneDXExtRefTypePurl = "purl"
+// MaxSBOMBytes is the largest SBOM accepted.
+const MaxSBOMBytes = 50 << 20
 
-	// maxSBOMComponents caps how many components a single SBOM import may
-	// process. The byte-size limit alone allows an SBOM with a very large
-	// number of tiny components, each becoming a synchronous Upsert+Link
-	// round-trip — a connection-pool exhaustion DoS. Reject oversized SBOMs.
-	maxSBOMComponents = 10000
-)
+// SBOMStore writes packages and reads the current inventory for the diff.
+type SBOMStore interface {
+	software.PackageWriter
+	ListSBOMEntries(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope, limit int) ([]componentdom.SBOMEntry, error)
+}
 
-// SBOMImportService handles importing SBOM files (CycloneDX, SPDX).
+// SBOMImportService imports CycloneDX and SPDX documents.
 type SBOMImportService struct {
-	repo         componentdom.Repository
+	store        SBOMStore
 	assetChecker assetTenantChecker
 	dataScope    *datascope.Enforcer
 	logger       *logger.Logger
 }
 
-// SetDataScope makes an import refuse (404) an asset outside the caller's
-// data scope.
+// SetDataScope limits imports to assets in the caller's data scope.
 func (s *SBOMImportService) SetDataScope(e *datascope.Enforcer) {
 	s.dataScope = e
 }
 
-// NewSBOMImportService creates a new SBOMImportService.
-func NewSBOMImportService(repo componentdom.Repository, assetChecker assetTenantChecker, log *logger.Logger) *SBOMImportService {
-	return &SBOMImportService{
-		repo:         repo,
-		assetChecker: assetChecker,
-		logger:       log.With("service", "sbom-import"),
-	}
+// NewSBOMImportService creates an SBOMImportService.
+func NewSBOMImportService(store SBOMStore, assetChecker assetTenantChecker, log *logger.Logger) *SBOMImportService {
+	return &SBOMImportService{store: store, assetChecker: assetChecker, logger: log.With("service", "sbom-import")}
 }
 
-// SBOMImportResult contains the result of an SBOM import.
+// SBOMDiff compares the document with the asset's current inventory.
+type SBOMDiff struct {
+	Added     int `json:"added"`
+	Removed   int `json:"removed"`
+	Unchanged int `json:"unchanged"`
+}
+
+// SBOMImportResult is the preview, or the outcome, of an import.
 type SBOMImportResult struct {
-	Format             string   `json:"format"` // cyclonedx or spdx
-	SpecVersion        string   `json:"spec_version"`
-	ComponentsTotal    int      `json:"components_total"`    // total in file
-	ComponentsImported int      `json:"components_imported"` // successfully imported
-	ComponentsSkipped  int      `json:"components_skipped"`
-	LicensesFound      int      `json:"licenses_found"`
-	Errors             []string `json:"errors,omitempty"`
+	DryRun             bool                         `json:"dry_run"`
+	Format             string                       `json:"format"`
+	SpecVersion        string                       `json:"spec_version"`
+	ComponentsTotal    int                          `json:"components_total"`
+	ComponentsImported int                          `json:"components_imported"`
+	ComponentsSkipped  int                          `json:"components_skipped"`
+	Direct             int                          `json:"direct"`
+	Transitive         int                          `json:"transitive"`
+	Edges              int                          `json:"edges"`
+	LicensesFound      int                          `json:"licenses_found"`
+	Ecosystems         []componentdom.FacetValue    `json:"ecosystems"`
+	Issues             []SBOMIssue                  `json:"issues"`
+	Diff               *SBOMDiff                    `json:"diff,omitempty"`
+	Written            *software.PackageWriteResult `json:"written,omitempty"`
 }
 
-// ImportSBOM detects format and imports components from a SBOM file.
-func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID string, reader io.Reader) (*SBOMImportResult, error) {
-	tid, err := shared.IDFromString(tenantID)
+// ImportSBOM parses the document and, unless dryRun, replaces the asset's
+// packages at the locations the document names. The asset must be the
+// tenant's and in the caller's scope (404 otherwise).
+func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID string, reader io.Reader, dryRun bool) (*SBOMImportResult, error) {
+	tid, err := parseID(tenantID, "tenant")
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+		return nil, err
 	}
-	aid, err := shared.IDFromString(assetID)
+	aid, err := parseID(assetID, "asset")
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid asset ID", shared.ErrValidation)
+		return nil, err
 	}
-
-	// Verify the target asset belongs to this tenant before linking any
-	// components to it (prevents cross-tenant component injection via a
-	// guessed/known asset UUID). Returns ErrNotFound → 404 otherwise.
 	if s.assetChecker != nil {
 		if _, err := s.assetChecker.GetByID(ctx, tid, aid); err != nil {
 			return nil, err
 		}
 	}
-	// ...and that the caller may see it (Layer 2): 404 otherwise.
 	if s.dataScope != nil {
 		if err := s.dataScope.AssertAsset(ctx, tid, aid); err != nil {
 			return nil, err
 		}
 	}
-
-	// Read body (max 50MB; larger is refused, never parsed truncated)
-	data, err := httpsec.ReadLimited(reader, 50<<20)
+	data, err := httpsec.ReadLimited(reader, MaxSBOMBytes)
 	if errors.Is(err, httpsec.ErrBodyTooLarge) {
 		return nil, fmt.Errorf("%w: SBOM exceeds 50 MB", shared.ErrValidation)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read SBOM data: %w", err)
+		return nil, fmt.Errorf("read SBOM: %w", err)
 	}
-
-	// Detect format
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("%w: invalid JSON format", shared.ErrValidation)
-	}
-
-	if _, ok := raw["bomFormat"]; ok {
-		return s.importCycloneDX(ctx, tid, aid, data)
-	}
-	if _, ok := raw["spdxVersion"]; ok {
-		return s.importSPDX(ctx, tid, aid, data)
-	}
-
-	return nil, fmt.Errorf("%w: unrecognized SBOM format (expected CycloneDX or SPDX)", shared.ErrValidation)
-}
-
-// =============================================================================
-// CycloneDX Import
-// =============================================================================
-
-type cycloneDXBOM struct {
-	BOMFormat   string               `json:"bomFormat"`
-	SpecVersion string               `json:"specVersion"`
-	Components  []cycloneDXComponent `json:"components"`
-}
-
-type cycloneDXComponent struct {
-	Type     string             `json:"type"` // library, framework, application
-	Name     string             `json:"name"`
-	Version  string             `json:"version"`
-	PURL     string             `json:"purl"`
-	Licenses []cycloneDXLicense `json:"licenses,omitempty"`
-	Scope    string             `json:"scope,omitempty"` // required, optional, excluded
-}
-
-type cycloneDXLicense struct {
-	License struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	} `json:"license"`
-}
-
-func (s *SBOMImportService) importCycloneDX(ctx context.Context, tenantID, assetID shared.ID, data []byte) (*SBOMImportResult, error) {
-	var bom cycloneDXBOM
-	if err := json.Unmarshal(data, &bom); err != nil {
-		return nil, fmt.Errorf("%w: invalid CycloneDX JSON", shared.ErrValidation)
-	}
-	if len(bom.Components) > maxSBOMComponents {
-		return nil, fmt.Errorf("%w: SBOM has %d components, exceeds limit of %d", shared.ErrValidation, len(bom.Components), maxSBOMComponents)
-	}
-
-	result := &SBOMImportResult{
-		Format:          "cyclonedx",
-		SpecVersion:     bom.SpecVersion,
-		ComponentsTotal: len(bom.Components),
-	}
-
-	for _, comp := range bom.Components {
-		if comp.Name == "" {
-			result.ComponentsSkipped++
-			continue
-		}
-
-		ecosystem := detectEcosystemFromPURL(comp.PURL)
-		license := ""
-		if len(comp.Licenses) > 0 {
-			license = comp.Licenses[0].License.ID
-			if license == "" {
-				license = comp.Licenses[0].License.Name
-			}
-			result.LicensesFound++
-		}
-
-		depType := componentdom.DependencyTypeDirect
-		if comp.Scope == cycloneDXScopeOptional || comp.Scope == cycloneDXScopeExcluded {
-			depType = componentdom.DependencyTypeTransitive
-		}
-
-		if err := s.upsertComponent(ctx, tenantID, assetID, comp.Name, comp.Version, ecosystem, comp.PURL, license, depType); err != nil {
-			if len(result.Errors) < 50 {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s@%s: %v", comp.Name, comp.Version, err))
-			}
-			result.ComponentsSkipped++
-			continue
-		}
-		result.ComponentsImported++
-	}
-
-	s.logger.Info("CycloneDX import completed",
-		"components_total", result.ComponentsTotal,
-		"imported", result.ComponentsImported,
-		"skipped", result.ComponentsSkipped,
-	)
-	return result, nil
-}
-
-// =============================================================================
-// SPDX Import
-// =============================================================================
-
-type spdxDocument struct {
-	SPDXVersion string        `json:"spdxVersion"`
-	Packages    []spdxPackage `json:"packages"`
-}
-
-type spdxPackage struct {
-	Name             string            `json:"name"`
-	VersionInfo      string            `json:"versionInfo"`
-	ExternalRefs     []spdxExternalRef `json:"externalRefs,omitempty"`
-	LicenseConcluded string            `json:"licenseConcluded,omitempty"`
-	LicenseDeclared  string            `json:"licenseDeclared,omitempty"`
-}
-
-type spdxExternalRef struct {
-	ReferenceCategory string `json:"referenceCategory"`
-	ReferenceType     string `json:"referenceType"`
-	ReferenceLocator  string `json:"referenceLocator"` // PURL
-}
-
-func (s *SBOMImportService) importSPDX(ctx context.Context, tenantID, assetID shared.ID, data []byte) (*SBOMImportResult, error) {
-	var doc spdxDocument
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("%w: invalid SPDX JSON", shared.ErrValidation)
-	}
-	if len(doc.Packages) > maxSBOMComponents {
-		return nil, fmt.Errorf("%w: SBOM has %d packages, exceeds limit of %d", shared.ErrValidation, len(doc.Packages), maxSBOMComponents)
-	}
-
-	result := &SBOMImportResult{
-		Format:          "spdx",
-		SpecVersion:     doc.SPDXVersion,
-		ComponentsTotal: len(doc.Packages),
-	}
-
-	for _, pkg := range doc.Packages {
-		if pkg.Name == "" {
-			result.ComponentsSkipped++
-			continue
-		}
-
-		// Extract PURL from external refs
-		purl := ""
-		for _, ref := range pkg.ExternalRefs {
-			if ref.ReferenceType == cycloneDXExtRefTypePurl {
-				purl = ref.ReferenceLocator
-				break
-			}
-		}
-
-		ecosystem := detectEcosystemFromPURL(purl)
-		if ecosystem == "" {
-			ecosystem = "other"
-		}
-
-		license := pkg.LicenseDeclared
-		if license == "" || license == spdxLicenseNoAssertion {
-			license = pkg.LicenseConcluded
-		}
-		if license == spdxLicenseNoAssertion {
-			license = ""
-		}
-		if license != "" {
-			result.LicensesFound++
-		}
-
-		if err := s.upsertComponent(ctx, tenantID, assetID, pkg.Name, pkg.VersionInfo, ecosystem, purl, license, componentdom.DependencyTypeDirect); err != nil {
-			if len(result.Errors) < 50 {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s@%s: %v", pkg.Name, pkg.VersionInfo, err))
-			}
-			result.ComponentsSkipped++
-			continue
-		}
-		result.ComponentsImported++
-	}
-
-	s.logger.Info("SPDX import completed",
-		"components_total", result.ComponentsTotal,
-		"imported", result.ComponentsImported,
-		"skipped", result.ComponentsSkipped,
-	)
-	return result, nil
-}
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-func (s *SBOMImportService) upsertComponent(
-	ctx context.Context, tenantID, assetID shared.ID,
-	name, version, ecosystem, purl, license string,
-	depType componentdom.DependencyType,
-) error {
-	eco, err := componentdom.ParseEcosystem(ecosystem)
+	parsed, err := ParseSBOM(data)
 	if err != nil {
-		eco = componentdom.EcosystemOther
+		return nil, err
 	}
+	res := summarizeSBOM(parsed)
+	res.DryRun = dryRun
 
-	c, err := componentdom.NewComponent(name, version, eco)
+	current, err := s.store.ListSBOMEntries(ctx, tid, &aid, nil, software.MaxSnapshotPackages+1)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	if purl != "" {
-		c.SetPURL(purl)
+	res.Diff = diffSBOM(parsed.Nodes, current)
+	if dryRun {
+		return res, nil
 	}
-	if license != "" {
-		c.UpdateLicense(license)
-	}
-
-	compID, err := s.repo.Upsert(ctx, c)
+	written, err := s.store.WritePackages(ctx, tid, software.PackageSnapshot{
+		AssetID: aid, Channel: software.ChannelSBOMUpload, Packages: parsed.Nodes, Replace: true,
+	})
 	if err != nil {
-		return fmt.Errorf("upsert: %w", err)
+		return nil, err
 	}
-
-	dep, err := componentdom.NewAssetDependency(tenantID, assetID, compID, "", depType)
-	if err != nil {
-		return fmt.Errorf("dependency: %w", err)
-	}
-	// The license is this tenant's observation and goes on its own
-	// dependency row, never on the shared component.
-	if license != "" {
-		if valid, err := s.repo.EnsureLicenses(ctx, []string{license}); err == nil && len(valid) > 0 {
-			dep.SetLicense(strings.Join(valid, ", "))
-		}
-	}
-
-	if err := s.repo.LinkAsset(ctx, dep); err != nil {
-		// Duplicate link is OK — skip silently
-		if !strings.Contains(err.Error(), "already exists") && !strings.Contains(err.Error(), "duplicate") {
-			return fmt.Errorf("link: %w", err)
-		}
-	}
-
-	return nil
+	res.Written = &written
+	res.ComponentsImported = written.Links
+	s.logger.Info("sbom imported", "tenant_id", tid.String(), "asset_id", aid.String(),
+		"format", parsed.Format, "packages", len(parsed.Nodes), "links", written.Links, "removed", written.Removed)
+	return res, nil
 }
 
-// detectEcosystemFromPURL extracts the ecosystem from a Package URL.
-// Example: "pkg:npm/express@4.18.2" → "npm"
-func detectEcosystemFromPURL(purl string) string {
-	if purl == "" {
-		return "other"
+func summarizeSBOM(p *ParsedSBOM) *SBOMImportResult {
+	res := &SBOMImportResult{
+		Format: p.Format, SpecVersion: p.SpecVersion, ComponentsTotal: p.Total,
+		ComponentsImported: len(p.Nodes), ComponentsSkipped: p.Skipped, Edges: p.Edges,
+		Issues: p.Issues, Ecosystems: []componentdom.FacetValue{},
 	}
-	// pkg:TYPE/...
-	purl = strings.TrimPrefix(purl, "pkg:")
-	idx := strings.Index(purl, "/")
-	if idx <= 0 {
-		return "other"
+	if res.Issues == nil {
+		res.Issues = []SBOMIssue{}
 	}
-	// Reuse the canonical alias map (ParseEcosystem) instead of a local switch
-	// so PURL types like crates/crates.io→cargo, gradle→maven, etc. normalize
-	// consistently with ingest + component CRUD. Unknown → other.
-	eco, _ := componentdom.ParseEcosystem(purl[:idx])
-	return eco.String()
+	licenses := map[string]bool{}
+	ecos := map[string]int{}
+	for _, n := range p.Nodes {
+		switch n.Relationship {
+		case software.RelationshipDirect:
+			res.Direct++
+		case software.RelationshipTransitive:
+			res.Transitive++
+		}
+		for _, l := range n.Licenses {
+			licenses[l] = true
+		}
+		ecos[software.EcosystemForType(n.PURL.Type)]++
+	}
+	res.LicensesFound = len(licenses)
+	for e, c := range ecos {
+		res.Ecosystems = append(res.Ecosystems, componentdom.FacetValue{Value: e, Count: c})
+	}
+	sort.Slice(res.Ecosystems, func(i, j int) bool {
+		if res.Ecosystems[i].Count != res.Ecosystems[j].Count {
+			return res.Ecosystems[i].Count > res.Ecosystems[j].Count
+		}
+		return res.Ecosystems[i].Value < res.Ecosystems[j].Value
+	})
+	return res
+}
+
+func diffSBOM(nodes []software.PackageNode, current []componentdom.SBOMEntry) *SBOMDiff {
+	incoming := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		incoming[n.PURL.String()] = true
+	}
+	d := &SBOMDiff{}
+	existing := make(map[string]bool, len(current))
+	for _, e := range current {
+		existing[e.PURL] = true
+		if incoming[e.PURL] {
+			d.Unchanged++
+		} else {
+			d.Removed++
+		}
+	}
+	for k := range incoming {
+		if !existing[k] {
+			d.Added++
+		}
+	}
+	return d
 }
