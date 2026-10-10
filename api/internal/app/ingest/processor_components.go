@@ -167,7 +167,7 @@ func (p *ComponentProcessor) ProcessBatch(
 			AssetID: assetID, Channel: channel, Packages: byAsset[assetID], Replace: true,
 		})
 		if err != nil {
-			p.logger.Warn("failed to write packages", "asset_id", assetID.String(), "error", err)
+			p.logger.Warn("failed to write packages", "asset_id", assetID.String(), "error", sanitizeIngestLogField(err.Error()))
 			output.Errors = append(output.Errors, "packages: "+err.Error())
 			continue
 		}
