@@ -135,3 +135,37 @@ func (s *Service) ChangeOrgChannels(ctx context.Context, tenantID, actor, id sha
 	}
 	return p, reason, nil
 }
+
+// ReadablePrograms returns which of the private programs (ids) the caller
+// may read the names of in delivery telemetry such as the notification
+// outbox: every one for an owner, otherwise the programs the caller is a
+// member of. Anything else is scrubbed by the caller.
+func (s *Service) ReadablePrograms(ctx context.Context, tenantID, actor shared.ID, ids []shared.ID) (map[shared.ID]bool, error) {
+	out := make(map[shared.ID]bool, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	if s.ownerCaller(ctx) {
+		for _, id := range ids {
+			out[id] = true
+		}
+		return out, nil
+	}
+	if actor.IsZero() {
+		return out, nil
+	}
+	member, err := s.repo.MemberProgramIDs(ctx, tenantID, actor)
+	if err != nil {
+		return nil, err
+	}
+	want := make(map[shared.ID]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	for _, id := range member {
+		if want[id] {
+			out[id] = true
+		}
+	}
+	return out, nil
+}
