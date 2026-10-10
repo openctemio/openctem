@@ -93,18 +93,18 @@ func TestWriteToolNeedsAPersonAndConfirmation(t *testing.T) {
 	conf := &fakeConfirmer{approved: map[string]string{}}
 	comments := &fakeCommenter{}
 	h.SetWriteTools(conf, comments)
-	perms := []string{"findings:read", "findings:write"}
+	perms := []string{"findings:read", "findings:comment"}
 	list := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
 
 	// Listed for a person's connection holding the permission; never for an API key.
 	if !toolNames(wtRequest(t, h, true, perms, list))["add_finding_comment"] {
-		t.Fatal("write tool not listed for an OAuth connection with findings:write")
+		t.Fatal("write tool not listed for an OAuth connection with findings:comment")
 	}
 	if toolNames(wtRequest(t, h, false, perms, list))["add_finding_comment"] {
 		t.Fatal("write tool listed for an API key")
 	}
-	if toolNames(wtRequest(t, h, true, []string{"findings:read"}, list))["add_finding_comment"] {
-		t.Fatal("write tool listed without findings:write")
+	if toolNames(wtRequest(t, h, true, []string{"findings:read", "findings:write", "findings:severity"}, list))["add_finding_comment"] {
+		t.Fatal("write tool listed without findings:comment")
 	}
 
 	call := func(principal bool, args string) (string, bool) {

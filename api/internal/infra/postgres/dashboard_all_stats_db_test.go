@@ -65,7 +65,7 @@ func TestDashboardGetAllStats_OnePass(t *testing.T) {
 	vulnID := shared.NewID()
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO vulnerabilities (id, cve_id, title, severity, cvss_score) VALUES ($1, $2, 'v', 'high', 8.0)`,
-		vulnID.String(), "CVE-2099-"+vulnID.String()[:8]); err != nil {
+		vulnID.String(), "CVE-2099-"+vulnID.String()[28:]); err != nil {
 		t.Fatalf("seed vulnerability: %v", err)
 	}
 	t.Cleanup(func() {

@@ -148,3 +148,38 @@ func TestAdminOverviewSecurityCounts(t *testing.T) {
 		t.Fatalf("failed actions moved by %d, want 1", d)
 	}
 }
+
+// Pending access requests (confirmed, not decided) are counted for the
+// Requests inbox; unconfirmed and decided ones are not.
+func TestAdminOverviewAccessRequests(t *testing.T) {
+	h := newOverviewHarness(t)
+	c := h.newAdmin(admin.AdminRoleReadonly)
+	c.verify()
+	read := func() handler.AdminOverviewResponse {
+		t.Helper()
+		code, body := c.do(http.MethodGet, "/api/v1/admin/overview", nil, false)
+		if code != http.StatusOK {
+			t.Fatalf("overview: %d %s", code, body)
+		}
+		var got handler.AdminOverviewResponse
+		_ = json.Unmarshal([]byte(body), &got)
+		return got
+	}
+	before := read()
+	marker := uuid.NewString()[:8]
+	t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM access_requests WHERE company LIKE $1`, "ovr-"+marker+"%")
+	})
+	for i, st := range []string{"pending", "unconfirmed", "approved", "rejected"} {
+		h.exec(`INSERT INTO access_requests (company, email, domain, status, confirmed_at, created_at)
+			VALUES ($1, $2, 'example.test', $3, now() - interval '2 hours', now() - interval '3 hours')`,
+			"ovr-"+marker+"-"+st, "r"+string(rune('a'+i))+marker+"@example.test", st)
+	}
+	after := read()
+	if d := after.Requests.AccessPending - before.Requests.AccessPending; d != 1 {
+		t.Fatalf("pending access requests moved by %d, want 1", d)
+	}
+	if after.Requests.AccessOldestSeconds < 7000 {
+		t.Fatalf("oldest pending = %ds, want about 2 hours", after.Requests.AccessOldestSeconds)
+	}
+}

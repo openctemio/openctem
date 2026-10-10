@@ -15,7 +15,8 @@ import { Plus, Settings2, ShieldOff } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { MetricStrip, PageHeader, type MetricStripItem } from '@/features/shared'
+import { MetricStrip, GatedSectionTabs, PageHeader, type MetricStripItem } from '@/features/shared'
+import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -158,6 +159,7 @@ export default function ScopePage() {
         </Button>
         {primary}
       </PageHeader>
+      <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" className="mt-4 mb-0" />
 
       <MetricStrip className="mt-5" items={metrics} />
 

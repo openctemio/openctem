@@ -5,6 +5,7 @@ api_keys
 api_spec_operations
 api_specs
 asset_access_grants
+asset_attribute_sources
 asset_attributions
 asset_components
 asset_dedup_review
@@ -14,6 +15,7 @@ asset_identity_backfill
 asset_merge_log
 asset_relationships
 asset_services
+asset_software
 asset_state_history
 assets
 assignment_rules
@@ -26,6 +28,9 @@ audit_chain_rebaseline_entries
 audit_chain_rebaselines
 audit_log_chain
 audit_logs
+authorization_letters
+automation_runs
+automations
 bounty_program_exclusions
 bounty_programs
 business_service_assets
@@ -83,6 +88,7 @@ finding_status_approvals
 finding_verification_checklists
 findings
 group_asset_scope_rules
+group_role_bindings
 groups
 ingest_jobs
 ingest_reports
@@ -101,7 +107,6 @@ notifications
 pentest_campaign_members
 pentest_campaigns
 pentest_finding_templates
-pentest_findings
 pentest_reports
 pentest_retests
 priority_class_audit_log
@@ -149,6 +154,9 @@ sensor_result_quarantine
 sensors
 settings
 sla_policies
+software_product_aliases
+software_products
+software_versions
 sso_pending_changes
 suppression_rules
 template_sources
@@ -174,5 +182,3 @@ vulnerabilities
 web_endpoint_events
 web_endpoint_params
 web_endpoints
-workflow_runs
-workflows

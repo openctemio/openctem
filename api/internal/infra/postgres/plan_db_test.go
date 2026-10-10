@@ -40,7 +40,7 @@ func TestPlanRepository(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
 	r := NewPlanRepository(&DB{DB: sqlDB})
-	suffix := shared.NewID().String()[:8]
+	suffix := shared.NewID().String()[28:]
 	a := planTestTenant(t, sqlDB, "plan-a-"+suffix)
 	b := planTestTenant(t, sqlDB, "plan-b-"+suffix)
 	owner := planTestUser(t, sqlDB, "plan-owner-"+suffix+"@example.test")

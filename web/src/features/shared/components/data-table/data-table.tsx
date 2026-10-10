@@ -65,6 +65,7 @@ import {
   type DataTableRowGroups,
 } from './data-table-groups'
 import { useTableDensity, type TableDensity } from './use-table-density'
+import { pageSizeChoices } from '@/lib/page-size-options'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -1001,11 +1002,13 @@ export function DataTable<TData, TValue>({
                   <SelectValue placeholder={table.getState().pagination.pageSize} />
                 </SelectTrigger>
                 <SelectContent side="top">
-                  {pageSizeOptions.map((size) => (
-                    <SelectItem key={size} value={`${size}`}>
-                      {size}
-                    </SelectItem>
-                  ))}
+                  {pageSizeChoices(pageSizeOptions, table.getState().pagination.pageSize).map(
+                    (size) => (
+                      <SelectItem key={size} value={`${size}`}>
+                        {size}
+                      </SelectItem>
+                    )
+                  )}
                 </SelectContent>
               </Select>
             </div>
