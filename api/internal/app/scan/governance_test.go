@@ -79,3 +79,29 @@ func TestRequireApproval(t *testing.T) {
 		t.Fatalf("zap probes at T2: %+v", g.facts)
 	}
 }
+
+// The rules read the scan declared intensity (RFC-071): a passive-tool scan
+// declared intrusive is intrusive for approval, and changing the declared
+// intensity changes what was approved. Never below what the tools probe.
+func TestGovernanceSubjectOf_DeclaredIntensity(t *testing.T) {
+	s := &Service{}
+	sc := &scan.Scan{TenantID: shared.NewID(), ScanType: scan.ScanTypeSingle, ScannerName: "subfinder",
+		Targets: []string{"example.com"}, Intensity: scan.IntensityIntrusive}
+	def, f, err := s.GovernanceSubjectOf(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.IntensityTier != 2 || def.Intensity != "intrusive" {
+		t.Fatalf("declared intrusive: tier %d intensity %s", f.IntensityTier, def.Intensity)
+	}
+	sc.Intensity = scan.IntensityPassive
+	def2, f2, _ := s.GovernanceSubjectOf(context.Background(), sc)
+	if f2.IntensityTier != 0 || def2.Intensity != "passive" || def2.Digest() == def.Digest() {
+		t.Fatalf("declared passive: tier %d intensity %s, digest must change", f2.IntensityTier, def2.Intensity)
+	}
+	// A tool above the declared intensity is not hidden by it.
+	sc.ScannerName = "zap"
+	if _, f3, _ := s.GovernanceSubjectOf(context.Background(), sc); f3.IntensityTier != 2 {
+		t.Fatalf("zap under a passive declaration: tier %d, want 2", f3.IntensityTier)
+	}
+}
