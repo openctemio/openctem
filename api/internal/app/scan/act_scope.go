@@ -39,6 +39,15 @@ const maxListedRefusals = 20
 // a scan command) when any target is outside the actor's act scope. The
 // actor is the request's caller, else fallbackUser.
 func (s *Service) refuseOutOfActScope(ctx context.Context, tenantID shared.ID, fallbackUser *shared.ID, targets []string) error {
+	return s.refuseOutOfActScopeAwaiting(ctx, tenantID, fallbackUser, targets, nil)
+}
+
+// refuseOutOfActScopeAwaiting is refuseOutOfActScope for a scan saved to
+// start when its scope is approved: a target in awaiting (covered only by a
+// pending entry) is not refused for having no scope entry yet. Every other
+// reason (outside the data scope, not an asset for a restricted member)
+// still refuses.
+func (s *Service) refuseOutOfActScopeAwaiting(ctx context.Context, tenantID shared.ID, fallbackUser *shared.ID, targets []string, awaiting map[string]bool) error {
 	if s.actScope == nil || len(targets) == 0 {
 		return nil
 	}
@@ -46,14 +55,17 @@ func (s *Service) refuseOutOfActScope(ctx context.Context, tenantID shared.ID, f
 	if err != nil {
 		return fmt.Errorf("act-scope check failed, nothing saved or dispatched: %w", err)
 	}
-	if len(d.RefusedTargets) == 0 {
-		return nil
-	}
 	refusals := make([]scopedom.Refusal, 0, len(d.RefusedTargets))
 	for t, reason := range d.RefusedTargets {
+		if awaiting[t] && reason == actscope.ReasonNoScopeTarget {
+			continue
+		}
 		r := scopedom.NewRefusal(t, RefusalCodeForActReason(reason), nil, 0)
 		r.Message = reason
 		refusals = append(refusals, r)
+	}
+	if len(refusals) == 0 {
+		return nil
 	}
 	return refusalError(refusals)
 }

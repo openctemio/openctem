@@ -126,3 +126,21 @@ func matchesAny(t *scopedom.Target, target string) bool {
 	}
 	return false
 }
+
+// PendingCovered returns the targets that only a pending scope entry of the
+// tenant covers (Uncovered answers entry_pending): approving that entry
+// would put them in scope. Used to save a scan that starts once the entry is
+// approved; the scan gate runs again at that start.
+func (s *Service) PendingCovered(ctx context.Context, tenantID shared.ID, targets []string) (map[string]bool, error) {
+	e, err := s.NewExplainer(ctx, tenantID.String())
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		if code, _ := e.Uncovered(t); code == scopedom.RefusalEntryPending {
+			out[t] = true
+		}
+	}
+	return out, nil
+}

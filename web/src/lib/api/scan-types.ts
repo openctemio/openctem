@@ -13,7 +13,15 @@ export const SCAN_TYPES = ['workflow', 'single'] as const
 export type ScanType = (typeof SCAN_TYPES)[number]
 
 // Schedule types
-export const SCHEDULE_TYPES = ['manual', 'daily', 'weekly', 'monthly', 'crontab', 'rrule'] as const
+export const SCHEDULE_TYPES = [
+  'manual',
+  'once',
+  'daily',
+  'weekly',
+  'monthly',
+  'crontab',
+  'rrule',
+] as const
 export type ScheduleType = (typeof SCHEDULE_TYPES)[number]
 
 // Status types
@@ -32,6 +40,7 @@ export const SCAN_TYPE_LABELS: Record<ScanType, string> = {
 
 export const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
   manual: 'Manual',
+  once: 'Once',
   daily: 'Daily',
   weekly: 'Weekly',
   monthly: 'Monthly',
@@ -122,6 +131,8 @@ export interface ScanConfig {
   schedule_day?: number
   schedule_time?: string
   schedule_timezone: string
+  /** The one run of a once schedule (RFC 3339, UTC). */
+  schedule_run_at?: string
   next_run_at?: string
   tags?: string[]
   run_on_tenant_runner: boolean
@@ -209,6 +220,8 @@ export interface CreateScanConfigRequest {
   schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
+  /** The one run of a once schedule (RFC 3339), a minute to a year ahead. */
+  run_at?: string
   timezone?: string
   tags?: string[]
   run_on_tenant_runner?: boolean
@@ -222,6 +235,12 @@ export interface CreateScanConfigRequest {
   max_retries?: number
   /** Initial backoff seconds (10-86400, default 60). Exponential per attempt. */
   retry_backoff_seconds?: number
+  /**
+   * Save the scan although direct targets are refused, when every refused one
+   * is covered by a scope entry waiting for approval: it starts once they are
+   * approved (RFC-054 §12.8). The response says `starts_when_scope_approved`.
+   */
+  start_when_scope_approved?: boolean
 }
 
 /**
@@ -242,6 +261,8 @@ export interface UpdateScanConfigRequest {
   schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
+  /** The one run of a once schedule (RFC 3339), a minute to a year ahead. */
+  run_at?: string
   timezone?: string
   tags?: string[]
   run_on_tenant_runner?: boolean
