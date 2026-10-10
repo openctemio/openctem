@@ -109,7 +109,7 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 			// The repeat of a claim is handed out signed too. The sensor
 			// already holds the command, so a refusal leaves it as it is
 			// (its lease runs out unless the sensor goes on).
-			signed, err := s.signJob(ctx, in.SensorID, cmd)
+			signed, err := s.signJob(ctx, in.SensorID, cmd, s.enforcesLimitsFor(ctx, cmd.TenantID, in.SensorID))
 			if err != nil {
 				return nil, err
 			}
@@ -136,7 +136,7 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 		return nil, s.transitionError(ctx, t, in, err)
 	}
 	if t == TransitionClaim && s.jobs != nil {
-		signed, err := s.signJob(ctx, in.SensorID, out)
+		signed, err := s.signJob(ctx, in.SensorID, out, s.enforcesLimitsFor(ctx, out.TenantID, in.SensorID))
 		if err != nil {
 			// Not handed out unsigned: back to pending, still addressed to
 			// this sensor only if it was before the claim.

@@ -1,5 +1,6 @@
 'use client'
 
+import { IntensityBadge } from '@/features/scans/components/intensity-badge'
 import * as React from 'react'
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from '@/components/link'
@@ -628,7 +629,10 @@ function ConfigurationsTab() {
               <span className="max-w-[14rem] truncate text-sm" title={label}>
                 {label}
               </span>
-              <span className="text-xs text-muted-foreground">{SCAN_TYPE_LABELS[kind]}</span>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {SCAN_TYPE_LABELS[kind]}
+                <IntensityBadge intensity={row.original.intensity} />
+              </span>
             </div>
           )
         },
