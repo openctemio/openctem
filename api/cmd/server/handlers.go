@@ -238,6 +238,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
@@ -658,6 +659,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.AssignmentRule.SetAuditService(svc.Audit)
 	handlers.ScopeRule.SetAuditService(svc.Audit)
 	handlers.Outbox.SetAuditService(svc.Audit)
+	// Integration admins read private program events scrubbed unless they
+	// own the tenant or are a member of the program (RFC-065 §15.4).
+	handlers.Outbox.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
+	handlers.Integration.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
