@@ -69,6 +69,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
@@ -647,6 +648,7 @@ type Services struct {
 	Component      *asset.ComponentService
 	SBOMImport     *asset.SBOMImportService
 	VEX            *vexapp.Service
+	LicensePolicy  *licapp.Service
 	ReportSchedule *module.ReportScheduleService
 	Branch         *asset.BranchService
 
@@ -1106,6 +1108,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = asset.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
+	s.LicensePolicy = licapp.NewService(repos.LicensePolicy, repos.Finding, repos.Tenant, log)
+	s.SBOMImport.SetLicenseEvaluator(s.LicensePolicy)
 	s.VEX = vexapp.NewService(repos.VEXStatement, s.DataScope, s.Audit, log)
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
@@ -1842,6 +1846,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetToolContractSource(repos.Sensor)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
+	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)        // License policy on every package write
 	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
