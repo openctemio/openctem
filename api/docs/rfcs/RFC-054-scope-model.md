@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -1039,3 +1039,17 @@ under the approval rules above, puts the targets in scope, and the start is
 checked as if the person who asked had pressed Run then. Waits are
 tenant-scoped (every query carries the tenant; a wait can only name the
 tenant's own scan) and removed with their scan.
+
+## 13. Amendment 2026-10-10: approvals follow scan governance
+
+Owner decision: approvals are opt-in and approve scans, not scope entries
+([RFC-073](RFC-073-scan-approval-governance.md)). The S3 approvals of §7
+and the sole-owner self-approval of §12.3 apply only when the organization's
+scan approval is **Strict**; in Off (default) and On a widening needs no
+second person. The platform policy of §12.6 now governs scan approval
+(`tenant_controlled`, `off`, `on`, `strict`; RFC-073 §5); its
+`tenant_controlled` owner-only approval count is removed. Unchanged in every
+mode: step-up on widening routes, the dry run, members only request, the
+T2 maximum duration and re-attestation (§12.4, §12.5), ownership proof, the
+platform deny list, CIDR caps, audit and notification.
+
