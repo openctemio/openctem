@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 import { LOGIN_ERROR_CODES, loginErrorHref, loginErrorMessage } from './login-error'
 
 describe('loginErrorMessage', () => {
