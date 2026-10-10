@@ -2,14 +2,13 @@ package postgres
 
 // Asset change timeline (RFC-069 §11,
 // docs/architecture/asset-attribute-reconciliation.md). Events are written
-// by AssetAttributeSourceRepository.Apply; this file reads them and keeps
-// the monthly partitions and retention.
+// by AssetAttributeSourceRepository.Apply; this file reads them and applies
+// retention.
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -89,7 +88,7 @@ func (r *AssetChangeEventRepository) ListChanges(ctx context.Context, tenantID s
 		return nil, false, fmt.Errorf("list asset changes: %w", err)
 	}
 	defer rows.Close()
-	out := make([]asset.ChangeEvent, 0, limit)
+	var out []asset.ChangeEvent
 	for rows.Next() {
 		var (
 			id, assetID, kind, reason string
@@ -129,74 +128,35 @@ func (r *AssetChangeEventRepository) ListChanges(ctx context.Context, tenantID s
 	return out, more, nil
 }
 
-// EnsurePartitions creates the monthly partitions from the month of from.
-func (r *AssetChangeEventRepository) EnsurePartitions(ctx context.Context, from time.Time, months int) (int, error) {
-	var n int
-	if err := r.db.QueryRowContext(ctx, `SELECT asset_change_events_ensure_partitions($1::date, $2)`,
-		from.UTC().Format("2006-01-02"), months).Scan(&n); err != nil {
-		return 0, fmt.Errorf("ensure asset change partitions: %w", err)
-	}
-	return n, nil
-}
+// changeRetentionBatch bounds one retention delete; changeRetentionMaxBatches
+// bounds one run (the next run continues).
+const (
+	changeRetentionBatch      = 5000
+	changeRetentionMaxBatches = 100
+)
 
-// changePartitionName matches the monthly partitions the ensure function
-// creates; nothing else is ever dropped.
-var changePartitionName = regexp.MustCompile(`^asset_change_events_(\d{4})_(\d{2})$`)
-
-// DropBefore drops the monthly partitions that end at or before cutoff and
-// deletes older rows from the default partition. Platform retention across
-// every tenant; never driven by a tenant request.
-func (r *AssetChangeEventRepository) DropBefore(ctx context.Context, cutoff time.Time) (int, int64, error) {
-	drop, err := r.expiredPartitions(ctx, cutoff)
-	if err != nil {
-		return 0, 0, err
-	}
-	for _, name := range drop {
-		if _, err := r.db.ExecContext(ctx, `DROP TABLE IF EXISTS `+pq.QuoteIdentifier(name)); err != nil {
-			return 0, 0, fmt.Errorf("drop asset change partition %s: %w", name, err)
+// DeleteBefore deletes events older than cutoff in batches. Platform
+// retention across every tenant, never driven by a tenant request; plain DML
+// (the server runs no DDL).
+func (r *AssetChangeEventRepository) DeleteBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	var total int64
+	for i := 0; i < changeRetentionMaxBatches; i++ {
+		res, err := r.db.ExecContext(ctx, `
+			DELETE FROM asset_change_events
+			 WHERE (tenant_id, at, id) IN (
+			       SELECT tenant_id, at, id FROM asset_change_events
+			        WHERE at < $1
+			        LIMIT $2)`, cutoff.UTC(), changeRetentionBatch)
+		if err != nil {
+			return total, fmt.Errorf("asset change retention: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < changeRetentionBatch {
+			break
 		}
 	}
-	res, err := r.db.ExecContext(ctx, `DELETE FROM asset_change_events_default WHERE at < $1`, cutoff.UTC())
-	if err != nil {
-		return len(drop), 0, fmt.Errorf("asset change retention: %w", err)
-	}
-	n, _ := res.RowsAffected()
-	return len(drop), n, nil
-}
-
-// expiredPartitions lists the monthly partitions that end at or before cutoff.
-func (r *AssetChangeEventRepository) expiredPartitions(ctx context.Context, cutoff time.Time) ([]string, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.relname
-		  FROM pg_inherits i
-		  JOIN pg_class c ON c.oid = i.inhrelid
-		 WHERE i.inhparent = 'asset_change_events'::regclass`)
-	if err != nil {
-		return nil, fmt.Errorf("list asset change partitions: %w", err)
-	}
-	defer rows.Close()
-	var drop []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("list asset change partitions: %w", err)
-		}
-		m := changePartitionName.FindStringSubmatch(name)
-		if m == nil {
-			continue
-		}
-		start, perr := time.Parse("2006-01", m[1]+"-"+m[2])
-		if perr != nil {
-			continue
-		}
-		if !start.AddDate(0, 1, 0).After(cutoff) {
-			drop = append(drop, name)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list asset change partitions: %w", err)
-	}
-	return drop, nil
+	return total, nil
 }
 
 // AssetsWithAttributeSources returns up to limit ids of the tenant's assets

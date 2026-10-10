@@ -13,8 +13,10 @@ COMMENT ON COLUMN asset_attribute_sources.winner IS
     'RFC-069: this source decides the value the asset shows (set by the resolver)';
 
 -- Append-only apart from flap coalescing (the newest event of an attribute
--- is updated when the value flips back within a short window). Partitioned
--- by month on "at" so retention drops whole months.
+-- is updated when the value flips back within a short window) and retention
+-- (rows past the retention window are deleted). Partitioned by month on
+-- "at". The server runs no DDL (least-privilege role): migrations create the
+-- months ahead; a row outside them lands in the default partition.
 CREATE TABLE asset_change_events (
     id           UUID         NOT NULL,
     tenant_id    UUID         NOT NULL,
@@ -52,7 +54,8 @@ CREATE INDEX idx_asset_change_events_tenant ON asset_change_events (tenant_id, a
 CREATE TABLE asset_change_events_default PARTITION OF asset_change_events DEFAULT;
 
 -- Creates the monthly partitions from the month of "from" for "months"
--- months; existing ones are kept. The timeline controller calls it daily.
+-- months; existing ones are kept. Migrations call it (the migrator owns the
+-- schema); a later migration extends the months before these run out.
 CREATE OR REPLACE FUNCTION asset_change_events_ensure_partitions(from_month DATE, months INTEGER)
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
@@ -74,4 +77,5 @@ BEGIN
 END;
 $$;
 
-SELECT asset_change_events_ensure_partitions((now() - interval '1 month')::date, 4);
+-- Last month through the next two years.
+SELECT asset_change_events_ensure_partitions((now() - interval '1 month')::date, 27);
