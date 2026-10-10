@@ -605,6 +605,9 @@ type Services struct {
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
+	// ProgramDelivery resolves where events about private program assets
+	// may go and which program names to scrub (RFC-065 §15.4).
+	ProgramDelivery *postgres.ProgramDeliveryRepository
 	// ProgramFeed imports the public program feed (RFC-065 §16); nil unless
 	// PROGRAMFEED_DIR and PROGRAMFEED_ROOT_KEY_ID are set.
 	ProgramFeed *programfeedapp.Importer
@@ -1033,6 +1036,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Program channels and the organization-channel opt-in (RFC-065 §15.4).
 	programDelivery := postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB})
 	s.BountyProgram.SetDeliveryStore(programDelivery)
+	s.ProgramDelivery = programDelivery
 	s.ProgramAssigner = programRepo
 	// The public program catalog and the feed importer (RFC-065 §16).
 	catalogRepo := postgres.NewPublicProgramRepository(&postgres.DB{DB: deps.DB})
