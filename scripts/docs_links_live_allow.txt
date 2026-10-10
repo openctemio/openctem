@@ -1,0 +1,2 @@
+# URL paths on docs.openctem.io (no host) that the --live check skips until the docs PR adding them is merged and deployed.
+# Example: sensors/new-page
