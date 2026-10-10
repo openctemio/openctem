@@ -44,6 +44,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
+	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
 	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/threat"
@@ -852,6 +853,9 @@ type Services struct {
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
+	// ScanGovernance is scan approval governance (RFC-073): settings,
+	// requests and the run gate (wired in wireScopeApprovers).
+	ScanGovernance *scangovapp.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
 	// Plans and limits.
