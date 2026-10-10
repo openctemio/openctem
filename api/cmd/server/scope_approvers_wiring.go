@@ -142,6 +142,7 @@ func wireScanGovernance(svc *Services, repos *Repositories, log *logger.Logger) 
 	}
 	if svc.Scan != nil {
 		svc.ScanGovernance.SetScans(svc.Scan)
+		svc.ScanGovernance.SetScanLister(svc.Scan)
 		svc.Scan.SetApprovalGate(svc.ScanGovernance, repos.ScanApproval)
 	}
 }
