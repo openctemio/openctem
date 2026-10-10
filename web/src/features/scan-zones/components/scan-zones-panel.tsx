@@ -11,7 +11,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { EmptyState, ErrorState, MetricStrip, type MetricStripItem } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { Can, Permission } from '@/lib/permissions'
 import {
   deleteScanZone,
   invalidateScanZonesCache,
@@ -19,8 +19,6 @@ import {
   useScanZones,
 } from '@/lib/api/scan-zone-hooks'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
-
-import { FreezeBanner, useFreezeWindows, ZoneFreezeWindowsDialog } from '@/features/scan-freeze'
 
 import { useZoneSensors } from '../hooks/use-zone-sensors'
 import { describeScanZoneError } from '../lib/errors'
@@ -49,19 +47,6 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
   const [editZone, setEditZone] = useState<ScanZone | null>(null)
   const [sensorsZone, setSensorsZone] = useState<ScanZone | null>(null)
   const [deleteZone, setDeleteZone] = useState<ScanZone | null>(null)
-  const [freezeZone, setFreezeZone] = useState<ScanZone | null>(null)
-  const canReadScans = useHasPermission(Permission.ScansRead)
-  const { data: freezeData } = useFreezeWindows({}, canReadScans)
-  const frozenZoneIds = useMemo(
-    () =>
-      new Set(
-        (freezeData?.data ?? [])
-          .filter((w) => w.active && w.scan_zone_id)
-          .map((w) => w.scan_zone_id as string)
-      ),
-    [freezeData?.data]
-  )
-  const zoneNames = useMemo(() => new Map(zones.map((z) => [z.id, z.name])), [zones])
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<{ message: string; hint?: string } | null>(null)
 
@@ -158,8 +143,6 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
         sensorsById={sensorsById}
         onEdit={setEditZone}
         onSensors={setSensorsZone}
-        onFreezeWindows={canReadScans ? setFreezeZone : undefined}
-        frozenZoneIds={frozenZoneIds}
         onDelete={(z) => {
           setDeleteError(null)
           setDeleteZone(z)
@@ -186,8 +169,6 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
   return (
     <>
       <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
-
-      <FreezeBanner className="mt-5" zoneNames={zoneNames} />
 
       {warnings.length > 0 && (
         <Alert className="mt-5" data-testid="zone-coverage-warnings">
@@ -221,12 +202,6 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
         }}
         zone={editZone}
         otherDefaultZone={defaultZone}
-      />
-
-      <ZoneFreezeWindowsDialog
-        open={!!freezeZone}
-        onOpenChange={(o) => !o && setFreezeZone(null)}
-        zone={freezeZone}
       />
 
       <ZoneSensorsDialog

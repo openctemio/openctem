@@ -1,0 +1,10 @@
+{
+  "schema": "openctem.programfeed.latest/v1",
+  "sequence": 2,
+  "tag": "v1-2",
+  "snapshot": "snapshot.manifest.dsse.json",
+  "delta": "delta.manifest.dsse.json",
+  "base_sequence": 1,
+  "created_at": "2026-10-10T05:42:34Z",
+  "expires_at": "2026-10-17T05:42:34Z"
+}

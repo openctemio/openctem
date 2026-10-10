@@ -91,6 +91,18 @@ type ScopeConfig struct {
 	// Unset: a public resolver when organizations are self-service (SaaS),
 	// otherwise system.
 	ZoneResolver string
+	// ProgramFeedDir is a directory holding the newest signed public
+	// program feed bundle (PROGRAMFEED_DIR: a mirror or an upload,
+	// RFC-065 §16); ProgramFeedRootKeyID pins the feed's offline root
+	// (PROGRAMFEED_ROOT_KEY_ID). Both are needed; unset, no feed is
+	// imported.
+	ProgramFeedDir       string
+	ProgramFeedRootKeyID string
+	// ProgramFeedLocalBundleDir is the directory of the operator's own
+	// unsigned local-only bundle (PROGRAMFEED_LOCAL_BUNDLE_DIR, output of
+	// `programfeed build --local-only`); read only while a platform
+	// administrator has the source enabled. Never set from the UI.
+	ProgramFeedLocalBundleDir string
 }
 
 // ScanZoneResolverSystem routes hostnames with the platform's own resolver.
@@ -847,6 +859,14 @@ type SensorConfig struct {
 	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
 	CTEMIDFeedURL string
 
+	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
+	// (VULNFEED_ROOT_KEY_ID; empty = no import), the release base URL
+	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
+	// holding a release's files (VULNFEED_BUNDLE_DIR).
+	VulnFeedRootKeyID string
+	VulnFeedBaseURL   string
+	VulnFeedBundleDir string
+
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
 	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
@@ -1336,6 +1356,9 @@ func Load() (*Config, error) {
 			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			VulnFeedRootKeyID:           getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
 			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
@@ -1400,6 +1423,10 @@ func Load() (*Config, error) {
 			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
 			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
+			// The public program feed (RFC-065 §16).
+			ProgramFeedDir:            getEnv("PROGRAMFEED_DIR", ""),
+			ProgramFeedRootKeyID:      getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
+			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),

@@ -40,6 +40,7 @@ type ScopeHandler struct {
 	activeProof string
 	actors      MemberNamer
 	sweeper     DiscoverySweeper
+	waitStarter ScopeWaitStarter
 	programs    HiddenPrograms
 }
 
@@ -74,6 +75,18 @@ func (h *ScopeHandler) hiddenProgramIDs(r *http.Request) ([]string, error) {
 	return out, nil
 }
 
+// ScopeWaitStarter starts the scans saved to start when their scope is
+// approved (*scan.Service).
+type ScopeWaitStarter interface {
+	StartScansAwaitingScope(ctx context.Context, tenantID shared.ID)
+}
+
+// SetScopeWaitStarter starts waiting scans when an entry comes into effect.
+func (h *ScopeHandler) SetScopeWaitStarter(s ScopeWaitStarter) { h.waitStarter = s }
+
+// scopeWaitTimeout bounds one pass over the waiting scans of a tenant.
+const scopeWaitTimeout = 2 * time.Minute
+
 // DiscoverySweeper starts a discovery sweep for a tenant (*easm.SweepService).
 type DiscoverySweeper interface {
 	SweepForSeed(tenantID shared.ID)
@@ -83,8 +96,30 @@ type DiscoverySweeper interface {
 // effect, so its first names arrive in minutes instead of at the next run.
 func (h *ScopeHandler) SetSweeper(s DiscoverySweeper) { h.sweeper = s }
 
-// discover starts a sweep when the entry discovers and is in effect.
+// discover runs what follows an entry coming into effect: the scans waiting
+// for scope are started (each re-checked at its start), and a discovery
+// sweep when the entry discovers.
 func (h *ScopeHandler) discover(tenantID string, t *scopedom.Target) {
+	h.startWaits(tenantID, t)
+	h.sweepSeed(tenantID, t)
+}
+
+// startWaits starts, in the background, the scans waiting for scope once an
+// entry is in effect; each is checked again by its trigger.
+func (h *ScopeHandler) startWaits(tenantID string, t *scopedom.Target) {
+	if h.waitStarter != nil && t != nil && t.IsActive() {
+		if id, err := shared.IDFromString(tenantID); err == nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), scopeWaitTimeout)
+				defer cancel()
+				h.waitStarter.StartScansAwaitingScope(ctx, id)
+			}()
+		}
+	}
+}
+
+// sweepSeed starts a sweep when the entry discovers and is in effect.
+func (h *ScopeHandler) sweepSeed(tenantID string, t *scopedom.Target) {
 	if h.sweeper == nil || t == nil || !t.IsActive() || !t.Discovery() {
 		return
 	}
@@ -960,6 +995,7 @@ func (h *ScopeHandler) ActivateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditTarget(r, audit.ActionScopeTargetActivated, targetID, before, target)
+	h.startWaits(tenantID, target)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h.joinedOut(r, target))

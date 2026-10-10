@@ -203,8 +203,10 @@ export const Permission = {
   CIRead: 'scans:ci:read',
   CIWrite: 'scans:ci:write',
   CIOverride: 'scans:ci:override',
-  // Start a scan by hand while a scan freeze window is active (audited).
-  ScanFreezeOverride: 'scans:freeze:override',
+  // Scan window policies (RFC-067): change them; lift them for a short
+  // time in an emergency (fresh authenticator code, audited).
+  ScanWindowsManage: 'scans:windows:manage',
+  ScanWindowsOverride: 'scans:windows:override',
 
   // ===========================================
   // SENSORS MODULE
@@ -500,7 +502,8 @@ export const PermissionGroups = {
     Permission.SecretStoreWrite,
     Permission.CIWrite,
     Permission.CIOverride,
-    Permission.ScanFreezeOverride,
+    Permission.ScanWindowsManage,
+    Permission.ScanWindowsOverride,
     Permission.SensorsWrite,
     Permission.CommandsWrite,
     Permission.ScanZonesWrite,
@@ -671,7 +674,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.CIRead]: 'View CI Runs',
   [Permission.CIWrite]: 'Manage CI Trust and Gate',
   [Permission.CIOverride]: 'Override the CI Gate',
-  [Permission.ScanFreezeOverride]: 'Override Scan Freeze Windows',
+  [Permission.ScanWindowsManage]: 'Manage Scan Windows',
+  [Permission.ScanWindowsOverride]: 'Override Scan Windows',
 
   // Sensors
   [Permission.SensorsRead]: 'View Sensors',
@@ -871,7 +875,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.CIRead,
     Permission.CIWrite,
     Permission.CIOverride,
-    Permission.ScanFreezeOverride,
+    Permission.ScanWindowsManage,
+    Permission.ScanWindowsOverride,
     // Sensors
     Permission.SensorsRead,
     Permission.SensorsWrite,
@@ -1032,7 +1037,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.CIRead,
     Permission.CIWrite,
     Permission.CIOverride,
-    Permission.ScanFreezeOverride,
+    Permission.ScanWindowsManage,
+    Permission.ScanWindowsOverride,
     // Sensors
     Permission.SensorsRead,
     Permission.SensorsWrite,
