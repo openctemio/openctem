@@ -205,6 +205,11 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		input.Context["dispatch_warnings"] = append(warnings, optInWarning)
 	}
 
+	// A scanner above the scan's intensity never runs (RFC-071).
+	if err := refuseRunAboveIntensity(sc); err != nil {
+		return nil, err
+	}
+
 	// Validate tools are still available and active before triggering
 	// (Tools may have been disabled or removed since scan was created)
 	if err := s.validateToolsAtTriggerTime(ctx, sc); err != nil {
@@ -301,6 +306,9 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	runContext["scan_id"] = sc.ID.String()
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
+	// The probe ceiling of every step (RFC-071), from the scan, never from
+	// the trigger's context.
+	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
 	// The zone of the run is the routing decision below, never a value from
@@ -439,6 +447,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	runContext["scan_id"] = sc.ID.String()
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
 	runContext["scanner_name"] = sc.ScannerName
+	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext["scanner_config"] = sc.ScannerConfig
 	runContext["targets_per_job"] = sc.TargetsPerJob
 	runContext["routing_tags"] = sc.Tags
@@ -626,7 +635,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 	if maxParallel <= 0 {
 		maxParallel = 3
 	}
-	queued, roots := 0, 0
+	queued, roots, aboveIntensity := 0, 0, 0
 	// A first step that cannot be queued (no tool, incompatible targets, no
 	// sensor for the tool...) is failed with its reason by the queuer; the
 	// other first steps still start. The run is then re-evaluated at once, so
@@ -640,6 +649,11 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 		roots++
 		if !step.ConditionMet(run) {
 			s.skipWorkflowStep(ctx, run, step, step.ConditionSkipReason())
+			continue
+		}
+		if reason := IntensitySkipReason(run, step); reason != "" {
+			s.skipWorkflowStep(ctx, run, step, reason)
+			aboveIntensity++
 			continue
 		}
 		if queued >= maxParallel {
@@ -669,7 +683,10 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 	}
 	if queued == 0 {
 		msg := "workflow has no step without dependencies; nothing can start"
-		if roots > 0 {
+		switch {
+		case aboveIntensity > 0:
+			msg = "no step started: every first step either probes above this scan's intensity or its condition was false"
+		case roots > 0:
 			msg = "no step started: the condition of every first step was false"
 		}
 		run.Fail(msg)
