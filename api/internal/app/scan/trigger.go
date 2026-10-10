@@ -47,11 +47,6 @@ type TriggerScanExecInput struct {
 	// records it and a scan gets at most one run per occurrence
 	// (scanrun.ErrOccurrenceAlreadyRun otherwise). nil for every other trigger.
 	ScheduledFor *time.Time `json:"-"`
-	// FreezeOverride starts the scan although a freeze window is active.
-	// The HTTP layer sets it only when the caller asked for it and holds
-	// scans:freeze:override; it is audited and never honored for a
-	// scheduled run.
-	FreezeOverride bool `json:"-"`
 	// Interactive is a member's own "Run now" (POST /scans/{id}/trigger).
 	// Pausing a scan turns its schedule off; it does not stop a member from
 	// running it by hand. Automatic triggers (schedule, retry, automations)
@@ -244,13 +239,13 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		return s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor, input.FreezeOverride)
+		return s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
 	}
-	return s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor, input.FreezeOverride)
+	return s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
 }
 
 // triggerWorkflow triggers a workflow scan workflow execution.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time, freezeOverride bool) (*scanrun.Run, error) {
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time) (*scanrun.Run, error) {
 	if sc.ScanWorkflowID == nil {
 		return nil, fmt.Errorf("%w: scan_workflow_id is required for workflow", shared.ErrValidation)
 	}
@@ -310,7 +305,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
 	// The zone of the run is the routing decision below, never a value from
 	// the trigger context a caller sent: it stamps every step command and
-	// decides which freeze windows apply.
+	// decides which zone scan windows apply.
 	delete(runContext, scanrun.RunContextKeyScanZoneID)
 	delete(runContext, scanrun.RunContextKeySensorRouting)
 	// Who the run acts for (act scope of chained stages): the person who
@@ -350,25 +345,13 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 			return nil, err
 		}
 	}
-	if len(targets) > 0 {
-		runContext["targets"] = targets
-	}
-
-	var zoneIDs []shared.ID
-	if zid := scanrun.ScanZoneFromContext(runContext); zid != nil {
-		zoneIDs = []shared.ID{*zid}
-	} else {
-		// The scan's sensor preference decides, with the checks a single
-		// scan gets; the workflow's own preference does not (research/62
-		// SG-11). Every step of the run follows this decision.
-		routing, err := s.decideWorkflowRouting(ctx, sc, targets)
-		if err != nil {
-			return nil, err
-		}
-		routing.record(runContext)
-	}
-	override, err := s.checkFreeze(ctx, sc, freezeRequest{triggerType, triggeredBy, freezeOverride}, zoneIDs, workflowActive(steps))
+	runZone, err := s.workflowRunZone(ctx, sc, targets, runContext)
 	if err != nil {
+		return nil, err
+	}
+	// Scan windows (windows.go): never-opening targets refuse the run, a
+	// scheduled run with nothing open is deferred.
+	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, targets, oneZone(runZone), workflowTier(steps), runContext); err != nil {
 		return nil, err
 	}
 
@@ -377,7 +360,6 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scan run: %w", err)
 	}
-	run.FreezeOverride = override
 	run.SetTotalSteps(len(steps))
 	pinned := *template
 	pinned.Steps = steps
@@ -424,12 +406,32 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	return run, nil
 }
 
+// workflowRunZone records the targets of the run and returns the zone it
+// was routed to, or nil when it
+// was not: then the scan's sensor preference decides, with the checks a
+// single scan gets; the workflow's own preference does not (research/62
+// SG-11). Every step of the run follows this decision.
+func (s *Service) workflowRunZone(ctx context.Context, sc *scan.Scan, targets []string, runContext map[string]any) (*shared.ID, error) {
+	if len(targets) > 0 {
+		runContext["targets"] = targets
+	}
+	if zid := scanrun.ScanZoneFromContext(runContext); zid != nil {
+		return zid, nil
+	}
+	routing, err := s.decideWorkflowRouting(ctx, sc, targets)
+	if err != nil {
+		return nil, err
+	}
+	routing.record(runContext)
+	return nil, nil
+}
+
 // QuickScanTemplateID is the system template ID for quick/single scans.
 // This template is created during database migration/seed.
 const QuickScanTemplateID = "00000000-0000-0000-0000-000000000001"
 
 // triggerSingleScan triggers a single scanner execution.
-func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time, freezeOverride bool) (*scanrun.Run, error) {
+func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time) (*scanrun.Run, error) {
 	// Build context
 	if runContext == nil {
 		runContext = make(map[string]any)
@@ -482,7 +484,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	// A connector scan (RFC-047) is one command for the connector's sensor;
 	// the sensor's zone routing and platform routing below do not apply.
 	if _, connector := s.isConnectorScanner(ctx, sc.TenantID, sc.ScannerName); connector {
-		return s.triggerConnectorScan(ctx, sc, resolved, triggerType, triggeredBy, runContext, retryAttempt, scheduledFor, freezeOverride)
+		return s.triggerConnectorScan(ctx, sc, resolved, triggerType, triggeredBy, runContext, retryAttempt, scheduledFor)
 	}
 
 	// Scan zones (RFC-023): once the tenant has zones, a network scanner's
@@ -534,8 +536,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		}
 	}
 
-	override, err := s.checkFreeze(ctx, sc, freezeRequest{triggerType, triggeredBy, freezeOverride}, planZoneIDs(plan), singleScanActive(sc))
-	if err != nil {
+	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, resolved.Targets, planZoneOf(plan), singleScanTier(sc), runContext); err != nil {
 		return nil, err
 	}
 
@@ -547,7 +548,6 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err != nil {
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
-	run.FreezeOverride = override
 	run.SetTotalSteps(1)
 	run.RetryAttempt = retryAttempt
 	run.ScheduledFor = scheduledFor
@@ -731,7 +731,6 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	if err != nil {
 		return err
 	}
-	cmd.FreezeOverride = run.FreezeOverride
 	cmd.DispatchGate = scanDispatchGate(sc, run)
 
 	// usePlatform was decided before the run was created (decideSensorRouting).

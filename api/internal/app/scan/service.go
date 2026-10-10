@@ -215,7 +215,7 @@ type Service struct {
 	scopeWaitTrigger    func(context.Context, TriggerScanExecInput) (*scanrun.Run, error) // tests only; nil = TriggerScan
 	zones               ZoneDirectory                                                     // optional; nil = zone routing off (RFC-023)
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
-	freezeWindows       FreezeWindows                                                     // optional; nil = no trigger-time freeze check (freeze.go)
+	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
 	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
 	// activeProof is the operator's SCOPE_ACTIVE_PROOF (active_proof.go).
 	activeProof      string
