@@ -603,6 +603,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Names a permanent scope target or seed covers are confirmed: once at
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
 	if svc.ScopeJoin != nil {
+		if svc.Module != nil {
+			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
+		}
 		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
 		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
 		if svc.BountyProgram != nil {
