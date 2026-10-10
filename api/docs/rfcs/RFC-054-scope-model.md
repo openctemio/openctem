@@ -1001,7 +1001,7 @@ organization requires N approvals"; the widening warning adapts.
 | T2 duration | A3: `t2_max_duration`, owner-only `PUT /scope/settings/intrusive`, server-side bound, entry dialogs |
 | Attestation | A4: attestation timestamps, `POST /attest`, the attestation and downgrade job |
 | Platform policy | A5: platform default and per-organization override, console section, effective policy on the tenant settings |
-| Start when approved | §12.8: a scan saved to start once the pending entries covering its targets are approved (migration `001701`) |
+| Start when approved | §12.8: a scan saved to start once the pending entries covering its targets are approved (migration `001727`) |
 
 **Job signer ledger** (RFC-040 §5.6). Every write above goes through the
 scope ledger hook (`scope.Service.commitEntry`): an owner's own approval is
