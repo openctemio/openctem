@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -124,18 +125,22 @@ type ScopeSettingsResponse struct {
 	// T2AttestationDays: how often a long t2 entry is confirmed (30..180).
 	// Owner-only.
 	T2AttestationDays int `json:"t2_attestation_days"`
-	// ApprovalPolicy is the platform administrator's policy for widening
-	// approvals (read-only; RFC-054 §12.6).
+	// ApprovalPolicy is the organization's scan approval in force and
+	// whether scope entries need approval under it (read-only; RFC-073 §6).
 	ApprovalPolicy ScopeApprovalPolicyView `json:"approval_policy"`
 }
 
-// ScopeApprovalPolicyView is the platform approval policy as the tenant
+// ScopeApprovalPolicyView is scan approval governance as the scope page
 // sees it.
 type ScopeApprovalPolicyView struct {
-	// Mode: required, tenant_controlled or disabled.
-	Mode string `json:"mode" enums:"required,tenant_controlled,disabled"`
-	// Source: platform_default or organization_override.
-	Source string `json:"source" enums:"platform_default,organization_override"`
+	// ScanApproval: off, on or strict.
+	ScanApproval string `json:"scan_approval" enums:"off,on,strict"`
+	// Source: organization (the owner's choice) or platform (forced by the
+	// platform administrator).
+	Source string `json:"source" enums:"organization,platform"`
+	// EntriesNeedApproval: widening a scope entry needs approval (Strict
+	// only; in Off and On scans are what people approve).
+	EntriesNeedApproval bool `json:"entries_need_approval"`
 }
 
 // ScopeSettingsRequest replaces the settings. There is no field that turns
@@ -162,7 +167,8 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		ActiveProof:   activeProofOrOff(h.activeProof),
 		T2MaxDuration: ss.T2Duration(), T2MaxDays: t2Days, T2PermanentAllowed: t2Permanent,
 		T2AttestationDays: ss.AttestationDays(),
-		ApprovalPolicy:    ScopeApprovalPolicyView{Mode: string(mode), Source: source},
+		ApprovalPolicy: ScopeApprovalPolicyView{ScanApproval: string(mode), Source: source,
+			EntriesNeedApproval: scangov.ScopeEntriesNeedApproval(mode)},
 	}, nil
 }
 
@@ -231,20 +237,6 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
 		return
-	}
-	// Under a tenant-controlled policy the approval count may go to 0 for
-	// every tier: only an owner changes it then (RFC-054 §12.6).
-	if mode, _ := h.service.ApprovalPolicy(ctx, tenantID); mode == tenant.ScopeApprovalTenantControlled && !middleware.IsOwner(ctx) {
-		cur, err := h.settings.GetScopeSettings(ctx, tenantID)
-		if err != nil {
-			h.handleServiceError(w, "Scope settings", err)
-			return
-		}
-		if !sameApprovals(cur.WideningApprovals, req.WideningApprovals) {
-			apierror.New(http.StatusForbidden, "OWNER_REQUIRED",
-				"Your platform administrator lets the organization's owner set the approval count; ask an owner").WriteJSON(w)
-			return
-		}
 	}
 	ss := tenant.ScopeSettings{
 		AutoJoinDisabled: req.AutoJoinDiscovered != nil && !*req.AutoJoinDiscovered,
@@ -333,11 +325,4 @@ func (h *ScopeHandler) UpdateIntrusiveSettings(w http.ResponseWriter, r *http.Re
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func sameApprovals(a, b *int) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return *a == *b
 }
