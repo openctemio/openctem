@@ -63,7 +63,7 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 		return
 	}
 	// The platform policy for scan approval and the organization's scan
-	// approval mode (RFC-072): scope entries need approval only in Strict;
+	// approval mode (RFC-073): scope entries need approval only in Strict;
 	// an unreadable mode counts as Strict for them.
 	if repos != nil && repos.ScanPolicy != nil {
 		svc.ScanPolicy = scanpolicy.NewService(repos.ScanPolicy, repos.AdminAuditLog, repos.Admin,

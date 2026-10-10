@@ -113,7 +113,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
   }
   const widening = isWideningChange(entry, change)
   // Scan approval decides whether scope entries need approval (Strict
-  // only, RFC-072 §6); t2 then always needs one.
+  // only, RFC-073 §6); t2 then always needs one.
   const entriesNeedApproval = settings?.approval_policy?.entries_need_approval ?? true
   const needsApprovals =
     (settings?.effective_widening_approvals ?? 0) > 0 || (tier === 't2' && entriesNeedApproval)

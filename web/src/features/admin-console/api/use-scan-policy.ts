@@ -4,7 +4,7 @@ import useSWR from 'swr'
 import { adminFetch, adminFetcher } from './admin-client'
 
 /**
- * The platform policy for scan approval (RFC-072 §5): let the organization
+ * The platform policy for scan approval (RFC-073 §5): let the organization
  * choose, or force off, on (at least) or strict.
  */
 export type ScanApprovalPolicy = 'tenant_controlled' | 'off' | 'on' | 'strict'

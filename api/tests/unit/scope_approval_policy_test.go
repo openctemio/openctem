@@ -1,6 +1,6 @@
 package unit
 
-// Scope-entry approvals under scan approval governance (RFC-072 §6) and the
+// Scope-entry approvals under scan approval governance (RFC-073 §6) and the
 // platform scan approval policy (§5): each mode for each tier, fail-closed
 // reads, and the change trail.
 

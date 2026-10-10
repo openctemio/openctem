@@ -122,7 +122,7 @@ export function approvalsForNew(opts: {
   effective: number
   tier: ScopeTier
   /**
-   * Scope entries need approval (Strict scan approval, RFC-072 §6); unknown
+   * Scope entries need approval (Strict scan approval, RFC-073 §6); unknown
    * counts as yes. Off and On: an approver's widening takes effect at once.
    */
   entriesNeedApproval?: boolean

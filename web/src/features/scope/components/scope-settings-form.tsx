@@ -73,7 +73,7 @@ const ONE_OFF_TEXT: Record<ScopeOneOffPolicy, { label: string; hint: string }> =
 
 const DEFAULT_SENTINEL = 'default'
 
-/** Scan approval as the scope page shows it (RFC-072 §6). */
+/** Scan approval as the scope page shows it (RFC-073 §6). */
 export function scanApprovalFact(
   t: (key: string, fallback?: string) => string,
   policy: ApiScopeSettings['approval_policy'] | undefined

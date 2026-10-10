@@ -7,7 +7,7 @@ import { saveScanPolicyOrganization, useScanPolicyOrganization } from '../api/us
 import { ScanPolicyForm, useScanPolicyText } from './scan-policy-form'
 
 /**
- * An organization's Scope tab: its scan approval policy (RFC-072 §5), an
+ * An organization's Scope tab: its scan approval policy (RFC-073 §5), an
  * override of the platform default, and the scan approval in force.
  */
 export function OrganizationScanPolicyPanel({
