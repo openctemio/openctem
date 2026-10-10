@@ -17,7 +17,7 @@ func (g fakeModuleGate) IsEnabled(_ context.Context, tenantID, moduleID string) 
 }
 
 // Every MCP tool and prompt is declared under one module of the registry
-// (configs/modules.yaml, `mcp`), and its Module is that module ("" for a core
+// (configs/modules/<id>.yaml, `mcp`), and its Module is that module ("" for a core
 // one). A new tool cannot be added without deciding it.
 func TestMCP_EveryToolAndPromptFollowsTheRegistry(t *testing.T) {
 	owner := map[string]string{}

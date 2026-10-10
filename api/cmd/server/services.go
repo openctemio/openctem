@@ -43,8 +43,9 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
+	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
+	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/app/scopepolicy"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
@@ -67,6 +68,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
@@ -84,6 +86,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
@@ -99,6 +102,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	bountyprogramdom "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -307,6 +311,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 	return datascope.Caller{
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
+		IsOwner: middleware.IsOwner(ctx),
 		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
 	}
 }
@@ -543,6 +548,9 @@ type Services struct {
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
+	// ProgramDelivery resolves where events about private program assets
+	// may go and which program names to scrub (RFC-065 §15.4).
+	ProgramDelivery bountyprogramdom.DeliveryResolver
 	// ProgramFeed imports the public program feed (RFC-065 §16); nil unless
 	// PROGRAMFEED_DIR and PROGRAMFEED_ROOT_KEY_ID are set.
 	ProgramFeed *programfeedapp.Importer
@@ -582,6 +590,8 @@ type Services struct {
 	// Components & Branches
 	Component      *asset.ComponentService
 	SBOMImport     *asset.SBOMImportService
+	VEX            *vexapp.Service
+	LicensePolicy  *licapp.Service
 	ReportSchedule *module.ReportScheduleService
 	Branch         *asset.BranchService
 
@@ -785,9 +795,12 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
-	// ScopePolicy is the platform policy for scope-widening approvals
+	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
-	ScopePolicy *scopepolicy.Service
+	ScanPolicy *scanpolicy.Service
+	// ScanGovernance is scan approval governance (RFC-073): settings,
+	// requests and the run gate (wired in wireScopeApprovers).
+	ScanGovernance *scangovapp.Service
 	// The request-access queue (sign-up closed, requests allowed).
 	AccessRequest *accessrequestapp.Service
 	// Plans and limits.
@@ -915,6 +928,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// no scope row sees nothing, in every organization.
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
+	s.DataScope.SetOwnerLookup(datascope.MembershipOwnerLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
 	s.Asset.SetScoringConfigProvider(asset.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)
@@ -967,6 +981,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		func(err error) bool { return errors.Is(err, bountysource.ErrGone) },
 		programSyncAuditor(s.Audit))
 	s.BountyProgram.SetAssigner(programRepo)
+	// Program channels and the organization-channel opt-in (RFC-065 §15.4).
+	programDelivery := postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB})
+	s.BountyProgram.SetDeliveryStore(programDelivery)
+	s.ProgramDelivery = programDelivery
 	s.ProgramAssigner = programRepo
 	// The public program catalog and the feed importer (RFC-065 §16).
 	catalogRepo := postgres.NewPublicProgramRepository(&postgres.DB{DB: deps.DB})
@@ -1034,6 +1052,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = asset.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
+	s.LicensePolicy = licapp.NewService(repos.LicensePolicy, repos.Finding, repos.Tenant, log)
+	s.SBOMImport.SetLicenseEvaluator(s.LicensePolicy)
+	s.VEX = vexapp.NewService(repos.VEXStatement, s.DataScope, s.Audit, log)
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
@@ -1552,6 +1573,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Encryptor.DecryptString,
 		log.Logger,
 	)
+	// Events about private program assets reach only the programs' own
+	// channels (RFC-065 §15.4): one rule for every integration provider.
+	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
 
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
@@ -1766,6 +1790,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetToolContractSource(repos.Sensor)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
+	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)        // License policy on every package write
+	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
 	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)
@@ -2145,6 +2171,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Workflow,
 		log,
 	)
+	// Automations are organization-wide: events about private program
+	// assets start none (RFC-065 §15.4).
+	s.WorkflowDispatcher.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
 
 	// Wire workflow dispatcher to ingest service for automatic workflow triggering
 	// when new findings are created during ingestion

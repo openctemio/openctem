@@ -1,276 +1,198 @@
 package ingest
 
+// SBOM dependencies of a CTIS report into the software catalog. Design:
+// api/docs/rfcs/RFC-070-software-components-inventory.md.
+
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/licensepolicy"
+
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
 )
 
-// ComponentProcessor handles batch processing of dependencies/components during ingestion.
+// ComponentProcessor writes the dependencies of a report as package
+// snapshots, one per owning asset.
 type ComponentProcessor struct {
-	repo   component.Repository
+	writer software.PackageWriter
 	logger *slog.Logger
+	// license re-evaluates the license policy on the assets written.
+	license LicenseEvaluator
 }
 
+// LicenseEvaluator re-evaluates the organization's license policy on the
+// packages of these assets (internal/app/licensepolicy).
+type LicenseEvaluator interface {
+	EvaluateAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (licensepolicy.Result, error)
+}
+
+// SetLicenseEvaluator wires the license policy evaluation.
+func (p *ComponentProcessor) SetLicenseEvaluator(e LicenseEvaluator) { p.license = e }
+
 // NewComponentProcessor creates a new component processor.
-func NewComponentProcessor(repo component.Repository, logger *slog.Logger) *ComponentProcessor {
-	return &ComponentProcessor{
-		repo:   repo,
-		logger: logger,
+func NewComponentProcessor(writer software.PackageWriter, logger *slog.Logger) *ComponentProcessor {
+	return &ComponentProcessor{writer: writer, logger: logger}
+}
+
+// PackageChannel is the package channel of a report: a sensor, an
+// integration, a person (finding import) or a CI upload.
+func PackageChannel(fromSensor bool, sourceType string) string {
+	switch {
+	case fromSensor:
+		return software.ChannelSensor
+	case strings.EqualFold(sourceType, "integration"):
+		return software.ChannelIntegration
+	case strings.EqualFold(sourceType, "manual"):
+		return software.ChannelFindingImport
+	default:
+		return software.ChannelCI
 	}
 }
 
-// ComponentOutput tracks component processing results.
-type ComponentOutput struct {
-	ComponentsCreated  int
-	ComponentsUpdated  int
-	DependenciesLinked int
-	LicensesLinked     int
-	Errors             []string
-	Warnings           []string
+// DependencyNodes converts CTIS dependencies to package nodes, index-aligned
+// with deps; ok[i] is false for an entry without a usable identity or a root
+// entry (the project itself), whose depends_on marks the direct packages.
+func DependencyNodes(deps []ctis.Dependency) (nodes []software.PackageNode, ok []bool) {
+	nodes = make([]software.PackageNode, len(deps))
+	ok = make([]bool, len(deps))
+	direct := map[string]bool{}
+	for i := range deps {
+		if strings.EqualFold(deps[i].Relationship, "root") {
+			for _, ref := range deps[i].DependsOn {
+				direct[ref] = true
+			}
+		}
+	}
+	for i := range deps {
+		d := &deps[i]
+		if strings.EqualFold(d.Relationship, "root") {
+			continue
+		}
+		n, valid := dependencyNode(d)
+		if !valid {
+			continue
+		}
+		if n.Relationship == software.RelationshipUnknown && (direct[d.ID] || direct[d.PURL] || direct[d.Name]) {
+			n.Relationship = software.RelationshipDirect
+		}
+		nodes[i], ok[i] = n, true
+	}
+	return nodes, ok
 }
 
-// ProcessBatch processes all dependencies from a CTIS report.
-// It creates/updates global components and links them to assets.
-// Three-pass approach to handle foreign key constraints:
-// 1. Pass 1: Create all global components and collect their IDs
-// 2. Pass 2: Insert asset_components WITHOUT parent_component_id
-// 3. Pass 3: Update asset_components WITH parent_component_id
+func dependencyNode(d *ctis.Dependency) (software.PackageNode, bool) {
+	var n software.PackageNode
+	p, err := software.ParsePURL(d.PURL)
+	if err != nil {
+		p, err = software.SyntheticPURL(d.Ecosystem, d.Name, d.Version)
+		if err != nil {
+			return n, false
+		}
+		n.Synthetic = true
+	}
+	if p.Version == "" {
+		p.Version = clipVersion(d.Version)
+	}
+	ref := d.ID
+	if ref == "" {
+		ref = d.PURL
+	}
+	if ref == "" {
+		ref = d.Name + "@" + d.Version
+	}
+	location := d.Path
+	if location == "" && len(d.Locations) > 0 {
+		location = d.Locations[0].Path
+	}
+	n.Ref = ref
+	n.PURL = p
+	n.DisplayName = d.Name
+	n.Location = software.CleanLocation(location)
+	n.Relationship = software.NormalizeRelationship(d.Relationship)
+	n.Scope = dependencyScope(d)
+	n.Licenses = software.NormalizeLicenses(d.Licenses)
+	n.DependsOn = d.DependsOn
+	return n, true
+}
+
+// dependencyScope reads the scope a producer put in the dependency
+// properties (CycloneDX scope, trivy "dev").
+func dependencyScope(d *ctis.Dependency) string {
+	for _, k := range []string{"scope", "dependency_scope"} {
+		if v, ok := d.Properties[k].(string); ok {
+			if s := software.NormalizeScope(v); s != "" {
+				return s
+			}
+		}
+	}
+	if dev, ok := d.Properties["dev"].(bool); ok && dev {
+		return software.ScopeDevelopment
+	}
+	return ""
+}
+
+func clipVersion(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) > software.MaxPackageVer {
+		v = v[:software.MaxPackageVer]
+	}
+	return v
+}
+
+// ProcessBatch writes the report's dependencies, one snapshot per owning
+// asset. A report is a full inventory of the locations it names.
 func (p *ComponentProcessor) ProcessBatch(
 	ctx context.Context,
 	tenantID shared.ID,
 	report *ctis.Report,
 	assetMap map[string]shared.ID,
+	channel string,
 	output *Output,
 ) error {
-	if len(report.Dependencies) == 0 {
+	if len(report.Dependencies) == 0 || p.writer == nil {
 		return nil
 	}
-
-	p.logger.Debug("starting component processing",
-		"dependencies_count", len(report.Dependencies),
-		"assets_count", len(assetMap),
-	)
-
-	compOutput := &ComponentOutput{}
-
 	if len(assetMap) == 0 {
 		p.logger.Warn("no asset found for dependency linking")
 		return nil
 	}
-
-	// Resolve the OWNING asset for each dependency (index-aligned with
-	// report.Dependencies). Previously every dependency was linked to a RANDOM
-	// first asset from the map, collapsing a multi-asset SBOM onto one asset;
-	// this attributes each dependency to its correct asset.
 	depAssetIDs := p.resolveDepAssetIDs(report, assetMap)
-
-	// Pass 1: Create all global components and build lookup maps
-	// componentIDMap: PURL/name@version -> component ID
-	componentIDMap := make(map[string]shared.ID)
-
-	for _, dep := range report.Dependencies {
-		compID, err := p.createOrUpdateComponent(ctx, &dep, compOutput)
+	nodes, ok := DependencyNodes(report.Dependencies)
+	byAsset := map[shared.ID][]software.PackageNode{}
+	order := []shared.ID{}
+	for i := range nodes {
+		if !ok[i] || depAssetIDs[i].IsZero() {
+			continue
+		}
+		if _, seen := byAsset[depAssetIDs[i]]; !seen {
+			order = append(order, depAssetIDs[i])
+		}
+		byAsset[depAssetIDs[i]] = append(byAsset[depAssetIDs[i]], nodes[i])
+	}
+	for _, assetID := range order {
+		res, err := p.writer.WritePackages(ctx, tenantID, software.PackageSnapshot{
+			AssetID: assetID, Channel: channel, Packages: byAsset[assetID], Replace: true,
+		})
 		if err != nil {
-			p.logger.Warn("failed to create/update component",
-				"name", dep.Name,
-				"version", dep.Version,
-				"error", err,
-			)
-			compOutput.Errors = append(compOutput.Errors, err.Error())
+			p.logger.Warn("failed to write packages", "asset_id", assetID.String(), "error", sanitizeIngestLogField(err.Error()))
+			output.Errors = append(output.Errors, "packages: "+err.Error())
 			continue
 		}
-
-		// Build lookup keys (multiple formats for matching DependsOn)
-		keys := p.buildDependencyKeys(&dep)
-		for _, key := range keys {
-			componentIDMap[key] = compID
+		output.ComponentsCreated += res.Versions
+		output.DependenciesLinked += res.Links
+	}
+	if p.license != nil {
+		if _, err := p.license.EvaluateAssets(ctx, tenantID, order); err != nil {
+			p.logger.Warn("license policy evaluation failed", "tenant_id", tenantID.String(), "error", sanitizeIngestLogField(err.Error()))
 		}
 	}
-
-	// Pass 2: Insert asset_components WITHOUT parent_component_id
-	// Build assetDepIDMap for parent lookup in Pass 3. Keys are namespaced by
-	// owning asset so the same PURL on two assets can't collide.
-	assetDepIDMap := make(map[string]shared.ID)
-	assetDepDepthMap := make(map[string]int)
-
-	for i, dep := range report.Dependencies {
-		assetID := depAssetIDs[i]
-		if assetID.IsZero() {
-			continue // could not attribute (already logged during resolution)
-		}
-
-		keys := p.buildDependencyKeys(&dep)
-		primaryKey := keys[0] // First key is the primary one
-
-		compID, ok := componentIDMap[primaryKey]
-		if !ok {
-			continue // Component wasn't created successfully
-		}
-
-		// Insert WITHOUT parent (parent_component_id will be updated in Pass 3)
-		assetDepID, depth, err := p.linkDependencyToAssetWithoutParent(ctx, tenantID, assetID, compID, &dep, compOutput)
-		if err != nil {
-			p.logger.Warn("failed to link dependency",
-				"name", dep.Name,
-				"version", dep.Version,
-				"error", err,
-			)
-			compOutput.Errors = append(compOutput.Errors, err.Error())
-			continue
-		}
-
-		// Store in maps for parent lookup in Pass 3 (namespaced by asset).
-		if !assetDepID.IsZero() {
-			for _, key := range keys {
-				nsKey := assetScopedKey(assetID, key)
-				assetDepIDMap[nsKey] = assetDepID
-				assetDepDepthMap[nsKey] = depth
-			}
-		}
-	}
-
-	// Pass 3: Update asset_components WITH parent_component_id
-	// Now all asset_components exist, we can safely set parent references. Parent
-	// resolution is scoped to the SAME owning asset as the child.
-	for i, dep := range report.Dependencies {
-		// Only process transitive dependencies with DependsOn
-		if dep.Relationship != "indirect" && dep.Relationship != "transitive" {
-			continue
-		}
-		if len(dep.DependsOn) == 0 {
-			continue
-		}
-
-		assetID := depAssetIDs[i]
-		if assetID.IsZero() {
-			continue
-		}
-
-		keys := p.buildDependencyKeys(&dep)
-		primaryKey := keys[0]
-
-		assetDepID, ok := assetDepIDMap[assetScopedKey(assetID, primaryKey)]
-		if !ok || assetDepID.IsZero() {
-			continue // Asset dependency wasn't created
-		}
-
-		// Find parent's asset_component ID — within this dependency's own asset.
-		parentID, parentDepth, found := p.findParentInMaps(assetID, dep.DependsOn, assetDepIDMap, assetDepDepthMap)
-		if !found {
-			// Try database lookup as fallback (also asset-scoped)
-			parentID, parentDepth, found = p.findParentInDB(ctx, assetID, dep.DependsOn)
-		}
-
-		if found && parentID != nil {
-			// Calculate depth and update
-			depth := parentDepth + 1
-			if err := p.repo.UpdateAssetDependencyParent(ctx, tenantID, assetDepID, *parentID, depth); err != nil {
-				p.logger.Warn("failed to update parent reference",
-					"dependency", dep.Name,
-					"parent_id", parentID.String(),
-					"error", err,
-				)
-			} else {
-				// Update local map with correct depth
-				for _, key := range keys {
-					assetDepDepthMap[assetScopedKey(assetID, key)] = depth
-				}
-			}
-		}
-	}
-
-	p.logger.Info("component processing complete",
-		"components_created", compOutput.ComponentsCreated,
-		"components_updated", compOutput.ComponentsUpdated,
-		"dependencies_linked", compOutput.DependenciesLinked,
-		"licenses_linked", compOutput.LicensesLinked,
-		"errors", len(compOutput.Errors),
-		"warnings", len(compOutput.Warnings),
-	)
-
-	// Update output stats
-	output.ComponentsCreated = compOutput.ComponentsCreated
-	output.ComponentsUpdated = compOutput.ComponentsUpdated
-	output.DependenciesLinked = compOutput.DependenciesLinked
-	output.LicensesLinked = compOutput.LicensesLinked
-	output.Warnings = append(output.Warnings, compOutput.Warnings...)
-	// Merge component errors too — the ingest audit log derives its
-	// success/partial/failed result from len(output.Errors). Without this a SBOM
-	// import where every component failed was recorded as a full success.
-	output.Errors = append(output.Errors, compOutput.Errors...)
-
 	return nil
-}
-
-// buildDependencyKeys creates multiple lookup keys for a dependency.
-// This allows matching DependsOn values in various formats that scanners might provide.
-// Returns keys in order of preference: PURL, name@version, name, ID
-func (p *ComponentProcessor) buildDependencyKeys(dep *ctis.Dependency) []string {
-	keys := make([]string, 0, 4)
-
-	// Primary key: PURL (most specific)
-	if dep.PURL != "" {
-		keys = append(keys, dep.PURL)
-	}
-
-	// Secondary key: name@version
-	nameVersion := fmt.Sprintf("%s@%s", dep.Name, dep.Version)
-	keys = append(keys, nameVersion)
-
-	// Tertiary key: just name (some scanners only provide name in DependsOn)
-	if dep.Name != "" {
-		keys = append(keys, dep.Name)
-	}
-
-	// Quaternary key: ID if provided
-	if dep.ID != "" && dep.ID != dep.Name {
-		keys = append(keys, dep.ID)
-	}
-
-	return keys
-}
-
-// findParentInMaps attempts to find a parent dependency using multiple key
-// formats, scoped to the child's owning asset. Returns the parent's
-// asset_dependency ID and depth if found.
-func (p *ComponentProcessor) findParentInMaps(
-	assetID shared.ID,
-	dependsOn []string,
-	assetDepIDMap map[string]shared.ID,
-	assetDepDepthMap map[string]int,
-) (*shared.ID, int, bool) {
-	for _, parentRef := range dependsOn {
-		// Try exact match first
-		if id, ok := assetDepIDMap[assetScopedKey(assetID, parentRef)]; ok {
-			depth := assetDepDepthMap[assetScopedKey(assetID, parentRef)]
-			return &id, depth, true
-		}
-
-		// Try with pkg: prefix (some tools provide just the path part)
-		if !strings.HasPrefix(parentRef, "pkg:") {
-			purlKey := "pkg:" + parentRef
-			if id, ok := assetDepIDMap[assetScopedKey(assetID, purlKey)]; ok {
-				depth := assetDepDepthMap[assetScopedKey(assetID, purlKey)]
-				return &id, depth, true
-			}
-		}
-	}
-	return nil, 0, false
-}
-
-// assetScopedKey namespaces a dependency lookup key by its owning asset so the
-// same PURL / name appearing on two assets in one multi-asset report cannot
-// collide in the Pass 2/3 maps.
-func assetScopedKey(assetID shared.ID, key string) string {
-	return assetID.String() + "\x1f" + key
 }
 
 // resolveDepAssetIDs returns, index-aligned with report.Dependencies, the
@@ -401,147 +323,3 @@ func matchDepToAsset(dep *ctis.Dependency, matchers []assetMatcher) (shared.ID, 
 // findParentInDB attempts to find a parent dependency in the database.
 // This is a fallback for when the parent was created in a previous scan but not included in current batch.
 // Returns the parent's asset_dependency ID and depth if found.
-func (p *ComponentProcessor) findParentInDB(
-	ctx context.Context,
-	assetID shared.ID,
-	dependsOn []string,
-) (*shared.ID, int, bool) {
-	for _, parentRef := range dependsOn {
-		// Try to find by PURL (most reliable)
-		purl := parentRef
-		if !strings.HasPrefix(purl, "pkg:") {
-			purl = "pkg:" + parentRef
-		}
-
-		existingDep, err := p.repo.GetExistingDependencyByPURL(ctx, assetID, purl)
-		if err != nil {
-			p.logger.Debug("failed to lookup parent in DB",
-				"purl", purl,
-				"error", err,
-			)
-			continue
-		}
-
-		if existingDep != nil {
-			id := existingDep.ID()
-			p.logger.Debug("found parent in DB from previous scan",
-				"parent_purl", purl,
-				"parent_id", id.String(),
-				"parent_depth", existingDep.Depth(),
-			)
-			return &id, existingDep.Depth(), true
-		}
-	}
-	return nil, 0, false
-}
-
-// createOrUpdateComponent creates or updates a global component.
-// Returns the component ID.
-func (p *ComponentProcessor) createOrUpdateComponent(
-	ctx context.Context,
-	dep *ctis.Dependency,
-	output *ComponentOutput,
-) (shared.ID, error) {
-	// Step 1: Ecosystem, from the label or else the package URL (trivy
-	// components carry only a PURL).
-	ecosystem := component.ResolveEcosystem(dep.Ecosystem, dep.PURL)
-
-	// Step 2: Create or update global component
-	comp, err := component.NewComponent(dep.Name, dep.Version, ecosystem)
-	if err != nil {
-		return shared.ID{}, err
-	}
-
-	// Prefer sensor's PURL over generated PURL
-	// Sensor's PURL may be more accurate (e.g., includes namespace, qualifiers)
-	if dep.PURL != "" {
-		comp.SetPURL(dep.PURL)
-	}
-	if len(dep.Licenses) > 0 {
-		comp.UpdateLicense(strings.Join(dep.Licenses, ", "))
-	}
-
-	// Upsert component (creates if not exists, returns ID)
-	compID, err := p.repo.Upsert(ctx, comp)
-	if err != nil {
-		return shared.ID{}, err
-	}
-
-	// Licenses are not attached to the shared component: they are this
-	// tenant's observation and go on its asset dependency (Pass 2).
-
-	// Track if created or updated
-	if comp.ID() == compID {
-		output.ComponentsCreated++
-	} else {
-		output.ComponentsUpdated++
-	}
-
-	return compID, nil
-}
-
-// linkDependencyToAssetWithoutParent links a component to an asset WITHOUT parent tracking.
-// This is used in Pass 2 to ensure all asset_components exist before setting parent references.
-// Returns the asset_dependency ID and initial depth for use in Pass 3.
-func (p *ComponentProcessor) linkDependencyToAssetWithoutParent(
-	ctx context.Context,
-	tenantID shared.ID,
-	assetID shared.ID,
-	compID shared.ID,
-	dep *ctis.Dependency,
-	output *ComponentOutput,
-) (shared.ID, int, error) {
-	// Parse dependency type
-	depType, _ := component.ParseDependencyType(dep.Relationship)
-
-	// Create asset dependency link WITHOUT parent
-	assetDep, err := component.NewAssetDependency(tenantID, assetID, compID, dep.Path, depType)
-	if err != nil {
-		return shared.ID{}, 0, err
-	}
-
-	// Licenses the report declares are this tenant's observation: they are
-	// stored on its own asset_components row, never on the shared component.
-	if len(dep.Licenses) > 0 {
-		valid, err := p.repo.EnsureLicenses(ctx, dep.Licenses)
-		if err != nil {
-			p.logger.Warn("failed to record licenses",
-				"component_id", compID.String(),
-				"licenses", sanitizeIngestLogField(strings.Join(dep.Licenses, ",")),
-				"error", sanitizeIngestLogField(err.Error()),
-			)
-			output.Warnings = append(output.Warnings, fmt.Sprintf("license recording failed for %s: %v", dep.Name, err))
-		}
-		if len(valid) > 0 {
-			assetDep.SetLicense(strings.Join(valid, ", "))
-			output.LicensesLinked += len(valid)
-		}
-	}
-
-	// Set initial depth based on dependency type
-	// - depth = 1: direct dependency
-	// - depth = 2: transitive dependency (will be updated in Pass 3 if parent found)
-	depth := 1
-	if depType == component.DependencyTypeTransitive {
-		depth = 2
-		assetDep.SetDepth(depth)
-	}
-
-	// Link asset to component (without parent reference)
-	if err := p.repo.LinkAsset(ctx, assetDep); err != nil {
-		// Ignore duplicate link errors (already linked)
-		if !strings.Contains(err.Error(), "duplicate") && !strings.Contains(err.Error(), "already exists") {
-			return shared.ID{}, 0, err
-		}
-		// For duplicates, try to get the existing ID
-		existingDep, lookupErr := p.repo.GetExistingDependencyByComponentID(ctx, assetID, compID, dep.Path)
-		if lookupErr == nil && existingDep != nil {
-			return existingDep.ID(), existingDep.Depth(), nil
-		}
-		// Return zero ID for duplicate - it's already linked
-		return shared.ID{}, depth, nil
-	}
-
-	output.DependenciesLinked++
-	return assetDep.ID(), depth, nil
-}

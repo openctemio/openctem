@@ -455,9 +455,28 @@ program records `scope_source = file_import`.
 - `GET /scope/targets` and `GET /scope/targets/{id}` leave out the entries
   of private programs the caller may not see or has not accepted (404 by
   id), so a scope reader does not learn a private program's scope.
-- Not changed by this section: assets and findings that private-program
-  entries cover follow the data scope (§7) — full-data roles still see them
-  in the inventory; §16.5 separates them from the organization's own assets.
+- Assets of a private program (owner decision, 2026-10-10): a
+  program-only asset (§16.5) linked to private programs only, and its
+  findings, are visible only to the members of one of those programs and to
+  the organization's owners. Administrators and full-data roles who are not
+  members get 404 by id and do not see them in lists, exports, counts,
+  dashboards (also with `include_program_assets=true`), the change feed or
+  the EASM overview. The rule lives in the data-scope layer: the enforcer
+  gives such a caller a scope that admits every asset but the hidden ones
+  (`DataScope.Unrestricted`; resolved only when something is hidden from
+  them), and the one predicate (`filterspec.HiddenAssetWhere`) is added to
+  every scoped read and id check; a restricted member's scope rows never
+  admit a hidden asset either. An asset the organization also owns (not
+  program-only) stays visible, but the program's tag and flags are left out
+  of its response for non-members. Acting (scans) is not narrowed by it.
+  A non-member's system tags, in responses and in the inventory's tag and
+  `program_assets=only` filters, are only those derived from programs not
+  hidden from them (`filterspec.ProgramHiddenSQL`), so the filter cannot
+  reveal that a private program covers a shared asset. The same rule
+  covers the tag suggestions (`GET /assets/tags`, data-scoped), the EASM
+  overview counts and review queue (SQL, not a page filter), and the live
+  notification push (a hidden asset's notice reaches only owners and the
+  program's members).
 
 | Threat | Control |
 |---|---|
@@ -467,6 +486,75 @@ program records `scope_source = file_import`.
 | Hostile file widens scope (`.*`, `*.com`, a /8) | exact-only Burp translation; guardrails refuse public suffixes, deny list, CIDR caps; preview before commit |
 | Oversized or malformed file | 256 KiB / 2 000 items, strict format errors (`PROGRAM_FILE_INVALID`) |
 | Another tenant | every query tenant-scoped; attestation insert joins the program in the caller's tenant |
+
+### 15.4 Outbound delivery (decision 2026-10-10)
+
+Tenant integrations (Slack, Teams, Telegram, email, generic webhooks,
+Splunk HEC) and automations (their HTTP, notification and ticket actions)
+are organization-wide channels: their audience is not the program's
+members. §15.3 hides a private program's assets from non-members inside the
+product; this section keeps them from leaving it through those channels.
+
+- **Restricted asset**: program-only (§16.5), linked to at least one private
+  program that has not opted in, and to no public program
+  (`orgRestrictedAssetSQL`, the one predicate every outbound path uses).
+- **Notification outbox** (every provider): before sending, the worker
+  resolves the entry's subject (its `finding`, `asset`, `exposure` or
+  `approval` aggregate, and the assets a batch notice lists in
+  `metadata.assets`). An event about a restricted asset goes only to the
+  integrations attached to one of its private programs (for a batch: one
+  program of every restricted asset). With no attached integration nobody
+  receives it. If the decision cannot be resolved (database error), the
+  entry fails and is retried; nothing is sent.
+- **Payload scrubbing**: for every destination not attached to a private
+  program linked to the event's assets, the program's name, handle and
+  `program:<platform>:<slug>` tag are replaced by `[private program]` in the
+  title and body, before any message template. This covers shared assets
+  (also the organization's own, routed normally) and opted-in programs.
+- **Automations**: events about restricted assets (finding created, updated
+  or status changed, AI triage, assets discovered) start no automation; a
+  batch drops the restricted findings or assets. An unknown decision starts
+  nothing.
+- **EASM alerts**: an exposure on a restricted asset is never folded into the
+  organization's daily digest (its counts would reveal the program's
+  assets); it is enqueued on its own, outside the hourly budget, and the
+  outbox routes it as above.
+- **Program channels**: `bounty_program_channels (tenant_id, program_id,
+  integration_id, created_by, created_at)`, tenant-composite foreign keys to
+  the program and to the integration (`uq_integrations_tenant_id`), deleted
+  with either. Attaching is additive: the integration keeps its organization
+  traffic and also receives the program's private events, with the program's
+  name.
+  - `GET /programs/{id}/delivery` (`programs:read`; member or owner who
+    accepted the current terms): attached integrations and the opt-in.
+  - `PUT /programs/{id}/notification-channels/{integration_id}` (`programs:write` and
+    `integrations:manage`, step-up; member or owner who accepted the current
+    terms): only a notification integration of the caller's tenant
+    (`404 PROGRAM_CHANNEL_NOT_FOUND` otherwise). Idempotent. Audited
+    (`bounty_program.channel_attached`).
+  - `DELETE /programs/{id}/notification-channels/{integration_id}` (same permissions,
+    membership only, narrowing). Audited (`bounty_program.channel_detached`).
+- **Organization channels opt-in**: `bounty_programs.org_channels_opt_in`
+  (default off). `PUT /programs/{id}/org-channels {enabled, reason}`
+  (`programs:write`, step-up): owners only (a member gets 403, anyone who may
+  not see the program 404); private programs only; turning it on needs a
+  reason of 10 to 500 characters. Audited at high severity with the reason
+  (`bounty_program.org_channels_changed`). An asset linked to several private
+  programs reaches organization channels only when every one of them opted
+  in; program names stay scrubbed there.
+- Not covered by this rule, by design: tickets a person creates by hand from
+  a finding they can see, status sync of an existing ticket, and scheduled
+  reports (data-scoped to their recipients, §15.3).
+
+| Threat | Control |
+|---|---|
+| A private program's finding is posted to an organization Slack channel, webhook or SIEM index | outbox delivers restricted events only to program channels |
+| An organization automation forwards it (HTTP action, ticket, notification) | restricted events start no automation |
+| The EASM digest counts it | restricted exposures never enter the digest |
+| A shared asset's notice names the private program | name, handle and tag scrubbed for non-program destinations |
+| A member routes the program to an organization channel without the owner | attaching needs `integrations:manage` and step-up and is audited; the organization-wide opt-in is owner-only with a reason |
+| A database error during the decision | fail closed: the entry is retried, nothing is sent; automations do not start |
+| Another tenant's integration attached, or another tenant's ids resolved | insert joins the integration and program in the caller's tenant; composite foreign keys; every resolver query is tenant-bound |
 
 ## 16. Public program monitor (addendum, 2026-10-10)
 
@@ -626,7 +714,12 @@ covers the target.
   programs. Controller `program-feed-local`, hourly. Fetching allowlisted
   public datasets directly from the platform is a later option.
 
-### 16.8 Program targets as collected assets (owner direction, 2026-10-10; next change)
+### 16.8 Program targets as collected assets (owner direction, 2026-10-10)
+
+> Status: points 2 and 3 are built (typed scope items, port/protocol and
+> path limits on entries enforced at dispatch, claim and in the signer's
+> ledger, per-item qualifiers; migration `001910`). Point 1 (CTIS ingest)
+> and the confidentiality of private-program assets follow.
 
 The feed importer is an asset collector, not a second asset pipeline:
 

@@ -512,7 +512,13 @@ func registerIncomingWebhookRoutes(
 func includeProgramAssets(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("include_program_assets") == "true" {
-			r = r.WithContext(shared.WithProgramAssets(r.Context()))
+			ctx := shared.WithProgramAssets(r.Context())
+			// Private program assets stay hidden from non-members who are
+			// not owners (RFC-065 §15.3); an unparseable user is a member
+			// of nothing.
+			uid, _ := shared.IDFromString(middleware.GetUserID(ctx))
+			ctx = shared.WithProgramViewer(ctx, shared.ProgramViewer{UserID: uid, Owner: middleware.IsOwner(ctx)})
+			r = r.WithContext(ctx)
 		}
 		next.ServeHTTP(w, r)
 	})

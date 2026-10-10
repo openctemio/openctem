@@ -430,7 +430,7 @@ func TestCompileAlwaysTenantFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(w.SQL, "f.tenant_id = $1 AND f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $2 AND uaa.tenant_id = $3)") {
+	if !strings.HasPrefix(w.SQL, "f.tenant_id = $1 AND (f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $2 AND uaa.tenant_id = $3) AND NOT EXISTS (SELECT 1 FROM assets ph WHERE ph.id = f.asset_id") {
 		t.Fatalf("restricted actor must get the scope predicate: %s", w.SQL)
 	}
 	if w.Args[1] != userA.String() || w.Args[2] != tenantA.String() {
@@ -662,7 +662,7 @@ func TestRebase(t *testing.T) {
 	if strings.Contains(w.SQL, "findings.") && !strings.Contains(w.SQL, "x_findings.") {
 		t.Fatalf("rebase left a qualifier: %s", w.SQL)
 	}
-	if !strings.HasPrefix(w.SQL, "f.tenant_id = $1 AND f.asset_id IN") || !strings.Contains(w.SQL, "x_findings.y") {
+	if !strings.HasPrefix(w.SQL, "f.tenant_id = $1 AND (f.asset_id IN") || !strings.Contains(w.SQL, "x_findings.y") {
 		t.Fatalf("rebase: %s", w.SQL)
 	}
 	if reg.TenantSQL != "findings.tenant_id" {

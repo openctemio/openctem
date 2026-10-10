@@ -1,0 +1,24 @@
+- id: scans
+  const: ModuleScans
+  slug: scans
+  name: Scans
+  description: "Scans, Scanning settings (Sensors, Profiles, Tools, Capabilities, Templates, Sources, Secret Store)"
+  icon: Search
+  category: core
+  order: 4
+  core: true
+  user_facing: true
+  permission: "scans:read"
+  jobs:
+    - CoverageScheduler
+    - OneOffScanArchiveController
+    - QueuePriorityController
+    - ScanRetryController
+    - ScanTimeoutController
+    - ScanWindowClosingController
+    - StalledRunRepairController
+    - CIAlertsController
+    - CIRetentionController
+    - CommandEventRetentionController
+    - CommandLogRetentionController
+    - WebSurfaceRetentionController

@@ -112,10 +112,13 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
     ...(duration.kind === 'permanent' && entry.expires_at ? { clear_expiry: true } : {}),
   }
   const widening = isWideningChange(entry, change)
-  // The platform policy decides whether t2 always needs an approval.
-  const policy = settings?.approval_policy?.mode ?? 'required'
+  // Scan approval decides whether scope entries need approval (Strict
+  // only, RFC-073 §6); t2 then always needs one.
+  const entriesNeedApproval = settings?.approval_policy?.entries_need_approval ?? true
+  // Entry tier ceilings apply only in Strict scan approval (RFC-073 §6).
+  const tierCeilings = settings?.approval_policy?.tier_ceilings ?? true
   const needsApprovals =
-    (settings?.effective_widening_approvals ?? 0) > 0 || (tier === 't2' && policy === 'required')
+    (settings?.effective_widening_approvals ?? 0) > 0 || (tier === 't2' && entriesNeedApproval)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -169,7 +172,15 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
                 <span>{error}</span>
               </div>
             )}
-            <div className="space-y-2">
+            {!tierCeilings && (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'scope.entry.noTierCeiling',
+                  'An entry covers every probe: the scan intensity and the approval rules decide how hard its targets are scanned.'
+                )}
+              </p>
+            )}
+            <div className={tierCeilings ? 'space-y-2' : 'hidden'}>
               <Label htmlFor={`${formId}-tier`}>
                 {t('scope.entry.tierLabel', 'Deepest probe allowed')}
               </Label>
@@ -235,10 +246,10 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
                         'scope.edit.widensPending',
                         'It goes back to pending and authorizes nothing until another approver approves it.'
                       )
-                    : policy === 'disabled'
+                    : !entriesNeedApproval
                       ? t(
-                          'scope.edit.widensDisabled',
-                          'Approvals are disabled by your platform administrator: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                          'scope.edit.widensNoApproval',
+                          'Scope entries need no approval while scan approval is not Strict: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
                         )
                       : t(
                           'scope.edit.widensNow',

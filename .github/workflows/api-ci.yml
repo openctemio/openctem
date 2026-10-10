@@ -128,6 +128,9 @@ jobs:
       # silently skips it on databases that are already past it. In the merge
       # queue the base is merge_group.base_sha, i.e. including the groups
       # ahead, so two queued PRs with the same number cannot both land.
+      # On pull_request "below the base max" is only a warning: the merge
+      # queue renumbers a PR's migrations when it enqueues it. merge_group and
+      # push keep it an error; duplicates fail everywhere.
       - name: Migration Versions
         working-directory: .
         env:
@@ -137,7 +140,7 @@ jobs:
         run: |
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
           case "$EVENT" in
-            pull_request) bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
+            pull_request) MIGRATION_BELOW_BASE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
             merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
             *)            bash .github/scripts/check-migration-versions.sh ;;
           esac
@@ -153,7 +156,7 @@ jobs:
       - name: Asset Types Drift
         run: GOWORK=off go run ./cmd/gen-asset-types -check
 
-      # The module registry (RFC-064): configs/modules.yaml generates the Go
+      # The module registry (RFC-064): configs/modules/*.yaml generates the Go
       # catalog, the web constants and the modules rows (newest registry
       # migration). Fails when any of them drifted from the YAML.
       - name: Module Registry Drift
@@ -226,12 +229,58 @@ jobs:
           test "$published" = "gateway"
           rm .env
 
+      # The shards of the two DB-backed jobs below cover every package and
+      # every top-level test of tests/unit exactly once.
+      - name: Test shards cover every test
+        run: bash ../.github/scripts/go-shard.sh check 4 4 && bash ../.github/scripts/go-shard.sh check 3 3
+
+  # vet, staticcheck and golangci-lint run in their own job, in parallel with
+  # the gates in `API static checks` (they were two thirds of that job's time).
+  lint:
+    name: API lint
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # base branch for golangci --new-from-rev
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      # The analysis caches of golangci-lint, and the installed staticcheck
+      # binary (its version is in the key), so a run only re-analyses what
+      # changed. A cache is a speed-up only: a miss runs the same checks.
+      - name: Cache lint tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/golangci-lint
+            ~/go/bin/staticcheck
+          key: lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-${{ github.sha }}
+          restore-keys: |
+            lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-
+            lint-${{ runner.os }}-
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
       - name: Lint (go vet)
         run: go vet ./...
 
       - name: Lint (staticcheck)
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          STATICCHECK_VERSION=v0.7.0
+          if ! command -v staticcheck >/dev/null 2>&1 || ! staticcheck -version | grep -q "${STATICCHECK_VERSION#v}"; then
+            go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}
+          fi
           staticcheck ./...
 
       - name: Lint (golangci-lint on new code)
@@ -247,9 +296,24 @@ jobs:
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
+    # The suite is split into parallel shards (.github/scripts/go-shard.sh:
+    # tests/unit alone is most of the run time, so it has its own shards).
+    # `Static checks` proves the shards together cover every test once.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { kind: unit, shard: 0, total: 4 }
+          - { kind: unit, shard: 1, total: 4 }
+          - { kind: unit, shard: 2, total: 4 }
+          - { kind: unit, shard: 3, total: 4 }
+          - { kind: pkgs, shard: 0, total: 4 }
+          - { kind: pkgs, shard: 1, total: 4 }
+          - { kind: pkgs, shard: 2, total: 4 }
+          - { kind: pkgs, shard: 3, total: 4 }
     services:
       postgres:
-        image: postgres:17-alpine
+        image: public.ecr.aws/docker/library/postgres:17-alpine
         env:
           POSTGRES_USER: openctem
           # Job-scoped throwaway database: no password at all (trust auth on
@@ -264,7 +328,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: public.ecr.aws/docker/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -300,18 +364,14 @@ jobs:
       # OPENCTEM_TEST_DB_REQUIRED: testdb fails instead of skipping when the
       # database is missing or unreachable. -json feeds the skip check below;
       # the jq filter prints the same log that -v would.
-      - name: Run tests
+      - name: Run tests (${{ matrix.kind }} shard ${{ matrix.shard }}/${{ matrix.total }})
         # shell: bash means -o pipefail. Without it a failing go test is hidden
         # by the pipe into tee/jq and the step goes green.
         shell: bash
-        run: |
-          go test -json -race -timeout 20m -coverprofile=coverage.out -covermode=atomic ./... \
-            | tee test.json \
-            | jq -Rrj '. as $l | (try fromjson catch null) as $e
-                | if $e == null then $l + "\n"
-                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
-                  else empty end'
         env:
+          KIND: ${{ matrix.kind }}
+          SHARD: ${{ matrix.shard }}
+          TOTAL: ${{ matrix.total }}
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: openctem
@@ -320,6 +380,20 @@ jobs:
           OPENCTEM_TEST_DB_REQUIRED: "1"
           REDIS_HOST: localhost
           REDIS_PORT: 6379
+        run: |
+          if [ "$KIND" = unit ]; then
+            run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
+            set -- -run "$run" ./tests/unit
+          else
+            mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
+            set -- "${pk[@]}"
+          fi
+          go test -json -race -timeout 20m -coverprofile=coverage.out -covermode=atomic "$@" \
+            | tee test.json \
+            | jq -Rrj '. as $l | (try fromjson catch null) as $e
+                | if $e == null then $l + "\n"
+                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
+                  else empty end'
 
       # A test that skips itself on a failed ping (t.Skipf) would otherwise let
       # this job go green without running its DB checks.
@@ -332,6 +406,7 @@ jobs:
         with:
           files: ./api/coverage.out
           flags: api
+          name: api-${{ matrix.kind }}-${{ matrix.shard }}
           fail_ci_if_error: false
 
   # D-6: the API connects as a least-privilege role (docs/deployment/database-roles.md).
@@ -345,9 +420,19 @@ jobs:
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { kind: unit, shard: 0, total: 3 }
+          - { kind: unit, shard: 1, total: 3 }
+          - { kind: unit, shard: 2, total: 3 }
+          - { kind: pkgs, shard: 0, total: 3 }
+          - { kind: pkgs, shard: 1, total: 3 }
+          - { kind: pkgs, shard: 2, total: 3 }
     services:
       postgres:
-        image: postgres:17-alpine
+        image: public.ecr.aws/docker/library/postgres:17-alpine
         env:
           POSTGRES_USER: postgres
           # Job-scoped throwaway database, trust auth on the service network:
@@ -363,7 +448,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: public.ecr.aws/docker/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -409,16 +494,12 @@ jobs:
       # missing database fails the job instead of passing silently. The two
       # tests that need CREATEDB (a superuser) skip here by design and run in
       # Tests (Postgres + Redis).
-      - name: Run the DB-backed suite as the app role
+      - name: Run the DB-backed suite as the app role (${{ matrix.kind }} shard ${{ matrix.shard }}/${{ matrix.total }})
         shell: bash # -o pipefail: the pipe into tee/jq must not hide a failure
-        run: |
-          go test -json -timeout 30m ./... \
-            | tee lp-test.json \
-            | jq -Rrj '. as $l | (try fromjson catch null) as $e
-                | if $e == null then $l + "\n"
-                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
-                  else empty end'
         env:
+          KIND: ${{ matrix.kind }}
+          SHARD: ${{ matrix.shard }}
+          TOTAL: ${{ matrix.total }}
           OPENCTEM_TEST_DB_REQUIRED: "1"
           DATABASE_URL: ${{ env.APP_URL }}
           DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
@@ -430,6 +511,20 @@ jobs:
           DB_NAME: lp_test
           REDIS_HOST: localhost
           REDIS_PORT: 6379
+        run: |
+          if [ "$KIND" = unit ]; then
+            run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
+            set -- -run "$run" ./tests/unit
+          else
+            mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
+            set -- "${pk[@]}"
+          fi
+          go test -json -timeout 30m "$@" \
+            | tee lp-test.json \
+            | jq -Rrj '. as $l | (try fromjson catch null) as $e
+                | if $e == null then $l + "\n"
+                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
+                  else empty end'
 
       - name: No DB-backed test was skipped
         if: ${{ !cancelled() }}
@@ -498,7 +593,7 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, test, least-privilege, binaries, docker]
+    needs: [changes, static, lint, test, least-privilege, binaries, docker]
     runs-on: ubuntu-latest
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
@@ -516,7 +611,7 @@ jobs:
           # the tier for this event must have RUN and passed, so a mistyped
           # condition cannot wave a queued PR through without its tests.
           if [ "$API" = true ]; then
-            if [ "$EVENT" = pull_request ]; then required="changes static test least-privilege"; else required="changes static test least-privilege binaries"; fi
+            if [ "$EVENT" = pull_request ]; then required="changes static lint test least-privilege"; else required="changes static lint test least-privilege binaries"; fi
             for j in $required; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass for $EVENT, got: $r"; exit 1; fi

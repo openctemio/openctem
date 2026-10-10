@@ -74,6 +74,22 @@ func (r *ScanSelectorRepository) ListSelectorAssets(ctx context.Context, q scan.
 		args = append(args, *q.SeenSince)
 		seen = fmt.Sprintf(" AND a.last_seen >= $%d", len(args))
 	}
+	if q.NewOnly {
+		// In scope newly: attribution confirmed (since NewSince), or no
+		// attribution record and first seen (since NewSince). Never
+		// needs_review, candidate or rejected. Both reads are pinned to the
+		// tenant.
+		confirmed, unrecorded := "", ""
+		if q.NewSince != nil {
+			args = append(args, *q.NewSince)
+			confirmed = fmt.Sprintf(" AND COALESCE(aa.decided_at, aa.updated_at) >= $%d", len(args))
+			unrecorded = fmt.Sprintf(" AND a.first_seen >= $%d", len(args))
+		}
+		seen += ` AND (EXISTS (SELECT 1 FROM asset_attributions aa
+		    WHERE aa.tenant_id = a.tenant_id AND aa.asset_id = a.id AND aa.state = 'confirmed'` + confirmed + `)
+		  OR (NOT EXISTS (SELECT 1 FROM asset_attributions aa
+		    WHERE aa.tenant_id = a.tenant_id AND aa.asset_id = a.id)` + unrecorded + `))`
+	}
 	args = append(args, limit)
 
 	//nolint:gosec // G202: match, seen and scanMemberMatchProps are fixed SQL with numbered placeholders
