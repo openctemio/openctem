@@ -16,6 +16,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // AssetChangeEventRepository implements asset.ChangeEventRepository and
@@ -68,8 +69,14 @@ func (r *AssetChangeEventRepository) ListChanges(ctx context.Context, tenantID s
 		where = append(where, arg(q.Tag)+" = ANY(a.tags)")
 	}
 	if q.ScopeUserID != nil {
-		where = append(where, "e.asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE tenant_id = $1 AND user_id = "+
-			arg(q.ScopeUserID.String())+")")
+		user := arg(q.ScopeUserID.String())
+		notHidden := "NOT EXISTS (SELECT 1 FROM assets ph WHERE ph.id = e.asset_id AND " + filterspec.HiddenAssetWhereExpr(user, "$1") + ")"
+		if q.ScopeUnrestricted {
+			where = append(where, notHidden)
+		} else {
+			where = append(where, "e.asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE tenant_id = $1 AND user_id = "+
+				user+") AND "+notHidden)
+		}
 	}
 	if q.BeforeAt != nil && q.BeforeID != nil {
 		where = append(where, "(e.at, e.id) < ("+arg(q.BeforeAt.UTC())+"::timestamptz, "+arg(q.BeforeID.String())+"::uuid)")

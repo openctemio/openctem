@@ -10,6 +10,7 @@
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 
 import {
   Select,
@@ -83,45 +84,48 @@ export function ScannerSelect({
   allowConnectors = false,
   zoneId,
 }: ScannerSelectProps) {
+  const { t } = useTranslation()
   const { options, availability, isLoading, error } = useScannerOptions(allowConnectors, zoneId)
   // Keep a configuration's scanner selectable even if the registry no longer
   // lists it (disabled since), so opening Edit does not silently blank it.
-  const known = options.some((t) => t.name === value)
-  const selected = options.find((t) => t.name === value)
+  const known = options.some((tool) => tool.name === value)
+  const selected = options.find((tool) => tool.name === value)
   const selectedReason = selected
     ? scannerUnavailableReason(selected, availability, !!zoneId)
     : null
 
   const placeholder = isLoading
-    ? 'Loading scanners…'
+    ? t('scans.scanner.loading')
     : error
-      ? 'Could not load scanners'
+      ? t('scans.scanner.loadFailed')
       : options.length === 0
-        ? 'No active scanners'
-        : 'Choose a scanner'
+        ? t('scans.scanner.none')
+        : t('scans.scanner.choose')
 
   return (
     <div className="space-y-1">
       <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger id={id} aria-label="Scanner">
+        <SelectTrigger id={id} aria-label={t('scans.basic.scanner')}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
           {value && !known && (
-            <SelectItem value={value}>{value} (not active in the tool registry)</SelectItem>
+            <SelectItem value={value}>
+              {t('scans.scanner.notActive', undefined, { name: value })}
+            </SelectItem>
           )}
-          {options.map((t) => {
-            const reason = scannerUnavailableReason(t, availability, !!zoneId)
+          {options.map((tool) => {
+            const reason = scannerUnavailableReason(tool, availability, !!zoneId)
             // The current value stays selectable so Edit keeps it.
             return (
               <SelectItem
-                key={t.id}
-                value={t.name}
-                disabled={!!reason && t.name !== value}
+                key={tool.id}
+                value={tool.name}
+                disabled={!!reason && tool.name !== value}
                 title={reason ?? undefined}
               >
                 <span className="flex flex-col">
-                  <span>{t.display_name || t.name}</span>
+                  <span>{tool.display_name || tool.name}</span>
                   {reason && <span className="text-xs text-muted-foreground">{reason}</span>}
                 </span>
               </SelectItem>
@@ -131,7 +135,7 @@ export function ScannerSelect({
       </Select>
       {selectedReason && (
         <p className="text-xs text-warning" role="status">
-          {selectedReason}: a run would be refused until a sensor that may run it is online.
+          {t('scans.scanner.refusedUntil', undefined, { reason: selectedReason })}
         </p>
       )}
     </div>

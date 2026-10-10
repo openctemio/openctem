@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import useSWR from 'swr'
 import { AlertCircle, CheckCircle2 } from 'lucide-react'
 
@@ -17,12 +18,12 @@ export type WorkflowPreview =
   S['github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreview']
 export type WorkflowPreviewRequest = S['internal_infra_http_handler.WorkflowPreviewRequest']
 
-const STATUS_LABEL: Record<string, string> = {
-  ready: 'ready',
-  outdated: 'ready (outdated)',
-  offline_only: 'sensors offline',
-  no_sensor: 'no sensor',
-  disabled: 'disabled',
+const STATUS_KEYS: Record<string, string> = {
+  ready: 'scans.wfPreview.ready',
+  outdated: 'scans.wfPreview.outdated',
+  offline_only: 'scans.wfPreview.offline_only',
+  no_sensor: 'scans.wfPreview.no_sensor',
+  disabled: 'scans.wfPreview.disabled',
 }
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -55,6 +56,7 @@ export function useWorkflowPreview(request: WorkflowPreviewRequest, enabled = tr
 }
 
 export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRequest }) {
+  const { t } = useTranslation()
   const { data, error, isLoading, ready } = useWorkflowPreview(request)
 
   return (
@@ -65,20 +67,18 @@ export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRe
     >
       <div>
         <h3 id="workflow-preview-heading" className="text-sm font-semibold">
-          Preview
+          {t('scans.wfPreview.title')}
         </h3>
-        <p className="text-xs text-muted-foreground">
-          What each step would run if the scan starts now.
-        </p>
+        <p className="text-xs text-muted-foreground">{t('scans.wfPreview.subtitle')}</p>
       </div>
       {!ready ? (
-        <p className="text-sm text-muted-foreground">Add targets to preview the workflow.</p>
+        <p className="text-sm text-muted-foreground">{t('scans.wfPreview.addTargets')}</p>
       ) : error ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Could not preview the workflow</AlertTitle>
+          <AlertTitle>{t('scans.wfPreview.failed')}</AlertTitle>
           <AlertDescription>
-            {error instanceof Error ? error.message : 'Try again.'}
+            {error instanceof Error ? error.message : t('scans.wfPreview.tryAgain')}
           </AlertDescription>
         </Alert>
       ) : isLoading || !data ? (
@@ -91,18 +91,19 @@ export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRe
 }
 
 export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
+  const { t } = useTranslation()
   const targets = preview.targets
   return (
     <div className="space-y-3">
       {preview.blocking ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>The scan would not start as it is</AlertTitle>
-          <AlertDescription>Fix the problems below, or start it later.</AlertDescription>
+          <AlertTitle>{t('scans.wfPreview.wouldNotStart')}</AlertTitle>
+          <AlertDescription>{t('scans.wfPreview.fixProblems')}</AlertDescription>
         </Alert>
       ) : (
         <p className="flex items-center gap-1.5 text-sm text-success">
-          <CheckCircle2 className="h-4 w-4" /> Every step can run.
+          <CheckCircle2 className="h-4 w-4" /> {t('scans.wfPreview.everyStep')}
         </p>
       )}
       {targets?.windows && (
@@ -133,22 +134,31 @@ export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
               )}
               {n.tool && (
                 <span className="text-xs text-muted-foreground">
-                  {n.pinned ? 'runs' : 'picks'} {n.tool}
+                  {t(n.pinned ? 'scans.wfPreview.runs' : 'scans.wfPreview.picks', undefined, {
+                    tool: n.tool,
+                  })}
                 </span>
               )}
               {n.availability?.status && (
                 <Badge variant="secondary" className="ms-auto px-1 py-0 text-[10px]">
-                  {STATUS_LABEL[n.availability.status] ?? n.availability.status}
+                  {STATUS_KEYS[n.availability.status]
+                    ? t(STATUS_KEYS[n.availability.status])
+                    : n.availability.status}
                   {n.availability.sensors_total
-                    ? ` · ${n.availability.sensors_online ?? 0}/${n.availability.sensors_total} online`
+                    ? t('scans.wfPreview.online', undefined, {
+                        online: n.availability.sensors_online ?? 0,
+                        total: n.availability.sensors_total,
+                      })
                     : ''}
                 </Badge>
               )}
             </div>
             {(n.chunk_size ?? 0) > 0 && (n.max_parallel_sensors ?? 0) > 0 && (
               <p className="mt-1 text-xs text-muted-foreground" data-testid="preview-parallel">
-                Cut into chunks of {n.chunk_size}; up to {n.max_parallel_sensors} sensor(s) work on
-                it at once.
+                {t('scans.wfPreview.chunks', undefined, {
+                  size: n.chunk_size ?? 0,
+                  sensors: n.max_parallel_sensors ?? 0,
+                })}
               </p>
             )}
             {n.blocking?.message && (
@@ -159,9 +169,14 @@ export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
       </ol>
       {targets && (
         <p className="text-xs text-muted-foreground">
-          {targets.resolved_targets ?? 0} target(s) resolved
-          {targets.excluded_targets ? `, ${targets.excluded_targets} excluded by scope` : ''}
-          {targets.uncovered_targets ? `, ${targets.uncovered_targets} not scanned` : ''}.
+          {t('scans.wfPreview.resolved', undefined, { count: targets.resolved_targets ?? 0 })}
+          {targets.excluded_targets
+            ? t('scans.wfPreview.excluded', undefined, { count: targets.excluded_targets })
+            : ''}
+          {targets.uncovered_targets
+            ? t('scans.wfPreview.uncovered', undefined, { count: targets.uncovered_targets })
+            : ''}
+          .
           {targets.error?.message && targets.error.code !== SCAN_WINDOW_NEVER_OPENS
             ? ` ${targets.error.message}`
             : ''}

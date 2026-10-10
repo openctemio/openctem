@@ -473,7 +473,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if binding.Kind == BindingTrusted {
 		sourceRun = opts.SourceRun
 	}
-	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind)
+	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind, sourceName)
 
 	// Step 1: Process assets using batch operations
 	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)

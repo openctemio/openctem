@@ -36,6 +36,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -97,7 +98,20 @@ type ScopeJoin struct {
 	settings   ScopeJoinSettings
 	audit      ScopeJoinAudit
 	log        *logger.Logger
+	// modules reports the modules a tenant has off; nil runs every tenant.
+	modules ScopeJoinModuleGuard
 }
+
+// ScopeJoinModuleGuard reports the modules a tenant has off
+// (*module.ModuleService).
+type ScopeJoinModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard makes the background re-evaluation skip a tenant with the
+// attack_surface module off: its pending attribution records stay pending
+// and are re-evaluated once the module is back on.
+func (j *ScopeJoin) SetModuleGuard(g ScopeJoinModuleGuard) { j.modules = g }
 
 // NewScopeJoin wires the join. Every source is required; with a nil one the
 // join confirms nothing and reports an error.
@@ -516,6 +530,9 @@ func (j *ScopeJoin) ReevaluateAll(ctx context.Context) (int, error) {
 	for _, t := range tenants {
 		if ctx.Err() != nil {
 			return total, ctx.Err()
+		}
+		if j.modules != nil && j.modules.TenantDisabledModules(ctx, t.String())[moduledom.ModuleAttackSurface] {
+			continue
 		}
 		names, err := j.Run(ctx, t)
 		if err != nil {

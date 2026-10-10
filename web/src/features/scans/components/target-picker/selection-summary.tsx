@@ -9,6 +9,7 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { CheckCircle2, ChevronDown, FolderOpen, Loader2, ShieldAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -44,6 +45,7 @@ export function SelectionSummary({
   sensorPreference,
   scannerName,
 }: SelectionSummaryProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const joined = useDebounce(targets.join('\n'), SUMMARY_SCOPE_DEBOUNCE_MS)
   const list = joined ? joined.split('\n') : []
@@ -58,12 +60,22 @@ export function SelectionSummary({
   const empty = targets.length === 0 && groupCount === 0
 
   const parts: string[] = []
-  parts.push(`${targets.length.toLocaleString()} ${targets.length === 1 ? 'target' : 'targets'}`)
-  if (groupCount > 0) parts.push(`${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`)
+  parts.push(
+    t(targets.length === 1 ? 'scans.summary.targetsOne' : 'scans.summary.targetsMany', undefined, {
+      count: targets.length.toLocaleString(),
+    })
+  )
+  if (groupCount > 0) {
+    parts.push(
+      t(groupCount === 1 ? 'scans.summary.groupsOne' : 'scans.summary.groupsMany', undefined, {
+        count: groupCount,
+      })
+    )
+  }
 
   return (
     <section
-      aria-label="Selected targets"
+      aria-label={t('scans.summary.label')}
       className="bg-background/95 sticky bottom-0 z-10 rounded-lg border p-3 shadow-sm backdrop-blur"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -71,30 +83,35 @@ export function SelectionSummary({
           className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm"
           aria-live="polite"
         >
-          <span className="font-medium">{empty ? 'Nothing selected yet' : parts.join(' · ')}</span>
+          <span className="font-medium">
+            {empty ? t('scans.summary.nothing') : parts.join(' · ')}
+          </span>
           {check.available && targets.length > 0 && (
             <span className="text-muted-foreground flex items-center gap-1">
               {check.isLoading && results.length === 0 ? (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> checking scope
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />{' '}
+                  {t('scans.summary.checking')}
                 </>
               ) : refused > 0 ? (
                 <>
                   <ShieldAlert className="h-3.5 w-3.5 text-warning" aria-hidden />
-                  {allowed} in scope ·{' '}
-                  <span className="text-warning">{refused} may not be scanned</span>
+                  {t('scans.summary.inScope', undefined, { count: allowed })} ·{' '}
+                  <span className="text-warning">
+                    {t('scans.summary.mayNotScan', undefined, { count: refused })}
+                  </span>
                 </>
               ) : results.length > 0 ? (
                 <>
                   <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />
-                  all in scope
+                  {t('scans.summary.allInScope')}
                 </>
               ) : null}
             </span>
           )}
           {groupCount > 0 && (
             <span className="text-muted-foreground text-xs">
-              (group members are checked when the scan runs)
+              {t('scans.summary.groupMembersLater')}
             </span>
           )}
         </div>
@@ -107,7 +124,7 @@ export function SelectionSummary({
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
           >
-            {open ? 'Hide' : 'Review selection'}
+            {open ? t('scans.summary.hide') : t('scans.summary.review')}
             <ChevronDown
               className={cn('ms-1 h-3.5 w-3.5 transition-transform', open && 'rotate-180')}
             />
@@ -117,20 +134,23 @@ export function SelectionSummary({
 
       {over && (
         <p role="alert" className="mt-2 text-xs text-destructive">
-          {targets.length.toLocaleString()} direct targets: a scan takes at most{' '}
-          {MAX_DIRECT_TARGETS.toLocaleString()}. Remove some, or scan them as an asset group.
+          {t('scans.summary.tooMany', undefined, {
+            count: targets.length.toLocaleString(),
+            max: MAX_DIRECT_TARGETS.toLocaleString(),
+          })}
         </p>
       )}
       {invalidCount > 0 && (
         <p role="alert" className="mt-2 text-xs text-destructive">
-          {invalidCount} typed {invalidCount === 1 ? 'line is' : 'lines are'} not a target: fix or
-          remove {invalidCount === 1 ? 'it' : 'them'} under Paste.
+          {t(
+            invalidCount === 1 ? 'scans.summary.invalidOne' : 'scans.summary.invalidMany',
+            undefined,
+            { count: invalidCount }
+          )}
         </p>
       )}
       {check.error && (
-        <p className="text-muted-foreground mt-1 text-xs">
-          The scope check is not available right now; the scan is still checked when it starts.
-        </p>
+        <p className="text-muted-foreground mt-1 text-xs">{t('scans.scope.unavailable')}</p>
       )}
 
       {open && (
@@ -144,7 +164,7 @@ export function SelectionSummary({
               sensorPreference={sensorPreference}
             />
           )}
-          <ul className="flex flex-wrap gap-1.5" aria-label="Selection">
+          <ul className="flex flex-wrap gap-1.5" aria-label={t('scans.summary.selection')}>
             {chips.map((chip) => (
               <li
                 key={chip.key}
@@ -162,7 +182,7 @@ export function SelectionSummary({
                     type="button"
                     onClick={chip.onRemove}
                     className="rounded-full p-0.5 hover:bg-muted"
-                    aria-label={`Remove ${chip.label}`}
+                    aria-label={t('scans.summary.remove', undefined, { name: chip.label })}
                   >
                     <X className="h-3 w-3" aria-hidden />
                   </button>
