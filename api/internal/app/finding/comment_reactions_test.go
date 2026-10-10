@@ -541,3 +541,15 @@ func (r *recordingActivityRepo) Create(_ context.Context, a *vulnerability.Findi
 	r.created = append(r.created, a)
 	return nil
 }
+
+func (denyScopeRepo) HasHiddenAssets(context.Context, shared.ID, shared.ID) (bool, error) {
+	return false, nil
+}
+
+func (denyScopeRepo) AssetIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}
+
+func (denyScopeRepo) FindingIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}

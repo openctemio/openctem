@@ -14,12 +14,12 @@ import (
 
 type fakeReviewStore struct {
 	query     ReviewQuery
-	scopeUser *shared.ID
+	scopeUser *shared.DataScope
 	saved     []string
 	prev      map[string]attribution.State
 }
 
-func (f *fakeReviewStore) ListForReview(_ context.Context, _ shared.ID, scopeUserID *shared.ID, q ReviewQuery) (*ReviewPage, error) {
+func (f *fakeReviewStore) ListForReview(_ context.Context, _ shared.ID, scopeUserID *shared.DataScope, q ReviewQuery) (*ReviewPage, error) {
 	f.query, f.scopeUser = q, scopeUserID
 	return &ReviewPage{Items: []ReviewItem{}}, nil
 }
@@ -90,7 +90,7 @@ func TestQueue_DefaultsAndScope(t *testing.T) {
 	if store.query.Limit != 50 {
 		t.Errorf("limit not clamped: %d", store.query.Limit)
 	}
-	if store.scopeUser == nil || *store.scopeUser != user {
+	if store.scopeUser == nil || store.scopeUser.UserID != user {
 		t.Fatal("a scoped member's queue must be narrowed to the member's data scope")
 	}
 	if _, err := svc.Queue(context.Background(), shared.NewID(), ReviewQuery{States: []attribution.State{"bogus"}}); !errors.Is(err, shared.ErrValidation) {
@@ -100,7 +100,7 @@ func TestQueue_DefaultsAndScope(t *testing.T) {
 
 type coverItemsStore struct{ fakeReviewStore }
 
-func (c *coverItemsStore) ListForReview(_ context.Context, _ shared.ID, _ *shared.ID, q ReviewQuery) (*ReviewPage, error) {
+func (c *coverItemsStore) ListForReview(_ context.Context, _ shared.ID, _ *shared.DataScope, q ReviewQuery) (*ReviewPage, error) {
 	c.query = q
 	return &ReviewPage{Items: []ReviewItem{{AssetID: "1", Name: "a.ours.example"}, {AssetID: "2", Name: "x.theirs.example"}}, Total: 2}, nil
 }
@@ -251,4 +251,16 @@ func TestDecide_RunsEffectsForDecidedOnly(t *testing.T) {
 	if len(res.calls) != 1 || len(res.calls[0]) != 1 || res.calls[0][0] != inScope {
 		t.Fatalf("resolver calls %v", res.calls)
 	}
+}
+
+func (*scopeRepo) HasHiddenAssets(context.Context, shared.ID, shared.ID) (bool, error) {
+	return false, nil
+}
+
+func (*scopeRepo) AssetIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}
+
+func (*scopeRepo) FindingIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
 }

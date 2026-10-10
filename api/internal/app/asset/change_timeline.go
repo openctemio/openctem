@@ -56,6 +56,7 @@ func (s *AssetService) ListTenantChanges(ctx context.Context, tenantID string, q
 		if scope != nil {
 			uid := scope.UserID
 			q.ScopeUserID = &uid
+			q.ScopeUnrestricted = scope.Unrestricted
 		}
 	}
 	return s.changes.ListChanges(ctx, tid, q)
