@@ -50,3 +50,7 @@ func allowAllTargetChecks(opts ...scanservice.ServiceOption) []scanservice.Servi
 		scanservice.WithActScope(actOnAll{}),
 	}, opts...)
 }
+
+func (allOwned) UncoveredTargets(context.Context, shared.ID, []string) ([]string, error) {
+	return nil, nil
+}

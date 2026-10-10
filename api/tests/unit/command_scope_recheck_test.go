@@ -641,6 +641,36 @@ func TestScopeRecheck_ProbesWithoutRecord(t *testing.T) {
 	}
 }
 
+// A job queued above the scan intensity it records is never handed out: it
+// is failed with INTENSITY_EXCEEDED on every path, before the scope gate
+// runs (RFC-071). A job within its intensity goes out unchanged.
+func TestScopeRecheck_JobAboveIntensityIsFailed(t *testing.T) {
+	for _, path := range handOutPaths {
+		t.Run(path.name, func(t *testing.T) {
+			f := newRecheckFixture()
+			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, stepPayload,
+				&commanddom.DispatchGate{Tier: 1, Intensity: "passive"})
+			got, _ := path.run(f, c)
+			if got != nil {
+				t.Fatalf("a T1 job of a passive scan was handed out: %s", got.Payload)
+			}
+			stored := f.repo.commands[c.ID.String()]
+			if stored.Status != commanddom.CommandStatusFailed || !strings.HasPrefix(stored.ErrorMessage, "INTENSITY_EXCEEDED: ") {
+				t.Fatalf("stored %s %q", stored.Status, stored.ErrorMessage)
+			}
+			if f.gate.callCount() != 0 {
+				t.Fatalf("the scope gate ran %d time(s) for a job refused on its intensity", f.gate.callCount())
+			}
+
+			ok := f.repo.add(f.tenant, commanddom.CommandTypeScan, stepPayload,
+				&commanddom.DispatchGate{Tier: 1, Intensity: "active"})
+			if got, err := path.run(f, ok); err != nil || got == nil {
+				t.Fatalf("a T1 job of an active scan: %v %v", got, err)
+			}
+		})
+	}
+}
+
 // The claim re-check gives the gate each job tool and port settings, so a
 // target only a port- or path-limited entry covers is checked against
 // what the job would do (RFC-065 §16.8); jobs with different settings are
