@@ -1,0 +1,21 @@
+- id: assets
+  const: ModuleAssets
+  slug: assets
+  name: Assets
+  description: "The asset inventory, asset groups and every asset type"
+  icon: Server
+  category: core
+  order: 2
+  core: true
+  user_facing: true
+  permission: "assets:read"
+  mcp:
+    - list_assets
+  jobs:
+    - AssetIdentityBackfillController
+    - AssetChangeTimelineController
+    - AssetLifecycleController
+    - AssetPurgeController
+    - OwnerResolutionController
+    - DataExpirationController
+    - DomainReverifyController
