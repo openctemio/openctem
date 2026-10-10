@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
@@ -32,6 +34,7 @@ import (
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -578,6 +581,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if err != nil {
 			log.Error("vulnerability bundle import disabled", "error", err)
 		} else {
+			// Chunked (v2) bundles are fetched with retries, resume and mirror
+			// fall-back and applied chunk by chunk with a durable checkpoint
+			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
+			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
+				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
 			w.ControllerManager.Register(controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import")))
 		}
 	}
@@ -603,6 +611,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Names a permanent scope target or seed covers are confirmed: once at
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
 	if svc.ScopeJoin != nil {
+		if svc.Module != nil {
+			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
+		}
 		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
 		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
 		if svc.BountyProgram != nil {
