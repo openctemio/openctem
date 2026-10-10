@@ -77,6 +77,8 @@ services:
       # import). A floor under every widening's approval count (0-2).
       # SIGNER_LEDGER: enforce
       # SIGNER_LEDGER_MIN_APPROVALS: "0"
+      # Floor for widening to an intrusive (t2) entry (0-2, RFC-072 §7).
+      # SIGNER_LEDGER_T2_MIN_APPROVALS: "0"
     volumes:
       - signer-keys:/var/lib/openctem-signer/keys
       - signer-state:/var/lib/openctem-signer/state
