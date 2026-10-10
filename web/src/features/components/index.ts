@@ -1,23 +1,14 @@
 /**
- * Components Feature (SBOM / Software Supply Chain)
- *
- * This feature handles software composition analysis, dependency tracking,
- * vulnerability management for third-party components, and SBOM generation.
+ * Software components inventory (RFC-070): packages, the versions in use,
+ * where they are used, the dependency graph, SBOM import and export.
  */
 
-// Types
-export * from './types'
-
-// API (hooks and types for backend)
-export * from './api'
-
-// Hooks (high-level data hooks)
-export * from './hooks'
-
-// Lib (utilities)
-export * from './lib'
-
-// Data directory removed — all pages now use real API
-
-// Components
-export * from './components'
+export * from './api/types'
+export * from './api/hooks'
+export * from './api/download-sbom'
+export * from './lib/filters'
+export { ComponentsListView } from './components/components-list-view'
+export { ComponentDetailView } from './components/component-detail-view'
+export { DependencyGraphView } from './components/dependency-graph'
+export { SbomImportDialog } from './components/sbom-import-dialog'
+export { SbomExportDialog } from './components/sbom-export-dialog'

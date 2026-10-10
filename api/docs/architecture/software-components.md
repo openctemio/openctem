@@ -93,3 +93,24 @@ Module: `components`.
 | Version string | 128 characters |
 | Licenses per link | 16 |
 | List page size | 100 |
+
+## Web console
+
+- `/components`: one row per package (versions in use, assets, open findings
+  by severity, KEV, fix, licenses, risk, last seen); KPI strip and presets
+  (vulnerable, known exploited, fixable, direct); facets (risk toggles,
+  severity, ecosystem, dependency, scope, license) in a side panel on desktop
+  and a sheet on phones; search, sort, page and every filter in the URL;
+  Import SBOM (asset, file, preview, import) and Export SBOM (format, one
+  asset or every visible asset). An empty inventory says how to get data.
+- `/components/{id}`: header with the package URL, licenses, KEV and risk;
+  tabs Versions (upgrade advice, major-version hint), Where used (asset,
+  version, direct or transitive, scope, manifest, open findings; the paths
+  that bring the package in; the asset's dependency graph) and
+  Vulnerabilities (links to the findings of each CVE).
+- The dependency graph is laid out left to right from the direct packages,
+  highlights packages with open vulnerabilities and every path to them, is
+  searchable and keyboard operable, and has a tree list view (the default on
+  phones).
+- Findings filter chips resolve a `component_id` through
+  `GET /components/versions/{versionId}`.

@@ -12,7 +12,6 @@ import {
   securityEndpoints,
   type AssetFilters,
   type FindingFilters,
-  type ComponentFilters,
   type ScanFilters,
   type PaginationParams,
 } from './security-endpoints'
@@ -183,67 +182,6 @@ export function useDeleteAssetGroup(groupId: string) {
 
 // ============================================
 // COMPONENT (SBOM) HOOKS
-// ============================================
-
-export function useComponents(filters?: ComponentFilters, config?: SWRConfiguration) {
-  const endpoint = securityEndpoints.components.list(filters)
-  return useSWR<PaginatedResponse<unknown>>(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useComponent(componentId: string | null, config?: SWRConfiguration) {
-  const endpoint = componentId ? securityEndpoints.components.get(componentId) : null
-  return useSWR(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useVulnerableComponents(filters?: ComponentFilters, config?: SWRConfiguration) {
-  const endpoint = securityEndpoints.components.vulnerable(filters)
-  return useSWR<PaginatedResponse<unknown>>(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useComponentsByEcosystem(
-  ecosystem: string,
-  filters?: ComponentFilters,
-  config?: SWRConfiguration
-) {
-  const endpoint = securityEndpoints.components.byEcosystem(ecosystem, filters)
-  return useSWR<PaginatedResponse<unknown>>(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useComponentStats(config?: SWRConfiguration) {
-  const endpoint = securityEndpoints.components.stats()
-  return useSWR(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useEcosystemStats(config?: SWRConfiguration) {
-  const endpoint = securityEndpoints.components.ecosystemStats()
-  return useSWR(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-export function useLicenseStats(config?: SWRConfiguration) {
-  const endpoint = securityEndpoints.components.licenseStats()
-  return useSWR(endpoint, fetcher, {
-    ...defaultConfig,
-    ...config,
-  })
-}
 
 // ============================================
 // SCAN HOOKS
