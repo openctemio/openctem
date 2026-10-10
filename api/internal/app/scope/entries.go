@@ -88,10 +88,35 @@ var (
 type policy struct {
 	settings tenant.ScopeSettings
 	admins   int
+	// mode is the platform approval policy in force (RFC-054 §12.6).
+	mode tenant.ScopeApprovalMode
+}
+
+// ApprovalPolicySource answers the platform approval policy of a tenant
+// (*scopepolicy.Service). It fails closed (required).
+type ApprovalPolicySource interface {
+	EffectiveScopeApprovalMode(ctx context.Context, tenantID shared.ID) (tenant.ScopeApprovalMode, string)
+}
+
+// SetApprovalPolicy wires the platform approval policy. Without it every
+// tenant is `required`.
+func (s *Service) SetApprovalPolicy(src ApprovalPolicySource) { s.approvalPolicy = src }
+
+// ApprovalPolicy answers the tenant's approval mode and its source
+// (platform_default or organization_override).
+func (s *Service) ApprovalPolicy(ctx context.Context, tenantID string) (tenant.ScopeApprovalMode, string) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil || s.approvalPolicy == nil {
+		return tenant.ScopeApprovalRequired, "platform_default"
+	}
+	return s.approvalPolicy.EffectiveScopeApprovalMode(ctx, id)
 }
 
 func (s *Service) loadPolicy(ctx context.Context, tenantID shared.ID) (policy, error) {
-	p := policy{admins: 2}
+	p := policy{admins: 2, mode: tenant.ScopeApprovalRequired}
+	if s.approvalPolicy != nil {
+		p.mode, _ = s.approvalPolicy.EffectiveScopeApprovalMode(ctx, tenantID)
+	}
 	if s.settings != nil {
 		st, err := s.settings.GetScopeSettings(ctx, tenantID.String())
 		if err != nil {
@@ -113,7 +138,7 @@ func (s *Service) loadPolicy(ctx context.Context, tenantID shared.ID) (policy, e
 
 // approvals is the approval count for a widening of an entry of tier tier.
 func (p policy) approvals(tier scopedom.Tier, request bool) int {
-	n := p.settings.EffectiveApprovals(p.admins, tier == scopedom.TierIntrusive)
+	n := p.settings.EffectiveApprovalsUnder(p.mode, p.admins, tier == scopedom.TierIntrusive)
 	if request && n < 1 {
 		n = 1
 	}

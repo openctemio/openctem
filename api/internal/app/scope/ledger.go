@@ -153,6 +153,12 @@ func (s *Service) commitEntry(ctx context.Context, before *jobsign.LedgerEntry, 
 	if widens {
 		ch.Requester = userRef(t.CreatedBy())
 		ch.RequiredApprovals = min(max(t.ApprovalsRequired(), 0), jobsign.MaxPolicyApprovals)
+		// The platform approval policy in force (RFC-054 §12.6), for the
+		// signer's record of why the change needed this many approvals.
+		if s.approvalPolicy != nil {
+			mode, _ := s.approvalPolicy.EffectiveScopeApprovalMode(ctx, t.TenantID())
+			ch.PlatformPolicy = string(mode)
+		}
 		for _, a := range t.Approvals() {
 			if id := userRef(a.UserID); id != "" {
 				ch.Approvals = append(ch.Approvals, jobsign.LedgerApproval{UserID: id, ApprovedAt: a.ApprovedAt.UTC(), SelfApproved: a.Self})

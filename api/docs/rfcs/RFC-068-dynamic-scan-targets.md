@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (delegated, 2026-10-09; decisions T1–T8 adopted as recommended, §10). P0 in implementation |
+| Status | Implemented (P0; decisions T1–T8 adopted 2026-10-09, §10) |
 | Scope | api (`pkg/domain/scan`, `internal/app/scan` target resolution, `internal/app/scanrun` step seeds, the inventory reader, `GET /assets?in_cidr=`, run dispatch report, metrics, one migration), web (New Scan targets and options, scan detail, run detail) |
 | Architecture | [scan-targets.md](../architecture/scan-targets.md) |
 | Related | RFC-030 (work distribution), RFC-046 (Scan → Run → Task, stage catalogue), RFC-054 (scope model: `*.x` covers `x`, tiers, proof, auto-join), RFC-065 (programs, run scope snapshot), RFC-067 (scan window policies), [scan-stages.md](../architecture/scan-stages.md), [active-probe-gate.md](../architecture/active-probe-gate.md) |
@@ -253,3 +253,10 @@ default (no table rewrite) and an object check added `NOT VALID` then
 validated. Existing scans keep their behaviour: CIDRs are swept, and a stored
 `*.x` that used to be refused for an active scanner now runs as a selector.
 Scans whose targets were frozen by the old web expansion keep their list.
+
+## 13. Follow-ups
+
+- Plan-based limit on targets per run.
+- Upgrade frozen subdomain lists to `*.x` selectors.
+- Tag and scope-entry selectors.
+- Notification when the expansion cap is hit.
