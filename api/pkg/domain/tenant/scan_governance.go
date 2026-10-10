@@ -1,7 +1,7 @@
 package tenant
 
-// The organization's scan approval governance (RFC-072,
-// docs/rfcs/RFC-072-scan-approval-governance.md): the mode an owner chooses
+// The organization's scan approval governance (RFC-073,
+// docs/rfcs/RFC-073-scan-approval-governance.md): the mode an owner chooses
 // and the approval rules. Off by default.
 
 import (
