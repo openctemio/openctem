@@ -217,7 +217,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	registerWebEndpointRoutes(router, handler.NewWebEndpointHandler(webendpointapp.NewService(postgres.NewWebEndpointRepository(db), enforcer), nil, log), auth, nil)
 	registerAssetStateHistoryRoutes(router, historyHandler, auth, nil)
 	registerAssetRelationshipRoutes(router, handler.NewAssetRelationshipHandler(relSvc, v, log), auth, nil, passthrough)
-	registerRelationshipSuggestionRoutes(router, handler.NewRelationshipSuggestionHandler(suggSvc, log), auth, nil)
+	registerRelationshipSuggestionRoutes(router, handler.NewRelationshipSuggestionHandler(suggSvc, log), auth, nil, passthrough)
 	registerAssetDedupRoutes(router, dedupHandler, auth, nil)
 	// The asset's software list (RFC-066).
 	vmSvc := vulnmatchapp.NewService(postgres.NewSoftwareMatchRepository(db),
