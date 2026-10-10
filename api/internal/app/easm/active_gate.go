@@ -27,6 +27,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
@@ -36,6 +37,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 )
 
 // ActiveGateRecords reads attribution records and rejection tombstones
@@ -286,11 +288,70 @@ func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, 
 			}
 		}
 		free, ports, path, covered := auth.Limits(t, tier)
-		if !covered || free {
+		if !covered || free || job.LimitsEnforced {
+			// A sensor that enforces the limits gets them in the signed job
+			// (StatementLimits) and may run any tool inside them.
 			continue
 		}
 		if reason := scopedom.ConstrainedJobRefusal(job.Tool, ports, path, job.Ports, job.TopPorts); reason != "" {
 			out[t] = reason
+		}
+	}
+	return out, nil
+}
+
+// StatementLimits are the scope limits a signed job carries for its
+// targets (jobsign.Statement.Limits): for each target that only port- or
+// path-limited entries cover at tier, one limit per covering entry, on the
+// target's host. A host that an unlimited entry covers through any of the
+// targets gets none (it is not limited). Targets nothing covers are left
+// to the other checks.
+func (g *ActiveGate) StatementLimits(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) ([]jobsign.Limit, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	if len(targets) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many targets for one limit lookup", shared.ErrValidation)
+	}
+	var auth *scopeauth.Authority
+	byHost := map[string][]scopedom.EntryLimit{}
+	free := map[string]bool{}
+	var hosts []string
+	for _, t := range targets {
+		h := jobsign.LimitHost(t)
+		if h == "" || !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		isFree, covered, ls := auth.EntryLimits(t, tier)
+		switch {
+		case !covered:
+			continue
+		case isFree:
+			free[h] = true
+			continue
+		}
+		if _, seen := byHost[h]; !seen {
+			hosts = append(hosts, h)
+		}
+		for _, l := range ls {
+			if !slices.Contains(byHost[h], l) {
+				byHost[h] = append(byHost[h], l)
+			}
+		}
+	}
+	var out []jobsign.Limit
+	for _, h := range hosts {
+		if free[h] {
+			continue
+		}
+		for _, l := range byHost[h] {
+			out = append(out, jobsign.Limit{Host: h, Ports: l.Ports, Protocol: l.Protocol, PathPrefix: l.PathPrefix})
 		}
 	}
 	return out, nil
