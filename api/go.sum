@@ -141,8 +141,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
 github.com/onsi/gomega v1.34.1/go.mod h1:kU1QgUvBDLXBJq618Xvm2LUX6rSAfRaFRTcdOeDLwwY=
-github.com/openctemio/ctis v1.2.1-0.20261007105007-986a2023c50e h1:qZL5RaeNRm/VW4tOhdqrutNnsyn8L5/szGafbCtW87s=
-github.com/openctemio/ctis v1.2.1-0.20261007105007-986a2023c50e/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
+github.com/openctemio/ctis v1.2.1-0.20261010105554-cd662a8cd894 h1:KrCxgyUfW1MkKoBPR69hsIwqjHALFjABevniK55+/Lo=
+github.com/openctemio/ctis v1.2.1-0.20261010105554-cd662a8cd894/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
 github.com/openctemio/sdk-go v0.18.1-0.20261010083220-17ba39a04836 h1:WIJMgJnUb++NsP2aEcf4lKV6bxCJB9ni7F2LwkNvXj0=
 github.com/openctemio/sdk-go v0.18.1-0.20261010083220-17ba39a04836/go.mod h1:dxDZsXsRP43BXA7X26d4nbQxDc6HhFpaWQ17Mq0nxS8=
 github.com/pires/go-proxyproto v0.15.0 h1:dTshmNbFm/D+0+sbrxUuddPOZ5Y0B7c5NhtsBkm6LqI=
