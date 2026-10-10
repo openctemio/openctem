@@ -14,8 +14,8 @@
 #
 # The assignment is a pure function of the package / test names, so a shard
 # never depends on what another shard did. The three slowest packages are
-# pinned to different pkgs shards; the rest are spread by a checksum of the
-# import path.
+# pinned to different pkgs shards (integration alone in shard 0); the rest are
+# spread over the other shards by a checksum of the import path.
 set -euo pipefail
 
 UNIT=github.com/openctemio/openctem/api/tests/unit
@@ -30,7 +30,8 @@ pkg_shard() { # <pkg> <n> -> shard index
     "$PIN_0") echo $((0 % $2)) ;;
     "$PIN_1") echo $((1 % $2)) ;;
     "$PIN_2") echo $((2 % $2)) ;;
-    *) echo $(($(printf '%s' "$1" | cksum | cut -d' ' -f1) % $2)) ;;
+    *) # shard 0 holds the integration package alone; the rest share 1..n-1
+       if [ "$2" -gt 1 ]; then echo $((1 + $(printf '%s' "$1" | cksum | cut -d' ' -f1) % ($2 - 1))); else echo 0; fi ;;
   esac
 }
 
