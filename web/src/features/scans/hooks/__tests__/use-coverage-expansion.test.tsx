@@ -29,14 +29,17 @@ describe('useCoverageExpansion', () => {
 
   it('asks once for all the typed domains', async () => {
     get.mockResolvedValue({
-      data: [{ name: 'api.example.com' }, { name: 'www.example.org' }],
+      data: [
+        { name: 'api.example.com', properties: { resolved_ips: ['203.0.113.1'] } },
+        { name: 'www.example.org', properties: { resolved_ips: ['203.0.113.2'] } },
+      ],
       total: 2,
     })
     const { result } = renderHook(
-      () => useCoverageExpansion(['example.com', 'example.org'], 'subdomains'),
+      () => useCoverageExpansion(['example.com', 'example.org'], 'subdomains_ips'),
       { wrapper }
     )
-    await waitFor(() => expect(result.current.added.length).toBe(2))
+    await waitFor(() => expect(result.current.added).toEqual(['203.0.113.1', '203.0.113.2']))
     expect(get).toHaveBeenCalledTimes(1)
     expect(get).toHaveBeenCalledWith(coverageURL(['example.com', 'example.org'], 1))
     expect(String(get.mock.calls[0][0])).toContain('under=example.com%2Cexample.org')
@@ -47,7 +50,7 @@ describe('useCoverageExpansion', () => {
     get
       .mockResolvedValueOnce({ data: full, total: 130 })
       .mockResolvedValueOnce({ data: full.slice(0, 30), total: 130 })
-    renderHook(() => useCoverageExpansion(['example.com'], 'subdomains'), { wrapper })
+    renderHook(() => useCoverageExpansion(['example.com'], 'subdomains_ips'), { wrapper })
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
     expect(String(get.mock.calls[1][0])).toContain('page=2')
   })
@@ -55,5 +58,13 @@ describe('useCoverageExpansion', () => {
   it('sends nothing for host-only coverage', () => {
     renderHook(() => useCoverageExpansion(['example.com'], 'host'), { wrapper })
     expect(get).not.toHaveBeenCalled()
+  })
+
+  it('lists nothing for subdomains: the run resolves *.domain itself (RFC-068)', () => {
+    const { result } = renderHook(() => useCoverageExpansion(['example.com'], 'subdomains'), {
+      wrapper,
+    })
+    expect(get).not.toHaveBeenCalled()
+    expect(result.current.added).toEqual([])
   })
 })

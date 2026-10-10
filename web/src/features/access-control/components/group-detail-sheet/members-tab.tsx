@@ -12,10 +12,12 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  CalendarClock,
 } from 'lucide-react'
 import { DataTableRowActions, EmptyState } from '@/features/shared'
 import { MemberRoleConfig, getInitials, type GroupMember } from '@/features/access-control'
 import { useState, useEffect } from 'react'
+import { daysUntil, formatShortDate } from '@/features/organization/lib/external-access'
 
 interface MembersTabProps {
   members: GroupMember[]
@@ -28,6 +30,8 @@ interface MembersTabProps {
   onAddMember?: () => void
   /** Omitted when the caller may not remove members (the action is hidden). */
   onRemoveMember?: (userId: string, name: string) => void
+  /** Omitted when the caller may not change end dates (the action is hidden). */
+  onChangeEnd?: (userId: string, name: string, expiresAt?: string) => void
 }
 
 export function MembersTab({
@@ -39,6 +43,7 @@ export function MembersTab({
   onPageChange,
   onAddMember,
   onRemoveMember,
+  onChangeEnd,
 }: MembersTabProps) {
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -128,22 +133,57 @@ export function MembersTab({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {member.expires_at && (
+                    <Badge
+                      variant="outline"
+                      className={
+                        daysUntil(member.expires_at) <= 7
+                          ? 'gap-1 border-warning/40 text-xs text-warning'
+                          : 'gap-1 text-xs'
+                      }
+                      title={
+                        `Leaves the team ${formatShortDate(member.expires_at)}` +
+                        (member.expiry_reason ? `: ${member.expiry_reason}` : '')
+                      }
+                    >
+                      <CalendarClock className="h-3 w-3" />
+                      Ends {formatShortDate(member.expires_at)}
+                    </Badge>
+                  )}
                   <Badge variant="outline" className="text-xs">
                     {member.role === 'owner' && <Crown className="h-3 w-3 me-1" />}
                     {member.role === 'lead' && <Crown className="h-3 w-3 me-1" />}
                     {member.role === 'member' && <User className="h-3 w-3 me-1" />}
                     {roleConfig.label}
                   </Badge>
-                  {onRemoveMember && (
+                  {(onRemoveMember || onChangeEnd) && (
                     <DataTableRowActions
                       actions={[
-                        {
-                          label: 'Remove',
-                          icon: Trash2,
-                          destructive: true,
-                          onClick: () =>
-                            onRemoveMember(member.user_id || member.user?.id || '', name),
-                        },
+                        ...(onChangeEnd
+                          ? [
+                              {
+                                label: 'Change end date',
+                                icon: CalendarClock,
+                                onClick: () =>
+                                  onChangeEnd(
+                                    member.user_id || member.user?.id || '',
+                                    name,
+                                    member.expires_at
+                                  ),
+                              },
+                            ]
+                          : []),
+                        ...(onRemoveMember
+                          ? [
+                              {
+                                label: 'Remove',
+                                icon: Trash2,
+                                destructive: true,
+                                onClick: () =>
+                                  onRemoveMember(member.user_id || member.user?.id || '', name),
+                              },
+                            ]
+                          : []),
                       ]}
                     />
                   )}

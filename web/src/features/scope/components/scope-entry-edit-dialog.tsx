@@ -36,7 +36,14 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import { invalidateScopeCache, updateScopeTarget, useScopeSettingsApi } from '../api/use-scope-api'
 import type { ApiScopeTarget, ScopeTier, UpdateScopeTargetInput } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
-import { coversText, daysUntil, expiryText, TIER_HINT, TIER_LABEL } from '../lib/scope-entry'
+import {
+  coversText,
+  daysUntil,
+  expiryBoundFor,
+  expiryText,
+  TIER_HINT,
+  TIER_LABEL,
+} from '../lib/scope-entry'
 
 type ExpiryChoice = 'keep' | 'days' | 'permanent'
 
@@ -63,7 +70,6 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
   const formId = useId()
   const canApprove = useHasPermission(Permission.ScopeApprove)
   const { data: settings } = useScopeSettingsApi(!!entry)
-  const maxDays = Math.max(1, settings?.one_off_max_days ?? 7)
 
   const [description, setDescription] = useState('')
   const [reason, setReason] = useState('')
@@ -79,11 +85,14 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
     setReason(entry.reason ?? '')
     setTier((entry.max_tier as ScopeTier) || 't1')
     setExpiry('keep')
-    setDays(Math.min(7, maxDays))
+    setDays(7)
     setError(null)
-  }, [entry, maxDays])
+  }, [entry])
 
   if (!entry) return null
+
+  // Intrusive (T2) entries follow the owner's limit; others the one-off one.
+  const { maxDays, permanent: permanentAllowed } = expiryBoundFor(tier, settings)
 
   const change: UpdateScopeTargetInput = {
     description: description.trim(),
@@ -93,7 +102,10 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
     ...(expiry === 'permanent' ? { clear_expiry: true } : {}),
   }
   const widening = isWideningChange(entry, change)
-  const needsApprovals = (settings?.effective_widening_approvals ?? 0) > 0 || tier === 't2'
+  // The platform policy decides whether t2 always needs an approval.
+  const policy = settings?.approval_policy?.mode ?? 'required'
+  const needsApprovals =
+    (settings?.effective_widening_approvals ?? 0) > 0 || (tier === 't2' && policy === 'required')
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -101,7 +113,11 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
       setError(t('scope.error.WIDENING_NEEDS_APPROVER'))
       return
     }
-    if (tier === 't2' && (expiry === 'permanent' || (!entry.expires_at && expiry === 'keep'))) {
+    if (
+      tier === 't2' &&
+      !permanentAllowed &&
+      (expiry === 'permanent' || (!entry.expires_at && expiry === 'keep'))
+    ) {
       setError(t('scope.error.INTRUSIVE_NEEDS_EXPIRY'))
       return
     }
@@ -153,7 +169,9 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
                 <SelectContent>
                   <SelectItem value="keep">Keep ({expiryText(entry.expires_at)})</SelectItem>
                   <SelectItem value="days">Expire in a number of days</SelectItem>
-                  {entry.expires_at && <SelectItem value="permanent">Make permanent</SelectItem>}
+                  {entry.expires_at && permanentAllowed && (
+                    <SelectItem value="permanent">Make permanent</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
               {expiry === 'days' && (
@@ -171,6 +189,13 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
                     days from now (1 to {maxDays})
                   </span>
                 </div>
+              )}
+              {tier === 't2' && (
+                <p className="text-xs text-muted-foreground">
+                  {permanentAllowed
+                    ? 'Intrusive (T2) entries may be permanent in your organization; they are confirmed again periodically.'
+                    : `Intrusive (T2) entries last at most ${maxDays} days in your organization (set by an owner).`}
+                </p>
               )}
             </div>
             <div className="space-y-2">
@@ -214,7 +239,9 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
                 {canApprove
                   ? needsApprovals
                     ? 'It goes back to pending and authorizes nothing until another approver approves it.'
-                    : 'You may be asked to confirm your identity.'
+                    : policy === 'disabled'
+                      ? 'Approvals are disabled by your platform administrator: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                      : 'It takes effect at once; every administrator is told. You may be asked to confirm your identity.'
                   : 'Only a scope approver can make this change.'}
               </p>
             )}

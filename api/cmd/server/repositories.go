@@ -22,6 +22,8 @@ type Repositories struct {
 	ScopeExcl              *postgres.ScopeExclusionRepository
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
 	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
+	Software               *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
+	AssetAttributeSources  *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
 	APISpec                *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
@@ -55,7 +57,6 @@ type Repositories struct {
 	// Pentest
 	PentestCampaign       *postgres.PentestCampaignRepository
 	PentestCampaignMember *postgres.PentestCampaignMemberRepository
-	PentestFinding        *postgres.PentestFindingRepository
 	PentestRetest         *postgres.PentestRetestRepository
 	PentestTemplate       *postgres.PentestTemplateRepository
 	PentestReport         *postgres.PentestReportRepository
@@ -134,6 +135,8 @@ type Repositories struct {
 	ScanFreezeWindow *postgres.ScanFreezeWindowRepository
 	// Content packs (RFC-061)
 	ContentPack *postgres.ContentPackRepository
+	// Platform content packs and channels (RFC-061)
+	PlatformContentPack *postgres.PlatformContentPackRepository
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
@@ -143,6 +146,7 @@ type Repositories struct {
 	ToolCapability   *postgres.ToolCapabilityRepository
 	TenantToolConfig *postgres.TenantToolConfigRepository
 	Scan             *postgres.ScanRepository
+	ScanSelector     *postgres.ScanSelectorRepository
 	ScannerTemplate  *postgres.ScannerTemplateRepository
 	TemplateSource   *postgres.TemplateSourceRepository
 	SecretStore      *postgres.SecretStoreRepository
@@ -154,17 +158,21 @@ type Repositories struct {
 	StepRun          *postgres.StepRunRepository
 
 	// Workflows
-	Workflow        *postgres.WorkflowRepository
-	WorkflowNode    *postgres.WorkflowNodeRepository
-	WorkflowEdge    *postgres.WorkflowEdgeRepository
-	WorkflowRun     *postgres.WorkflowRunRepository
-	WorkflowNodeRun *postgres.WorkflowNodeRunRepository
+	Workflow        *postgres.AutomationRepository
+	WorkflowNode    *postgres.AutomationNodeRepository
+	WorkflowEdge    *postgres.AutomationEdgeRepository
+	WorkflowRun     *postgres.AutomationRunRepository
+	WorkflowNodeRun *postgres.AutomationRunStepRepository
 
 	// Suppressions
 	Suppression *postgres.SuppressionRepository
 
 	// Access Control
-	Group           *postgres.GroupRepository
+	Group *postgres.GroupRepository
+	// GroupRoleBinding: team role bindings (decisions G1-G12).
+	GroupRoleBinding *postgres.GroupRoleBindingRepository
+	// ServiceAccount: organization-owned identities for integrations.
+	ServiceAccount  *postgres.ServiceAccountRepository
 	AccessControl   *postgres.AccessControlRepository
 	DataScope       *postgres.DataScopeRepository
 	MemberLifecycle *postgres.MemberLifecycleRepository
@@ -181,6 +189,7 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin         *postgres.AdminRepository
 	SignupPolicy  *postgres.SignupPolicyRepository
+	ScopePolicy   *postgres.ScopePolicyRepository
 	AccessRequest *postgres.AccessRequestRepository
 	Plan          *postgres.PlanRepository
 	IdleLifecycle *postgres.IdleLifecycleRepository
@@ -293,6 +302,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScopeExcl:              postgres.NewScopeExclusionRepository(db),
 		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
 		WebEndpoint:            postgres.NewWebEndpointRepository(db),
+		Software:               postgres.NewSoftwareRepository(db),
+		AssetAttributeSources:  postgres.NewAssetAttributeSourceRepository(db),
 		APISpec:                postgres.NewAPISpecRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
@@ -327,7 +338,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Pentest
 		PentestCampaign:       postgres.NewPentestCampaignRepository(db),
 		PentestCampaignMember: postgres.NewPentestCampaignMemberRepository(db),
-		PentestFinding:        postgres.NewPentestFindingRepository(db),
 		PentestRetest:         postgres.NewPentestRetestRepository(db),
 		PentestTemplate:       postgres.NewPentestTemplateRepository(db),
 		PentestReport:         postgres.NewPentestReportRepository(db),
@@ -386,9 +396,10 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScanCoverage: postgres.NewScanCoverageRepository(db),
 
 		// Scan zones (RFC-023)
-		ScanZone:         postgres.NewScanZoneRepository(db),
-		ScanFreezeWindow: postgres.NewScanFreezeWindowRepository(db),
-		ContentPack:      postgres.NewContentPackRepository(db),
+		ScanZone:            postgres.NewScanZoneRepository(db),
+		ScanFreezeWindow:    postgres.NewScanFreezeWindowRepository(db),
+		ContentPack:         postgres.NewContentPackRepository(db),
+		PlatformContentPack: postgres.NewPlatformContentPackRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),
@@ -398,6 +409,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ToolCapability:   postgres.NewToolCapabilityRepository(db),
 		TenantToolConfig: postgres.NewTenantToolConfigRepository(db),
 		Scan:             postgres.NewScanRepository(db),
+		ScanSelector:     postgres.NewScanSelectorRepository(db),
 		ScannerTemplate:  postgres.NewScannerTemplateRepository(db),
 		TemplateSource:   postgres.NewTemplateSourceRepository(db),
 		SecretStore:      postgres.NewSecretStoreRepository(db),
@@ -409,22 +421,24 @@ func newRepositories(db *postgres.DB) *Repositories {
 		StepRun:          postgres.NewStepRunRepository(db),
 
 		// Workflows
-		Workflow:        postgres.NewWorkflowRepository(db),
-		WorkflowNode:    postgres.NewWorkflowNodeRepository(db),
-		WorkflowEdge:    postgres.NewWorkflowEdgeRepository(db),
-		WorkflowRun:     postgres.NewWorkflowRunRepository(db),
-		WorkflowNodeRun: postgres.NewWorkflowNodeRunRepository(db),
+		Workflow:        postgres.NewAutomationRepository(db),
+		WorkflowNode:    postgres.NewAutomationNodeRepository(db),
+		WorkflowEdge:    postgres.NewAutomationEdgeRepository(db),
+		WorkflowRun:     postgres.NewAutomationRunRepository(db),
+		WorkflowNodeRun: postgres.NewAutomationRunStepRepository(db),
 
 		// Suppressions
 		Suppression: postgres.NewSuppressionRepository(db),
 
 		// Access Control
-		Group:           postgres.NewGroupRepository(db),
-		AccessControl:   postgres.NewAccessControlRepository(db),
-		DataScope:       postgres.NewDataScopeRepository(db),
-		MemberLifecycle: postgres.NewMemberLifecycleRepository(db),
-		Role:            postgres.NewRoleRepository(db),
-		RolePermission:  postgres.NewPermissionRepository(db),
+		Group:            postgres.NewGroupRepository(db),
+		GroupRoleBinding: postgres.NewGroupRoleBindingRepository(db),
+		ServiceAccount:   postgres.NewServiceAccountRepository(db),
+		AccessControl:    postgres.NewAccessControlRepository(db),
+		DataScope:        postgres.NewDataScopeRepository(db),
+		MemberLifecycle:  postgres.NewMemberLifecycleRepository(db),
+		Role:             postgres.NewRoleRepository(db),
+		RolePermission:   postgres.NewPermissionRepository(db),
 
 		// Session (raw *sql.DB required)
 		Session:      postgres.NewSessionRepository(db.DB),
@@ -434,6 +448,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:         postgres.NewAdminRepository(db),
 		SignupPolicy:  postgres.NewSignupPolicyRepository(db),
+		ScopePolicy:   postgres.NewScopePolicyRepository(db),
 		AccessRequest: postgres.NewAccessRequestRepository(db),
 		Plan:          postgres.NewPlanRepository(db),
 		IdleLifecycle: postgres.NewIdleLifecycleRepository(db),

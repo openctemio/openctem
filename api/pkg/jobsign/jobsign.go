@@ -40,6 +40,8 @@ const (
 	MaxTargets = 10000
 	// MaxTargetBytes caps one target.
 	MaxTargetBytes = 1024
+	// MaxTemplates caps the custom templates of one statement.
+	MaxTemplates = 256
 	// MaxTTL caps expires_at - issued_at.
 	MaxTTL = time.Hour
 	// MaxClockSkew is how far issued_at may be from the signer's clock.
@@ -64,11 +66,17 @@ type Statement struct {
 	// PayloadSHA256 is "sha256:" + lower-case hex of the SHA-256 of the
 	// command's "payload" JSON value, as the exact bytes of the response
 	// that hands the command to the sensor.
-	PayloadSHA256 string    `json:"payload_sha256"`
-	Targets       []string  `json:"targets"`
-	LeaseEpoch    int       `json:"lease_epoch"`
-	IssuedAt      time.Time `json:"issued_at"`
-	ExpiresAt     time.Time `json:"expires_at"`
+	PayloadSHA256 string   `json:"payload_sha256"`
+	Targets       []string `json:"targets"`
+	// Templates is "sha256:" + lower-case hex of the SHA-256 of each custom
+	// template the payload carries (payload custom_templates[].content,
+	// base64-decoded), in payload order; absent when it carries none. The
+	// signer signs only digests in its ledger, and a sensor that verified
+	// the statement trusts exactly these template bytes.
+	Templates  []string  `json:"templates,omitempty"`
+	LeaseEpoch int       `json:"lease_epoch"`
+	IssuedAt   time.Time `json:"issued_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
 	// Seq, Nonce and Signer are set by the signer.
 	Seq    uint64     `json:"seq"`
 	Nonce  string     `json:"nonce"`

@@ -27,16 +27,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
+	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
-	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
+	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -90,8 +90,8 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 	t.Cleanup(func() {
 		bg := context.Background()
 		for _, tn := range []string{tenantA, tenantB} {
-			_, _ = raw.ExecContext(bg, `DELETE FROM workflow_runs WHERE tenant_id = $1`, tn)
-			_, _ = raw.ExecContext(bg, `DELETE FROM workflows WHERE tenant_id = $1`, tn)
+			_, _ = raw.ExecContext(bg, `DELETE FROM automation_runs WHERE tenant_id = $1`, tn)
+			_, _ = raw.ExecContext(bg, `DELETE FROM automations WHERE tenant_id = $1`, tn)
 			_, _ = raw.ExecContext(bg, `DELETE FROM findings WHERE tenant_id = $1`, tn)
 			_, _ = raw.ExecContext(bg, `DELETE FROM tenants WHERE id = $1`, tn)
 		}
@@ -148,26 +148,26 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 	tenants := postgres.NewTenantRepository(db)
 	enforcer.SetAdminLookup(datascope.MembershipAdminLookup(tenants))
 	roles := postgres.NewRoleRepository(db)
-	authorizer := workflowsvc.NewPrincipalAuthorizer(
+	authorizer := automationsvc.NewPrincipalAuthorizer(
 		wfAuthzMembers{tenants: tenants, access: postgres.NewAccessControlRepository(db)},
 		wfAuthzPerms{roles: roles}, enforcer,
-		func(ctx context.Context, p workflowsvc.Principal) context.Context {
+		func(ctx context.Context, p automationsvc.Principal) context.Context {
 			ctx = context.WithValue(ctx, middleware.UserIDKey, p.UserID.String())
 			return context.WithValue(ctx, middleware.IsAdminKey, p.IsAdmin)
 		})
 	vuln := findingapp.NewVulnerabilityService(nil, postgres.NewFindingRepository(db), logger.NewNop())
 	vuln.SetDataScope(enforcer)
 
-	wfRepo, nodeRepo := postgres.NewWorkflowRepository(db), postgres.NewWorkflowNodeRepository(db)
-	runRepo, nodeRunRepo := postgres.NewWorkflowRunRepository(db), postgres.NewWorkflowNodeRunRepository(db)
-	executor := workflowsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, logger.NewNop(),
-		workflowsvc.WithExecutorStepAuthorizer(authorizer))
-	executor.RegisterActionHandler(workflowdom.ActionTypeAddTags, workflowsvc.NewFindingActionHandler(vuln, logger.NewNop()))
+	wfRepo, nodeRepo := postgres.NewAutomationRepository(db), postgres.NewAutomationNodeRepository(db)
+	runRepo, nodeRunRepo := postgres.NewAutomationRunRepository(db), postgres.NewAutomationRunStepRepository(db)
+	executor := automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, logger.NewNop(),
+		automationsvc.WithExecutorStepAuthorizer(authorizer))
+	executor.RegisterActionHandler(automationdom.ActionTypeAddTags, automationsvc.NewFindingActionHandler(vuln, logger.NewNop()))
 	// No executor on the service: the test runs each run synchronously.
-	svc := workflowsvc.NewWorkflowService(wfRepo, nodeRepo, postgres.NewWorkflowEdgeRepository(db), runRepo, nodeRunRepo,
+	svc := automationsvc.NewWorkflowService(wfRepo, nodeRepo, postgres.NewAutomationEdgeRepository(db), runRepo, nodeRunRepo,
 		logger.NewNop(),
-		workflowsvc.WithWorkflowStepAuthorizer(authorizer),
-		workflowsvc.WithWorkflowSubjectReaders(postgres.NewFindingRepository(db), postgres.NewAssetRepository(db)))
+		automationsvc.WithWorkflowStepAuthorizer(authorizer),
+		automationsvc.WithWorkflowSubjectReaders(postgres.NewFindingRepository(db), postgres.NewAssetRepository(db)))
 	h := NewWorkflowHandler(svc, validator.New(), logger.NewNop())
 
 	as := func(user, method, body string, params map[string]string) *http.Request {
@@ -203,14 +203,14 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 	}
 	runCount := func(wf string) int {
 		var n int
-		if err := raw.QueryRowContext(ctx, `SELECT COUNT(*) FROM workflow_runs WHERE workflow_id = $1`, wf).Scan(&n); err != nil {
+		if err := raw.QueryRowContext(ctx, `SELECT COUNT(*) FROM automation_runs WHERE automation_id = $1`, wf).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		return n
 	}
 	ownerOf := func(wf string) string {
 		var o sql.NullString
-		if err := raw.QueryRowContext(ctx, `SELECT created_by::text FROM workflows WHERE id = $1`, wf).Scan(&o); err != nil {
+		if err := raw.QueryRowContext(ctx, `SELECT created_by::text FROM automations WHERE id = $1`, wf).Scan(&o); err != nil {
 			t.Fatal(err)
 		}
 		return o.String
@@ -223,8 +223,8 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 		}
 		var status string
 		var code sql.NullString
-		if err := raw.QueryRowContext(ctx, `SELECT r.status, (SELECT error_code FROM workflow_node_runs WHERE workflow_run_id = r.id AND node_type = 'action')
-			FROM workflow_runs r WHERE r.id = $1`, runID).Scan(&status, &code); err != nil {
+		if err := raw.QueryRowContext(ctx, `SELECT r.status, (SELECT error_code FROM automation_run_steps WHERE automation_run_id = r.id AND node_type = 'action')
+			FROM automation_runs r WHERE r.id = $1`, runID).Scan(&status, &code); err != nil {
 			t.Fatal(err)
 		}
 		return status, code.String
@@ -299,7 +299,7 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 			t.Fatalf("manual run triggered_by = %v, want the caller", run.TriggeredBy)
 		}
 		var subject sql.NullString
-		if err := raw.QueryRowContext(ctx, `SELECT subject_id::text FROM workflow_runs WHERE id = $1`, run.ID).Scan(&subject); err != nil {
+		if err := raw.QueryRowContext(ctx, `SELECT subject_id::text FROM automation_runs WHERE id = $1`, run.ID).Scan(&subject); err != nil {
 			t.Fatal(err)
 		}
 		if subject.String != fIn {
@@ -346,9 +346,9 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 
 	eventRun := func(f string) string {
 		t.Helper()
-		run, err := svc.TriggerWorkflow(ctx, workflowsvc.TriggerWorkflowInput{
+		run, err := svc.TriggerWorkflow(ctx, automationsvc.TriggerWorkflowInput{
 			TenantID: shared.MustIDFromString(tenantA), WorkflowID: shared.MustIDFromString(wf),
-			TriggerType: workflowdom.TriggerTypeFindingCreated,
+			TriggerType: automationdom.TriggerTypeFindingCreated,
 			TriggerData: map[string]any{"finding": map[string]any{"id": f}},
 		})
 		if err != nil {
@@ -360,8 +360,8 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 
 	t.Run("event run acts as the owner, checked on every run", func(t *testing.T) {
 		clearTags()
-		if st, code := execRun(eventRun(fOut)); st != "failed" || code != workflowsvc.ErrCodeRunNotAuthorized {
-			t.Errorf("event on a finding outside the owner's scope = %s/%s, want failed/%s", st, code, workflowsvc.ErrCodeRunNotAuthorized)
+		if st, code := execRun(eventRun(fOut)); st != "failed" || code != automationsvc.ErrCodeRunNotAuthorized {
+			t.Errorf("event on a finding outside the owner's scope = %s/%s, want failed/%s", st, code, automationsvc.ErrCodeRunNotAuthorized)
 		}
 		if len(tagsOf(fOut)) != 0 {
 			t.Fatal("an out-of-scope event changed the finding")
@@ -373,8 +373,8 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 		// The owner loses findings:write: the next run is refused.
 		clearTags()
 		exec(`DELETE FROM role_permissions WHERE role_id = $1 AND permission_id = 'findings:write'`, operatorRole)
-		if st, code := execRun(eventRun(fIn)); st != "failed" || code != workflowsvc.ErrCodeRunNotAuthorized {
-			t.Errorf("after losing findings:write = %s/%s, want failed/%s", st, code, workflowsvc.ErrCodeRunNotAuthorized)
+		if st, code := execRun(eventRun(fIn)); st != "failed" || code != automationsvc.ErrCodeRunNotAuthorized {
+			t.Errorf("after losing findings:write = %s/%s, want failed/%s", st, code, automationsvc.ErrCodeRunNotAuthorized)
 		}
 		if len(tagsOf(fIn)) != 0 {
 			t.Fatal("a run of an owner without findings:write changed the finding")
@@ -383,8 +383,8 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 		// Back, but suspended: refused too.
 		exec(`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, 'findings:write')`, operatorRole)
 		exec(`UPDATE tenant_members SET status = 'suspended', suspended_at = now() WHERE user_id = $1 AND tenant_id = $2`, operator, tenantA)
-		if st, code := execRun(eventRun(fIn)); st != "failed" || code != workflowsvc.ErrCodeRunNotAuthorized {
-			t.Errorf("suspended owner = %s/%s, want failed/%s", st, code, workflowsvc.ErrCodeRunNotAuthorized)
+		if st, code := execRun(eventRun(fIn)); st != "failed" || code != automationsvc.ErrCodeRunNotAuthorized {
+			t.Errorf("suspended owner = %s/%s, want failed/%s", st, code, automationsvc.ErrCodeRunNotAuthorized)
 		}
 		if len(tagsOf(fIn)) != 0 {
 			t.Fatal("a run of a suspended owner changed the finding")

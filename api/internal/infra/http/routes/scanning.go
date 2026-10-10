@@ -277,6 +277,9 @@ func registerScanWorkflowRoutes(
 		r.GET("/{id}/map", h.GetRunMap, middleware.Require(permission.ScansRead))
 		// What one step produced, new ones first (in the caller's data scope).
 		r.GET("/{id}/outputs", h.ListRunStepOutputs, middleware.Require(permission.ScansRead))
+		// The scope the run relied on (RFC-065 §9): scope or program readers only.
+		r.GET("/{id}/scope-snapshot", h.GetRunScopeSnapshot, middleware.Require(permission.ScansRead),
+			middleware.RequireAny(permission.ScopeRead, permission.ProgramsRead))
 
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.ScansWrite))
 	}, runMiddlewares...)
@@ -520,6 +523,9 @@ func registerScannerTemplateRoutes(
 		r.POST("/", h.Create, middleware.Require(permission.ScannerTemplatesWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.ScannerTemplatesWrite))
 		r.POST("/{id}/deprecate", h.Deprecate, middleware.Require(permission.ScannerTemplatesWrite))
+		// Approving a version for sensors is a scope widening (RFC-040
+		// §5.8, §11.5): the scope approvers, with step-up.
+		r.POST("/{id}/approve", h.ApproveForSensors, middleware.Require(permission.ScopeApprove), requireStepUp())
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScannerTemplatesDelete))
@@ -547,6 +553,25 @@ func registerContentPackRoutes(
 		r.GET("/{id}/download", h.Download, middleware.Require(permission.ContentPacksRead))
 		r.POST("/", h.Upload, middleware.Require(permission.ContentPacksWrite), requireStepUp())
 		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.ContentPacksWrite), requireStepUp())
+	}, tenantMiddlewares...)
+}
+
+// registerPlatformContentPackRoutes registers the read-only view every
+// organization has of the platform content packs and channels (RFC-061).
+// The platform administrators manage them under /api/v1/admin/content-packs.
+func registerPlatformContentPackRoutes(
+	router Router,
+	h *handler.PlatformContentPackHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/platform-content-packs", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
+		r.GET("/channels", h.Channels, middleware.Require(permission.ContentPacksRead))
+		r.GET("/signing-key", h.SigningKey, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
 	}, tenantMiddlewares...)
 }
 

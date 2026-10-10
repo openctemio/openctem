@@ -65,7 +65,7 @@ func (h *MCPHandler) buildWriteTools() []mcpTool {
 			`"content":{"type":"string","description":"comment text (plain text, at most 4000 characters)"},` +
 			`"confirmation_id":{"type":"string","description":"the id returned by the first call, once the user confirmed"}},` +
 			`"required":["finding_id","content"]}`),
-		RequiredPerm: string(permission.FindingsWrite),
+		RequiredPerm: string(permission.FindingsComment),
 		Write:        true,
 		prepare:      h.prepareAddFindingComment,
 		call:         h.toolAddFindingComment,
