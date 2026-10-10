@@ -28,6 +28,8 @@ type ScanConfigExport struct {
 	// TargetOptions tunes how each run resolves the dynamic selectors among
 	// Targets (RFC-068); omitted when every option is the default.
 	TargetOptions *scan.TargetOptions `json:"target_options,omitempty"`
+	// Intensity is the probe ceiling (RFC-071).
+	Intensity string `json:"intensity,omitempty"`
 
 	// Scan Type
 	ScanType       string         `json:"scan_type"`
@@ -115,6 +117,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 	if opts.RedactSecrets {
 		export.ScannerConfig = scan.RedactConfigSecrets(sc.ScannerConfig)
 	}
+	export.Intensity = string(sc.EffectiveIntensity())
 	if !sc.TargetOptions.IsZero() {
 		o := sc.TargetOptions
 		export.TargetOptions = &o
@@ -235,6 +238,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		ScannerConfig:       export.ScannerConfig,
 		TargetsPerJob:       export.TargetsPerJob,
 		TargetOptions:       export.TargetOptions,
+		Intensity:           export.Intensity,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
 		ScheduleRRule:       export.ScheduleRRule,

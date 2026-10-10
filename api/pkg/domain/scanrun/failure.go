@@ -150,6 +150,9 @@ const (
 	// FailureSignerRefused: the job signer refused the job because its
 	// scope ledger does not authorize it (RFC-040 §5.6 point 4).
 	FailureSignerRefused = "SIGNER_REFUSED"
+	// FailureIntensityExceeded: the job probes above the intensity of the
+	// scan it belongs to (RFC-071); refused at claim.
+	FailureIntensityExceeded = "INTENSITY_EXCEEDED"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -165,6 +168,7 @@ var failureClasses = map[string]FailureClass{
 	FailureAllTargetsUnconfirm: FailureClassScope,
 	FailureScopeChanged:        FailureClassScope,
 	FailureGateRecordMissing:   FailureClassScope,
+	FailureIntensityExceeded:   FailureClassScope,
 	FailureSignerRefused:       FailureClassScope,
 	FailureNoSensor:            FailureClassPlacement,
 	FailureNoSensorForTool:     FailureClassPlacement,
