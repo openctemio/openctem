@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,25 +49,19 @@ func (r *detailVulnRepo) GetByID(_ context.Context, id shared.ID) (*vulnerabilit
 // detailComponents is the FindingComponentLookup fake; it records the tenant
 // it was asked about so the test can check the dependency lookup is scoped.
 type detailComponents struct {
-	c          *component.Component
-	dep        *component.AssetDependency
-	depErr     error
+	c          *component.FindingComponent
 	gotTenant  string
 	gotAsset   string
 	depLookups int
 }
 
-func (d *detailComponents) GetComponent(_ context.Context, id string) (*component.Component, error) {
-	if d.c == nil || d.c.ID().String() != id {
+func (d *detailComponents) GetFindingComponent(_ context.Context, tenantID, versionID, assetID string) (*component.FindingComponent, error) {
+	d.depLookups++
+	d.gotTenant, d.gotAsset = tenantID, assetID
+	if d.c == nil || d.c.VersionID != versionID {
 		return nil, shared.ErrNotFound
 	}
 	return d.c, nil
-}
-
-func (d *detailComponents) GetAssetDependency(_ context.Context, tenantID, assetID, _ string) (*component.AssetDependency, error) {
-	d.depLookups++
-	d.gotTenant, d.gotAsset = tenantID, assetID
-	return d.dep, d.depErr
 }
 
 type detailFixture struct {
@@ -76,7 +69,7 @@ type detailFixture struct {
 	asset   shared.ID
 	finding *vulnerability.Finding
 	vuln    *vulnerability.Vulnerability
-	comp    *component.Component
+	comp    *component.FindingComponent
 }
 
 func newDetailFixture(t *testing.T) detailFixture {
@@ -92,10 +85,9 @@ func newDetailFixture(t *testing.T) detailFixture {
 	v.UpdateEPSS(0.00868, 57.276)
 	v.SetFixedVersions([]string{"7.0.5", "6.0.6"})
 
-	c, err := component.NewComponent("cross-spawn", "7.0.3", component.EcosystemNPM)
-	if err != nil {
-		t.Fatal(err)
-	}
+	versionID := shared.NewID()
+	c := &component.FindingComponent{VersionID: versionID.String(), ProductID: shared.NewID().String(),
+		Name: "cross-spawn", Version: "7.0.3", Ecosystem: "npm", PURL: "pkg:npm/cross-spawn@7.0.3"}
 
 	f, err := vulnerability.NewFinding(tenant, asset, vulnerability.FindingSourceSCA, "npm-audit",
 		vulnerability.SeverityHigh, "cross-spawn ReDoS vulnerability")
@@ -103,7 +95,7 @@ func newDetailFixture(t *testing.T) detailFixture {
 		t.Fatal(err)
 	}
 	f.SetVulnerabilityID(v.ID())
-	f.SetComponentID(c.ID())
+	f.SetComponentID(versionID)
 	return detailFixture{tenant: tenant, asset: asset, finding: f, vuln: v, comp: c}
 }
 
@@ -129,13 +121,10 @@ func TestGetFinding_EmbedsVulnerabilityAndComponent(t *testing.T) {
 	svc := findingapp.NewVulnerabilityService(&detailVulnRepo{v: fx.vuln}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
 	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
 
-	dep, err := component.NewAssetDependency(fx.tenant, fx.asset, fx.comp.ID(), "package-lock.json", component.DependencyTypeTransitive)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dep.SetManifestFile("package-lock.json")
-	dep.SetDepth(2)
-	lookup := &detailComponents{c: fx.comp, dep: dep}
+	withUsage := *fx.comp
+	depth := 2
+	withUsage.Relationship, withUsage.Location, withUsage.Depth = "transitive", "package-lock.json", &depth
+	lookup := &detailComponents{c: &withUsage}
 	h.SetComponentService(lookup)
 
 	rr, resp := getFindingDetail(t, h, fx.tenant.String(), fx.finding.ID().String())
@@ -199,7 +188,7 @@ func TestGetFinding_ContextLookupsAreBestEffort(t *testing.T) {
 	// still loads, with the component (no dependency facts, no fix version).
 	svc := findingapp.NewVulnerabilityService(&detailVulnRepo{}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
 	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
-	h.SetComponentService(&detailComponents{c: fx.comp, depErr: errors.New("db down")})
+	h.SetComponentService(&detailComponents{c: fx.comp})
 
 	rr, resp := getFindingDetail(t, h, fx.tenant.String(), fx.finding.ID().String())
 	if rr.Code != http.StatusOK {
@@ -228,7 +217,7 @@ func TestGetFinding_NoComponentServiceLeavesComponentOut(t *testing.T) {
 	if resp.Component != nil {
 		t.Errorf("component = %+v, want none without a component service", resp.Component)
 	}
-	if resp.ComponentID == nil || *resp.ComponentID != fx.comp.ID().String() {
+	if resp.ComponentID == nil || *resp.ComponentID != fx.comp.VersionID {
 		t.Errorf("component_id = %v", resp.ComponentID)
 	}
 	if resp.Vulnerability == nil {

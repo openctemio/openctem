@@ -156,6 +156,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"POST /api/v1/exposures/ingest":                       {classGap, "§3 H1 of research 21b: asset_id checked (C3), but the fingerprint upsert can overwrite an out-of-scope or asset-less exposure"},
 	"GET /api/v1/exposures/stats":                         {classPartial, "counts tenant-wide (L-18)"},
 	"/api/v1/components":                                  {classScoped, "component service scope (L-10)"},
+	"/api/v1/vex-statements":                              {classScoped, "vex service: asset-bound statements need the asset in scope, statements for every asset need full data access to write and an in-scope link to read"},
 	"/api/v1/repositories":                                {classScoped, "repository must be in scope (L-10)"},
 	"/api/v1/relationships":                               {classScoped, "both ends in scope"},
 	"/api/v1/services":                                    {classScoped, "asset service handler scope"},

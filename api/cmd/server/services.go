@@ -86,6 +86,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
@@ -645,6 +646,7 @@ type Services struct {
 	// Components & Branches
 	Component      *asset.ComponentService
 	SBOMImport     *asset.SBOMImportService
+	VEX            *vexapp.Service
 	ReportSchedule *module.ReportScheduleService
 	Branch         *asset.BranchService
 
@@ -1034,6 +1036,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		func(err error) bool { return errors.Is(err, bountysource.ErrGone) },
 		programSyncAuditor(s.Audit))
 	s.BountyProgram.SetAssigner(programRepo)
+	// Program channels and the organization-channel opt-in (RFC-065 §15.4).
+	programDelivery := postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB})
+	s.BountyProgram.SetDeliveryStore(programDelivery)
 	s.ProgramAssigner = programRepo
 	// The public program catalog and the feed importer (RFC-065 §16).
 	catalogRepo := postgres.NewPublicProgramRepository(&postgres.DB{DB: deps.DB})
@@ -1101,6 +1106,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = asset.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
+	s.VEX = vexapp.NewService(repos.VEXStatement, s.DataScope, s.Audit, log)
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
@@ -1619,6 +1625,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Encryptor.DecryptString,
 		log.Logger,
 	)
+	// Events about private program assets reach only the programs' own
+	// channels (RFC-065 §15.4): one rule for every integration provider.
+	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
 
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
@@ -1833,6 +1842,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetToolContractSource(repos.Sensor)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
+	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
 	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)
@@ -2212,6 +2222,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Workflow,
 		log,
 	)
+	// Automations are organization-wide: events about private program
+	// assets start none (RFC-065 §15.4).
+	s.WorkflowDispatcher.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
 
 	// Wire workflow dispatcher to ingest service for automatic workflow triggering
 	// when new findings are created during ingestion
