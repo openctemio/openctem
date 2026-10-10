@@ -46,18 +46,19 @@ type ScanStatus struct {
 }
 
 // Status answers a scan's approval state.
-func (s *Service) Status(ctx context.Context, tenantID, scanID shared.ID) (*ScanStatus, error) {
+// viewer is who asks (the requester facts of the rules).
+func (s *Service) Status(ctx context.Context, tenantID, scanID shared.ID, viewer string) (*ScanStatus, error) {
 	if err := s.requireRepo(); err != nil {
 		return nil, err
 	}
 	if s.scans == nil {
 		return nil, fmt.Errorf("%w: scans not wired", shared.ErrInternal)
 	}
-	_, def, facts, err := s.scans.GovernanceSubject(ctx, tenantID, scanID)
+	sc, def, facts, err := s.scans.GovernanceSubject(ctx, tenantID, scanID)
 	if err != nil {
 		return nil, err
 	}
-	ev, err := s.Evaluate(ctx, tenantID, facts)
+	ev, err := s.evaluateAt(ctx, tenantID, facts, viewer, plannedAt(sc, s.clock()))
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +124,9 @@ func (s *Service) Submit(ctx context.Context, tenantID, scanID shared.ID, in Sub
 	}
 	if m == scangov.ModeOff {
 		return nil, scangov.ErrGovernanceOff
+	}
+	if facts, err = s.withRequester(ctx, tenantID, st.Rules, facts, actor.UserID, plannedAt(sc, s.clock())); err != nil {
+		return nil, err
 	}
 	ev := scangov.Evaluate(m, st.Rules, facts)
 	if !ev.Required {
@@ -441,6 +445,9 @@ func (s *Service) Emergency(ctx context.Context, tenantID, scanID shared.ID, in 
 	}
 	if m == scangov.ModeOff {
 		return nil, scangov.ErrGovernanceOff
+	}
+	if facts, err = s.withRequester(ctx, tenantID, st.Rules, facts, actor.UserID, s.clock()); err != nil {
+		return nil, err
 	}
 	ev := scangov.Evaluate(m, st.Rules, facts)
 	if !ev.Required {

@@ -182,7 +182,7 @@ func (h *ScanApprovalHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	if id, err := shared.IDFromString(req.ScanZoneID); err == nil {
 		sc.ScanZoneID = &id
 	}
-	ev, err := h.svc.Preview(r.Context(), sc)
+	ev, err := h.svc.Preview(r.Context(), sc, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.writeErr(w, err)
 		return
@@ -205,7 +205,7 @@ func (h *ScanApprovalHandler) ScanStatus(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	st, err := h.svc.Status(r.Context(), tid, id)
+	st, err := h.svc.Status(r.Context(), tid, id, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.writeErr(w, err)
 		return
