@@ -51,6 +51,43 @@ back-off and jitter, Retry-After, per-attempt deadline, stall guard, Range
 resume, ETag, a circuit breaker per origin. Mirrors cannot change content:
 everything is pinned by the signed pointer and manifests.
 
+### The vulnerability feed (CVE corpus)
+
+`internal/app/vulnfeed` reads streams `products`, `vulns`, `ranges` (in that
+order); a range's record id is `<CVE>#<digest>`, so one CVE's ranges may span
+chunks. Each record is validated by `pkg/vulnbundle` (`ParseProduct`,
+`ParseVuln`, `ParseRange`), and ids must ascend inside the chunk's declared
+range. Per chunk, in one transaction with the checkpoint:
+
+- products resolve to global catalog products and are recorded in
+  `cve_feed_products` (bundle key, product, sequence);
+- CVE records are upserted with `feed_sequence`;
+- ranges are upserted by `range_key` with `feed_sequence`, and must name a
+  CVE record and products of the same bundle (written by its earlier chunks,
+  so a resumed run needs nothing in memory); ranges of a rejected CVE are
+  not kept.
+
+Finishing the bundle (`FinishFeedBundle`, one transaction with the applied
+sequence) removes the ranges of an older sequence the bundle replaced: a
+snapshot removes every one it no longer holds and withdraws the CVEs it does
+not hold; a delta only touches the CVEs it holds. Until then a CVE keeps its
+old ranges next to its new ones, so no CVE ever loses ranges mid-bundle. The
+removal guard runs here: at most max(500, 2 % of the stored ranges) may be
+removed from non-rejected CVEs left without any range; over it the finish is
+refused and repeated on each run until a newer release arrives.
+
+The matcher's feed cursor (`cve_records.synced_at`) moves only for CVEs
+whose record content changed, that gained a range, or that lost one at
+finish, so a release re-evaluates the changed CVEs only.
+
+The v1 reader stays the fallback for one release: when neither the bundle
+directory nor the release serves `latest.v2.dsse.json`. Both readers share
+the applied sequence (the v1 reader never goes below the checkpoint and
+moves it forward; a v2 run first carries the v1 sequence into the
+checkpoint) and the key-set version. Origins: the release
+(`VULNFEED_BASE_URL` + `/latest/download`), then `VULNFEED_MIRRORS`; with
+`VULNFEED_BUNDLE_DIR` only that directory is read.
+
 ## Push: segments and the outbox
 
 Sensors and collectors send results with protocol v2 (RFC-026): segments
