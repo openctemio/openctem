@@ -45,7 +45,6 @@ const ALLOWLIST = new Set(
     'features/capabilities/components/capability-card.tsx',
     'features/capabilities/components/capability-detail-panel.tsx',
     'features/capabilities/components/capability-table.tsx',
-    'features/components/components/component-detail-sheet.tsx',
     'features/pentest/components/finding-detail-sheet.tsx',
     'features/scan-workflows/components/node-palette.tsx',
     'features/vulnerabilities/components/vulnerability-detail-sheet.tsx',

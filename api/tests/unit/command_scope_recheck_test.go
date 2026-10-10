@@ -640,3 +640,30 @@ func TestScopeRecheck_ProbesWithoutRecord(t *testing.T) {
 		})
 	}
 }
+
+// The claim re-check gives the gate each job tool and port settings, so a
+// target only a port- or path-limited entry covers is checked against
+// what the job would do (RFC-065 §16.8); jobs with different settings are
+// decided apart.
+func TestScopeRecheck_PassesTheJobToThePortLimitCheck(t *testing.T) {
+	f := newRecheckFixture()
+	gate := &commanddom.DispatchGate{Tier: 1, Validated: true}
+	f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"scanner":"naabu","targets":["api.example.com"],"config":{"ports":"1-65535"}}`, gate)
+	f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"scanner":"naabu","targets":["api.example.com"],"config":{"top_ports":"100"}}`, gate)
+	if _, err := f.svc.Poll(context.Background(), command.PollInput{TenantID: f.tenant.String(), SensorID: f.sensor.String(), Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if f.gate.callCount() != 2 {
+		t.Fatalf("gate calls = %d, want one per job shape", f.gate.callCount())
+	}
+	seen := map[scopedom.JobShape]bool{}
+	for _, in := range f.gate.calls {
+		if in.Job == nil {
+			t.Fatalf("no job in gate input %+v", in)
+		}
+		seen[*in.Job] = true
+	}
+	if !seen[scopedom.JobShape{Tool: "naabu", Ports: "1-65535"}] || !seen[scopedom.JobShape{Tool: "naabu", TopPorts: true}] {
+		t.Fatalf("job shapes = %v", seen)
+	}
+}

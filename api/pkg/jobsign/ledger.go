@@ -61,6 +61,17 @@ type LedgerEntry struct {
 	// ExpiresAt is when the entry stops authorizing (nil: permanent). The
 	// signer applies it with its own clock.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Ports and Protocol are the entry's port limit (empty: none). They are
+	// part of the entry like its pattern: the ledger matches with them, so it
+	// is never wider than the entry in the database.
+	Ports    string `json:"ports,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+}
+
+// SameScope reports whether two entries authorize the same targets: type,
+// pattern and port limit.
+func (e LedgerEntry) SameScope(o LedgerEntry) bool {
+	return e.Type == o.Type && e.Pattern == o.Pattern && e.Ports == o.Ports && e.Protocol == o.Protocol
 }
 
 // LedgerExclusion is a scope exclusion in effect. Only target exclusions
@@ -205,8 +216,7 @@ func EntryWidens(old *LedgerEntry, next LedgerEntry, now time.Time) bool {
 	if old == nil || Expired(old.ExpiresAt, now) {
 		return true
 	}
-	return old.Type != next.Type || old.Pattern != next.Pattern ||
-		next.MaxTier > old.MaxTier || laterEnd(old.ExpiresAt, next.ExpiresAt)
+	return !old.SameScope(next) || next.MaxTier > old.MaxTier || laterEnd(old.ExpiresAt, next.ExpiresAt)
 }
 
 // ExclusionPutWidens reports whether putting next where old is (nil: no
