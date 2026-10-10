@@ -1776,9 +1776,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			s.CertMonitor.SetScopeJoin(s.ScopeJoin)
 		}
 	}
-	// Open ports a port scan no longer sees are closed (research/22 P0-6).
 	s.Ingest.SetEvidenceStore(s.Evidence)
-	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
@@ -1786,7 +1784,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
-	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)
+	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset values and sets, incl. open ports (RFC-069)
 	// Inventory vulnerability matching (RFC-066): told by ingest when an
 	// organization's software changes; findings go through the same
 	// priority and SLA enrichment as ingested ones.

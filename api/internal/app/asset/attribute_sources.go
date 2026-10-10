@@ -90,7 +90,11 @@ func (s *AssetService) ResolveAttributes(ctx context.Context, tenantID shared.ID
 		}
 	}
 	changes, err := s.applyAttributes(ctx, tenantID, assetdom.AttributeApply{Resolve: refs, Reason: reason}, nil)
-	return len(changes), err
+	if err != nil {
+		return len(changes), err
+	}
+	sets, err := s.resolveSets(ctx, tenantID, assetIDs, reason)
+	return len(changes) + sets, err
 }
 
 // afterAttributeChanges records each change in the asset history, re-scores
