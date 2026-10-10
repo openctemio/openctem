@@ -81,6 +81,46 @@ export function RunDispatchPanel({ dispatch }: { dispatch: RunDispatch }) {
         )}
       </div>
 
+      {dispatch.target_expansion && dispatch.target_expansion.length > 0 && (
+        <section aria-labelledby="run-expansion-heading" className="space-y-2">
+          <h4 id="run-expansion-heading" className="text-sm font-semibold">
+            Resolved at start
+          </h4>
+          <p className="text-xs text-muted-foreground">
+            What each dynamic target held in the inventory when this run started. Every name was
+            then checked against scope like any target; the stages below show what discovery added
+            during the run.
+          </p>
+          <ul className="divide-y rounded-md border" data-testid="run-target-expansion">
+            {dispatch.target_expansion.map((e) => (
+              <li key={`${e.kind}:${e.selector}`} className="space-y-0.5 px-3 py-2">
+                <p className="flex flex-wrap items-center gap-2">
+                  <span className="break-all font-mono text-sm">{e.selector}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {e.matched.toLocaleString()} known{' '}
+                    {e.kind === 'cidr'
+                      ? e.matched === 1
+                        ? 'host'
+                        : 'hosts'
+                      : e.matched === 1
+                        ? 'name'
+                        : 'names'}
+                  </span>
+                  {e.capped && (
+                    <Badge variant="outline" className="border-warning/50 font-normal text-warning">
+                      Capped
+                    </Badge>
+                  )}
+                </p>
+                {e.sample && e.sample.length > 0 && (
+                  <p className="truncate text-xs text-muted-foreground">{e.sample.join(', ')}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* A small per-zone summary (a handful of rows, no paging or sorting),
           so a plain table rather than DataTable. */}
       {routing?.zones && routing.zones.length > 0 && (

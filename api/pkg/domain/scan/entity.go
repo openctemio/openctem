@@ -22,6 +22,9 @@ type Scan struct {
 	AssetGroupID  shared.ID   // Optional: primary asset group (legacy, for single asset group)
 	AssetGroupIDs []shared.ID // Optional: multiple asset groups (NEW)
 	Targets       []string    // Optional: direct target list (domains, IPs, URLs)
+	// TargetOptions tunes how each run resolves the selectors among Targets
+	// (wildcard domains, CIDRs) against the inventory (RFC-068).
+	TargetOptions TargetOptions
 
 	// Scan Type
 	ScanType       ScanType
@@ -808,6 +811,7 @@ func (s *Scan) Clone(newName string) *Scan {
 		ScanWorkflowID:      s.ScanWorkflowID,
 		ScannerName:         s.ScannerName,
 		TargetsPerJob:       s.TargetsPerJob,
+		TargetOptions:       s.TargetOptions,
 		ScheduleType:        s.ScheduleType,
 		ScheduleCron:        s.ScheduleCron,
 		ScheduleDay:         s.ScheduleDay,
