@@ -105,9 +105,12 @@ source changes (`old_value` = `new_value` then). A re-sighting writes none.
 | `reason` | `newer_observation`, `manual_lock`, `lock_released`, `ttl_expiry`, `policy_change`, `source_removed` |
 | `flap_count` | a value flipping back and forth between sources within an hour is one event (`asset.ChangeEvent.Coalesces`); locks, releases, TTL expiry and policy changes are never folded |
 
-The `asset-change-timeline` controller (hourly, one replica) creates the
-next months' partitions, drops months past retention
-(`ASSET_CHANGE_RETENTION_DAYS`, default 400, minimum 30) and once a day
+The server runs no DDL (least-privilege role): the migration creates the
+monthly partitions from last month through the next two years, and a later
+migration extends them (`asset_change_events_ensure_partitions`, owned by
+the migrator). The `asset-change-timeline` controller (hourly, one replica)
+deletes events past retention in batches (`ASSET_CHANGE_RETENTION_DAYS`,
+default 400, minimum 30) and once a day
 re-resolves every asset with a recorded source, so a value whose deciding
 source passed its TTL moves on with reason `ttl_expiry` without waiting for
 the next report. Events cascade with the asset (tenant deletion erases

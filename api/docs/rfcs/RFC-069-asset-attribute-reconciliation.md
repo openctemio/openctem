@@ -305,10 +305,13 @@ kind/name/run, actor (lock, release), reason (`newer_observation`,
 - A value flipping back and forth between sources within an hour is one
   event with a count (`ChangeEvent.Coalesces`); a person's lock or release,
   a TTL expiry and a policy change are always their own events.
+- Partitions: the server runs no DDL (least-privilege role), so the
+  migration creates last month through the next two years and a later
+  migration extends them; anything outside lands in the default partition.
 - Retention: `ASSET_CHANGE_RETENTION_DAYS` (default 400, minimum 30); the
-  `asset-change-timeline` controller creates partitions ahead, drops expired
-  months, and once a day re-resolves every asset with a recorded source so a
-  value whose deciding source passed its TTL moves on (`ttl_expiry`).
+  `asset-change-timeline` controller deletes expired events in batches, and
+  once a day re-resolves every asset with a recorded source so a value whose
+  deciding source passed its TTL moves on (`ttl_expiry`).
 - Events cascade with the asset and the tenant (organization deletion erases
   them) and move with the asset in a merge. They hold only values the asset
   itself holds.
@@ -327,7 +330,7 @@ pagination (`cursor`, `limit` ≤ 200).
 | Two equal sources disagreeing make the value (and the timeline) flap | incumbent kept on an equal-rank conflict; reversals within an hour folded | `TestResolve` (equal rank), `TestChangeEventCoalesces`, `TestAssetTimeline_FlappingFoldsIntoOneEvent` |
 | Write amplification from frequent re-sightings | no event; `observed_at` refreshed at most hourly | `TestAssetTimeline_EventOnlyWhenTheValueChanges` |
 | Reading another tenant's or an out-of-scope asset's history | every query `WHERE tenant_id`; asset timeline behind `GetAssetInCallerScope` (404); feed narrowed to `user_accessible_assets` | `TestAssetChanges_*`, `TestAssetTimeline_ListIsTenantAndScopeIsolated` |
-| History outliving erasure | FK cascade from assets (and so tenants); retention by month | `TestAssetTimeline_ListIsTenantAndScopeIsolated`, `TestAssetTimeline_PartitionsAndRetention` |
+| History outliving erasure | FK cascade from assets (and so tenants); batched retention delete | `TestAssetTimeline_ListIsTenantAndScopeIsolated`, `TestAssetTimeline_PartitionsAndRetention` |
 
 ### 11.4 Status
 

@@ -10,21 +10,17 @@ import (
 )
 
 type fakeTimelineStore struct {
-	ensured  int
+	runs     int
 	cutoffs  []time.Time
 	tenants  []shared.ID
 	assets   map[shared.ID][]shared.ID
 	pageSize []int
 }
 
-func (f *fakeTimelineStore) EnsurePartitions(context.Context, time.Time, int) (int, error) {
-	f.ensured++
-	return 0, nil
-}
-
-func (f *fakeTimelineStore) DropBefore(_ context.Context, cutoff time.Time) (int, int64, error) {
+func (f *fakeTimelineStore) DeleteBefore(_ context.Context, cutoff time.Time) (int64, error) {
+	f.runs++
 	f.cutoffs = append(f.cutoffs, cutoff)
-	return 0, 0, nil
+	return 0, nil
 }
 
 func (f *fakeTimelineStore) TenantsWithAttributeSources(context.Context) ([]shared.ID, error) {
@@ -73,8 +69,8 @@ func TestAssetChangeTimelineController(t *testing.T) {
 	if _, err := c.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if store.ensured != 1 {
-		t.Fatalf("partitions ensured %d times", store.ensured)
+	if store.runs != 1 {
+		t.Fatalf("retention ran %d times", store.runs)
 	}
 	if want := now.AddDate(0, 0, -minAssetChangeRetentionDays); !store.cutoffs[0].Equal(want) {
 		t.Fatalf("retention cutoff %s, want %s (floor)", store.cutoffs[0], want)
@@ -83,13 +79,13 @@ func TestAssetChangeTimelineController(t *testing.T) {
 		t.Fatalf("sweep resolved %v, want every asset of each tenant once", res.calls)
 	}
 
-	// Within the day: partitions and retention again, no second sweep.
+	// Within the day: retention again, no second sweep.
 	now = now.Add(time.Hour)
 	if _, err := c.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if store.ensured != 2 || res.calls[t1] != len(many) {
-		t.Fatalf("second run: ensured %d, resolved %d", store.ensured, res.calls[t1])
+	if store.runs != 2 || res.calls[t1] != len(many) {
+		t.Fatalf("second run: retention %d, resolved %d", store.runs, res.calls[t1])
 	}
 	now = now.Add(24 * time.Hour)
 	if _, err := c.Reconcile(context.Background()); err != nil {
