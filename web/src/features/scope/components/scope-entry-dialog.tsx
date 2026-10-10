@@ -215,16 +215,12 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   })
 
   const expiresOn = expiring ? formatDay(expiryDateFor(expiryDays), locale) : ''
-  const summary = useMemo(() => {
-    const parts: string[] = []
-    if (name.trim()) parts.push(coversText({ pattern, target_type: type }))
-    parts.push(
-      expiring
-        ? t('scope.entry.expiresOn', 'expires on {date}', { date: expiresOn })
-        : t('scope.entry.permanent', 'permanent')
-    )
-    return parts.join(' · ')
-  }, [name, pattern, type, expiring, expiresOn, t])
+  const summary = [
+    ...(name.trim() ? [coversText({ pattern, target_type: type })] : []),
+    expiring
+      ? t('scope.entry.expiresOn', 'expires on {date}', { date: expiresOn })
+      : t('scope.entry.permanent', 'permanent'),
+  ].join(' · ')
 
   // Domain proof (RFC-054 §8): intrusive probes always need a verified
   // domain; platform sensors need one when the operator says so.
@@ -236,9 +232,12 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const proofMissing = proofNeeded && proofRow?.status !== 'verified'
 
   const validate = (): string | null => {
-    if (!name.trim()) return 'Enter a name or address.'
+    if (!name.trim()) return t('scope.entry.errEmpty', 'Enter a name or address.')
     if (!override && !detected)
-      return 'This is not a domain, IP address, IP range, URL, repository or cloud account. Pick its kind, or check the spelling.'
+      return t(
+        'scope.entry.errKind',
+        'This is not a domain, IP address, IP range, URL, repository or cloud account. Pick its kind, or check the spelling.'
+      )
     if (isRequest && !(REQUESTABLE_TARGET_TYPES as string[]).includes(type))
       return t('scope.error.REQUEST_MUST_BE_SINGLE')
     if (isRequest && !requestsAllowed) return t('scope.error.REQUEST_NOT_ALLOWED')
@@ -274,16 +273,36 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
       })
       await invalidateScopeCache()
       if (entry?.status === 'active') {
-        toast.success(`${entry.pattern} is in scope`)
+        toast.success(
+          t('scope.entry.toastActive', '{pattern} is in scope', { pattern: entry.pattern ?? '' })
+        )
       } else if (isRequest) {
-        toast.success('Request sent', {
-          description: 'A scope approver will review it. It authorizes nothing until then.',
+        toast.success(t('scope.entry.toastRequest', 'Request sent'), {
+          description: t(
+            'scope.entry.toastRequestHint',
+            'A scope approver will review it. It authorizes nothing until then.'
+          ),
         })
       } else {
         const n = entry?.approvals_required ?? approvals
-        toast.success(`${entry?.pattern ?? pattern} is waiting for approval`, {
-          description: `It needs ${n} ${n === 1 ? 'approval' : 'approvals'} from another approver before scans may use it.`,
-        })
+        toast.success(
+          t('scope.entry.toastPending', '{pattern} is waiting for approval', {
+            pattern: entry?.pattern ?? pattern,
+          }),
+          {
+            description:
+              n === 1
+                ? t(
+                    'scope.entry.toastPendingHint1',
+                    'It needs 1 approval from another approver before scans may use it.'
+                  )
+                : t(
+                    'scope.entry.toastPendingHintN',
+                    'It needs {n} approvals from other approvers before scans may use it.',
+                    { n }
+                  ),
+          }
+        )
       }
       // Overlap warnings ("a superset of api.example.com") ride on the entry.
       for (const w of (entry as { warnings?: string[] } | undefined)?.warnings ?? [])
@@ -291,13 +310,17 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
       if (entry) onCreated?.(entry)
       onOpenChange(false)
     } catch (err) {
-      setError(scopeErrorMessage(t, err, 'Could not save the scope entry.'))
+      setError(
+        scopeErrorMessage(t, err, t('scope.entry.errSave', 'Could not save the scope entry.'))
+      )
     } finally {
       setSaving(false)
     }
   }
 
-  const title = isRequest ? 'Request access' : 'Add to scope'
+  const title = isRequest
+    ? t('scope.entry.titleRequest', 'Request access')
+    : t('scope.entry.titleAdd', 'Add to scope')
   const blocked = isRequest && !settingsLoading && !requestsAllowed
 
   return (
@@ -307,8 +330,14 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {isRequest
-              ? 'Ask a scope approver to allow one name or address for a few days. Scans may use it only after it is approved.'
-              : 'Say what your organization may probe. Exclusions still win over every entry.'}
+              ? t(
+                  'scope.entry.descRequest',
+                  'Ask a scope approver to allow one name or address for a few days. Scans may use it only after it is approved.'
+                )
+              : t(
+                  'scope.entry.descAdd',
+                  'Say what your organization may probe. Exclusions still win over every entry.'
+                )}
           </DialogDescription>
         </DialogHeader>
 
@@ -331,7 +360,7 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
               )}
 
               <div className="space-y-2">
-                <Label htmlFor={`${formId}-name`}>What</Label>
+                <Label htmlFor={`${formId}-name`}>{t('scope.entry.what', 'What')}</Label>
                 <Input
                   id={`${formId}-name`}
                   value={name}
@@ -356,20 +385,20 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   {override ? (
                     <>
-                      <span>Kind:</span>
+                      <span>{t('scope.entry.kindColon', 'Kind:')}</span>
                       <ScopeTargetTypeSelect
                         value={override}
                         onValueChange={(v) => setOverride(v as ScopeKind)}
                         only={isRequest ? REQUESTABLE_TARGET_TYPES : undefined}
                         className="h-7 w-44 text-xs"
-                        aria-label="Kind"
+                        aria-label={t('scope.entry.kind', 'Kind')}
                       />
                       <button
                         type="button"
                         className="underline underline-offset-2 hover:text-foreground"
                         onClick={() => setOverride(null)}
                       >
-                        Detect it
+                        {t('scope.entry.detect', 'Detect it')}
                       </button>
                     </>
                   ) : (
@@ -377,9 +406,14 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                       <span aria-live="polite">
                         {name.trim()
                           ? detected
-                            ? `Detected: ${SCOPE_KIND_LABEL[detected]}`
-                            : 'Kind not recognised'
-                          : 'A domain, IP address, IP range, URL, repository or cloud account.'}
+                            ? t('scope.entry.detected', 'Detected: {kind}', {
+                                kind: SCOPE_KIND_LABEL[detected],
+                              })
+                            : t('scope.entry.notRecognised', 'Kind not recognised')
+                          : t(
+                              'scope.entry.kindsHint',
+                              'A domain, IP address, IP range, URL, repository or cloud account.'
+                            )}
                       </span>
                       {name.trim() && (
                         <button
@@ -387,7 +421,9 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                           className="underline underline-offset-2 hover:text-foreground"
                           onClick={() => setOverride(detected ?? 'domain')}
                         >
-                          {detected ? 'Change' : 'Pick the kind'}
+                          {detected
+                            ? t('scope.entry.change', 'Change')
+                            : t('scope.entry.pickKind', 'Pick the kind')}
                         </button>
                       )}
                     </>
@@ -397,7 +433,9 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
 
               {isDomain && !isRequest && (
                 <fieldset className="space-y-2">
-                  <legend className="text-sm font-medium">Covers</legend>
+                  <legend className="text-sm font-medium">
+                    {t('scope.entry.covers', 'Covers')}
+                  </legend>
                   <RadioGroup
                     value={coverage}
                     onValueChange={(v) => {
@@ -408,13 +446,21 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                   >
                     <CoverageOption
                       value="subdomains"
-                      title={`${name.trim() || 'example.com'} and every name below it`}
-                      hint={`Pattern *.${name.trim() || 'example.com'}. Add an exclusion of exactly the domain to leave it out.`}
+                      title={t('scope.entry.coverSub', '{name} and every name below it', {
+                        name: name.trim() || 'example.com',
+                      })}
+                      hint={t(
+                        'scope.entry.coverSubHint',
+                        'Pattern *.{name}. Add an exclusion of exactly the domain to leave it out.',
+                        { name: name.trim() || 'example.com' }
+                      )}
                     />
                     <CoverageOption
                       value="name"
-                      title={`${name.trim() || 'example.com'} only`}
-                      hint="Names below it stay out of scope."
+                      title={t('scope.entry.coverName', '{name} only', {
+                        name: name.trim() || 'example.com',
+                      })}
+                      hint={t('scope.entry.coverNameHint', 'Names below it stay out of scope.')}
                     />
                   </RadioGroup>
                 </fieldset>
@@ -438,14 +484,16 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                   <SelectContent>
                     {(isRequest ? ['t0', 't1'] : ['t0', 't1', 't2']).map((k) => (
                       <SelectItem key={k} value={k}>
-                        {TIER_LABEL[k]}
+                        {t(`scope.tier.label.${k}`, TIER_LABEL[k])}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {TIER_HINT[tier]}{' '}
-                  {t('scope.entry.tierTools', 'Runs: {tools}.', { tools: TIER_TOOLS[tier] })}
+                  {t(`scope.tier.hint.${tier}`, TIER_HINT[tier])}{' '}
+                  {t('scope.entry.tierTools', 'Runs: {tools}.', {
+                    tools: t(`scope.tier.tools.${tier}`, TIER_TOOLS[tier]),
+                  })}
                   {tier !== 't0' && ` ${t('scope.entry.tierBelow', 'Lower tiers are included.')}`}
                 </p>
               </div>
@@ -528,7 +576,9 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
 
               {usableLetters.length > 0 && (
                 <div className="space-y-2">
-                  <Label htmlFor={`${formId}-authority`}>Authorized by</Label>
+                  <Label htmlFor={`${formId}-authority`}>
+                    {t('scope.entry.authorizedBy', 'Authorized by')}
+                  </Label>
                   <Select
                     value={letterId || 'ownership'}
                     onValueChange={(v) => setLetterId(v === 'ownership' ? '' : v)}
@@ -537,42 +587,60 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ownership">Our organization owns it</SelectItem>
+                      <SelectItem value="ownership">
+                        {t('scope.entry.ownership', 'Our organization owns it')}
+                      </SelectItem>
                       {usableLetters.map((l) => (
                         <SelectItem key={l.id} value={l.id}>
-                          Letter: {l.title} (until {new Date(l.valid_until).toLocaleDateString()})
+                          {t('scope.entry.letter', 'Letter: {title} (until {date})', {
+                            title: l.title,
+                            date: new Date(l.valid_until).toLocaleDateString(locale),
+                          })}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   {letterId && (
                     <p className="text-xs text-muted-foreground">
-                      The entry authorizes probes only while the letter is valid, and stops when it
-                      expires or is revoked.
+                      {t(
+                        'scope.entry.letterHint',
+                        'The entry authorizes probes only while the letter is valid, and stops when it expires or is revoked.'
+                      )}
                     </p>
                   )}
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor={`${formId}-reason`}>Reason{needsReason ? '' : ' (optional)'}</Label>
+                <Label htmlFor={`${formId}-reason`}>
+                  {needsReason
+                    ? t('scope.entry.reason', 'Reason')
+                    : t('scope.entry.reasonOptional', 'Reason (optional)')}
+                </Label>
                 <Textarea
                   id={`${formId}-reason`}
                   rows={2}
                   value={reason}
                   maxLength={1000}
-                  placeholder="Why may this be probed? For example: our domain, registrar account 123; pentest ticket OPS-12."
+                  placeholder={t(
+                    'scope.entry.reasonPlaceholder',
+                    'Why may this be probed? For example: our domain, registrar account 123; pentest ticket OPS-12.'
+                  )}
                   onChange={(e) => {
                     setReason(e.target.value)
                     setError(null)
                   }}
                 />
-                <p className="text-xs text-muted-foreground">Kept in the audit log.</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('scope.entry.auditKept', 'Kept in the audit log.')}
+                </p>
               </div>
 
               {!isRequest && (
                 <div className="space-y-2">
-                  <Label htmlFor={`${formId}-desc`}>Description (optional)</Label>
+                  <Label htmlFor={`${formId}-desc`}>
+                    {t('scope.entry.descOptional', 'Description (optional)')}
+                  </Label>
                   <Input
                     id={`${formId}-desc`}
                     value={description}
@@ -587,12 +655,14 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           {!blocked && (
             <Button type="submit" form={formId} disabled={saving || settingsLoading}>
               {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              {isRequest ? 'Send request' : 'Add to scope'}
+              {isRequest
+                ? t('scope.entry.sendRequest', 'Send request')
+                : t('scope.entry.titleAdd', 'Add to scope')}
             </Button>
           )}
         </DialogFooter>

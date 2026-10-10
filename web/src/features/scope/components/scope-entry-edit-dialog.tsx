@@ -130,12 +130,16 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
       await invalidateScopeCache()
       toast.success(
         updated?.status === 'pending'
-          ? `${updated.pattern} is waiting for approval again`
-          : 'Scope entry saved'
+          ? t('scope.edit.pendingAgain', '{pattern} is waiting for approval again', {
+              pattern: updated.pattern ?? '',
+            })
+          : t('scope.edit.saved', 'Scope entry saved')
       )
       onOpenChange(false)
     } catch (err) {
-      setError(scopeErrorMessage(t, err, 'Could not save the scope entry.'))
+      setError(
+        scopeErrorMessage(t, err, t('scope.entry.errSave', 'Could not save the scope entry.'))
+      )
     } finally {
       setSaving(false)
     }
@@ -145,10 +149,13 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit scope entry</DialogTitle>
+          <DialogTitle>{t('scope.edit.title', 'Edit scope entry')}</DialogTitle>
           <DialogDescription>
-            <code className="break-all">{entry.pattern}</code>: {coversText(entry)}. Type and
-            pattern cannot change; remove the entry and add a new one instead.
+            <code className="break-all">{entry.pattern}</code>: {coversText(entry)}.{' '}
+            {t(
+              'scope.edit.desc',
+              'Type and pattern cannot change; remove the entry and add a new one instead.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -179,14 +186,16 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
                 <SelectContent>
                   {['t0', 't1', 't2'].map((k) => (
                     <SelectItem key={k} value={k}>
-                      {TIER_LABEL[k]}
+                      {t(`scope.tier.label.${k}`, TIER_LABEL[k])}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {TIER_HINT[tier]}{' '}
-                {t('scope.entry.tierTools', 'Runs: {tools}.', { tools: TIER_TOOLS[tier] })}
+                {t(`scope.tier.hint.${tier}`, TIER_HINT[tier])}{' '}
+                {t('scope.entry.tierTools', 'Runs: {tools}.', {
+                  tools: t(`scope.tier.tools.${tier}`, TIER_TOOLS[tier]),
+                })}
               </p>
             </div>
             <ScopeDurationField
@@ -199,7 +208,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
               }}
             />
             <div className="space-y-2">
-              <Label htmlFor={`${formId}-reason`}>Reason</Label>
+              <Label htmlFor={`${formId}-reason`}>{t('scope.entry.reason', 'Reason')}</Label>
               <Textarea
                 id={`${formId}-reason`}
                 rows={2}
@@ -209,7 +218,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`${formId}-desc`}>Description</Label>
+              <Label htmlFor={`${formId}-desc`}>{t('scope.edit.description', 'Description')}</Label>
               <Input
                 id={`${formId}-desc`}
                 maxLength={1000}
@@ -219,25 +228,34 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
             </div>
             {widening && (
               <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
-                This widens the entry.{' '}
+                {t('scope.edit.widens', 'This widens the entry.')}{' '}
                 {canApprove
                   ? needsApprovals
-                    ? 'It goes back to pending and authorizes nothing until another approver approves it.'
+                    ? t(
+                        'scope.edit.widensPending',
+                        'It goes back to pending and authorizes nothing until another approver approves it.'
+                      )
                     : policy === 'disabled'
-                      ? 'Approvals are disabled by your platform administrator: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
-                      : 'It takes effect at once; every administrator is told. You may be asked to confirm your identity.'
-                  : 'Only a scope approver can make this change.'}
+                      ? t(
+                          'scope.edit.widensDisabled',
+                          'Approvals are disabled by your platform administrator: it takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                        )
+                      : t(
+                          'scope.edit.widensNow',
+                          'It takes effect at once; every administrator is told. You may be asked to confirm your identity.'
+                        )
+                  : t('scope.edit.widensApprover', 'Only a scope approver can make this change.')}
               </p>
             )}
           </form>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button type="submit" form={formId} disabled={saving}>
             {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Save
+            {t('common.save', 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
