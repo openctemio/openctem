@@ -74,8 +74,6 @@ type Service struct {
 	isOwner OwnerCheck
 	// catalog is the public program catalog (subscription.go).
 	catalog bp.CatalogRepository
-	// targets creates the assets a followed program lists (targets.go).
-	targets TargetCreator
 }
 
 // NewService wires the service. Without a FullData checker every caller is

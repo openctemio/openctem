@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS public_programs (
     terms_doc_sha256 text        NOT NULL DEFAULT '',
     content_sha256   text        NOT NULL,
     provenance       jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    feed_stream      text        NOT NULL DEFAULT 'signed',
     as_of            timestamptz NOT NULL,
     removed_at       timestamptz,
     feed_sequence    bigint      NOT NULL,
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS public_programs (
     CONSTRAINT chk_public_programs_terms_text CHECK (length(terms_text) <= 20000),
     CONSTRAINT chk_public_programs_items CHECK (jsonb_typeof(scope_items) = 'array'),
     CONSTRAINT chk_public_programs_rules CHECK (jsonb_typeof(rules) = 'object'),
-    CONSTRAINT chk_public_programs_provenance CHECK (jsonb_typeof(provenance) = 'object')
+    CONSTRAINT chk_public_programs_provenance CHECK (jsonb_typeof(provenance) = 'object'),
+    CONSTRAINT chk_public_programs_stream CHECK (feed_stream IN ('signed', 'local'))
 );
 CREATE INDEX IF NOT EXISTS idx_public_programs_listed ON public_programs (lower(name)) WHERE removed_at IS NULL;
 
@@ -57,9 +59,23 @@ CREATE TABLE IF NOT EXISTS program_feed_state (
     keyset_version   bigint      NOT NULL,
     applied_at       timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
-    CONSTRAINT chk_program_feed_state_single CHECK (id = 1)
+    CONSTRAINT chk_program_feed_state_stream CHECK (id IN (1, 2))
 );
-COMMENT ON TABLE program_feed_state IS 'The program feed sequence and key-set version last applied; a lower one is refused (RFC-065 §16)';
+COMMENT ON TABLE program_feed_state IS 'The sequence and key-set version last applied per stream (1 signed feed, 2 local bundle); a lower one is refused (RFC-065 §16)';
+
+-- The operator's local bundle source (owner option A): off until a
+-- platform administrator enables it (step-up and a reason, audited).
+CREATE TABLE IF NOT EXISTS program_feed_sources (
+    source     text        NOT NULL,
+    enabled    boolean     NOT NULL DEFAULT false,
+    reason     text        NOT NULL DEFAULT '',
+    changed_by text        NOT NULL DEFAULT '',
+    changed_at timestamptz,
+    PRIMARY KEY (source),
+    CONSTRAINT chk_program_feed_sources_source CHECK (source IN ('local_bundle')),
+    CONSTRAINT chk_program_feed_sources_reason CHECK (length(reason) <= 500)
+);
+COMMENT ON TABLE program_feed_sources IS 'Platform switches of program feed sources; local_bundle reads PROGRAMFEED_LOCAL_BUNDLE_DIR only when enabled (RFC-065 §16.6)';
 
 ALTER TABLE bounty_programs
     ADD COLUMN IF NOT EXISTS public_program_id    uuid REFERENCES public_programs (id) ON DELETE SET NULL,

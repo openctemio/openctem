@@ -30,15 +30,24 @@ func NewPublicProgramRepository(db *DB) *PublicProgramRepository {
 
 const publicProgramColumns = `id, feed_id, source, platform, handle, name, program_url, program_type, status,
 	offers_bounty, scope_published, scope_items, rules, terms_text, terms_url, terms_doc_sha256,
-	content_sha256, as_of, removed_at, feed_sequence, updated_at, provenance`
+	content_sha256, as_of, removed_at, feed_sequence, updated_at, provenance, feed_stream`
 
-// FeedState returns the applied state (zero before the first import).
-func (r *PublicProgramRepository) FeedState(ctx context.Context) (bountyprogram.FeedState, error) {
+// stateRow is the program_feed_state row of a stream.
+func stateRow(stream string) int {
+	if stream == bountyprogram.StreamLocal {
+		return 2
+	}
+	return 1
+}
+
+// FeedState returns the applied state of a stream (zero before its first
+// import).
+func (r *PublicProgramRepository) FeedState(ctx context.Context, stream string) (bountyprogram.FeedState, error) {
 	var st bountyprogram.FeedState
 	var at time.Time
 	var seq, ver int64
-	err := r.db.QueryRowContext(ctx, `SELECT applied_sequence, keyset_version, applied_at FROM program_feed_state WHERE id = 1`).
-		Scan(&seq, &ver, &at)
+	err := r.db.QueryRowContext(ctx, `SELECT applied_sequence, keyset_version, applied_at FROM program_feed_state WHERE id = $1`,
+		stateRow(stream)).Scan(&seq, &ver, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return st, nil
 	}
@@ -53,10 +62,11 @@ type publicCatalogRow struct {
 	id      string
 	content string
 	removed bool
+	stream  string
 }
 
 func readCatalogRows(ctx context.Context, tx *sql.Tx) (map[string]publicCatalogRow, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT feed_id, id, content_sha256, removed_at IS NOT NULL FROM public_programs`)
+	rows, err := tx.QueryContext(ctx, `SELECT feed_id, id, content_sha256, removed_at IS NOT NULL, feed_stream FROM public_programs`)
 	if err != nil {
 		return nil, fmt.Errorf("read catalog: %w", err)
 	}
@@ -65,7 +75,7 @@ func readCatalogRows(ctx context.Context, tx *sql.Tx) (map[string]publicCatalogR
 	for rows.Next() {
 		var feedID string
 		var c publicCatalogRow
-		if err := rows.Scan(&feedID, &c.id, &c.content, &c.removed); err != nil {
+		if err := rows.Scan(&feedID, &c.id, &c.content, &c.removed, &c.stream); err != nil {
 			return nil, err
 		}
 		existing[feedID] = c
@@ -87,7 +97,11 @@ func (r *PublicProgramRepository) Apply(ctx context.Context, a bountyprogram.Fee
 
 	// The state row serializes importers and refuses an older bundle.
 	var applied int64
-	err = tx.QueryRowContext(ctx, `SELECT applied_sequence FROM program_feed_state WHERE id = 1 FOR UPDATE`).Scan(&applied)
+	stream := a.Stream
+	if stream != bountyprogram.StreamLocal {
+		stream = bountyprogram.StreamSigned
+	}
+	err = tx.QueryRowContext(ctx, `SELECT applied_sequence FROM program_feed_state WHERE id = $1 FOR UPDATE`, stateRow(stream)).Scan(&applied)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
@@ -104,6 +118,9 @@ func (r *PublicProgramRepository) Apply(ctx context.Context, a bountyprogram.Fee
 	for i := range a.Programs {
 		p := &a.Programs[i]
 		seen[p.FeedID] = true
+		if old, had := existing[p.FeedID]; had && stream == bountyprogram.StreamLocal && old.stream == bountyprogram.StreamSigned && !old.removed {
+			continue // the signed feed's record wins
+		}
 		items, err := json.Marshal(p.Items)
 		if err != nil {
 			return nil, err
@@ -120,8 +137,8 @@ func (r *PublicProgramRepository) Apply(ctx context.Context, a bountyprogram.Fee
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO public_programs (feed_id, source, platform, handle, name, program_url, program_type, status,
 			       offers_bounty, scope_published, scope_items, rules, terms_text, terms_url, terms_doc_sha256,
-			       content_sha256, as_of, removed_at, feed_sequence, updated_at, provenance)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NULL, $18, now(), $19)
+			       content_sha256, as_of, removed_at, feed_sequence, updated_at, provenance, feed_stream)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NULL, $18, now(), $19, $20)
 			ON CONFLICT (feed_id) DO UPDATE SET source = EXCLUDED.source, platform = EXCLUDED.platform,
 			       handle = EXCLUDED.handle, name = EXCLUDED.name, program_url = EXCLUDED.program_url,
 			       program_type = EXCLUDED.program_type, status = EXCLUDED.status, offers_bounty = EXCLUDED.offers_bounty,
@@ -129,10 +146,10 @@ func (r *PublicProgramRepository) Apply(ctx context.Context, a bountyprogram.Fee
 			       terms_text = EXCLUDED.terms_text, terms_url = EXCLUDED.terms_url,
 			       terms_doc_sha256 = EXCLUDED.terms_doc_sha256, content_sha256 = EXCLUDED.content_sha256,
 			       as_of = EXCLUDED.as_of, removed_at = NULL, feed_sequence = EXCLUDED.feed_sequence, updated_at = now(),
-			       provenance = EXCLUDED.provenance
+			       provenance = EXCLUDED.provenance, feed_stream = EXCLUDED.feed_stream
 			RETURNING id`,
 			p.FeedID, p.Source, p.Platform, p.Handle, p.Name, p.URL, p.Type, p.Status, p.OffersBounty, p.ScopePublished,
-			items, rules, p.TermsText, p.TermsURL, p.TermsDocSHA256, p.TermsSHA256, p.AsOf, bounded(p.Sequence), prov).Scan(&id); err != nil {
+			items, rules, p.TermsText, p.TermsURL, p.TermsDocSHA256, p.TermsSHA256, p.AsOf, bounded(p.Sequence), prov, stream).Scan(&id); err != nil {
 			return nil, fmt.Errorf("upsert %s: %w", p.FeedID, err)
 		}
 		p.ID, _ = shared.IDFromString(id)
@@ -148,13 +165,13 @@ func (r *PublicProgramRepository) Apply(ctx context.Context, a bountyprogram.Fee
 	archive := []string{}
 	if a.Snapshot {
 		for feedID, c := range existing {
-			if !seen[feedID] && !c.removed {
+			if !seen[feedID] && !c.removed && c.stream == stream {
 				archive = append(archive, feedID)
 			}
 		}
 	} else {
 		for _, feedID := range a.Dropped {
-			if c, ok := existing[feedID]; ok && !c.removed && !seen[feedID] {
+			if c, ok := existing[feedID]; ok && !c.removed && !seen[feedID] && c.stream == stream {
 				archive = append(archive, feedID)
 			}
 		}
@@ -170,10 +187,10 @@ func (r *PublicProgramRepository) Apply(ctx context.Context, a bountyprogram.Fee
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO program_feed_state (id, applied_sequence, keyset_version, applied_at) VALUES (1, $1, $2, now())
+		INSERT INTO program_feed_state (id, applied_sequence, keyset_version, applied_at) VALUES ($3, $1, $2, now())
 		ON CONFLICT (id) DO UPDATE SET applied_sequence = EXCLUDED.applied_sequence,
 		       keyset_version = GREATEST(program_feed_state.keyset_version, EXCLUDED.keyset_version), applied_at = now()`,
-		bounded(a.State.AppliedSequence), bounded(a.State.KeySetVersion)); err != nil {
+		bounded(a.State.AppliedSequence), bounded(a.State.KeySetVersion), stateRow(stream)); err != nil {
 		return nil, fmt.Errorf("record program feed state: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -189,14 +206,16 @@ func scanPublicProgram(row interface{ Scan(...any) error }) (*bountyprogram.Publ
 		items, rules, prov []byte
 		removed            sql.NullTime
 		seq                int64
+		stream             string
 	)
 	if err := row.Scan(&id, &p.FeedID, &p.Source, &p.Platform, &p.Handle, &p.Name, &p.URL, &p.Type, &p.Status,
 		&p.OffersBounty, &p.ScopePublished, &items, &rules, &p.TermsText, &p.TermsURL, &p.TermsDocSHA256,
-		&p.TermsSHA256, &p.AsOf, &removed, &seq, &p.UpdatedAt, &prov); err != nil {
+		&p.TermsSHA256, &p.AsOf, &removed, &seq, &p.UpdatedAt, &prov, &stream); err != nil {
 		return nil, err
 	}
 	p.ID, _ = shared.IDFromString(id)
 	p.Sequence = uint64(max(seq, 0)) //nolint:gosec // non-negative
+	p.LocalOnly = stream == bountyprogram.StreamLocal
 	if removed.Valid {
 		t := removed.Time
 		p.RemovedAt = &t
@@ -288,4 +307,38 @@ func (r *PublicProgramRepository) StaleSubscriptions(ctx context.Context, limit 
 		}
 	}
 	return out, rows.Err()
+}
+
+var _ bountyprogram.FeedSourceSettings = (*PublicProgramRepository)(nil)
+
+// LocalBundle returns the local bundle switch (off when never set).
+func (r *PublicProgramRepository) LocalBundle(ctx context.Context) (bountyprogram.LocalBundleSetting, error) {
+	var st bountyprogram.LocalBundleSetting
+	var at sql.NullTime
+	err := r.db.QueryRowContext(ctx, `SELECT enabled, reason, changed_by, changed_at FROM program_feed_sources WHERE source = 'local_bundle'`).
+		Scan(&st.Enabled, &st.Reason, &st.ChangedBy, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return st, nil
+	}
+	if err != nil {
+		return st, fmt.Errorf("read local bundle setting: %w", err)
+	}
+	if at.Valid {
+		t := at.Time
+		st.ChangedAt = &t
+	}
+	return st, nil
+}
+
+// SetLocalBundle stores the local bundle switch.
+func (r *PublicProgramRepository) SetLocalBundle(ctx context.Context, st bountyprogram.LocalBundleSetting) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO program_feed_sources (source, enabled, reason, changed_by, changed_at)
+		VALUES ('local_bundle', $1, $2, $3, now())
+		ON CONFLICT (source) DO UPDATE SET enabled = EXCLUDED.enabled, reason = EXCLUDED.reason,
+		       changed_by = EXCLUDED.changed_by, changed_at = now()`, st.Enabled, st.Reason, st.ChangedBy)
+	if err != nil {
+		return fmt.Errorf("store local bundle setting: %w", err)
+	}
+	return nil
 }

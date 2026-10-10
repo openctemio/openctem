@@ -82,15 +82,23 @@ api/
 **Run before every commit:**
 
 ```bash
-# 1. Run linter - MUST pass with no errors
-GOWORK=off golangci-lint run ./...
+# 1. Lint the code this branch adds (what CI gates on). golangci-lint is
+#    pinned to v1.64.8: .golangci.yml is v1 format and a global v2 binary
+#    rejects it. Findings in files you did not touch mean the branch lags
+#    develop: merge develop and rerun.
+make lint-new
 
 # 2. Format code
 goimports -w ./...
 
-# 3. Run tests (if applicable)
-make test
+# 3. Tests of the packages you touched (integration tests need a scratch
+#    Postgres + Redis); CI runs the full suite
+GOWORK=off go test ./internal/app/<area>/... ./tests/unit/...
 ```
+
+Checklists for routes, permissions and modules (`api-route`), migrations
+(`migration`) and pull requests (`pr-checklist`) are skills in the repository
+root `.claude/skills/`.
 
 **Pre-commit hooks will fail if linting errors exist.**
 
@@ -881,7 +889,9 @@ no counts that go stale:
 - **Migrations:** the numbers are not contiguous (renumbering leaves gaps), so
   do not count them. The newest is
   `ls migrations/*.up.sql | sort | tail -1`. A new migration takes the next
-  number above the highest on `develop` and in open PRs.
+  number above the highest on `develop` and in open PRs. Tests look a migration up by
+  name (`testdb.MigrationVersion`), never by number, so the merge queue can
+  renumber it.
 
 ## Local builds: `GOWORK=off`
 
@@ -896,4 +906,4 @@ GOWORK=off go test ./...
 GOWORK=off golangci-lint run ./...
 ```
 
-**Last Updated**: 2026-10-04
+**Last Updated**: 2026-10-10

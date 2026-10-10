@@ -1,20 +1,23 @@
 package programfeed
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
 )
 
 // V1 reads records of schema openctem.programfeed/v1 (the collector's
-// schema/program.schema.json and schema/change.schema.json). Unknown fields
-// are refused, so a schema change cannot be read silently. Every target is
-// classified again by the platform's own parser: the feed's canonical form
-// is not trusted to be scannable.
+// schema/program.schema.json and schema/change.schema.json). Fields the
+// schema adds later are ignored (the collector extends records within v1);
+// every field read is validated, and every target is classified again by the
+// platform's own parser: the feed's canonical form is not trusted to be
+// scannable. Pointer and manifests stay strict (feedsign.DecodeStrict).
 type V1 struct{}
 
 type v1Target struct {
@@ -127,7 +130,7 @@ func v1Item(t v1Target, inScope bool) (bp.Item, error) {
 // Parse reads one program record.
 func (V1) Parse(line []byte) (bp.PublicProgram, error) {
 	var r v1Record
-	if err := feedsign.DecodeStrict(line, &r); err != nil {
+	if err := decodeRecord(line, &r); err != nil {
 		return bp.PublicProgram{}, fmt.Errorf("%w: %v", shared.ErrValidation, err)
 	}
 	if len(r.InScope) > bp.MaxScopeItems || len(r.OutOfScope) > bp.MaxScopeItems {
@@ -214,11 +217,24 @@ func v1RulesText(r v1Record) ([]bp.Header, string) {
 // ParseChange reads one change record.
 func (V1) ParseChange(line []byte) (bp.FeedChange, error) {
 	var c v1Change
-	if err := feedsign.DecodeStrict(line, &c); err != nil {
+	if err := decodeRecord(line, &c); err != nil {
 		return bp.FeedChange{}, fmt.Errorf("%w: %v", shared.ErrValidation, err)
 	}
 	if !v1ChangeKinds[c.Kind] || c.Sequence == 0 || c.Program == "" || len(c.Program) > 161 {
 		return bp.FeedChange{}, fmt.Errorf("%w: change %q of %q", shared.ErrValidation, c.Kind, c.Program)
 	}
 	return bp.FeedChange{Sequence: c.Sequence, Program: c.Program, Kind: c.Kind}, nil
+}
+
+// decodeRecord decodes one JSON record, ignoring unknown fields and refusing
+// trailing data.
+func decodeRecord(line []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(line))
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if dec.More() {
+		return errors.New("trailing data")
+	}
+	return nil
 }

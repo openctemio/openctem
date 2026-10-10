@@ -583,7 +583,7 @@ covers the target.
   `program_feed_state` (applied sequence, highest key-set version; the apply
   locks it and refuses an older sequence), `bounty_programs.public_program_id`
   (unique per tenant), `public_synced_sha256`, `confirmed_targets`, status
-  `pending_attestation`, source `public_feed` (migration `001710`).
+  `pending_attestation`, source `public_feed` (migration `001724`).
 - Fan-out is a reconcile: every tick, followed programs whose catalog
   content changed (or that are in effect while it is closed, paused or
   archived) are brought up to date, so a failed update is retried.
@@ -592,14 +592,61 @@ covers the target.
   `bounty_program.subscribed`), `POST /programs/{id}/targets/confirm`
   (`programs:write`, audited); acceptance is `POST /programs/{id}/reactivate`
   (step-up, terms hash), which records the person's attestation.
-- Owner decision (option A, 2026-10-10): the platform does not republish
-  restricted platform data. Next to the signed feed, a platform administrator
-  may enable an external program dataset source (off by default, step-up and
-  a reason, audited; datasets from a fixed allowlist pinned in configuration,
-  fetched by the platform with conditional GET and size caps and parsed with
-  the same v1 parser; provenance kept per record; a notice that the data
-  originates from the platforms and is subject to their terms; every target
-  inferred until a follower confirms it). Planned as its own change.
+- Owner decision (option A, 2026-10-10): the project does not republish
+  restricted platform data. Next to the signed feed, a platform operator may
+  import its own **local bundle** (`programfeed build --local-only`, unsigned,
+  manifest marked `collector.local_only`) from a directory the server
+  configuration names (`PROGRAMFEED_LOCAL_BUNDLE_DIR`, mounted read-only;
+  never set from the UI or by a tenant). It is off until a platform
+  administrator enables it (`PUT /api/v1/admin/program-feed/local-bundle`,
+  super_admin, a reason and a fresh console authenticator code, admin audit
+  high; `GET /api/v1/admin/program-feed` shows the state and the notice that
+  the records come from the hosting platforms and stay subject to their
+  terms). The same strict parser, caps, sequence monotonicity (its own
+  stream: `program_feed_state` row 2), delta-on-applied-base and 7-day
+  validity apply; a local-only manifest is accepted only on this path and
+  refused on the signed one. Local programs are marked local-only in the
+  catalog (`feed_stream = local`): every in-scope target is a suggestion
+  until a follower confirms it, provenance is kept per record, a signed
+  record with the same id wins, and each stream archives only its own
+  programs. Controller `program-feed-local`, hourly. Fetching allowlisted
+  public datasets directly from the platform is a later option.
+
+### 16.8 Program targets as collected assets (owner direction, 2026-10-10; next change)
+
+The feed importer is an asset collector, not a second asset pipeline:
+
+1. **Standard ingest.** Feed records are converted to the platform's CTIS
+   asset ingest (the path every collector uses) with `source = programfeed`,
+   `observed_at` = the record's `last_changed` (or `provenance.fetched_at`)
+   and `source_run` = the feed sequence, so program targets get dedup, the
+   attribute-source reconciliation (RFC-069), the change timeline, system
+   tags and vulnerability matching unchanged. Program metadata (rules,
+   terms, eligibility) stays in the program tables and links to the assets
+   (`asset_program_links`). Re-importing the same data produces no timeline
+   events.
+2. **Typed scope items.** Every target type maps to an asset type and a
+   scope entry: domain and wildcard to domain/subdomain; ip and cidr to
+   ip_address and cidr; host:port and service targets (`api.x.com:8443/tcp`,
+   `10.0.0.5:22`) to a host plus a service (open port) asset and a scope
+   entry constrained to that port and protocol — scope entries gain the
+   minimal port/protocol constraint, enforced at dispatch so a
+   port-restricted item never authorizes a scan of other ports; a URL with a
+   path to a web application/url entry with the path prefix; API endpoints
+   (OpenAPI, GraphQL) to an api asset; mobile apps, source repositories,
+   executables, smart contracts, AI models, hardware and other to their
+   asset types where they exist, otherwise program targets without an asset
+   (never scanned).
+3. **Per-item qualifiers** carried through: in or out of scope (out of scope
+   becomes an exclusion that wins), bounty eligibility, maximum severity,
+   environment, testing instructions, required headers and test-account
+   notes, and trust (published, published_by_platform, inferred).
+4. **Tests**: each type maps correctly; a port-restricted item cannot start
+   a scan of other ports; out of scope wins; an identical re-import makes no
+   timeline events; tenant isolation.
+
+The record parser ignores fields the collector adds within v1, so the typed
+fields can ship in the collector first.
 
 ### 16.7 Plan
 
@@ -609,5 +656,6 @@ covers the target.
 | Private programs (web) | `/programs/new` source picker (Enter manually / Import file), visibility, locked view and acceptance |
 | Feed importer | §16.2–16.3: catalog, verification, sequence and freshness, subscriptions, fan-out, notifications (fixture bundles; no network in CI) |
 | Program assets | §16.5: provenance links, system tags, inventory filter, default exclusion from organization metrics |
-| External dataset source | owner option A: admin-enabled, allowlisted public datasets fetched by the platform (§16.6) |
+| Local bundle source | owner option A: the operator's local-only bundle, enabled by a platform administrator (§16.6) |
+| Program targets as assets | §16.8: CTIS ingest, typed scope items with port/protocol constraints, per-item qualifiers |
 | Later | per-user researcher API connector (P7), passive sweep of unaccepted program targets (§16.4) |

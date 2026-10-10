@@ -14,5 +14,6 @@ ALTER TABLE bounty_programs
     DROP COLUMN IF EXISTS confirmed_targets,
     DROP COLUMN IF EXISTS public_synced_sha256,
     DROP COLUMN IF EXISTS public_program_id;
+DROP TABLE IF EXISTS program_feed_sources;
 DROP TABLE IF EXISTS program_feed_state;
 DROP TABLE IF EXISTS public_programs;

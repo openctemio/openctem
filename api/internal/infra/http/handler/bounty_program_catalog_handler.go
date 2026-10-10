@@ -4,7 +4,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -86,16 +85,12 @@ func toPublicProgramResponse(p bp.PublicProgram) PublicProgramResponse {
 // @Security     BearerAuth
 // @Router       /programs/catalog [get]
 func (h *BountyProgramHandler) Catalog(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	page, _ := strconv.Atoi(q.Get("page"))
-	perPage, _ := strconv.Atoi(q.Get("per_page"))
-	if page < 1 {
-		page = 1
+	paging, ok := listPageMax(w, r, 50, 100)
+	if !ok {
+		return
 	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 50
-	}
-	search := q.Get("search")
+	page, perPage := paging.Page, paging.PerPage
+	search := r.URL.Query().Get("search")
 	if len(search) > 100 {
 		search = search[:100]
 	}

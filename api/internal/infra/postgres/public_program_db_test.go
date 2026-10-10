@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// The public program catalog (migration 001710): snapshot apply with change
+// The public program catalog (migration 001724): snapshot apply with change
 // kinds, refusal of an older sequence, subscriptions unique per tenant, and
 // stale subscriptions across tenants. Requires DATABASE_URL.
 func TestPublicProgramRepository(t *testing.T) {
@@ -133,8 +133,79 @@ func TestPublicProgramRepository(t *testing.T) {
 	if k := kinds(ch); k["acme-bounty:b"] != "removed" || k["acme-bounty:a"] != "changed" {
 		t.Fatalf("third apply: %v", k)
 	}
-	st, err := cat.FeedState(ctx)
+	st, err := cat.FeedState(ctx, bountyprogram.StreamSigned)
 	if err != nil || st.AppliedSequence != 3 || st.KeySetVersion != 1 {
 		t.Fatalf("state = %+v %v", st, err)
+	}
+}
+
+// The local bundle stream (owner option A): its own sequence, archives only
+// its own programs, never replaces a signed record, and the switch is off
+// until set.
+func TestPublicProgramRepository_LocalStream(t *testing.T) {
+	db, pdb := openBatchDedupDB(t)
+	ctx := context.Background()
+	if _, err := db.Exec(`DELETE FROM program_feed_state; DELETE FROM program_feed_sources; UPDATE bounty_programs SET public_program_id = NULL; DELETE FROM public_programs`); err != nil {
+		t.Fatal(err)
+	}
+	cat := NewPublicProgramRepository(pdb)
+	now := time.Now().UTC().Truncate(time.Second)
+	mk := func(id string) bountyprogram.PublicProgram {
+		it := bountyprogram.Classify("a." + strings.ReplaceAll(id, ":", "-") + ".io")
+		it.InScope, it.Confidence = true, bountyprogram.ConfidencePublishedByPlatform
+		src := strings.SplitN(id, ":", 2)[0]
+		p := bountyprogram.PublicProgram{FeedID: id, Source: src, Platform: "hackerone", Name: "P " + id, Type: "bounty",
+			Status: bountyprogram.FeedStatusOpen, Items: []bountyprogram.Item{it}, AsOf: now,
+			Provenance: bountyprogram.FeedProvenance{Source: src, SourceURL: "https://example.org/list.json"}}
+		if err := p.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if st, err := cat.LocalBundle(ctx); err != nil || st.Enabled {
+		t.Fatalf("local switch default: %+v %v", st, err)
+	}
+	if err := cat.SetLocalBundle(ctx, bountyprogram.LocalBundleSetting{Enabled: true, Reason: "own use", ChangedBy: "root@x"}); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := cat.LocalBundle(ctx); !st.Enabled || st.Reason != "own use" || st.ChangedAt == nil {
+		t.Fatalf("local switch = %+v", st)
+	}
+	if _, err := cat.Apply(ctx, bountyprogram.FeedApply{Stream: bountyprogram.StreamSigned, State: bountyprogram.FeedState{AppliedSequence: 5},
+		Snapshot: true, Programs: []bountyprogram.PublicProgram{mk("disclose:shared"), mk("disclose:signed")}}); err != nil {
+		t.Fatal(err)
+	}
+	// The local stream starts at its own sequence 1 and does not archive
+	// signed programs; its copy of a signed program is ignored.
+	if _, err := cat.Apply(ctx, bountyprogram.FeedApply{Stream: bountyprogram.StreamLocal, State: bountyprogram.FeedState{AppliedSequence: 1},
+		Snapshot: true, Programs: []bountyprogram.PublicProgram{mk("disclose:shared"), mk("bounty-targets:local")}}); err != nil {
+		t.Fatal(err)
+	}
+	list, total, err := cat.ListPublic(ctx, "", 50, 0)
+	if err != nil || total != 3 {
+		t.Fatalf("list = %d %v", total, err)
+	}
+	for _, p := range list {
+		wantLocal := p.FeedID == "bounty-targets:local"
+		if p.LocalOnly != wantLocal {
+			t.Fatalf("%s local = %v", p.FeedID, p.LocalOnly)
+		}
+	}
+	if st, _ := cat.FeedState(ctx, bountyprogram.StreamLocal); st.AppliedSequence != 1 {
+		t.Fatalf("local state = %+v", st)
+	}
+	if st, _ := cat.FeedState(ctx, bountyprogram.StreamSigned); st.AppliedSequence != 5 {
+		t.Fatalf("signed state = %+v", st)
+	}
+	// A lower local sequence is refused.
+	if _, err := cat.Apply(ctx, bountyprogram.FeedApply{Stream: bountyprogram.StreamLocal, State: bountyprogram.FeedState{AppliedSequence: 1}, Snapshot: true}); err == nil {
+		t.Fatal("same local sequence applied twice")
+	}
+	// An empty local snapshot archives only local programs.
+	if _, err := cat.Apply(ctx, bountyprogram.FeedApply{Stream: bountyprogram.StreamLocal, State: bountyprogram.FeedState{AppliedSequence: 2}, Snapshot: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, total, _ := cat.ListPublic(ctx, "", 50, 0); total != 2 {
+		t.Fatalf("after an empty local snapshot: %d", total)
 	}
 }
