@@ -222,6 +222,12 @@ export interface CreateScanConfigRequest {
   max_retries?: number
   /** Initial backoff seconds (10-86400, default 60). Exponential per attempt. */
   retry_backoff_seconds?: number
+  /**
+   * Save the scan although direct targets are refused, when every refused one
+   * is covered by a scope entry waiting for approval: it starts once they are
+   * approved (RFC-054 §12.8). The response says `starts_when_scope_approved`.
+   */
+  start_when_scope_approved?: boolean
 }
 
 /**

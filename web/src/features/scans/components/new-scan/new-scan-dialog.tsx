@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, Loader2, Play } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Loader2, Play } from 'lucide-react'
 import { ScanRoutingSection, toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
 import { WorkflowPreviewSection } from './workflow-preview'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
@@ -43,8 +43,16 @@ import {
   refusedFromError,
   scopeRefusalSummary,
   ScopeRefusalPanel,
+  useScopeCheck,
   type ScopeRefusal,
 } from '@/features/scope'
+import { useTenant } from '@/context/tenant-provider'
+import {
+  clearNewScanDraft,
+  loadNewScanDraft,
+  saveNewScanDraft,
+} from '../../hooks/use-new-scan-draft'
+import { onlyAwaitingApproval } from '../../lib/scope-wait'
 
 interface NewScanDialogProps {
   open: boolean
@@ -61,6 +69,42 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   // Targets the server refused on create (TARGET_OUT_OF_SCOPE details).
   const [refused, setRefused] = useState<ScopeRefusal[]>([])
   const { t } = useTranslation()
+  const { currentTenant } = useTenant()
+  const tenantId = currentTenant?.id
+
+  // Keep the wizard while the user leaves it (to approve a scope entry,
+  // verify a domain) and give it back on the next open.
+  const restored = useRef(false)
+  useEffect(() => {
+    if (!open) {
+      restored.current = false
+      return
+    }
+    if (restored.current) return
+    restored.current = true
+    const draft = loadNewScanDraft(tenantId)
+    if (draft && STEPS.includes(draft.step as ScanWizardStep)) {
+      setFormData({ ...DEFAULT_NEW_SCAN, ...draft.form })
+      setCurrentStep(draft.step as ScanWizardStep)
+    }
+  }, [open, tenantId])
+  useEffect(() => {
+    if (open && restored.current && formData !== DEFAULT_NEW_SCAN)
+      saveNewScanDraft(tenantId, { form: formData, step: currentStep })
+  }, [open, tenantId, formData, currentStep])
+
+  // The same check the Targets step shows (one cached request): when every
+  // refused target only waits for a scope approval, the scan can be saved to
+  // start once it is approved.
+  const scopeCheck = useScopeCheck(directTargets(formData), {
+    enabled: open,
+    sensor_preference:
+      formData.sensorPreference === 'tenant' || formData.sensorPreference === 'platform'
+        ? formData.sensorPreference
+        : 'auto',
+    scanner_name: formData.mode === 'single' ? formData.scannerName || undefined : undefined,
+  })
+  const awaitingApproval = onlyAwaitingApproval(scopeCheck.results)
 
   // Store created scan config ID for triggering
   const createdConfigIdRef = useRef<string | null>(null)
@@ -140,7 +184,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     }
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (opts: { waitForScope?: boolean } = {}) => {
     if (!validateCurrentStep()) return
 
     const targetProblem = targetsError(formData)
@@ -154,6 +198,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     try {
       // Map form data to API request format
       const request = formDataToCreateRequest(formData)
+      if (opts.waitForScope) request.start_when_scope_approved = true
 
       // Create the scan configuration
       const scanConfig = await createScanConfig(request)
@@ -165,8 +210,17 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
       createdConfigIdRef.current = scanConfig.id
 
-      // Trigger scan immediately if requested
-      if (formData.schedule.runImmediately) {
+      const waits = !!(scanConfig as { starts_when_scope_approved?: boolean })
+        .starts_when_scope_approved
+      if (waits) {
+        toast.success(t('scans.new.savedWaiting', 'Scan "{name}" saved', { name: formData.name }), {
+          description: t(
+            'scans.new.savedWaitingHint',
+            'It starts on its own when the scope entry is approved, and is checked again then.'
+          ),
+        })
+      } else if (formData.schedule.runImmediately) {
+        // Trigger scan immediately if requested
         // Import trigger function dynamically to avoid hook rules issue
         const { post } = await import('@/lib/api/client')
         const { scanEndpoints } = await import('@/lib/api/endpoints')
@@ -202,6 +256,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           )
 
           // Still close dialog and refresh - the scan was created successfully
+          clearNewScanDraft(tenantId)
           await invalidateScanConfigsCache()
           onSubmit?.(formData)
           setFormData(DEFAULT_NEW_SCAN)
@@ -221,6 +276,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       onSubmit?.(formData)
 
       // Reset and close
+      clearNewScanDraft(tenantId)
       setFormData(DEFAULT_NEW_SCAN)
       setCurrentStep('basic')
       createdConfigIdRef.current = null
@@ -241,6 +297,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   }
 
   const handleClose = () => {
+    clearNewScanDraft(tenantId)
     setRefused([])
     setFormData(DEFAULT_NEW_SCAN)
     setCurrentStep('basic')
@@ -308,6 +365,18 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         {/* Step Content */}
         <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden">{renderStep()}</div>
 
+        {isLastStep && awaitingApproval && (
+          <p
+            className="border-t bg-muted/40 px-4 py-2 text-xs text-muted-foreground sm:px-6"
+            data-testid="scope-wait-notice"
+          >
+            {t(
+              'scans.new.waitNotice',
+              'Some targets wait for a scope approval (see Targets). The scan is saved now and starts on its own once the entry is approved.'
+            )}
+          </p>
+        )}
+
         {/* Footer */}
         <div className="flex flex-col-reverse gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex justify-center sm:justify-start">
@@ -336,10 +405,24 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               Cancel
             </Button>
 
-            {isLastStep ? (
+            {isLastStep && awaitingApproval ? (
               <Button
                 type="button"
-                onClick={handleSubmit}
+                onClick={() => void handleSubmit({ waitForScope: true })}
+                disabled={isLoading}
+                className="order-1 h-auto w-full whitespace-normal py-2 sm:order-2 sm:w-auto"
+              >
+                {isLoading ? (
+                  <Loader2 className="me-2 h-4 w-4 shrink-0 animate-spin" />
+                ) : (
+                  <Clock className="me-2 h-4 w-4 shrink-0" />
+                )}
+                {t('scans.new.createWhenApproved', 'Create scan, start when scope is approved')}
+              </Button>
+            ) : isLastStep ? (
+              <Button
+                type="button"
+                onClick={() => void handleSubmit()}
                 disabled={isLoading}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >

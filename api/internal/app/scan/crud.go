@@ -54,6 +54,10 @@ type CreateScanInput struct {
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
 	CreatedBy           string `json:"created_by" validate:"omitempty,uuid"`
+	// StartWhenScopeApproved saves a scan whose direct targets are refused
+	// only because pending scope entries cover them; it starts once those
+	// entries are approved (scope_wait.go). Ignored when nothing waits.
+	StartWhenScopeApproved bool `json:"start_when_scope_approved"`
 }
 
 // CreateScanResult represents the result of creating a scan.
@@ -104,9 +108,14 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), validatedTargets); err != nil {
 		return nil, err
 	}
-	// Nothing the tenant has not authorized for active scanning (RFC-036).
-	if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
-		return nil, err
+	// Nothing the tenant has not authorized for active scanning (RFC-036),
+	// unless the caller saves it to start when the pending entries that
+	// cover the refused targets are approved.
+	waitForScope := input.StartWhenScopeApproved && s.onlyAwaitingScope(ctx, tenantID, validatedTargets)
+	if !waitForScope {
+		if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, validatedTargets); err != nil {
 		return nil, err
@@ -208,6 +217,18 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	// Save to repository
 	if err := s.scanRepo.Create(ctx, sc); err != nil {
 		return nil, err
+	}
+	if waitForScope {
+		now := time.Now().UTC()
+		if err := s.scopeWaits.Create(ctx, ScopeWait{
+			ScanID: sc.ID, TenantID: tenantID, RequestedBy: sc.CreatedBy, CreatedAt: now, ExpiresAt: now.Add(ScopeWaitTTL),
+		}); err != nil {
+			// Never keep a scan whose out-of-scope targets nothing waits on.
+			if derr := s.scanRepo.Delete(ctx, tenantID, sc.ID); derr != nil {
+				s.logger.Error("scope wait: rollback failed", "scan_id", sc.ID.String(), "error", logger.SanitizeError(derr))
+			}
+			return nil, fmt.Errorf("save scope wait: %w", err)
+		}
 	}
 
 	// Audit log: scan config created
