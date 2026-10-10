@@ -527,12 +527,12 @@ product; this section keeps them from leaving it through those channels.
   name.
   - `GET /programs/{id}/delivery` (`programs:read`; member or owner who
     accepted the current terms): attached integrations and the opt-in.
-  - `PUT /programs/{id}/channels/{integrationId}` (`programs:write` and
+  - `PUT /programs/{id}/notification-channels/{integration_id}` (`programs:write` and
     `integrations:manage`, step-up; member or owner who accepted the current
     terms): only a notification integration of the caller's tenant
     (`404 PROGRAM_CHANNEL_NOT_FOUND` otherwise). Idempotent. Audited
     (`bounty_program.channel_attached`).
-  - `DELETE /programs/{id}/channels/{integrationId}` (same permissions,
+  - `DELETE /programs/{id}/notification-channels/{integration_id}` (same permissions,
     membership only, narrowing). Audited (`bounty_program.channel_detached`).
 - **Organization channels opt-in**: `bounty_programs.org_channels_opt_in`
   (default off). `PUT /programs/{id}/org-channels {enabled, reason}`

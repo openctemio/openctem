@@ -84,7 +84,7 @@ var stepUpRoutes = []string{
 	"PUT /api/v1/programs/{id}/source",
 	"POST /api/v1/programs/{id}/pending/apply",
 	// Widening who receives a private program's events (RFC-065 §15.4).
-	"PUT /api/v1/programs/{id}/channels/{id}",
+	"PUT /api/v1/programs/{id}/notification-channels/{id}",
 	"PUT /api/v1/programs/{id}/org-channels",
 	// Approving a custom template version for sensors (RFC-040 §11.5).
 	"POST /api/v1/scanner-templates/{id}/approve",

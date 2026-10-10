@@ -81,7 +81,7 @@ func (h *BountyProgramHandler) Delivery(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *BountyProgramHandler) integrationID(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
-	id, err := shared.IDFromString(chi.URLParam(r, "integrationId"))
+	id, err := shared.IDFromString(chi.URLParam(r, "integration_id"))
 	if err != nil {
 		apierror.NotFound("Integration").WriteJSON(w)
 		return shared.ID{}, false
@@ -89,33 +89,33 @@ func (h *BountyProgramHandler) integrationID(w http.ResponseWriter, r *http.Requ
 	return id, true
 }
 
-// AttachChannel handles PUT /api/v1/programs/{id}/channels/{integrationId}
+// AttachChannel handles PUT /api/v1/programs/{id}/notification-channels/{integration_id}
 // @Summary      Attach program channel
 // @Description  Let a notification integration of the organization receive events about the program's private assets (with the program's name). Needs integrations:manage, membership (or owner) with the current terms accepted, and a recent re-authentication. Idempotent. Audited.
 // @Tags         Programs
 // @Produce      json
 // @Param        id             path      string  true  "Program ID"
-// @Param        integrationId  path      string  true  "Notification integration ID"
+// @Param        integration_id  path      string  true  "Notification integration ID"
 // @Success      200  {object}  ProgramDeliveryResponse
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /programs/{id}/channels/{integrationId} [put]
+// @Router       /programs/{id}/notification-channels/{integration_id} [put]
 func (h *BountyProgramHandler) AttachChannel(w http.ResponseWriter, r *http.Request) {
 	h.changeChannel(w, r, true)
 }
 
-// DetachChannel handles DELETE /api/v1/programs/{id}/channels/{integrationId}
+// DetachChannel handles DELETE /api/v1/programs/{id}/notification-channels/{integration_id}
 // @Summary      Detach program channel
 // @Description  Stop sending events about the program's private assets to the integration. Needs integrations:manage and membership (or owner). Audited.
 // @Tags         Programs
 // @Produce      json
 // @Param        id             path      string  true  "Program ID"
-// @Param        integrationId  path      string  true  "Notification integration ID"
+// @Param        integration_id  path      string  true  "Notification integration ID"
 // @Success      200  {object}  ProgramDeliveryResponse
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /programs/{id}/channels/{integrationId} [delete]
+// @Router       /programs/{id}/notification-channels/{integration_id} [delete]
 func (h *BountyProgramHandler) DetachChannel(w http.ResponseWriter, r *http.Request) {
 	h.changeChannel(w, r, false)
 }

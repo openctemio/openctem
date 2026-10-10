@@ -233,7 +233,7 @@ decides for every path:
 An owner may let a private program's events reach every organization
 channel (`PUT /programs/{id}/org-channels`, reason, step-up, audited);
 program names stay scrubbed there. Members attach channels with
-`PUT /programs/{id}/channels/{integrationId}` (`integrations:manage`,
+`PUT /programs/{id}/notification-channels/{integration_id}` (`integrations:manage`,
 step-up, audited). Details: RFC-065 §15.4.
 
 ## Evidence
