@@ -164,6 +164,36 @@ func (h *ComponentHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeComponentJSON(w, d)
 }
 
+// ComponentVersionResponse is one package version.
+type ComponentVersionResponse struct {
+	ID          string `json:"id"`
+	ComponentID string `json:"component_id"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Ecosystem   string `json:"ecosystem"`
+	PURL        string `json:"purl"`
+}
+
+// GetVersion handles GET /api/v1/components/versions/{versionId}
+// @Summary      Get a package version
+// @Description  A package version (the id findings carry as component_id) seen through an in-scope asset or finding; 404 otherwise.
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        versionId  path  string  true  "Package version ID"
+// @Success      200  {object}  ComponentVersionResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /components/versions/{versionId} [get]
+func (h *ComponentHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetVersion(r.Context(), middleware.MustGetTenantID(r.Context()), r.PathValue("versionId"))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeComponentJSON(w, ComponentVersionResponse{ID: v.VersionID, ComponentID: v.ProductID, Name: v.Name,
+		Version: v.Version, Ecosystem: v.Ecosystem, PURL: v.PURL})
+}
+
 // ComponentVersionsResponse lists versions in use.
 type ComponentVersionsResponse struct {
 	Data []component.Version `json:"data"`

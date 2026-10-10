@@ -830,6 +830,38 @@ func (r *ComponentRepository) ListSBOMEntries(ctx context.Context, tenantID shar
 	return out, rows.Err()
 }
 
+// GetVersion returns a version visible through an in-scope link or finding.
+func (r *ComponentRepository) GetVersion(ctx context.Context, tenantID, versionID shared.ID, scope *shared.DataScope) (*component.FindingComponent, error) {
+	args := &sqlArgs{}
+	tenant := args.add(tenantID.String())
+	version := args.add(versionID.String())
+	linkScope := args.scope("s.asset_id", scope)
+	findingScope := ""
+	if scope != nil {
+		cond, _ := dataScopeCondAt("f.asset_id", scope, len(args.vals)-1)
+		findingScope = " AND " + cond
+	}
+	var c component.FindingComponent
+	var ptype string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT sv.id, p.id, p.name, sv.raw, p.purl_type, COALESCE(sv.purl, '')
+		FROM software_versions sv
+		JOIN software_products p ON p.id = sv.product_id
+		WHERE sv.id = `+version+` AND (sv.tenant_id IS NULL OR sv.tenant_id = `+tenant+`) AND p.purl_type IS NOT NULL
+		  AND (EXISTS (SELECT 1 FROM asset_software s WHERE s.tenant_id = `+tenant+` AND s.software_version_id = sv.id`+linkScope+`)
+		    OR EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = `+tenant+` AND f.component_id = sv.id`+findingScope+`))`,
+		args.vals...).Scan(&c.VersionID, &c.ProductID, &c.Name, &c.Version, &ptype, &c.PURL)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, component.ErrComponentNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get package version: %w", err)
+	}
+	c.Ecosystem = software.EcosystemForType(ptype)
+	c.Licenses = []string{}
+	return &c, nil
+}
+
 // GetFindingComponent returns the version a finding names, when it is global
 // or the tenant's own, and how assetID uses it.
 func (r *ComponentRepository) GetFindingComponent(ctx context.Context, tenantID, versionID shared.ID, assetID *shared.ID) (*component.FindingComponent, error) {

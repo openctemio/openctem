@@ -143,6 +143,7 @@ func registerComponentRoutes(
 		r.GET("/sbom", h.ExportSBOM, middleware.Require(permission.ComponentsRead))
 		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite), sbomRL.Middleware())
 		r.GET("/", h.List, middleware.Require(permission.ComponentsRead))
+		r.GET("/versions/{versionId}", h.GetVersion, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}/assets", h.ListAssets, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}/vulnerabilities", h.ListVulnerabilities, middleware.Require(permission.ComponentsRead))
