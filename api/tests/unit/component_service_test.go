@@ -102,6 +102,10 @@ func (m *mockComponentRepo) ListSBOMEntries(_ context.Context, tenantID shared.I
 	return m.sbomEntries, nil
 }
 
+func (m *mockComponentRepo) GetVersion(context.Context, shared.ID, shared.ID, *shared.DataScope) (*component.FindingComponent, error) {
+	return &component.FindingComponent{}, nil
+}
+
 func (m *mockComponentRepo) GetFindingComponent(context.Context, shared.ID, shared.ID, *shared.ID) (*component.FindingComponent, error) {
 	return &component.FindingComponent{}, nil
 }

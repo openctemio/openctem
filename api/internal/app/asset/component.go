@@ -356,6 +356,23 @@ func (s *ComponentService) DependencyGraph(ctx context.Context, tenantID, assetI
 	return s.repo.DependencyGraph(ctx, tid, aid, focus, depth, limit)
 }
 
+// GetVersion returns a package version visible to the caller.
+func (s *ComponentService) GetVersion(ctx context.Context, tenantID, versionID string) (*componentdom.FindingComponent, error) {
+	tid, err := parseID(tenantID, "tenant")
+	if err != nil {
+		return nil, err
+	}
+	vid, err := parseID(versionID, "version")
+	if err != nil {
+		return nil, err
+	}
+	scope, err := s.callerScope(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetVersion(ctx, tid, vid, scope)
+}
+
 // GetFindingComponent returns the package version a finding names and how
 // the finding's asset uses it. The caller has already authorized the finding.
 func (s *ComponentService) GetFindingComponent(ctx context.Context, tenantID, versionID, assetID string) (*componentdom.FindingComponent, error) {
