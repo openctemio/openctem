@@ -1070,7 +1070,8 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 
 	// Tags filter
 	if len(filter.Tags) > 0 {
-		conditions = append(conditions, fmt.Sprintf("a.tags && $%d", argIndex))
+		// System tags (derived from program links) filter like tags.
+		conditions = append(conditions, fmt.Sprintf("(a.tags && $%d OR a.system_tags && $%d)", argIndex, argIndex))
 		args = append(args, pq.Array(filter.Tags))
 		argIndex++
 	}
@@ -1333,6 +1334,14 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 			argIndex))
 		args = append(args, "scope_target:"+filter.CoveredByScopeTarget.String())
 		argIndex++
+	}
+
+	// Bug-bounty program assets (RFC-065 §16.5).
+	switch filter.ProgramAssets {
+	case "only":
+		conditions = append(conditions, "'bug-bounty' = ANY(a.system_tags)")
+	case "exclude":
+		conditions = append(conditions, "NOT a.program_only")
 	}
 
 	// Data classification filter.

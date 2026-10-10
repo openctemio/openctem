@@ -10,6 +10,7 @@
 import { useMemo } from 'react'
 import { RefreshCw } from 'lucide-react'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -45,6 +46,7 @@ export function DynamicTargetsPanel({
   onChange,
   workflow,
 }: DynamicTargetsPanelProps) {
+  const { t } = useTranslation()
   const selectors = useMemo(() => selectorsOf(targets, options), [targets, options])
   const cidr = useMemo(() => hasCidrTarget(targets), [targets])
   const { previews, isLoading, enabled } = useSelectorPreview(selectors, options)
@@ -61,13 +63,11 @@ export function DynamicTargetsPanel({
     <fieldset className="space-y-3 rounded-lg border p-3" data-testid="dynamic-targets">
       <legend className="flex items-center gap-1.5 px-1 text-sm font-medium">
         <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-        Dynamic targets
+        {t('scans.dynamic.title')}
       </legend>
       <p className="text-xs text-muted-foreground">
-        Resolved again at the start of every run from your inventory, so a scheduled scan also scans
-        what was found since the last run.
-        {workflow && ' Discovery steps add what they find during the run.'} Each target still passes
-        the scope check.
+        {t('scans.dynamic.intro')}
+        {workflow && ` ${t('scans.dynamic.workflowNote')}`} {t('scans.dynamic.scopeNote')}
       </p>
 
       {selectors.length > 0 && (
@@ -81,28 +81,51 @@ export function DynamicTargetsPanel({
                 <p className="break-all font-mono text-sm">{sel.target}</p>
                 <p className="text-xs text-muted-foreground">
                   {!enabled
-                    ? 'Known assets are shown to people who can read assets.'
+                    ? t('scans.dynamic.needAssetRead')
                     : isLoading && !p
-                      ? 'Looking up your inventory…'
+                      ? t('scans.targets.lookingUp')
                       : !p
-                        ? 'Not looked up.'
+                        ? t('scans.dynamic.notLookedUp')
                         : sel.kind === 'wildcard'
                           ? p.total === 0
-                            ? `No subdomains in your inventory yet: a run scans ${sel.value}.`
-                            : `${sel.value} and ${p.total.toLocaleString()} known ${p.total === 1 ? 'name' : 'names'} now${p.total > MAX_SELECTOR_TARGETS ? ` (a run takes the ${MAX_SELECTOR_TARGETS.toLocaleString()} seen most recently)` : ''}.`
+                            ? t('scans.dynamic.wildcardEmpty', undefined, { value: sel.value })
+                            : t(
+                                p.total === 1
+                                  ? 'scans.dynamic.wildcardOne'
+                                  : 'scans.dynamic.wildcardMany',
+                                undefined,
+                                {
+                                  value: sel.value,
+                                  count: p.total.toLocaleString(),
+                                  cap:
+                                    p.total > MAX_SELECTOR_TARGETS
+                                      ? t('scans.dynamic.wildcardCap', undefined, {
+                                          max: MAX_SELECTOR_TARGETS.toLocaleString(),
+                                        })
+                                      : '',
+                                }
+                              )
                           : p.total === 0
-                            ? 'No known hosts in this range yet: a run scans nothing from it.'
-                            : `${p.total.toLocaleString()} known ${p.total === 1 ? 'host' : 'hosts'} in this range now.`}
+                            ? t('scans.dynamic.cidrEmpty')
+                            : p.total === 1
+                              ? t('scans.dynamic.cidrOne')
+                              : t('scans.dynamic.cidrMany', undefined, {
+                                  count: p.total.toLocaleString(),
+                                })}
                 </p>
                 {p && p.recent.length > 0 && (
                   <p className="truncate text-xs text-muted-foreground">
-                    Seen most recently: {p.recent[0].name}
-                    {p.recent[0].lastSeen ? ` (${formatRelative(p.recent[0].lastSeen)})` : ''}
-                    {p.recent.length > 1 &&
-                      `, ${p.recent
-                        .slice(1)
-                        .map((r) => r.name)
-                        .join(', ')}`}
+                    {t('scans.dynamic.seenRecently', undefined, {
+                      names:
+                        p.recent[0].name +
+                        (p.recent[0].lastSeen ? ` (${formatRelative(p.recent[0].lastSeen)})` : '') +
+                        (p.recent.length > 1
+                          ? `, ${p.recent
+                              .slice(1)
+                              .map((r) => r.name)
+                              .join(', ')}`
+                          : ''),
+                    })}
                   </p>
                 )}
               </li>
@@ -113,18 +136,22 @@ export function DynamicTargetsPanel({
 
       {cidr && (
         <div className="space-y-1.5">
-          <p className="text-sm">Address ranges</p>
+          <p className="text-sm">{t('scans.dynamic.addressRanges')}</p>
           <RadioGroup
             value={options?.cidr_mode === 'inventory' ? 'inventory' : 'sweep'}
             onValueChange={(v) => set({ cidr_mode: v === 'inventory' ? 'inventory' : undefined })}
             className="gap-1"
           >
             <label className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-muted/50">
-              <RadioGroupItem value="sweep" className="mt-0.5" aria-label="Sweep the whole range" />
+              <RadioGroupItem
+                value="sweep"
+                className="mt-0.5"
+                aria-label={t('scans.dynamic.sweep')}
+              />
               <span className="min-w-0">
-                <span className="block text-sm">Sweep the whole range</span>
+                <span className="block text-sm">{t('scans.dynamic.sweep')}</span>
                 <span className="block text-xs text-muted-foreground">
-                  The scanner probes every address in it.
+                  {t('scans.dynamic.sweepHint')}
                 </span>
               </span>
             </label>
@@ -132,12 +159,12 @@ export function DynamicTargetsPanel({
               <RadioGroupItem
                 value="inventory"
                 className="mt-0.5"
-                aria-label="Only the hosts already in the inventory"
+                aria-label={t('scans.dynamic.inventoryOnly')}
               />
               <span className="min-w-0">
-                <span className="block text-sm">Only the hosts already in the inventory</span>
+                <span className="block text-sm">{t('scans.dynamic.inventoryOnly')}</span>
                 <span className="block text-xs text-muted-foreground">
-                  Each run takes the addresses your inventory holds in the range at that time.
+                  {t('scans.dynamic.inventoryOnlyHint')}
                 </span>
               </span>
             </label>
@@ -149,7 +176,7 @@ export function DynamicTargetsPanel({
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="flex items-center gap-2">
             <Label htmlFor="dyn-seen-within" className="text-sm font-normal">
-              Only assets seen in the last
+              {t('scans.dynamic.seenWithin')}
             </Label>
             <Select
               value={String(seenWithin)}
@@ -161,7 +188,9 @@ export function DynamicTargetsPanel({
               <SelectContent>
                 {windows.map((d) => (
                   <SelectItem key={d} value={String(d)}>
-                    {d === 0 ? 'Any time' : `${d} days`}
+                    {d === 0
+                      ? t('scans.dynamic.anyTime')
+                      : t('scans.dynamic.days', undefined, { count: d })}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -174,7 +203,7 @@ export function DynamicTargetsPanel({
               onCheckedChange={(v) => set({ include_stale: v === true || undefined })}
             />
             <Label htmlFor="dyn-include-stale" className="text-sm font-normal">
-              Include assets not seen for a while (stale)
+              {t('scans.dynamic.includeStale')}
             </Label>
           </div>
         </div>
