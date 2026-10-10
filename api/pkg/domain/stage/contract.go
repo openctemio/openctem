@@ -180,6 +180,8 @@ type contract struct {
 var requiredFields = map[Key][]string{
 	DiscoverSubdomains: []string{"name", "root_domain", "discovery_method"},
 	ResolveDNS:         []string{"name", "resolves_to"},
+	LookupRDAP:         []string{"name", "registration"},
+	LookupASN:          []string{"address", "asn"},
 	ScanPorts:          []string{"host", "port", "protocol"},
 	ProbeHTTP:          []string{"url", "status_code", "title"},
 	CrawlWeb:           []string{"url", "parent_url"},
@@ -198,6 +200,8 @@ var requiredFields = map[Key][]string{
 var chunkSizes = map[Key]int{
 	DiscoverSubdomains: 50,
 	ResolveDNS:         200,
+	LookupRDAP:         100,
+	LookupASN:          500,
 	ScanPorts:          50,
 	ProbeHTTP:          200,
 	CrawlWeb:           10,
@@ -212,12 +216,15 @@ var chunkSizes = map[Key]int{
 var toolParams = map[string]map[string]string{
 	"naabu":  {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
 	"nuclei": {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},
+	"rdap":   {"follow_registrar": "follow_registrar"},
+	"asn":    {"include_announced": "include_announced", "max_ranges": "max_ranges"},
 }
 
 // batchTools take a list of targets in one task (the sensor executor reads
 // the payload's `targets`); every other tool takes one target per task.
 var batchTools = map[string]bool{
 	"nuclei": true, "subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
+	"rdap": true, "asn": true,
 }
 
 // capabilityJobTools run capability jobs on the sensor (their embedded
@@ -229,6 +236,7 @@ var batchTools = map[string]bool{
 var capabilityJobTools = map[string]bool{
 	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
 	"nuclei": true, "trivy": true, "semgrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
+	"rdap": true, "asn": true,
 }
 
 // TakesCapabilityJobs reports whether a step running tool for the stage
