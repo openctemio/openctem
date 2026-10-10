@@ -9,8 +9,7 @@ CREATE TABLE scan_scope_waits (
     tenant_id    UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     requested_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at   TIMESTAMPTZ NOT NULL,
-    CHECK (expires_at > created_at)
+    expires_at   TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX idx_scan_scope_waits_tenant ON scan_scope_waits (tenant_id, expires_at);
 COMMENT ON TABLE scan_scope_waits IS
