@@ -248,6 +248,7 @@ decides for every path:
 | Notification outbox (Slack, Teams, Telegram, email, webhook, Splunk HEC) | restricted entry sent only to program channels; private program names scrubbed for every other destination; resolver error = retry, no send |
 | Automations | restricted findings and assets start no automation |
 | EASM alerts | restricted exposures skip the organization digest and go out on their own (then routed by the outbox) |
+| Outbox view (`GET /notification-outbox`, `/{id}`) | integration admins who are neither an owner nor a member read private program names, handles and tags scrubbed in title, body, last error and metadata; resolver error = 500 |
 
 An owner may let a private program's events reach every organization
 channel (`PUT /programs/{id}/org-channels`, reason, step-up, audited);
