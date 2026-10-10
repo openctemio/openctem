@@ -1,8 +1,11 @@
 'use client'
 
 /**
- * Import or re-import a program (RFC-065 §5): details, rules and the pasted
- * scope; "Preview" asks the server what the import would do and which terms
+ * Import or re-import a program (RFC-065 §5, §15): details, rules and the
+ * scope, entered by hand or read from a file (platform CSV export, Burp
+ * Suite target scope, any CSV with chosen columns; read in the browser and
+ * sent as text, never uploaded elsewhere). A new program is private by
+ * default: only its members and the organization owners see it. "Preview" asks the server what the import would do and which terms
  * hash to attest to; the person then accepts the program's rules and scope
  * as previewed, and the import sends that hash. Any change to the form after
  * the preview clears it, so a person never attests to terms they have not
@@ -10,11 +13,18 @@
  */
 
 import { useId, useMemo, useState } from 'react'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle, FileUp, Globe, Loader2, Lock, PenLine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
@@ -23,6 +33,8 @@ import type {
   ProgramChange,
   ProgramInput,
   ProgramPreview,
+  ProgramVisibility,
+  ScopeFileFormat,
 } from '../api/programs-api.types'
 import { previewProgram } from '../api/use-programs'
 import {
@@ -30,9 +42,19 @@ import {
   parseHeaderLines,
   parseWindowLines,
   rulesFromForm,
+  SCOPE_FILE_FORMATS,
+  csvHeaderColumns,
+  scopeFileFromForm,
+  scopeFileTooLarge,
   shortHash,
 } from '../lib/program-form'
+import { ProgramChoice } from './program-choice'
 import { ProgramPreviewView } from './program-preview'
+
+/** How the scope is given: typed or pasted, or read from a file. */
+export type ProgramScopeMode = 'manual' | 'file'
+
+const NO_COLUMN = '__none__'
 
 export interface ProgramFormValues {
   name: string
@@ -47,6 +69,15 @@ export interface ProgramFormValues {
   notes: string
   /** Testing windows, one "mon-fri 09:00-17:00 Europe/Paris" per line. */
   windows: string
+  mode: ProgramScopeMode
+  fileName: string
+  fileContent: string
+  fileFormat: ScopeFileFormat
+  mapIdentifier: string
+  mapType: string
+  mapInScope: string
+  visibility: ProgramVisibility
+  termsText: string
 }
 
 export const EMPTY_PROGRAM_FORM: ProgramFormValues = {
@@ -61,6 +92,15 @@ export const EMPTY_PROGRAM_FORM: ProgramFormValues = {
   forbidden: [],
   notes: '',
   windows: '',
+  mode: 'manual',
+  fileName: '',
+  fileContent: '',
+  fileFormat: 'auto',
+  mapIdentifier: '',
+  mapType: '',
+  mapInScope: '',
+  visibility: 'private',
+  termsText: '',
 }
 
 interface ProgramFormProps {
@@ -94,16 +134,45 @@ export function ProgramForm({
 
   const badHeaders = useMemo(() => parseHeaderLines(v.headers).invalid, [v.headers])
   const badWindows = useMemo(() => parseWindowLines(v.windows).invalid, [v.windows])
+  const columns = useMemo(
+    () => (v.fileFormat === 'generic_csv' ? csvHeaderColumns(v.fileContent) : []),
+    [v.fileFormat, v.fileContent]
+  )
+  const fileMissing =
+    v.mode === 'file' && (!v.fileContent || (v.fileFormat === 'generic_csv' && !v.mapIdentifier))
 
   const input = (accept?: string): ProgramInput => ({
     name: v.name.trim(),
     platform: v.platform.trim(),
     handle: v.handle.trim(),
     program_url: v.programUrl.trim(),
-    scope_text: v.scopeText,
+    scope_text: v.mode === 'manual' ? v.scopeText : '',
+    scope_file: v.mode === 'file' ? scopeFileFromForm(v) : undefined,
+    terms_text: v.termsText,
+    visibility: existing ? undefined : v.visibility,
     rules: rulesFromForm(v),
     accept_terms_sha256: accept,
   })
+
+  const readFile = async (file: File | undefined) => {
+    if (!file) return
+    const content = await file.text()
+    if (scopeFileTooLarge(content)) {
+      setError(t('programs.file.tooLarge', 'The file is larger than 256 KiB.'))
+      return
+    }
+    setError(null)
+    setV((prev) => ({
+      ...prev,
+      fileName: file.name.slice(0, 200),
+      fileContent: content,
+      mapIdentifier: '',
+      mapType: '',
+      mapInScope: '',
+    }))
+    setPreview(null)
+    setAccepted(false)
+  }
 
   // Any change invalidates the preview and the attestation.
   const set = <K extends keyof ProgramFormValues>(k: K, value: ProgramFormValues[K]) => {
@@ -152,6 +221,41 @@ export function ProgramForm({
         </div>
       )}
 
+      <section className="space-y-2">
+        <h2 className="text-sm font-medium">{t('programs.source.title', 'Where is the scope?')}</h2>
+        <ProgramChoice<ProgramScopeMode>
+          label={t('programs.source.title', 'Where is the scope?')}
+          value={v.mode}
+          onChange={(m) => set('mode', m)}
+          options={[
+            {
+              value: 'manual',
+              icon: PenLine,
+              title: t('programs.source.manual', 'Enter manually'),
+              description: t(
+                'programs.source.manualHint',
+                'Paste or type the scope list from the program page.'
+              ),
+            },
+            {
+              value: 'file',
+              icon: FileUp,
+              title: t('programs.source.file', 'Import file'),
+              description: t(
+                'programs.source.fileHint',
+                'The scope file the platform lets you download: CSV export, Burp Suite scope or any CSV.'
+              ),
+            },
+          ]}
+        />
+        <p className="text-muted-foreground text-xs">
+          {t(
+            'programs.source.noCredentials',
+            'Private and invite-only programs work the same way: nothing is fetched from the platform and no password, cookie or token is needed.'
+          )}
+        </p>
+      </section>
+
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor={`${id}-name`}>{t('programs.form.name', 'Program name')}</Label>
@@ -164,7 +268,9 @@ export function ProgramForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor={`${id}-url`}>{t('programs.form.url', 'Program policy URL')}</Label>
+          <Label htmlFor={`${id}-url`}>
+            {t('programs.form.urlOptional', 'Program page URL (optional)')}
+          </Label>
           <Input
             id={`${id}-url`}
             value={v.programUrl}
@@ -197,22 +303,163 @@ export function ProgramForm({
         </div>
       </section>
 
-      <section className="space-y-2">
-        <Label htmlFor={`${id}-scope`}>{t('programs.form.scope', 'Scope')}</Label>
-        <p className="text-muted-foreground text-xs">
-          {t(
-            'programs.form.scopeHint',
-            'Paste the program scope: one target per line, with "In scope" and "Out of scope" headings (or a leading "-" for out of scope), or the program CSV export.'
+      {!existing && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium">
+            {t('programs.visibility.title', 'Who can see this program')}
+          </h2>
+          <ProgramChoice<ProgramVisibility>
+            label={t('programs.visibility.title', 'Who can see this program')}
+            value={v.visibility}
+            onChange={(x) => set('visibility', x)}
+            options={[
+              {
+                value: 'private',
+                icon: Lock,
+                title: t('programs.visibility.private', 'Private'),
+                description: t(
+                  'programs.visibility.privateHint',
+                  'Only program members and organization owners; each person accepts the terms first. Every view is audited.'
+                ),
+              },
+              {
+                value: 'public',
+                icon: Globe,
+                title: t('programs.visibility.public', 'Public'),
+                description: t(
+                  'programs.visibility.publicHint',
+                  'Program members and everyone who sees the whole organization.'
+                ),
+              },
+            ]}
+          />
+        </section>
+      )}
+
+      {v.mode === 'file' && (
+        <section className="space-y-3">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-file`}>{t('programs.file.label', 'Scope file')}</Label>
+              <Input
+                id={`${id}-file`}
+                type="file"
+                accept=".csv,.tsv,.json,.txt,text/csv,application/json,text/plain"
+                onChange={(e) => void readFile(e.target.files?.[0])}
+              />
+              {v.fileName && (
+                <p className="text-muted-foreground text-xs">
+                  {t('programs.file.loaded', '{name} ({size} KiB) read in your browser.', {
+                    name: v.fileName,
+                    size: Math.ceil(v.fileContent.length / 1024),
+                  })}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-format`}>{t('programs.file.format', 'Format')}</Label>
+              <Select
+                value={v.fileFormat}
+                onValueChange={(f) => set('fileFormat', f as ScopeFileFormat)}
+              >
+                <SelectTrigger id={`${id}-format`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SCOPE_FILE_FORMATS.map((f) => (
+                    <SelectItem key={f.value} value={f.value}>
+                      {t(`programs.file.formats.${f.value}`, f.label)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {v.fileFormat === 'generic_csv' && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              {(
+                [
+                  ['mapIdentifier', t('programs.file.colIdentifier', 'Target column'), true],
+                  ['mapType', t('programs.file.colType', 'Type column (optional)'), false],
+                  [
+                    'mapInScope',
+                    t('programs.file.colInScope', 'In-scope column (optional)'),
+                    false,
+                  ],
+                ] as const
+              ).map(([key, label, required]) => (
+                <div key={key} className="space-y-2">
+                  <Label htmlFor={`${id}-${key}`}>{label}</Label>
+                  <Select
+                    value={v[key] || NO_COLUMN}
+                    onValueChange={(c) => set(key, c === NO_COLUMN ? '' : c)}
+                    disabled={columns.length === 0}
+                  >
+                    <SelectTrigger id={`${id}-${key}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {!required && (
+                        <SelectItem value={NO_COLUMN}>
+                          {t('programs.file.colNone', 'None')}
+                        </SelectItem>
+                      )}
+                      {required && !v[key] && (
+                        <SelectItem value={NO_COLUMN} disabled>
+                          {t('programs.file.colPick', 'Choose a column')}
+                        </SelectItem>
+                      )}
+                      {columns.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
           )}
-        </p>
+          <p className="text-muted-foreground text-xs">
+            {t(
+              'programs.file.hint',
+              'A Burp Suite host expression is imported only when it names one host or one domain and its subdomains; anything wider is listed as not scannable. Nothing is created before you accept the preview.'
+            )}
+          </p>
+        </section>
+      )}
+
+      <section className="space-y-2">
+        <Label htmlFor={`${id}-terms`}>
+          {t('programs.form.terms', 'Program terms and confidentiality (optional)')}
+        </Label>
         <Textarea
-          id={`${id}-scope`}
-          value={v.scopeText}
-          rows={10}
-          className="font-mono text-xs"
-          onChange={(e) => set('scopeText', e.target.value)}
+          id={`${id}-terms`}
+          value={v.termsText}
+          rows={4}
+          maxLength={20000}
+          onChange={(e) => set('termsText', e.target.value)}
         />
       </section>
+
+      {v.mode === 'manual' && (
+        <section className="space-y-2">
+          <Label htmlFor={`${id}-scope`}>{t('programs.form.scope', 'Scope')}</Label>
+          <p className="text-muted-foreground text-xs">
+            {t(
+              'programs.form.scopeHint',
+              'Paste the program scope: one target per line, with "In scope" and "Out of scope" headings (or a leading "-" for out of scope), or the program CSV export.'
+            )}
+          </p>
+          <Textarea
+            id={`${id}-scope`}
+            value={v.scopeText}
+            rows={10}
+            className="font-mono text-xs"
+            onChange={(e) => set('scopeText', e.target.value)}
+          />
+        </section>
+      )}
 
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -315,7 +562,7 @@ export function ProgramForm({
         <Button
           variant="outline"
           onClick={runPreview}
-          disabled={busy || badHeaders.length > 0 || badWindows.length > 0}
+          disabled={busy || badHeaders.length > 0 || badWindows.length > 0 || fileMissing}
         >
           {busy && !preview && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('programs.form.preview', 'Preview')}
