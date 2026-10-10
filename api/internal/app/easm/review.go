@@ -104,9 +104,9 @@ type ReviewPage struct {
 	Total int          `json:"total"`
 }
 
-// ReviewStore is the storage the queue needs. scopeUserID nil = unrestricted.
+// ReviewStore is the storage the queue needs. scope nil = unrestricted.
 type ReviewStore interface {
-	ListForReview(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, q ReviewQuery) (*ReviewPage, error)
+	ListForReview(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, q ReviewQuery) (*ReviewPage, error)
 	// SaveDecisions records a person's decision on each asset that is the
 	// tenant's and not deleted. It returns, for each asset written, the state
 	// it had before ("" = no record, a legacy confirmed asset).
@@ -169,13 +169,16 @@ func (s *ReviewService) Queue(ctx context.Context, tenantID shared.ID, q ReviewQ
 	if len(q.Reason) > 100 {
 		return nil, fmt.Errorf("%w: reason is too long", shared.ErrValidation)
 	}
-	scopeUser, err := s.scopeUser(ctx, tenantID)
+	scope, err := s.viewScope(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	page, err := s.store.ListForReview(ctx, tenantID, scopeUser, q)
-	if err != nil || s.coverage == nil || len(page.Items) == 0 {
+	page, err := s.store.ListForReview(ctx, tenantID, scope, q)
+	if err != nil {
 		return page, err
+	}
+	if s.coverage == nil || len(page.Items) == 0 {
+		return page, nil
 	}
 	names := make([]string, 0, len(page.Items))
 	for _, it := range page.Items {
@@ -191,7 +194,7 @@ func (s *ReviewService) Queue(ctx context.Context, tenantID shared.ID, q ReviewQ
 			page.Items[i].CoveredBy = &v
 		}
 	}
-	if err := s.explainAddresses(ctx, tenantID, scopeUser, q.Caller, page); err != nil {
+	if err := s.explainAddresses(ctx, tenantID, scope, q.Caller, page); err != nil {
 		return nil, err
 	}
 	return page, nil
@@ -276,7 +279,9 @@ func (s *ReviewService) Decide(ctx context.Context, tenantID shared.ID, assetIDs
 	return res, nil
 }
 
-func (s *ReviewService) scopeUser(ctx context.Context, tenantID shared.ID) (*shared.ID, error) {
+// viewScope is the caller's data scope for reads: nil when unrestricted;
+// an Unrestricted scope still hides private program assets (RFC-065 §15.3).
+func (s *ReviewService) viewScope(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error) {
 	if s.dataScope == nil {
 		return nil, nil
 	}
@@ -284,9 +289,5 @@ func (s *ReviewService) scopeUser(ctx context.Context, tenantID shared.ID) (*sha
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
-	if scope == nil {
-		return nil, nil
-	}
-	id := scope.UserID
-	return &id, nil
+	return scope, nil
 }

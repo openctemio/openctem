@@ -150,7 +150,7 @@ type LedgerConfig struct {
 	MinApprovals int
 	// T2MinApprovals is SIGNER_LEDGER_T2_MIN_APPROVALS: a floor for a
 	// widening that puts an intrusive (t2) entry into the ledger (0..2,
-	// default 0: the organization's scan approval decides, RFC-072 §7).
+	// default 0: the organization's scan approval decides, RFC-073 §7).
 	T2MinApprovals int
 	Logger         *slog.Logger
 }

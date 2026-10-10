@@ -1,7 +1,7 @@
 package tenant
 
-// The organization's scan approval settings section (RFC-072,
-// docs/rfcs/RFC-072-scan-approval-governance.md). The routes require the
+// The organization's scan approval settings section (RFC-073,
+// docs/rfcs/RFC-073-scan-approval-governance.md). The routes require the
 // owner (mode) or an administrator (rules), step-up and a reason; the scan
 // governance service checks the platform policy before it writes the mode.
 

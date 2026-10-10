@@ -65,7 +65,7 @@ func registerAssetReconciliationSettingsRoutes(router Router, h *handler.TenantH
 }
 
 // registerScanGovernanceRoutes wires the organization's scan approval
-// settings (RFC-072) under the token singleton /api/v1/organization. Reads:
+// settings (RFC-073) under the token singleton /api/v1/organization. Reads:
 // scans:read. The mode: owner only; the rules: owner or administrator; both
 // need step-up re-authentication and a reason, and are audited.
 func registerScanGovernanceRoutes(router Router, h *handler.ScanGovernanceHandler, authMiddleware, userSyncMiddleware Middleware) {
@@ -80,7 +80,7 @@ func registerScanGovernanceRoutes(router Router, h *handler.ScanGovernanceHandle
 }
 
 // registerScanApprovalRoutes wires the scan approvals inbox and decisions
-// (RFC-072). Reads: scans:read. Approve, reject and self-approve:
+// (RFC-073). Reads: scans:read. Approve, reject and self-approve:
 // scans:approve (the service checks the rule's approvers and that the
 // requester never approves). Remind and withdraw: scans:write.
 func registerScanApprovalRoutes(router Router, h *handler.ScanApprovalHandler, authMiddleware, userSyncMiddleware Middleware) {

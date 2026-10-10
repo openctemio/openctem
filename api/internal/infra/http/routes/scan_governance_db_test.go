@@ -13,7 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// The scan approval settings through the real routes (RFC-072 §4): Off by
+// The scan approval settings through the real routes (RFC-073 §4): Off by
 // default; only an owner changes the mode, with a reason; turning it on
 // seeds the Light preset; an administrator edits the rules, a member reads
 // them and edits nothing; a platform-forced mode refuses the owner; another
