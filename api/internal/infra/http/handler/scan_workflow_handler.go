@@ -187,11 +187,14 @@ type StepConditionResponse struct {
 
 // RunResponse represents the response for a scan run.
 type RunResponse struct {
-	ID             string  `json:"id"`
-	TenantID       string  `json:"tenant_id"`
-	ScanWorkflowID string  `json:"scan_workflow_id"`
-	AssetID        *string `json:"asset_id,omitempty"`
-	ScanID         *string `json:"scan_id,omitempty"`
+	ID             string `json:"id"`
+	TenantID       string `json:"tenant_id"`
+	ScanWorkflowID string `json:"scan_workflow_id"`
+	// Intensity is the probe ceiling the run started with (RFC-071):
+	// passive, active or intrusive; absent for a run without one.
+	Intensity string  `json:"intensity,omitempty" enums:"passive,active,intrusive"`
+	AssetID   *string `json:"asset_id,omitempty"`
+	ScanID    *string `json:"scan_id,omitempty"`
 	// ScanName names the run's scan (list rows only; empty when the scan was
 	// deleted).
 	ScanName        string  `json:"scan_name,omitempty"`
@@ -1342,6 +1345,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		ID:             r.ID.String(),
 		TenantID:       r.TenantID.String(),
 		ScanWorkflowID: r.ScanWorkflowID.String(),
+		Intensity:      string(scansvc.RunIntensity(r)),
 		TriggerType:    string(r.TriggerType),
 		TriggeredBy:    r.TriggeredBy,
 		Status:         string(r.Status),

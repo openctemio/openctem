@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	scandom "github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -305,6 +306,16 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			}
 			continue
 		}
+		// A step above the scan's intensity is never dispatched (RFC-071);
+		// its dependents are then skipped as blocked.
+		if reason := scanapp.IntensitySkipReason(run, step); reason != "" {
+			stepRun.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+				s.logger.Error("failed to skip a step above the scan's intensity", "step_key", step.StepKey, "error", err)
+			}
+			settledInline = true
+			continue
+		}
 
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step))
@@ -377,6 +388,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 	step = resolved.WithTool(step)
+	if err := checkStepIntensity(run, step, resolved); err != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
 	// The step run records what it runs: the capability and the tool the
 	// planner picked (written with the queued state below).
 	stepRun.Tool = resolved.Name
@@ -487,7 +501,8 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 // tier; seeds at the tool's, never lower), or the tool's tier for a step
 // outside the stage catalog.
 func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.DispatchGate {
-	g := &command.DispatchGate{Tier: int(scanapp.ProbeTier(resolved.Name)), ActScope: true}
+	g := &command.DispatchGate{Tier: int(scanapp.ProbeTier(resolved.Name)), ActScope: true,
+		Intensity: string(scanapp.RunIntensity(run))}
 	if resolved.HasStage {
 		g.Tier = int(resolved.Stage.Tier)
 		g.Passive = resolved.Stage.Tier.Passive()
@@ -1760,4 +1775,25 @@ func (s *Service) NotifyRunsReaped(ctx context.Context, reaped []scanrun.ReapedR
 		}
 		s.runCompleted(ctx, run)
 	}
+}
+
+// checkStepIntensity refuses a step whose resolved tool probes above the
+// run's intensity (the capability's default tool fits it; a pinned or
+// picked tool may not), and a passive step whose tool reaches its targets
+// (RFC-071): a T0 step must only use third-party sources, recursive
+// resolvers, a vendor API or no network.
+func checkStepIntensity(run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool) error {
+	tier := scanapp.StepIntensityTier(step)
+	if resolved.HasStage && int(resolved.Stage.Tier) > tier {
+		tier = int(resolved.Stage.Tier)
+	}
+	if reason := scanapp.IntensitySkipReasonForTier(run, tier); reason != "" {
+		return fmt.Errorf("%w: tool %s probes at %s, above the scan's %s intensity; not dispatched",
+			shared.ErrValidation, resolved.Name, scandom.TierLabel(tier), scanapp.RunIntensity(run))
+	}
+	if resolved.HasStage && resolved.Stage.Tier.Passive() && stage.ToolNetwork(resolved.Name).TouchesTargets() {
+		return fmt.Errorf("%w: passive step uses tool %s, which sends traffic to its targets; not dispatched",
+			shared.ErrValidation, resolved.Name)
+	}
+	return nil
 }
