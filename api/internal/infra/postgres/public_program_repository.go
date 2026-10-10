@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/openctemio/sdk-go/pkg/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -186,12 +187,13 @@ func (r *PublicProgramRepository) Apply(ctx context.Context, a bountyprogram.Fee
 			return nil, fmt.Errorf("archive programs: %w", err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO program_feed_state (id, applied_sequence, keyset_version, applied_at) VALUES ($3, $1, $2, now())
-		ON CONFLICT (id) DO UPDATE SET applied_sequence = EXCLUDED.applied_sequence,
-		       keyset_version = GREATEST(program_feed_state.keyset_version, EXCLUDED.keyset_version), applied_at = now()`,
-		bounded(a.State.AppliedSequence), bounded(a.State.KeySetVersion), stateRow(stream)); err != nil {
-		return nil, fmt.Errorf("record program feed state: %w", err)
+	if err := recordFeedState(ctx, tx, stream, a.State); err != nil {
+		return nil, err
+	}
+	// The chunked importer continues from this sequence (and abandons any
+	// bundle it left in progress).
+	if err := saveCheckpoint(ctx, tx, feedOfStream(stream), bundle.State{Applied: a.State.AppliedSequence}); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

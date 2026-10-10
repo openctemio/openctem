@@ -308,6 +308,30 @@ type FeedApply struct {
 	Dropped  []string
 }
 
+// FeedChunk is one verified chunk of a chunked bundle, applied in its own
+// transaction together with the feed checkpoint.
+type FeedChunk struct {
+	Stream   string
+	Sequence uint64
+	// Programs are upserted (keyed by feed id, never replacing a record of
+	// a newer sequence of the same stream).
+	Programs []PublicProgram
+	// Listed programs are named by a change other than dropped: each must
+	// be in the catalog at this sequence (or, on the local stream, held by
+	// the signed feed).
+	Listed []string
+	// Dropped programs are archived; one this bundle holds is refused.
+	Dropped []string
+}
+
+// FeedComplete finishes a chunked bundle after its last chunk.
+type FeedComplete struct {
+	Stream string
+	State  FeedState
+	// Snapshot: archive the stream's programs the bundle did not hold.
+	Snapshot bool
+}
+
 // CatalogRepository stores the catalog and finds stale subscriptions.
 type CatalogRepository interface {
 	// FeedState returns the applied sequence and key-set version of a
