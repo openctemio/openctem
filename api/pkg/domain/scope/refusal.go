@@ -37,6 +37,9 @@ const (
 	RefusalZoneNone           = "zone_none"
 	RefusalZoneNoSensor       = "zone_no_sensor"
 	RefusalZoneSensorMismatch = "zone_sensor_mismatch"
+	// RefusalConstrained: only port- or path-limited entries cover the
+	// target and the job could reach other ports or paths (RFC-065 §16.8).
+	RefusalConstrained = "constrained"
 )
 
 // Fix actions.
@@ -119,6 +122,7 @@ var RefusalMessages = map[string]string{
 	RefusalZoneNone:           "No scan zone covers this private target.",
 	RefusalZoneNoSensor:       "The scan zone of this target has no sensors.",
 	RefusalZoneSensorMismatch: "The chosen sensor is not in this target's scan zone.",
+	RefusalConstrained:        "The scope entries covering this target are limited to some ports or a path, and this job could reach others.",
 }
 
 // Refusal is one refused target, as every API refusal and the dry run carry it.
