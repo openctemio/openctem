@@ -49,6 +49,7 @@
     - list_assets
   jobs:
     - AssetIdentityBackfillController
+    - AssetChangeTimelineController
     - AssetLifecycleController
     - AssetPurgeController
     - OwnerResolutionController
@@ -85,6 +86,7 @@
     - JobRecoveryController
     - RetestScheduler
     - ThreatIntelRefreshController
+    - VulnMatchController
 - id: scans
   const: ModuleScans
   slug: scans
@@ -147,6 +149,7 @@
     - /api/v1/programs
   jobs:
     - ProgramAssignmentController
+    - ProgramFeedController
     - ProgramSyncController
     - ScopeAttestationController
 - id: business_services

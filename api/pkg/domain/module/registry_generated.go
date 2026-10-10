@@ -93,7 +93,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "assets:read",
 		MCP:        []string{"list_assets"},
-		Jobs:       []string{"AssetIdentityBackfillController", "AssetLifecycleController", "AssetPurgeController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
+		Jobs:       []string{"AssetIdentityBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
 	},
 	{
 		ID: ModuleFindings, Slug: "findings", Name: "Findings",
@@ -104,7 +104,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "PriorityReclassifyController", "PriorityReclassifySweepController", "PriorityAuditRetentionController", "EvidenceRetentionController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController"},
+		Jobs:       []string{"ApprovalExpirationController", "PriorityReclassifyController", "PriorityReclassifySweepController", "PriorityAuditRetentionController", "EvidenceRetentionController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -141,7 +141,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "scope rules select assets"},
 		},
 		Routes: []string{"/api/v1/scope", "/api/v1/programs"},
-		Jobs:   []string{"ProgramAssignmentController", "ProgramSyncController", "ScopeAttestationController"},
+		Jobs:   []string{"ProgramAssignmentController", "ProgramFeedController", "ProgramSyncController", "ScopeAttestationController"},
 	},
 	{
 		ID: ModuleBusinessServices, Slug: "business-services", Name: "Business Services",
