@@ -137,7 +137,7 @@ checklist: the `web-change` skill in the repository root `.claude/skills/`.
 
 - Locales: `en`, `vi` (`supportedLocales`) | RTL (direction only, none shipped): `ar`, `he`, `fa`, `ur`
 - Client: `const { t } = useTranslation()` from `@/context/i18n-provider`
-- Every new key goes into both `src/lib/i18n/dictionaries/en.json` and `vi.json` in the same PR
+- Every new key goes into both `src/lib/i18n/dictionaries/en/<namespace>.json` and `vi/<namespace>.json` in the same PR (namespace = the key's first segment; a new namespace is imported in `dictionaries/index.ts`)
 - Server: `(await headers()).get('x-locale') || 'en'`
 - See [i18n.md](.claude/i18n.md) for complete guide
 

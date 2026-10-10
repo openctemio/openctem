@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -2992,7 +2993,8 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	// Layer 2: Data Scope - count only the user's in-scope findings. Fail
 	// closed: a user with no scope row counts nothing.
 	if dataScopeUserID != nil {
-		query += ` AND asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)`
+		query += ` AND asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1) AND ` +
+			filterspec.NotHiddenSQL("asset_id", 2, 1)
 		args = append(args, dataScopeUserID.String())
 	}
 
@@ -3002,6 +3004,12 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	if filter.AssetID != nil {
 		args = append(args, filter.AssetID.String())
 		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
+	}
+	// Private program findings hidden from an unrestricted caller who is
+	// neither an owner nor a member (RFC-065 §15.3).
+	if dataScopeUserID == nil && filter.HiddenFor != nil {
+		args = append(args, filter.HiddenFor.String())
+		query += " AND " + filterspec.NotHiddenSQL("asset_id", len(args), 1)
 	}
 
 	// Source filter — used by the Exposures type pages (vulnerabilities,
@@ -3468,11 +3476,11 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		if filter.TenantID == nil {
 			conditions = append(conditions, "FALSE")
 		} else {
-			args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
 			// argIndex not incremented — this is the last block that consumes it.
-			conditions = append(conditions, fmt.Sprintf(
-				`asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-				argIndex, argIndex+1))
+			cond, scopeArgs := dataScopeCondAt("asset_id", &shared.DataScope{TenantID: *filter.TenantID,
+				UserID: *filter.DataScopeUserID, Unrestricted: filter.DataScopeUnrestricted}, argIndex)
+			args = append(args, scopeArgs...)
+			conditions = append(conditions, cond)
 		}
 	}
 
@@ -3757,6 +3765,10 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 				-- recorded in the resolution note does not.
 				AND (status NOT IN ` + fixedReopenFromSQL + `
 					OR resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
+				-- A finding the organization's VEX statement marks fixed stays
+				-- resolved while the statement stands (it is withdrawn on edit,
+				-- delete or expiry, which reopens it).
+				AND NOT (status = 'resolved' AND resolution_method = 'vex_fixed' AND vex_statement_id IS NOT NULL)
 			FOR UPDATE
 		)
 		UPDATE findings f

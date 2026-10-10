@@ -1693,7 +1693,8 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tags, err := h.service.ListTags(r.Context(), tenantID, prefix, types, limit)
+	tags, err := h.service.ListTags(r.Context(), tenantID, middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()),
+		prefix, types, limit)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

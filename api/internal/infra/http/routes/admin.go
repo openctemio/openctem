@@ -45,7 +45,7 @@ import (
 //	                          any admin         ops_admin+ (grant/deny; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
-//	/admin/settings/scope-policy, /admin/tenants/{id}/scope-policy
+//	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
@@ -185,11 +185,11 @@ func registerAdminRoutes(
 	// Scope-widening approvals (RFC-054 §12.6): any admin reads; a super
 	// admin changes the platform default with a fresh authenticator code and
 	// a reason (checked in the handler; the service audits and notifies).
-	if h.AdminScopePolicy != nil {
+	if h.AdminScanPolicy != nil {
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
-		router.Group("/api/v1/admin/settings/scope-policy", func(r Router) {
-			r.GET("/", h.AdminScopePolicy.GetDefault)
-			r.PUT("/", h.AdminScopePolicy.UpdateDefault, requireSuper)
+		router.Group("/api/v1/admin/settings/scan-approval-policy", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetDefault)
+			r.PUT("/", h.AdminScanPolicy.UpdateDefault, requireSuper)
 		}, adminMiddlewares...)
 	}
 
@@ -360,9 +360,9 @@ func registerAdminRoutes(
 			// The organization's scope approval policy (RFC-054 §12.6): any
 			// admin reads; a super admin changes it with a fresh code and a
 			// reason (the service writes the critical audit row).
-			if h.AdminScopePolicy != nil {
-				r.GET("/{tenantId}/scope-policy", h.AdminScopePolicy.GetOrganization, read...)
-				r.PUT("/{tenantId}/scope-policy", h.AdminScopePolicy.UpdateOrganization, superWrite, scope)
+			if h.AdminScanPolicy != nil {
+				r.GET("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.GetOrganization, read...)
+				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, superWrite, scope)
 			}
 
 			if h.VerifiedDomain != nil {
