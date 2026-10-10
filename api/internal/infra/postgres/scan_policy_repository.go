@@ -95,6 +95,29 @@ func (r *ScanPolicyRepository) GetOverride(ctx context.Context, tenantID shared.
 	return &m, nil
 }
 
+// ListFollowingDefault lists the organizations with no override (they
+// follow the platform default).
+func (r *ScanPolicyRepository) ListFollowingDefault(ctx context.Context) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM tenants WHERE scan_approval_policy IS NULL ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list organizations following the scan approval default: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("list organizations following the scan approval default: %w", err)
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("list organizations following the scan approval default: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // SetOverride sets (nil: removes) an organization's override.
 func (r *ScanPolicyRepository) SetOverride(ctx context.Context, tenantID shared.ID, mode *scangov.PlatformPolicy) error {
 	var v any

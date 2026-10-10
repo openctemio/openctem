@@ -17,7 +17,7 @@ import (
 // observed in this tenant's findings. Derived — no junction table involved.
 // Joins: findings → components (global) × vulnerabilities.
 //
-// Note: findings.component_id references components(id) directly.
+// Note: findings.component_id references software_versions(id) directly.
 func (r *FindingRepository) ListComponentCVEPairs(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -75,7 +75,7 @@ func (r *FindingRepository) ListComponentCVEPairs(
 			MIN(f.created_at),
 			MAX(f.updated_at)
 		FROM findings f
-		JOIN components     c ON c.id = f.component_id
+		JOIN software_versions c ON c.id = f.component_id
 		JOIN vulnerabilities v ON v.id = f.vulnerability_id
 		WHERE %s
 		GROUP BY c.id, c.purl, v.cve_id, v.id
@@ -135,7 +135,7 @@ func (r *FindingRepository) ListComponentCVEPairs(
 		SELECT COUNT(*) FROM (
 			SELECT 1
 			FROM findings f
-			JOIN components      c ON c.id = f.component_id
+			JOIN software_versions c ON c.id = f.component_id
 			JOIN vulnerabilities v ON v.id = f.vulnerability_id
 			WHERE %s
 			GROUP BY c.id, v.id
