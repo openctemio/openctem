@@ -13,9 +13,12 @@ Approvals and tier limits are opt-in and follow the organization's risk
 appetite. When an organization turns them on, people approve **scans**
 (what runs, how hard, against what, when and where), not scope entries.
 
-1. **Off by default.** Adding a scope entry needs no approval and has no
-   tier ceiling from approvals; members with scan permission create and run
-   scans directly. Audit, step-up on widening scope, exclusions, the deny
+1. **Off by default.** Adding a scope entry needs no approval and an entry
+   has no tier ceiling: in Off and On a scope entry is a list of targets
+   (with exclusions), and how hard a target may be probed is the scan's
+   business (intensity, approval rules); members with scan permission
+   create and run scans directly. Entry tier ceilings (`max_tier`) apply
+   only in Strict. Audit, step-up on widening scope, exclusions, the deny
    list and domain proof for platform sensors are unchanged.
 2. **A tenant setting "Scan approval": Off, On, Strict.** Owner only, with
    step-up re-authentication and a reason; audited high.
@@ -56,9 +59,9 @@ is refused.
 | G3 | The platform policy is `tenants.scan_approval_policy` + `platform_settings.scan_approval_policy`: `tenant_controlled` (default), `off`, `on`, `strict`. Migration `001881` renames the RFC-054 column and maps `disabled` to `off`, `required` and `tenant_controlled` to the default. Minimal back-compat: the old values had no meaning once entries stop needing approval outside Strict. |
 | G4 | Turning On with no rule seeds the Light preset (intrusive scans need one approval), so On is never silently empty. |
 | G5 | Rules: conditions AND inside a rule; rules OR'ed; every matched rule is shown; the matched rule asking the most approvals (first on a tie) decides who approves; justification and ticket requirements and ticket formats add up; the shortest validity wins. Monitor-mode rules record "would need approval" without blocking. |
-| G6 | Strict: at least two distinct approvers and a justification for every caught scan; scope entries keep RFC-054 §7 approvals; the T2 duration and attestation rules of RFC-054 §12.4/12.5 stay in every mode (they bound long intrusive grants, they are not approvals). |
+| G6 | Strict: at least two distinct approvers and a justification for every caught scan; scope entries keep RFC-054 §7 approvals and their tier ceilings. Off and On: no entry tier ceiling (owner 2026-10-10): an entry's `max_tier` is kept (it applies again when the organization turns Strict on) but nothing refuses a probe for it. The T2 duration and attestation rules of RFC-054 §12.4/12.5 still bound entries marked t2 in every mode, so turning Strict on never revives a stale intrusive grant. |
 | G7 | The approval covers the scan definition digest: targets and selectors as written (a `*.domain` or CIDR is approved as a pattern; each run resolves it again within it), asset groups, target options, scan type, scanner and configuration, workflow and the tools of its steps, profile, intensity, schedule, sensor placement, zone and routing tags. Name, description, retries and timeouts are not in it. |
-| G8 | Signer ledger: see §7. Standard modes keep the ledger's guarantee against database writers and every path that bypasses the scope service; they drop the recorded-approval requirement for entries. Strict keeps it. |
+| G8 | Signer ledger: see §7. Standard modes keep the ledger's guarantee against database writers and every path that bypasses the scope service; they drop the recorded-approval requirement and the tier ceilings for entries, in the ledger exactly as in the database. Strict keeps both. |
 
 ## 4. Settings
 
@@ -134,8 +137,8 @@ owner choose On or Strict.
 
 `scope.Service` reads the organization's mode in force
 (`scanpolicy.Service.ScanGovernanceMode`): in Off and On a widening needs no
-approval (`approvals_required = 0`, the entry is in effect at once); in
-Strict RFC-054 §7 applies unchanged (the tenant's 0/1/2, at least one with
+approval (`approvals_required = 0`, the entry is in effect at once) and the
+entry is not a tier ceiling; in Strict RFC-054 §7 applies unchanged (the tenant's 0/1/2, at least one with
 two or more administrators and for t2, the sole-owner self-approval). In
 every mode: step-up on every widening route, the dry run, a member without
 `attack_surface:scope:approve` only requests (the request still waits for
@@ -143,6 +146,16 @@ an approver), exclusions, ownership proof, deny list, CIDR caps, audit and
 notification. `GET /scope/settings` returns `approval_policy:
 {scan_approval, source, entries_need_approval}`; the owner-only
 `tenant_controlled` approval count of RFC-054 §12.6 is removed.
+
+Tier ceilings. The dispatch gate's tier check
+(`easm.ActiveGate.TierExceeded`, which scan create, quick scan, scan
+commands, runs, workflow steps and the dispatch gate all use) answers
+nothing exceeded outside Strict (`scanpolicy.Service.TierCeilingsEnforced`;
+an unreadable mode is Strict, fail closed). Coverage is unchanged: a target
+outside every entry is still refused, exclusions still apply, intrusive
+(t2) workflow steps still need ownership proof per step (RFC-054 §8.1),
+and the scan's intensity and approval rules decide how hard it probes.
+The entry form shows the tier only in Strict.
 
 Migrating existing entries: nothing is rewritten. Entries already in effect
 stay; an entry pending approval stays pending and is approved as before (an
@@ -163,13 +176,56 @@ Decision. Scope-entry changes keep going through the one hook
 (`platform_policy: "scan_approval:off|on|strict"`). In Off and On an entry
 widens with `policy_required_approvals = 0`; the signer's former hard
 minimum of one approval for a t2 entry becomes an operator floor,
-`SIGNER_LEDGER_T2_MIN_APPROVALS` (0 to 2, default 0), next to
-`SIGNER_LEDGER_MIN_APPROVALS`.
+`SIGNER_LEDGER_T2_MIN_APPROVALS` (0 to 2, default 0, accepted by the owner
+2026-10-10), next to `SIGNER_LEDGER_MIN_APPROVALS`.
+
+Tier ceilings in the ledger. The ledger holds one more fact per
+organization, its tier ceilings (on or off), so it is never wider than the
+database and never refuses what the database allows:
+
+- Operation `set_tier_ceilings` (`tier_ceilings: true|false`). Off widens
+  (every entry then covers every tier, still only inside the entries and
+  outside the exclusions); on narrows. The zero state is on, so a ledger,
+  log or snapshot that predates it is the stricter one.
+- Turning them off needs what an intrusive entry needs: the policy count
+  (0 in Off and On) and the operator floors, `SIGNER_LEDGER_T2_MIN_APPROVALS`
+  included. An operator who sets that floor above 0 therefore keeps every
+  organization's ceilings (Off and On widenings that carry "off" are refused
+  with `SCOPE_LEDGER_REFUSED`), which is the same as forcing Strict.
+- Who sends it. A mode change that crosses Strict (the owner's choice,
+  a platform override, or a platform default for the organizations that
+  follow it) goes through `scope.Service.CommitTierCeilings`: leaving
+  Strict is accepted by the signer before the mode is saved, or the change
+  fails and the mode stays Strict (`SCOPE_LEDGER_REFUSED` /
+  `SCOPE_LEDGER_UNAVAILABLE`); entering Strict is saved first and sent best
+  effort. A platform default change tells every following organization
+  that crosses Strict; one refusal fails the whole change and narrows back
+  those already accepted. Every scope widening also carries the
+  organization's ceilings as the database has them, so a new
+  organization's ledger follows its mode from its first entry, and one
+  whose mode change did not reach the signer catches up on its next
+  widening.
+- Sync (`POST /v1/ledger/sync`, snapshot `tier_ceilings_off`) turns the
+  ceilings back on when the database is Strict, never off: a snapshot that
+  says off while the ledger says on is counted as diverged. The ledger never
+  takes a wider state from the database alone. Export and import carry the
+  state.
+- Rollout. Existing ledgers start with the ceilings on. Until an
+  organization's next scope widening or mode change, the signer refuses a
+  job above an entry's tier that the API (Off or On) allows: the stricter
+  side, and visible as `tier_exceeds_ledger`. An operator who wants every
+  organization in step at once exports the database's view
+  (`server -signer-ledger-export`, which now carries `tier_ceilings_off`)
+  and imports it into the stopped signer (`openctem-signer ledger import -replace`), the
+  ceremony that already exists for trusting the database's view.
 
 Trade-off. In Off and On the ledger still refuses jobs outside the
 entries, still records every widening in its hash-chained log (detection
 A10, SIEM export) and still stops database writers and bypass paths; it no
-longer requires a recorded human approval for an entry. Scan approval does
+longer requires a recorded human approval for an entry, nor holds an entry
+to its tier. As for approval counts, the mode the API states with a
+widening is the API's (P2): an attacker inside the API process can claim
+Off, and the operator floors are the defence against that. Scan approval does
 not move into the signer in this RFC: approvals of scan definitions are
 recorded by the API and checked at every run. **Strict keeps the RFC-040
 guarantee as it was** (entries need their approvals, recorded and checked
