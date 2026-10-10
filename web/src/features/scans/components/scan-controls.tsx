@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Loader2, Pause, Play, Power } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -13,6 +14,7 @@ import type { ScanConfig } from '@/lib/api/scan-types'
 import { Can, Permission } from '@/lib/permissions'
 import { useScanTrigger } from '../hooks/use-scan-trigger'
 import { hasSchedule, scheduleOn } from '../lib/scan-status'
+import { enTranslate, type Translate } from '../lib/translate'
 
 /**
  * A scan's run and schedule controls, the same on the scan page and in the
@@ -34,6 +36,7 @@ export function ScanControls({
   onViewRun?: (runId: string) => void
   onChanged?: () => void
 }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const { trigger, isTriggering, dialog } = useScanTrigger({
     onViewRun,
@@ -52,7 +55,9 @@ export function ScanControls({
       await invalidateScanConfigsCache()
       onChanged?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to update scan "${config.name}"`))
+      toast.error(
+        getErrorMessage(error, t('scans.controls.updateFailed', undefined, { name: config.name }))
+      )
     } finally {
       setBusy(false)
     }
@@ -63,11 +68,13 @@ export function ScanControls({
       <Can permission={Permission.ScansWrite} mode="disable">
         <Button
           size="sm"
-          onClick={() => void setState('activate', `Scan "${config.name}" enabled`)}
+          onClick={() =>
+            void setState('activate', t('scans.controls.enabled', undefined, { name: config.name }))
+          }
           disabled={busy}
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
-          Enable
+          {t('scans.controls.enable')}
         </Button>
       </Can>
     )
@@ -84,7 +91,7 @@ export function ScanControls({
           aria-busy={triggering}
         >
           {triggering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          Run now
+          {t('scans.controls.runNow')}
         </Button>
       </Can>
       {hasSchedule(config) && (
@@ -95,7 +102,9 @@ export function ScanControls({
             onClick={() =>
               void setState(
                 on ? 'pause' : 'activate',
-                `Schedule of "${config.name}" turned ${on ? 'off' : 'on'}`
+                t(on ? 'scans.controls.scheduleOff' : 'scans.controls.scheduleOn', undefined, {
+                  name: config.name,
+                })
               )
             }
             disabled={busy || triggering}
@@ -107,7 +116,7 @@ export function ScanControls({
             ) : (
               <Play className="h-4 w-4" />
             )}
-            {on ? 'Schedule off' : 'Schedule on'}
+            {on ? t('scans.state.scheduleOff') : t('scans.state.scheduleOn')}
           </Button>
         </Can>
       )}
@@ -120,8 +129,11 @@ export function ScanControls({
  * The configuration's state in words, for headers: never a run state.
  * Manual scans: "Manual" (or "Disabled"). Scheduled: "Schedule on/off".
  */
-export function scanStateLabel(config: Pick<ScanConfig, 'status' | 'schedule_type'>): string {
-  if (config.status === 'disabled') return 'Disabled'
-  if (!hasSchedule(config)) return 'Manual'
-  return scheduleOn(config) ? 'Schedule on' : 'Schedule off'
+export function scanStateLabel(
+  config: Pick<ScanConfig, 'status' | 'schedule_type'>,
+  t: Translate = enTranslate
+): string {
+  if (config.status === 'disabled') return t('scans.state.disabled')
+  if (!hasSchedule(config)) return t('scans.state.manual')
+  return scheduleOn(config) ? t('scans.state.scheduleOn') : t('scans.state.scheduleOff')
 }

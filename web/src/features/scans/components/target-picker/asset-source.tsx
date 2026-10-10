@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useRef, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -49,6 +50,7 @@ interface AssetSourceProps {
 }
 
 export function AssetSource({ selected, onChange }: AssetSourceProps) {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [type, setType] = useState<string>(ALL)
@@ -112,11 +114,14 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
       )
       if (all.length > capped.length) {
         toast.warning(
-          `Selected the first ${MAX_DIRECT_TARGETS.toLocaleString()} of ${all.length.toLocaleString()} assets: a scan takes at most ${MAX_DIRECT_TARGETS.toLocaleString()} direct targets. Narrow the filter, or scan an asset group.`
+          t('scans.assets.selectedFirst', undefined, {
+            max: MAX_DIRECT_TARGETS.toLocaleString(),
+            total: all.length.toLocaleString(),
+          })
         )
       }
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not load the matching assets'))
+      toast.error(getErrorMessage(err, t('scans.assets.loadMatchingFailed')))
     } finally {
       setSelectingAll(false)
     }
@@ -131,8 +136,8 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
             aria-hidden
           />
           <Input
-            placeholder="Search assets by name..."
-            aria-label="Search assets"
+            placeholder={t('scans.assets.searchPlaceholder')}
+            aria-label={t('scans.assets.search')}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -150,11 +155,11 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
           }}
           disabled={selectedOnly}
         >
-          <SelectTrigger className="w-full sm:w-36" aria-label="Asset type">
+          <SelectTrigger className="w-full sm:w-36" aria-label={t('scans.assets.type')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>All types</SelectItem>
+            <SelectItem value={ALL}>{t('scans.assets.allTypes')}</SelectItem>
             {Object.entries(ASSET_TYPE_LABELS).map(([value, label]) => (
               <SelectItem key={value} value={value}>
                 {label}
@@ -170,11 +175,11 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
           }}
           disabled={selectedOnly}
         >
-          <SelectTrigger className="w-full sm:w-36" aria-label="Criticality">
+          <SelectTrigger className="w-full sm:w-36" aria-label={t('scans.assets.criticality')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>Any criticality</SelectItem>
+            <SelectItem value={ALL}>{t('scans.assets.anyCriticality')}</SelectItem>
             {Object.entries(CRITICALITY_LABELS).map(([value, label]) => (
               <SelectItem key={value} value={value}>
                 {label}
@@ -190,10 +195,12 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
             checked={pageSelected ? true : someSelected ? 'indeterminate' : false}
             onCheckedChange={(c) => onChange(rows, c === true)}
             disabled={rows.length === 0}
-            aria-label={selectedOnly ? 'Select all shown' : 'Select this page'}
+            aria-label={
+              selectedOnly ? t('scans.assets.selectAllShown') : t('scans.assets.selectPage')
+            }
           />
           <span className="text-muted-foreground">
-            {selectedOnly ? 'All selected' : 'This page'}
+            {selectedOnly ? t('scans.assets.allSelected') : t('scans.assets.thisPage')}
           </span>
         </label>
         <div className="flex items-center gap-3">
@@ -207,7 +214,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
               disabled={selectingAll}
             >
               {selectingAll && <Loader2 className="me-1 h-3 w-3 animate-spin" aria-hidden />}
-              Select all {total.toLocaleString()} matching
+              {t('scans.assets.selectAllMatching', undefined, { count: total.toLocaleString() })}
             </Button>
           )}
           <div className="flex items-center gap-2">
@@ -220,7 +227,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
               }}
             />
             <Label htmlFor="selected-only" className="text-sm font-normal">
-              Selected only ({selectedRows.length})
+              {t('scans.assets.selectedOnly', undefined, { count: selectedRows.length })}
             </Label>
           </div>
         </div>
@@ -229,7 +236,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
       <div
         className="max-h-72 overflow-y-auto rounded-md border"
         role="group"
-        aria-label="Assets"
+        aria-label={t('scans.assets.list')}
         aria-busy={isLoading || undefined}
       >
         {isLoading && !selectedOnly ? (
@@ -240,15 +247,15 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
           </div>
         ) : isError && !selectedOnly ? (
           <p className="p-4 text-center text-sm text-destructive">
-            {getErrorMessage(error, 'The assets could not be loaded')}
+            {getErrorMessage(error, t('scans.assets.loadFailed'))}
           </p>
         ) : rows.length === 0 ? (
           <p className="text-muted-foreground p-4 text-center text-sm">
             {selectedOnly
-              ? 'No asset selected yet.'
+              ? t('scans.assets.noneSelected')
               : debouncedSearch || type !== ALL || criticality !== ALL
-                ? 'No asset matches these filters.'
-                : 'No assets in your inventory yet.'}
+                ? t('scans.assets.noMatch')
+                : t('scans.assets.empty')}
           </p>
         ) : (
           <ul className="divide-y">
@@ -317,7 +324,9 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
       {!selectedOnly && total > 0 && (
         <div className="flex items-center justify-between">
           <p className="text-muted-foreground text-xs">
-            {total.toLocaleString()} {total === 1 ? 'asset' : 'assets'}
+            {t(total === 1 ? 'scans.assets.countOne' : 'scans.assets.countMany', undefined, {
+              count: total.toLocaleString(),
+            })}
           </p>
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
@@ -326,7 +335,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                aria-label="Previous page"
+                aria-label={t('scans.assets.prevPage')}
                 disabled={page <= 1 || isLoading}
                 onClick={() => {
                   setPage((p) => Math.max(1, p - 1))
@@ -343,7 +352,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                aria-label="Next page"
+                aria-label={t('scans.assets.nextPage')}
                 disabled={page >= totalPages || isLoading}
                 onClick={() => {
                   setPage((p) => Math.min(totalPages, p + 1))
