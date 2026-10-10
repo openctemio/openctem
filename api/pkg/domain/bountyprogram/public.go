@@ -101,9 +101,12 @@ type PublicProgram struct {
 	TermsSHA256 string
 	AsOf        time.Time
 	Provenance  FeedProvenance
-	RemovedAt   *time.Time
-	Sequence    uint64
-	UpdatedAt   time.Time
+	// LocalOnly: the record came from the operator's local bundle (owner
+	// option A), not the signed feed; every in-scope target is a suggestion.
+	LocalOnly bool
+	RemovedAt *time.Time
+	Sequence  uint64
+	UpdatedAt time.Time
 }
 
 // Open reports whether the program takes submissions.
@@ -243,7 +246,7 @@ func (p *PublicProgram) ItemsFor(confirmed []string) []Item {
 	}
 	out := make([]Item, 0, len(p.Items))
 	for _, it := range p.Items {
-		if it.InScope && it.Confidence != ConfidencePublished && !ok[strings.ToLower(it.Raw)] {
+		if it.InScope && (it.Confidence != ConfidencePublished || p.LocalOnly) && !ok[strings.ToLower(it.Raw)] {
 			it.Kind, it.TargetType, it.Pattern = KindOther, "", ""
 			it.Note = "suggested (" + it.Confidence + "): confirm it before it can be scanned"
 		}
@@ -255,7 +258,7 @@ func (p *PublicProgram) ItemsFor(confirmed []string) []Item {
 // IsSuggestion reports whether raw is an inferred in-scope target of p.
 func (p *PublicProgram) IsSuggestion(raw string) bool {
 	for _, it := range p.Items {
-		if it.InScope && it.Confidence != ConfidencePublished && strings.EqualFold(it.Raw, raw) {
+		if it.InScope && (it.Confidence != ConfidencePublished || p.LocalOnly) && strings.EqualFold(it.Raw, raw) {
 			return true
 		}
 	}
@@ -284,9 +287,19 @@ type FeedState struct {
 	AppliedAt       *time.Time
 }
 
+// Feed streams: the signed feed and the operator's local bundle.
+const (
+	StreamSigned = "signed"
+	StreamLocal  = "local"
+)
+
 // FeedApply is one verified bundle to apply.
 type FeedApply struct {
-	State FeedState
+	// Stream is signed or local: each has its own applied sequence and
+	// archives only its own programs; a signed record wins over a local
+	// one with the same id.
+	Stream string
+	State  FeedState
 	// Snapshot: Programs is the whole catalog (programs missing are
 	// archived). Otherwise a delta: Programs are upserted and Dropped
 	// archived.
@@ -297,8 +310,9 @@ type FeedApply struct {
 
 // CatalogRepository stores the catalog and finds stale subscriptions.
 type CatalogRepository interface {
-	// FeedState returns the applied sequence and key-set version.
-	FeedState(ctx context.Context) (FeedState, error)
+	// FeedState returns the applied sequence and key-set version of a
+	// stream.
+	FeedState(ctx context.Context, stream string) (FeedState, error)
 	// Apply writes a verified bundle in one transaction and records the
 	// state (refusing a sequence not newer than the applied one).
 	Apply(ctx context.Context, a FeedApply) ([]CatalogChange, error)
@@ -309,4 +323,19 @@ type CatalogRepository interface {
 	// StaleSubscriptions lists followed programs (any tenant) whose catalog
 	// program changed since they were brought up to date.
 	StaleSubscriptions(ctx context.Context, limit int) ([]ProgramRef, error)
+}
+
+// LocalBundleSetting is the platform administrator's switch for the local
+// bundle source (off by default).
+type LocalBundleSetting struct {
+	Enabled   bool
+	Reason    string
+	ChangedBy string
+	ChangedAt *time.Time
+}
+
+// FeedSourceSettings stores the local bundle switch.
+type FeedSourceSettings interface {
+	LocalBundle(ctx context.Context) (LocalBundleSetting, error)
+	SetLocalBundle(ctx context.Context, s LocalBundleSetting) error
 }

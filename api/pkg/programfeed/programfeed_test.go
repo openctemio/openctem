@@ -289,3 +289,61 @@ func TestLocalOnlyRefusedAndDatasetRecords(t *testing.T) {
 		t.Fatal("bad provenance accepted")
 	}
 }
+
+// Unsigned local-only bundles written by `programfeed build --local-only`.
+const local = "testdata/local"
+
+func TestLocalBundles(t *testing.T) {
+	c, err := os.ReadFile(filepath.Join(local, "created-at.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, _ := time.Parse(time.RFC3339, strings.TrimSpace(string(c)))
+	now := at.Add(time.Minute)
+	v, err := programfeed.VerifyLocalDir(filepath.Join(local, "seq1"), programfeed.Options{Now: now})
+	if err != nil || v.IsDelta() || v.Latest.Sequence != 1 || !v.Use.Collector.LocalOnly {
+		t.Fatalf("seq1: %+v %v", v, err)
+	}
+	progs, _, err := v.Read(programfeed.V1{})
+	if err != nil || len(progs) != 2 {
+		t.Fatalf("read seq1: %d %v", len(progs), err)
+	}
+	if progs[0].Provenance.Dataset != "arkadiyt/bounty-targets-data" || progs[0].Provenance.OriginalPlatform != "hackerone" {
+		t.Fatalf("provenance = %+v", progs[0].Provenance)
+	}
+	// A local record never makes an entry without confirmation.
+	p := progs[0]
+	p.LocalOnly = true
+	for _, it := range p.ItemsFor(nil) {
+		if it.InScope && it.Scannable() {
+			t.Fatalf("local target scannable without confirmation: %+v", it)
+		}
+	}
+	// The delta on top of 1; a lower or equal sequence is refused.
+	if v, err = programfeed.VerifyLocalDir(filepath.Join(local, "seq2"), programfeed.Options{AppliedSequence: 1, Now: now}); err != nil || !v.IsDelta() {
+		t.Fatalf("seq2 after 1: %v", err)
+	}
+	if _, err := programfeed.VerifyLocalDir(filepath.Join(local, "seq1"), programfeed.Options{AppliedSequence: 1, Now: now}); !errors.Is(err, programfeed.ErrNotNewer) {
+		t.Fatalf("not newer: %v", err)
+	}
+	// Expired, tampered and the signed path refuse.
+	if _, err := programfeed.VerifyLocalDir(filepath.Join(local, "seq1"), programfeed.Options{Now: now.Add(8 * 24 * time.Hour)}); err == nil {
+		t.Fatal("expired local bundle accepted")
+	}
+	d := copyDir(t, filepath.Join(local, "seq1"))
+	raw, _ := os.ReadFile(filepath.Join(d, "snapshot-programs.jsonl.gz"))
+	raw[len(raw)-1] ^= 0xff
+	_ = os.WriteFile(filepath.Join(d, "snapshot-programs.jsonl.gz"), raw, 0o600)
+	if _, err := programfeed.VerifyLocalDir(d, programfeed.Options{Now: now}); err == nil {
+		t.Fatal("tampered local bundle accepted")
+	}
+	if _, err := programfeed.VerifyDir(filepath.Join(local, "seq1"), programfeed.Options{PinnedRoot: "SHA256:x", Now: now}); err == nil {
+		t.Fatal("unsigned bundle accepted on the signed path")
+	}
+	// Oversized manifest refused.
+	d = copyDir(t, filepath.Join(local, "seq1"))
+	_ = os.WriteFile(filepath.Join(d, "latest.json"), make([]byte, programfeed.MaxManifestBytes+1), 0o600)
+	if _, err := programfeed.VerifyLocalDir(d, programfeed.Options{Now: now}); err == nil {
+		t.Fatal("oversized pointer accepted")
+	}
+}

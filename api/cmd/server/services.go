@@ -604,9 +604,14 @@ type Services struct {
 	ProgramAssigner controller.ProgramAssignments
 	// ProgramFeed imports the public program feed (RFC-065 §16); nil unless
 	// PROGRAMFEED_DIR and PROGRAMFEED_ROOT_KEY_ID are set.
-	ProgramFeed   *programfeedapp.Importer
-	AttackSurface *attack.SurfaceService
-	ThreatModel   *threatmodel.Service
+	ProgramFeed *programfeedapp.Importer
+	// ProgramFeedLocal imports the operator's local bundle; nil unless
+	// PROGRAMFEED_LOCAL_BUNDLE_DIR is set (and it runs only while enabled).
+	ProgramFeedLocal *programfeedapp.Importer
+	// ProgramFeedSettings holds the local bundle switch (admin console).
+	ProgramFeedSettings *postgres.PublicProgramRepository
+	AttackSurface       *attack.SurfaceService
+	ThreatModel         *threatmodel.Service
 	// ScopeLetters manages authorization letters (RFC-065 §13).
 	ScopeLetters *scope.LetterService
 
@@ -1021,6 +1026,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if cfg.Scope.ProgramFeedDir != "" && cfg.Scope.ProgramFeedRootKeyID != "" {
 		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
 			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log)
+	}
+	s.ProgramFeedSettings = catalogRepo
+	if cfg.Scope.ProgramFeedLocalBundleDir != "" {
+		s.ProgramFeedLocal = programfeedapp.NewLocalImporter(cfg.Scope.ProgramFeedLocalBundleDir, catalogRepo,
+			s.BountyProgram, catalogRepo, log)
 	}
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
