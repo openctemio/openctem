@@ -81,6 +81,7 @@ func ledgerEntryOf(t *scopedom.Target, now time.Time) *jobsign.LedgerEntry {
 	return &jobsign.LedgerEntry{
 		ID: t.ID().String(), Type: string(t.TargetType()), Pattern: t.Pattern(),
 		MaxTier: int(t.MaxTier()), ExpiresAt: utcPtr(t.ExpiresAt()),
+		Ports: t.Constraint().Ports, Protocol: t.Constraint().Protocol,
 	}
 }
 
@@ -354,7 +355,7 @@ func (s *Service) applyLedger(ctx context.Context, ch jobsign.LedgerChange, kind
 }
 
 func sameLedgerEntry(a, b jobsign.LedgerEntry) bool {
-	return a.ID == b.ID && a.Type == b.Type && a.Pattern == b.Pattern && a.MaxTier == b.MaxTier && sameExpiry(a.ExpiresAt, b.ExpiresAt)
+	return a.ID == b.ID && a.SameScope(b) && a.MaxTier == b.MaxTier && sameExpiry(a.ExpiresAt, b.ExpiresAt)
 }
 
 func sameLedgerExclusion(a, b jobsign.LedgerExclusion) bool {
