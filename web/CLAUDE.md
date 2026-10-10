@@ -114,6 +114,14 @@ Types: user.types.ts         Hooks: use-user.ts
 
 Create a `src/features/[name]/` folder when: 2+ related components, distinct business domain, could be independent module.
 
+### Shared components first
+
+Fix a UI defect everywhere it occurs: `git grep` the pattern, fix the shared
+component or extract one and migrate every caller in the same PR. Dialogs use
+the frame in `components/ui/dialog.tsx` (`size` + `DialogHeader` /
+`DialogBody` / `DialogFooter`, no ad-hoc `max-h`/`overflow`/`max-w`). Full
+checklist: the `web-change` skill in the repository root `.claude/skills/`.
+
 ### Styling
 
 - `cn()` for conditional classes, shadcn/ui variants, Tailwind utilities
@@ -129,6 +137,7 @@ Create a `src/features/[name]/` folder when: 2+ related components, distinct bus
 
 - Locales: `en`, `vi` (`supportedLocales`) | RTL (direction only, none shipped): `ar`, `he`, `fa`, `ur`
 - Client: `const { t } = useTranslation()` from `@/context/i18n-provider`
+- Every new key goes into both `src/lib/i18n/dictionaries/en.json` and `vi.json` in the same PR
 - Server: `(await headers()).get('x-locale') || 'en'`
 - See [i18n.md](.claude/i18n.md) for complete guide
 

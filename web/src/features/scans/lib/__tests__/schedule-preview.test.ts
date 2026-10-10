@@ -125,13 +125,25 @@ describe('schedulePreviewRequestFromForm', () => {
     ).toMatchObject({ schedule_type: 'monthly', schedule_day: 1 })
   })
 
-  it('has no preview when the scan runs now or once', () => {
+  it('has no preview when the scan runs now', () => {
     expect(schedulePreviewRequestFromForm(DEFAULT_NEW_SCAN)).toBeNull()
-    expect(
-      schedulePreviewRequestFromForm({
-        ...DEFAULT_NEW_SCAN,
-        schedule: { runImmediately: false, frequency: 'once' },
-      })
-    ).toBeNull()
+  })
+
+  it('previews a once schedule by its run', () => {
+    const req = schedulePreviewRequestFromForm({
+      ...DEFAULT_NEW_SCAN,
+      schedule: {
+        runImmediately: false,
+        frequency: 'once',
+        runAtDate: '2030-01-02',
+        runAtTime: '09:00',
+        timezone: 'UTC',
+      },
+    })
+    expect(req).toMatchObject({
+      schedule_type: 'once',
+      run_at: '2030-01-02T09:00:00Z',
+      timezone: 'UTC',
+    })
   })
 })

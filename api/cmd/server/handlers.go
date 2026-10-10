@@ -476,15 +476,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
-		SecretStore:         handler.NewSecretStoreHandler(svc.SecretStore, v, log),
-		Tool:                handler.NewToolHandler(svc.Tool, v, log),
-		ToolCategory:        handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
-		Capability:          handler.NewCapabilityHandler(svc.Capability, v, log),
-		Scan:                handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
-		CI:                  handler.NewCIHandler(svc.Scan, log),
-		CIAdmin:             ciAdmin,
-		CIRunner:            ciRunner,
-		ScanWorkflow:        withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
+		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
+			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
+		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
+		Tool:         handler.NewToolHandler(svc.Tool, v, log),
+		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
+		Capability:   handler.NewCapabilityHandler(svc.Capability, v, log),
+		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
+		CI:           handler.NewCIHandler(svc.Scan, log),
+		CIAdmin:      ciAdmin,
+		CIRunner:     ciRunner,
+		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -630,7 +632,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.EASMSweep != nil {
 		handlers.Scope.SetSweeper(svc.EASMSweep)
 	}
+	if svc.Scan != nil {
+		handlers.Scope.SetScopeWaitStarter(svc.Scan)
+	}
 	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
+	// Private programs (RFC-065 §15.3): owners see every private program;
+	// the scope views leave out the entries of private programs the caller
+	// may not see.
+	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
+	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {
 		handlers.Scope.SetDryRun(svc.Scan, svc.ActiveGate)
 	}

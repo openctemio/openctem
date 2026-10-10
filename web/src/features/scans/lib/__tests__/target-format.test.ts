@@ -42,13 +42,21 @@ describe('parsePastedTargets', () => {
       'Example.com',
       'example.com.',
       '',
-      'bad target',
+      'b@d',
       '10.0.0.1',
       ' 10.0.0.1 ',
     ])
     expect(p.targets).toEqual(['example.com', '10.0.0.1'])
     expect(p.duplicates).toBe(2)
-    expect(p.invalid.map((i) => i.input)).toEqual(['bad target'])
+    expect(p.invalid.map((i) => i.input)).toEqual(['b@d'])
     expect(p.byKind).toEqual({ domain: 2, invalid: 1, ipv4: 2 })
+  })
+})
+
+describe('pasted lists', () => {
+  it('splits on commas, semicolons and spaces', () => {
+    expect(
+      parsePastedTargets(['a.example.com, b.example.com;c.example.com d.example.com']).targets
+    ).toEqual(['a.example.com', 'b.example.com', 'c.example.com', 'd.example.com'])
   })
 })
