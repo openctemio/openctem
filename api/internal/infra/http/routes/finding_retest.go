@@ -89,6 +89,7 @@ func registerScanGovernanceRoutes(router Router, h *handler.ScanGovernanceHandle
 		r.GET("/", h.Get, middleware.Require(permission.ScansRead))
 		r.PUT("/mode", h.UpdateMode, middleware.RequireOwner(), requireStepUp())
 		r.PUT("/rules", h.UpdateRules, middleware.RequireAdmin(), requireStepUp())
+		r.POST("/test", h.TestRules, middleware.RequireAdmin())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 

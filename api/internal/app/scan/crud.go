@@ -705,6 +705,21 @@ func (s *Service) ListScans(ctx context.Context, input ListScansInput) (paginati
 	return s.scanRepo.List(ctx, filter, page)
 }
 
+// GovernanceScans lists up to limit of the tenant's saved scans, newest
+// first, and how many it has: what the scan approval rule tester
+// evaluates.
+func (s *Service) GovernanceScans(ctx context.Context, tenantID shared.ID, limit int) ([]*scan.Scan, int, error) {
+	sort, err := scan.ParseListSort("-created_at")
+	if err != nil {
+		return nil, 0, err
+	}
+	res, err := s.scanRepo.List(ctx, scan.Filter{TenantID: &tenantID, ExcludeAdHoc: true, Sort: sort}, pagination.New(1, limit))
+	if err != nil {
+		return nil, 0, err
+	}
+	return res.Data, int(res.Total), nil
+}
+
 // GetStats returns aggregated statistics for scans.
 func (s *Service) GetStats(ctx context.Context, tenantID string) (*scan.Stats, error) {
 	tid, err := shared.IDFromString(tenantID)
