@@ -8,7 +8,6 @@ asset_access_grants
 asset_attribute_sources
 asset_attributions
 asset_change_events
-asset_components
 asset_dedup_review
 asset_groups
 asset_identifiers
@@ -17,6 +16,7 @@ asset_merge_log
 asset_relationships
 asset_services
 asset_software
+asset_software_edges
 asset_state_history
 assets
 assignment_rules

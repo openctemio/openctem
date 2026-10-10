@@ -17,9 +17,9 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
-	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -40,7 +40,7 @@ type FindingProcessor struct {
 	dataFlowRepo vulnerability.DataFlowRepository
 	branchRepo   branch.Repository
 	assetRepo    asset.Repository
-	compRepo     component.Repository
+	compRepo     software.PackageWriter
 	logger       *logger.Logger
 
 	// findingCreatedCallback is called after findings are successfully created
@@ -156,7 +156,7 @@ func NewFindingProcessor(repo vulnerability.FindingRepository, branchRepo branch
 }
 
 // SetComponentRepository sets the component repository for linking findings to components.
-func (p *FindingProcessor) SetComponentRepository(repo component.Repository) {
+func (p *FindingProcessor) SetComponentRepository(repo software.PackageWriter) {
 	p.compRepo = repo
 }
 
@@ -2137,42 +2137,24 @@ func isValidFingerprint(fp string) bool {
 	return true
 }
 
-// linkFindingToComponent looks up a component by PURL and links it to the finding.
-// This is used for SCA findings where the vulnerability is in a specific package.
+// linkFindingToComponent sets the finding's package version from the package
+// URL of an SCA finding (the tenant's version, created tenant-private when the
+// package is new).
 func (p *FindingProcessor) linkFindingToComponent(ctx context.Context, f *vulnerability.Finding, ctisFinding *ctis.Finding) {
-	// Skip if no component repository configured
-	if p.compRepo == nil {
+	if p.compRepo == nil || ctisFinding.Vulnerability == nil || ctisFinding.Vulnerability.PURL == "" {
 		return
 	}
-
-	// Get PURL from vulnerability details
-	var purl string
-	if ctisFinding.Vulnerability != nil && ctisFinding.Vulnerability.PURL != "" {
-		purl = ctisFinding.Vulnerability.PURL
-	}
-
-	if purl == "" {
-		return
-	}
-
-	// Lookup component by PURL
-	comp, err := p.compRepo.GetByPURL(ctx, purl)
+	purl, err := software.ParsePURL(ctisFinding.Vulnerability.PURL)
 	if err != nil {
-		p.logger.Debug("component not found for PURL",
-			"purl", purl,
-			"error", err,
-		)
+		p.logger.Debug("finding package URL does not parse", "error", err)
 		return
 	}
-
-	if comp != nil {
-		f.SetComponentID(comp.ID())
-		p.logger.Debug("linked finding to component",
-			"finding_id", f.ID().String(),
-			"component_id", comp.ID().String(),
-			"purl", purl,
-		)
+	versionID, err := p.compRepo.EnsurePackageVersion(ctx, f.TenantID(), purl)
+	if err != nil {
+		p.logger.Debug("finding package version not resolved", "purl", purl.String(), "error", err)
+		return
 	}
+	f.SetComponentID(versionID)
 }
 
 // normalizeEnumToken maps a producer-supplied enum label onto the stored
