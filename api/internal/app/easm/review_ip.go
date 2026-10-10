@@ -58,7 +58,7 @@ type AddressFacts struct {
 type ReviewAddressStore interface {
 	// ResolvedFrom maps each address to the tenant's names that resolve to
 	// it (resolves_to edges), only names in the caller's data scope.
-	ResolvedFrom(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, addrs []string) (map[string][]string, error)
+	ResolvedFrom(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, addrs []string) (map[string][]string, error)
 	// AddressProps maps each address to the properties of its ip_address
 	// asset in the tenant (asn, asn_org, cdn).
 	AddressProps(ctx context.Context, tenantID shared.ID, addrs []string) (map[string]map[string]any, error)
@@ -82,7 +82,7 @@ const maxResolvedFrom = 10
 
 // explainAddresses fills resolved_from, network, hint and fixes on the
 // page's address rows (an ip_address, or a service on an address).
-func (s *ReviewService) explainAddresses(ctx context.Context, tenantID shared.ID, scopeUser *shared.ID, caller ReviewCaller, page *ReviewPage) error {
+func (s *ReviewService) explainAddresses(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, caller ReviewCaller, page *ReviewPage) error {
 	if s.addrs == nil || page == nil {
 		return nil
 	}
@@ -102,7 +102,7 @@ func (s *ReviewService) explainAddresses(ctx context.Context, tenantID shared.ID
 	if len(addrs) == 0 {
 		return nil
 	}
-	resolved, err := s.addrs.ResolvedFrom(ctx, tenantID, scopeUser, addrs)
+	resolved, err := s.addrs.ResolvedFrom(ctx, tenantID, scope, addrs)
 	if err != nil {
 		return fmt.Errorf("names that resolve to review addresses: %w", err)
 	}
