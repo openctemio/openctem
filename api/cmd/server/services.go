@@ -71,6 +71,7 @@ import (
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
+	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
@@ -1777,6 +1778,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
+	// Program targets go through the same ingest as every collector
+	// (RFC-065 §16.8): source feed or import, never a scan.
+	if s.BountyProgram != nil {
+		s.BountyProgram.SetTargetIngester(programtarget.New(s.Ingest, postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})))
+	}
 	// Assets reported for a tenant's own scan commands get tenant_scanned
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
