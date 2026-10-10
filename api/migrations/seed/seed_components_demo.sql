@@ -6,17 +6,15 @@
 -- realistic demo data:
 --   - 50 CVEs (global vulnerabilities)
 --   - 6 assets (web/api/service/mobile/iac/k8s)
---   - 200 global components (PURL-deduplicated registry)
---   - 200 asset_components links (per-asset SBOM rows)
---   - 80 findings tying assets × components × CVEs
+--   - ~55 package versions (software catalog, private to the tenant)
+--   - 200 package links (asset_software rows with source package)
+--   - 80 findings tying assets × package versions × CVEs
 --
--- Architecture note (very important):
---   Schema (migration 000044) splits "components" into two tables:
---     1. components        — global PURL-based registry (one row per unique pkg+version)
---     2. asset_components  — per-asset link (many rows possible per global component)
---   findings.component_id FK → components(id).
---   This seed populates BOTH and links them correctly so blast-radius
---   queries (component → assets, CVE → assets) work end-to-end.
+-- Architecture note (RFC-070): packages are software catalog products
+-- (software_products, software_versions) and where an asset uses one is an
+-- asset_software row; findings.component_id references software_versions(id).
+-- The rows are staged in temporary tables and converted, so blast-radius
+-- queries (package -> assets, CVE -> assets) work end-to-end.
 --
 -- Idempotent: ON CONFLICT (id) DO NOTHING / unique keys.
 -- Tenant-scoped data attaches to the first tenant whose name/slug matches
@@ -27,11 +25,26 @@
 --
 -- Cleanup (manual):
 --   DELETE FROM findings           WHERE id::text LIKE 'dcdc3%';
---   DELETE FROM asset_components   WHERE id::text LIKE 'dcdc2%';
---   DELETE FROM components         WHERE id::text LIKE 'dcdcc%';
+--   DELETE FROM asset_software     WHERE id::text LIKE 'dcdc2%';
+--   DELETE FROM software_versions  WHERE id::text LIKE 'dcdcc%';
 --   DELETE FROM assets             WHERE id::text LIKE 'dcdc1%';
 --   DELETE FROM vulnerabilities    WHERE id::text LIKE 'dcdca%';
 -- =============================================================================
+
+-- The demo rows below are staged in two temporary tables (the shape of the
+-- retired components / asset_components tables) and converted into the
+-- software catalog (RFC-070) before the findings are written: products per
+-- package URL, versions keeping the demo component ids (dcdcc...), links
+-- keeping the demo link ids (dcdc2...).
+CREATE TEMP TABLE IF NOT EXISTS seed_demo_components (
+  id UUID PRIMARY KEY, purl TEXT UNIQUE NOT NULL, name TEXT NOT NULL, version TEXT,
+  ecosystem TEXT, vulnerability_count INT DEFAULT 0
+);
+CREATE TEMP TABLE IF NOT EXISTS seed_demo_asset_components (
+  id UUID PRIMARY KEY, tenant_id UUID, asset_id UUID, component_id UUID, name TEXT, version TEXT,
+  ecosystem TEXT, package_manager TEXT, license TEXT, purl TEXT, dependency_type TEXT, is_direct BOOLEAN,
+  depth INT, manifest_file TEXT, status TEXT
+);
 
 DO $$
 DECLARE
@@ -338,7 +351,7 @@ END $$;
 -- UUIDs use prefix 'dcdcc' (c = component-global) for easy cleanup.
 -- =============================================================================
 
-INSERT INTO components (id, purl, name, version, ecosystem, vulnerability_count)
+INSERT INTO seed_demo_components (id, purl, name, version, ecosystem, vulnerability_count)
 VALUES
   -- npm
   ('dcdcc001-0000-0000-0000-000000000001', 'pkg:npm/react@18.2.0',                     'react',                   '18.2.0',         'npm', 0),
@@ -460,7 +473,7 @@ BEGIN
   -- (name, version, ecosystem, license, purl) so the existing list query
   -- works even before a JOIN. component_id is the FK to global components.
 
-  INSERT INTO asset_components (id, tenant_id, asset_id, component_id, name, version, ecosystem, package_manager,
+  INSERT INTO seed_demo_asset_components (id, tenant_id, asset_id, component_id, name, version, ecosystem, package_manager,
                                 license, purl, dependency_type, is_direct, depth, manifest_file, status)
   VALUES
     -- web-storefront — npm (~30)
@@ -565,12 +578,56 @@ BEGIN
     ('dcdc2005-0000-0000-0000-000000000009', v_tenant_id, 'dcdc1111-0000-0000-0000-000000000006', 'dcdcc004-0000-0000-0000-000000000009', 'go.etcd.io/etcd/client/v3', '3.5.11', 'go', 'go', 'Apache-2.0', 'pkg:golang/go.etcd.io/etcd/client/v3@3.5.11', 'direct', true, 0, 'go.mod', 'active')
   ON CONFLICT (id) DO NOTHING;
 
-  RAISE NOTICE 'Inserted asset_components: %', (SELECT COUNT(*) FROM asset_components WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc2%');
+  RAISE NOTICE 'Staged package links: %', (SELECT COUNT(*) FROM seed_demo_asset_components WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc2%');
 
   -- ---------------------------------------------------------------------------
   -- Step 7: Findings — link assets × global_components × CVEs (~50)
   -- findings.component_id references components(id) (global, not asset_components)
   -- ---------------------------------------------------------------------------
+  -- Convert the staged rows into the software catalog.
+  INSERT INTO software_products (tenant_id, part, vendor, name, purl_type, purl_namespace, purl_name, source)
+  SELECT DISTINCT ON (x.pt, x.pns, x.pn) v_tenant_id, 'a', left(x.pns, 128), x.pn, x.pt, x.pns, x.pn, 'observed'
+  FROM (
+    SELECT lower(split_part(path, '/', 1)) AS pt,
+           CASE WHEN position('/' in rest) > 0 THEN replace(regexp_replace(rest, '/[^/]*$', ''), '%40', '@') ELSE '' END AS pns,
+           replace(regexp_replace(rest, '^.*/', ''), '%40', '@') AS pn
+    FROM (
+      SELECT path, substr(path, length(split_part(path, '/', 1)) + 2) AS rest
+      FROM (SELECT regexp_replace(substr(purl, 5), '@[^@/]*$', '') AS path FROM seed_demo_components) a
+    ) b
+  ) x
+  ON CONFLICT DO NOTHING;
+
+  INSERT INTO software_versions (id, product_id, tenant_id, raw, normalized, scheme, purl)
+  SELECT c.id, p.id, v_tenant_id, COALESCE(c.version, ''), NULLIF(c.version, ''),
+         CASE x.pt WHEN 'npm' THEN 'npm' WHEN 'pypi' THEN 'pep440' WHEN 'maven' THEN 'maven'
+                   WHEN 'golang' THEN 'go' WHEN 'cargo' THEN 'semver' WHEN 'nuget' THEN 'semver' ELSE 'generic' END,
+         c.purl
+  FROM seed_demo_components c
+  CROSS JOIN LATERAL (
+    SELECT lower(split_part(path, '/', 1)) AS pt,
+           CASE WHEN position('/' in rest) > 0 THEN replace(regexp_replace(rest, '/[^/]*$', ''), '%40', '@') ELSE '' END AS pns,
+           replace(regexp_replace(rest, '^.*/', ''), '%40', '@') AS pn
+    FROM (SELECT path, substr(path, length(split_part(path, '/', 1)) + 2) AS rest
+          FROM (SELECT regexp_replace(substr(c.purl, 5), '@[^@/]*$', '') AS path) a) b
+  ) x
+  JOIN software_products p ON p.tenant_id = v_tenant_id AND p.purl_type = x.pt
+                          AND p.purl_namespace = x.pns AND p.purl_name = x.pn
+  ON CONFLICT DO NOTHING;
+
+  INSERT INTO asset_software (id, tenant_id, asset_id, product_id, software_version_id, location, source,
+                              evidence, confidence, relationship, dep_scope, depth, licenses)
+  SELECT ac.id, ac.tenant_id, ac.asset_id, v.product_id, v.id, COALESCE(ac.manifest_file, ''), 'package',
+         left(COALESCE(ac.purl, ac.name), 512), 100,
+         CASE WHEN ac.is_direct THEN 'direct' ELSE 'transitive' END,
+         CASE ac.dependency_type WHEN 'dev' THEN 'development' WHEN 'optional' THEN 'optional'
+                                 WHEN 'build' THEN 'build' WHEN 'peer' THEN 'optional' ELSE NULL END,
+         LEAST(GREATEST(COALESCE(ac.depth, 0), 0), 32),
+         CASE WHEN COALESCE(ac.license, '') = '' THEN '{}'::text[] ELSE ARRAY[ac.license] END
+  FROM seed_demo_asset_components ac
+  JOIN software_versions v ON v.id = ac.component_id
+  ON CONFLICT DO NOTHING;
+
   INSERT INTO findings (id, tenant_id, asset_id, component_id, vulnerability_id,
                         source, tool_name, tool_version, message, severity,
                         cvss_score, cve_id, status, fingerprint, finding_type,
@@ -712,73 +769,13 @@ BEGIN
 
   RAISE NOTICE 'Inserted findings: %', (SELECT COUNT(*) FROM findings WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc3%');
 
-  -- ---------------------------------------------------------------------------
-  -- Step 8: Recompute aggregated columns on asset_components
-  -- ---------------------------------------------------------------------------
-  UPDATE asset_components ac
-  SET
-    vulnerability_count = COALESCE(agg.cnt, 0),
-    has_known_vulnerabilities = (COALESCE(agg.cnt, 0) > 0),
-    highest_severity = agg.max_sev,
-    risk_score = LEAST(100, COALESCE(agg.cnt, 0) * 15
-                            + CASE agg.max_sev
-                                WHEN 'critical' THEN 40
-                                WHEN 'high'     THEN 25
-                                WHEN 'medium'   THEN 10
-                                WHEN 'low'      THEN 3
-                                ELSE 0
-                              END)
-  FROM (
-    SELECT f.component_id,
-           ac2.id AS ac_id,
-           COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS cnt,
-           (
-             ARRAY['critical','high','medium','low','info','none']::text[]
-           )[
-             LEAST(
-               COALESCE(MIN(CASE f.severity
-                              WHEN 'critical' THEN 1
-                              WHEN 'high'     THEN 2
-                              WHEN 'medium'   THEN 3
-                              WHEN 'low'      THEN 4
-                              WHEN 'info'     THEN 5
-                              ELSE 6 END
-                       ) FILTER (WHERE f.status IN ('new','confirmed','in_progress')), 6),
-               6
-             )
-           ] AS max_sev
-    FROM findings f
-    JOIN asset_components ac2
-      ON ac2.tenant_id = f.tenant_id
-     AND ac2.asset_id  = f.asset_id
-     AND ac2.component_id = f.component_id
-    WHERE f.tenant_id = v_tenant_id
-      AND f.component_id IS NOT NULL
-    GROUP BY f.component_id, ac2.id
-  ) agg
-  WHERE ac.id = agg.ac_id
-    AND ac.tenant_id = v_tenant_id;
-
-  -- Also update global components.vulnerability_count to count distinct CVEs
-  UPDATE components c
-  SET vulnerability_count = COALESCE(agg.cnt, c.vulnerability_count)
-  FROM (
-    SELECT component_id, COUNT(DISTINCT vulnerability_id) AS cnt
-    FROM findings
-    WHERE tenant_id = v_tenant_id
-      AND component_id IS NOT NULL
-      AND vulnerability_id IS NOT NULL
-      AND status IN ('new','confirmed','in_progress')
-    GROUP BY component_id
-  ) agg
-  WHERE c.id = agg.component_id;
-
   RAISE NOTICE '=== Demo Seed Complete ===';
   RAISE NOTICE 'Tenant: %', v_tenant_id;
   RAISE NOTICE 'CVEs (global): %',     (SELECT COUNT(*) FROM vulnerabilities WHERE id::text LIKE 'dcdcaaaa-%');
-  RAISE NOTICE 'Components (global): %', (SELECT COUNT(*) FROM components WHERE id::text LIKE 'dcdcc%');
+  RAISE NOTICE 'Package versions: %', (SELECT COUNT(*) FROM software_versions WHERE id::text LIKE 'dcdcc%');
   RAISE NOTICE 'Assets: %',            (SELECT COUNT(*) FROM assets WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc1111-%');
-  RAISE NOTICE 'asset_components: %',  (SELECT COUNT(*) FROM asset_components WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc2%');
+  RAISE NOTICE 'Package links: %',     (SELECT COUNT(*) FROM asset_software WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc2%');
   RAISE NOTICE 'Findings: %',          (SELECT COUNT(*) FROM findings WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc3%');
-  RAISE NOTICE 'Vulnerable components (per-asset): %', (SELECT COUNT(*) FROM asset_components WHERE tenant_id = v_tenant_id AND has_known_vulnerabilities = true);
+  RAISE NOTICE 'Vulnerable package links: %', (SELECT COUNT(*) FROM asset_software s WHERE s.tenant_id = v_tenant_id AND s.source = 'package'
+    AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = s.tenant_id AND f.asset_id = s.asset_id AND f.component_id = s.software_version_id));
 END $$;

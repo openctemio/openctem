@@ -140,6 +140,16 @@ func (r *memPolicyRepo) SetOverride(_ context.Context, id shared.ID, p *scangov.
 	return nil
 }
 
+func (r *memPolicyRepo) ListFollowingDefault(context.Context) ([]shared.ID, error) {
+	var out []shared.ID
+	for id, p := range r.override {
+		if p == nil {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
 type adminAuditLog struct{ entries []*admin.AuditLog }
 
 func (a *adminAuditLog) Create(_ context.Context, e *admin.AuditLog) error {

@@ -30,11 +30,12 @@ describe('Discovery > Scans', () => {
     expect(scans.sections).toBe(SCANS_SECTION_TABS)
   })
 
-  it('lists Scans, Runs and Workflows under /scans', () => {
+  it('lists Scans, Runs, Workflows and Approvals under /scans', () => {
     expect(SCANS_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
       ['Scans', '/scans', 'scans'],
       ['Runs', '/scans/runs', 'scans'],
       ['Workflows', '/scans/workflows', 'scan_workflows'],
+      ['Approvals', '/scans/approvals', 'scans'],
     ])
   })
 

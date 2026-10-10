@@ -1,0 +1,13 @@
+- id: sla
+  const: ModuleSLA
+  slug: sla
+  name: SLA Management
+  description: SLA policies for remediation time tracking
+  icon: Clock
+  category: prioritization
+  order: 23
+  core: true
+  user_facing: true
+  permission: "settings:sla:read"
+  jobs:
+    - SLAEscalationController

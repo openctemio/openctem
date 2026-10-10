@@ -1,0 +1,11 @@
+- id: scan_profiles
+  const: ModuleScanProfiles
+  slug: scan_profiles
+  name: Scan Profiles
+  description: Scan configuration profiles
+  icon: Sliders
+  category: operations
+  order: 83
+  permission: "scans:profiles:read"
+  depends:
+    - {id: scans, kind: hard, reason: "profiles are parameterised scan configurations"}
