@@ -25,7 +25,7 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import { isFreezeRefusal } from '@/features/scan-freeze'
+import { isNeverOpensRefusal, waitsSummary } from '@/features/scan-windows'
 import { triggerErrorHint } from '@/features/scan-zones'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
 import {
@@ -40,7 +40,6 @@ import { get, post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import { Permission, useHasPermission } from '@/lib/permissions'
 import type { ScanRun } from '@/lib/api/scan-types'
 import { formatScanDate } from '../lib/format'
 import { isRunInProgress, runTaskProgress } from '../lib/run-display'
@@ -111,34 +110,28 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
   const { t } = useTranslation()
   const busy = useSyncExternalStore(subscribe, getSnapshot, () => '')
   const [pending, setPending] = useState<{ scan: TriggerableScan; run: ScanRun } | null>(null)
-  // A trigger refused by an active scan freeze window, offered to override
-  // to members holding scans:freeze:override (the API checks it again and
-  // audits the override).
-  const [frozen, setFrozen] = useState<{ scan: TriggerableScan; message: string } | null>(null)
   // A trigger the scope gate refused: each target, why, and the fixes
   // (TARGET_OUT_OF_SCOPE details, RFC-054 §6.5), as in the scan dialogs.
   const [refusal, setRefusal] = useState<{ scan: TriggerableScan; refused: ScopeRefusal[] } | null>(
     null
   )
-  const canOverrideFreeze = useHasPermission(Permission.ScanFreezeOverride)
 
   const fire = useCallback(
-    async (scan: TriggerableScan, overrideFreeze = false) => {
+    async (scan: TriggerableScan) => {
       try {
-        await post(scanEndpoints.trigger(scan.id), overrideFreeze ? { override_freeze: true } : {})
-        toast.success(
-          overrideFreeze
-            ? t('scans.trigger.startedFrozen', undefined, { name: scan.name })
-            : t('scans.trigger.triggered', undefined, { name: scan.name })
-        )
+        const run = await post<ScanRun | undefined>(scanEndpoints.trigger(scan.id), {})
+        const waits = run?.window_waits
+        if (waits && (waits.waiting_count ?? 0) > 0) {
+          // The run started; some targets wait for their scan windows.
+          toast.success(t('scans.trigger.triggered', undefined, { name: scan.name }), {
+            description: waitsSummary(waits, t),
+          })
+        } else {
+          toast.success(t('scans.trigger.triggered', undefined, { name: scan.name }))
+        }
         onTriggered?.(scan)
         await invalidateScanConfigsCache()
       } catch (error) {
-        if (!overrideFreeze && canOverrideFreeze && isFreezeRefusal(error)) {
-          // Stays in flight until the user answers.
-          setFrozen({ scan, message: getErrorMessage(error, t('scans.trigger.freezeActive')) })
-          return
-        }
         const refused = refusedFromError(error)
         if (refused.length > 0) {
           setRefusal({ scan, refused })
@@ -148,15 +141,18 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
         toast.error(
           getErrorMessage(error, t('scans.trigger.failed', undefined, { name: scan.name })),
           {
-            description: isFreezeRefusal(error)
-              ? t('scans.trigger.freezeHint')
+            description: isNeverOpensRefusal(error)
+              ? t(
+                  'scanWindows.trigger.neverHint',
+                  'Change the scan windows in Settings > Scan windows, or remove these targets from the scan.'
+                )
               : triggerErrorHint(error),
           }
         )
       }
       setInFlight(scan.id, false)
     },
-    [onTriggered, canOverrideFreeze, t]
+    [onTriggered, t]
   )
 
   const trigger = useCallback(
@@ -181,40 +177,8 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
     setPending(null)
   }, [pending])
 
-  const dismissFrozen = useCallback(() => {
-    if (frozen) setInFlight(frozen.scan.id, false)
-    setFrozen(null)
-  }, [frozen])
-
   const progress = pending ? runTaskProgress(pending.run.task_summary, t) : null
   const started = pending?.run.started_at || pending?.run.created_at
-
-  const freezeDialog = (
-    <ConfirmDialog
-      open={!!frozen}
-      onOpenChange={(open) => {
-        if (!open) dismissFrozen()
-      }}
-      title={t('scans.trigger.freezeTitle')}
-      desc={
-        frozen ? (
-          <div className="space-y-2" data-testid="freeze-override-dialog">
-            <p>{frozen.message}</p>
-            <p>{t('scans.trigger.startAnywayQ', undefined, { name: frozen.scan.name })}</p>
-          </div>
-        ) : (
-          ''
-        )
-      }
-      confirmText={t('scans.trigger.startAnyway')}
-      destructive
-      handleConfirm={() => {
-        const f = frozen
-        setFrozen(null)
-        if (f) void fire(f.scan, true)
-      }}
-    />
-  )
 
   const dialog = (
     <>
@@ -266,7 +230,6 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
           if (p) void fire(p.scan)
         }}
       />
-      {freezeDialog}
       <Dialog open={!!refusal} onOpenChange={(open) => !open && setRefusal(null)}>
         <DialogContent>
           <DialogHeader>

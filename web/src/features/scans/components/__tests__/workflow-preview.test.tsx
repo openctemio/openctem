@@ -49,13 +49,32 @@ describe('WorkflowPreviewBody', () => {
     expect(screen.getByText(/3 target\(s\) resolved, 1 excluded by scope/)).toBeInTheDocument()
   })
 
-  it('shows what the trigger would refuse with, and an active freeze', () => {
+  it('shows what the trigger would refuse with, and the targets that wait for a scan window', () => {
     render(
       <WorkflowPreviewBody
         preview={{
           ...base,
           blocking: true,
-          freeze: { window: 'Change freeze', until: '2026-10-08T00:00:00Z' },
+          targets: {
+            ...base.targets,
+            windows: {
+              governed: true,
+              total: 3,
+              waiting_count: 1,
+              waiting: [
+                {
+                  target: 'app.example.com',
+                  next_open_at: '2026-10-08T00:00:00Z',
+                  blocking: [
+                    { source_id: 'p1', name: 'Change freeze', kind: 'blackout', origin: 'policy' },
+                  ],
+                },
+              ],
+              never_count: 0,
+              never: [],
+              next_open_at: '2026-10-08T00:00:00Z',
+            },
+          },
           nodes: [
             {
               ...base.nodes![0],
@@ -75,6 +94,7 @@ describe('WorkflowPreviewBody', () => {
     expect(screen.getByText('Step "iac": No sensor has checkov.')).toBeInTheDocument()
     expect(screen.getByText('runs checkov')).toBeInTheDocument()
     expect(screen.getByText('no sensor')).toBeInTheDocument()
-    expect(screen.getByText(/Freeze window Change freeze is active/)).toBeInTheDocument()
+    expect(screen.getByTestId('window-waits-waiting').textContent).toContain('app.example.com')
+    expect(screen.getByTestId('window-waits-waiting').textContent).toContain('Change freeze')
   })
 })
