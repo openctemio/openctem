@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-10; decisions C1–C14 adopted as recommended, §14; the owner may revise any of them). P0 in implementation; P1 VEX statements implemented |
+| Status | Accepted (2026-10-10; decisions C1–C19 adopted as recommended, §14; the owner may revise any of them). P0 in implementation; P1 VEX statements and license policy implemented |
 | Scope | api (`pkg/domain/software`, `pkg/domain/component`, `internal/app/asset` component and SBOM services, ingest, `internal/infra/postgres` component/software repositories, migrations, routes), web (`/components`, the component detail page, dependency graph, SBOM import and export) |
 | Architecture | [software-components.md](../architecture/software-components.md) |
 | Related | RFC-066 (software catalog, matcher; O6 one inventory model, O11 catalog sharing, O12 feed outside the platform), RFC-069 (asset change timeline), RFC-064 (modules), ADR-004 (finding provenance), [finding-import.md](../architecture/finding-import.md) (VEX documents), [global-catalog-trust.md](../architecture/global-catalog-trust.md), [component-relationship-best-practices.md](../architecture/component-relationship-best-practices.md) |
@@ -347,6 +347,18 @@ the parser is isolated so a format adds a reader, not a writer.
   severity high; `review` → medium only when the tenant opts in, otherwise only
   visible in the inventory). One finding per asset, package and license; it
   closes when the link goes away or the policy allows it.
+- Implemented (C15–C19): `GET/PUT /api/v1/organization/settings/license-policy`
+  (`settings:read` / `settings:write`, audited `tenant.license_policy_updated`);
+  `default` is `allow` or `review`, `unknown` is `review` or `deny`,
+  `review_findings` is the opt-in for review findings. A PUT re-evaluates the
+  whole organization synchronously (one evaluation per distinct license set
+  and scope, then one update); every package write (sensor, CI, SBOM import)
+  re-evaluates the assets it wrote. The verdict is cached on the link
+  (`license_verdict`, `license_rule`). License findings use the reserved tool
+  name `license-policy`; the evaluation creates, reopens, re-grades and
+  resolves only those (resolution method `license_policy`), each status move
+  with an activity entry. Still open: the `license_verdict` list filter and
+  the license-violations KPI of `GET /components`.
 
 ## 10. API
 
@@ -469,6 +481,11 @@ Adopted 2026-10-10 as recommended; the owner may revise any of them.
 | C11 | VEX versions | Stored as version strings plus an optional range, not version ids: a statement can name a version before the inventory has seen it (an imported document about the next release), and a range keeps covering new versions |
 | C12 | Applying a statement | Synchronous, in batches of 1 000 findings per transaction; no per-apply cap and no deferred controller pass |
 | C13 | Reopen on withdrawal | The lifecycle's reopen edges (false positive → new, resolved → confirmed), not a stored previous status |
+| C15 | License categories | The categories of the seeded SPDX catalog (`permissive`, `weak_copyleft`, `copyleft`, `proprietary`, `public_domain`, `unknown`); rules name them as `category:<name>` |
+| C16 | Several declared licenses | A link that declares several licenses (or expressions) must satisfy all of them (AND); in an expression OR takes the most permissive choice, AND the strictest term; an id WITH an exception matches a rule for the full form first, then the id; `GPL-2.0+` falls back to `GPL-2.0` |
+| C17 | Rule precedence | A rule for the license id beats a category rule; among rules for the same match the first in the list that applies to the link's scope wins (so a scope-limited allow placed first carves out test dependencies); a link without a scope counts as runtime |
+| C18 | Unknown licenses | Free text, `LicenseRef-` ids without a rule, unparseable expressions and links without a license get the `unknown` verdict |
+| C19 | License finding identity | Asset + package + declared license set (the installed version is not identity, per RFC-043); `component_id` points at the version that carries it |
 | C14 | Severity | A statement never downgrades severity: it closes (not_affected, fixed) or annotates (affected, under investigation); the reason shows on the finding |
 
 ## 15. Testing

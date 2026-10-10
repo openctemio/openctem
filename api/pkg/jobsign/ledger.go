@@ -103,6 +103,11 @@ const (
 	OpRemoveExclusion = "remove_exclusion"
 	OpPutTemplate     = "put_template"
 	OpRemoveTemplate  = "remove_template"
+	// OpSetTierCeilings turns the organization's entry tier ceilings on or
+	// off (RFC-073 §7): they apply only in the Strict scan approval mode.
+	// Turning them off widens (every entry then covers every tier);
+	// turning them on narrows.
+	OpSetTierCeilings = "set_tier_ceilings"
 )
 
 // LedgerTemplate is a custom template version people approved for sensors:
@@ -121,6 +126,9 @@ type LedgerOp struct {
 	Exclusion *LedgerExclusion `json:"exclusion,omitempty"`
 	Template  *LedgerTemplate  `json:"template,omitempty"`
 	ID        string           `json:"id,omitempty"`
+	// TierCeilings (set_tier_ceilings only): true enforces each entry's
+	// max_tier, false lets every entry cover every tier.
+	TierCeilings *bool `json:"tier_ceilings,omitempty"`
 }
 
 // LedgerChange is POST /v1/ledger/apply: one change to one organization's
@@ -171,6 +179,10 @@ type LedgerSnapshot struct {
 	Exclusions []LedgerExclusion `json:"exclusions"`
 	// Templates are the approved custom template versions in effect.
 	Templates []LedgerTemplate `json:"templates,omitempty"`
+	// TierCeilingsOff: the organization's entry tier ceilings are not in
+	// force (scan approval Off or On, RFC-073 §7). The zero value enforces
+	// them, so a snapshot that does not say is the stricter one.
+	TierCeilingsOff bool `json:"tier_ceilings_off,omitempty"`
 }
 
 // LedgerSyncResult answers a sync: what it narrowed, and how many items the
