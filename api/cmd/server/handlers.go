@@ -734,11 +734,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
 	}
-	// The platform policy for scan approval (RFC-072).
+	// The platform policy for scan approval (RFC-073).
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
 	}
-	// Scan approval governance (RFC-072): settings, requests, the inbox and
+	// Scan approval governance (RFC-073): settings, requests, the inbox and
 	// the scan list badge.
 	if svc.ScanGovernance != nil {
 		handlers.ScanGovernance = handler.NewScanGovernanceHandler(svc.ScanGovernance, log)

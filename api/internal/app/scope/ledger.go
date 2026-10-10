@@ -153,7 +153,7 @@ func (s *Service) commitEntry(ctx context.Context, before *jobsign.LedgerEntry, 
 	if widens {
 		ch.Requester = userRef(t.CreatedBy())
 		ch.RequiredApprovals = min(max(t.ApprovalsRequired(), 0), jobsign.MaxPolicyApprovals)
-		// The scan approval mode in force (RFC-072 §6), for the signer's
+		// The scan approval mode in force (RFC-073 §6), for the signer's
 		// record of why the change needed this many approvals: entries
 		// need approvals only in Strict.
 		if s.governance != nil {

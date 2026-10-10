@@ -72,7 +72,7 @@ const (
 	// overridden (RFC-067).
 	TypeScanWindowOverride = "scan_window_override"
 	// TypeScanApproval tells approvers that a scan waits for their approval,
-	// and requesters that it was approved or rejected (RFC-072).
+	// and requesters that it was approved or rejected (RFC-073).
 	TypeScanApproval = "scan_approval"
 )
 

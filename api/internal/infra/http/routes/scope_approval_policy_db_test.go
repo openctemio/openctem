@@ -13,7 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// Scope entries under scan approval governance (RFC-072 §6), through the
+// Scope entries under scan approval governance (RFC-073 §6), through the
 // real routes: by default (Off) a widening takes effect without a second
 // person, T2 included, but still needs the approval permission (a member's
 // request waits); Strict brings back the approvals of RFC-054 §7; a

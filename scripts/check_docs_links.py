@@ -21,6 +21,11 @@ Scans source files under each PATH (default: the current directory) for
 Tests, test data, node_modules and generated files are skipped. A URL that is
 only a prefix (followed by `${`, `%s`, `{{` or `+`) has only its page
 checked. A line carrying the marker `docs-links: ignore` is skipped.
+With --live every page URL (and its anchor) is also fetched from the published
+site: a 404 or a missing anchor fails; a network error or 5xx is retried and
+then only warned about. Pages listed in scripts/docs_links_live_allow.txt
+(one URL path per line, `#` comments) are skipped: use it for pages added in a
+docs PR that is not merged and deployed yet.
 Standard library only.
 """
 import argparse
@@ -29,6 +34,9 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
+import urllib.request
 
 EXTS = {
     ".go", ".ts", ".tsx", ".js", ".mjs", ".cjs", ".py", ".sh", ".yml", ".yaml",
@@ -240,11 +248,40 @@ def check_repo_file(repos, repo, ref, fpath, anchor, prefix):
     return None, note
 
 
+def live_check(url, allow, tries=3):
+    """None if the published page (and anchor) exists, else an error text.
+    Network errors and 5xx answers are retried, then warned about (not failed)."""
+    path, _, anchor = url.partition("#")
+    if path.rstrip("/") in allow:
+        return None
+    last = ""
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(path, headers={"User-Agent": "openctem-docs-links-check"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                body = r.read().decode("utf-8", "replace")
+            if anchor and not re.search(r"\bid=[\"']%s[\"']" % re.escape(anchor), body):
+                return f"anchor #{anchor} not on the published page"
+            return None
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                return f"published site answers HTTP {e.code}"
+            last = f"HTTP {e.code}"
+        except (urllib.error.URLError, OSError) as e:
+            last = str(e)
+        time.sleep(2 * (i + 1))
+    print(f"warning: could not reach {path}: {last}", file=sys.stderr)
+    return None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--docs", required=True, help="checkout of openctemio/docs")
     ap.add_argument("--repo", help="name of this repository (default: current directory name)")
     ap.add_argument("--fetch-other", action="store_true", help="clone other openctemio repositories to check their links")
+    ap.add_argument("--live", action="store_true", help="also fetch each docs.openctem.io page from the published site")
+    ap.add_argument("--live-allow", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs_links_live_allow.txt"),
+                    help="file with URL paths to skip in --live mode")
     ap.add_argument("paths", nargs="*", default=["."])
     args = ap.parse_args(argv)
 
@@ -255,6 +292,13 @@ def main(argv=None):
         return 2
     repos = Repos(args.repo or os.path.basename(root), root, args.fetch_other)
     errors, warnings, count = [], set(), 0
+    allow, live_seen = set(), {}
+    if args.live and os.path.exists(args.live_allow):
+        with open(args.live_allow, encoding="utf-8") as fh:
+            for ln in fh:
+                ln = ln.split("#", 1)[0].strip().strip("/")
+                if ln:
+                    allow.add("https://docs.openctem.io/" + ln)
     for f in source_files(args.paths, exclude=[args.docs]):
         try:
             with open(f, encoding="utf-8") as fh:
@@ -274,6 +318,12 @@ def main(argv=None):
                 err = check_docs(path, anchor, prefix, pages)
                 if err:
                     errors.append(f"{where}: {url}: {err}")
+                elif args.live and not prefix:
+                    full = "https://docs.openctem.io" + path + ("#" + anchor if anchor else "")
+                    if full not in live_seen:
+                        live_seen[full] = live_check(full, allow)
+                    if live_seen[full]:
+                        errors.append(f"{where}: {url}: {live_seen[full]}")
             for m in GH_URL.finditer(line):
                 count += 1
                 repo, _kind, ref, rest = m.groups()

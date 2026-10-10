@@ -22,14 +22,14 @@ const maxResolvingNames = 500
 
 // ResolvedFrom maps each address to the tenant's domain and subdomain names
 // with a resolves_to edge to its ip_address asset, only names in the
-// caller's data scope (scopeUserID nil = unrestricted).
-func (r *AttributionRepository) ResolvedFrom(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, addrs []string) (map[string][]string, error) {
+// caller's data scope (scope nil = unrestricted).
+func (r *AttributionRepository) ResolvedFrom(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, addrs []string) (map[string][]string, error) {
 	out := map[string][]string{}
 	if len(addrs) == 0 {
 		return out, nil
 	}
 	args := []any{tenantID.String(), pq.Array(addrs)}
-	sc, args := scopeClause("src.id", scopeUserID, tenantID, args)
+	sc, args := scopeClause("src.id", scope, args)
 	args = append(args, maxResolvingNames)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ip.name, lower(src.name)

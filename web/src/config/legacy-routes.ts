@@ -22,7 +22,7 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   // "Connected Apps" was a ComingSoonPage that nothing linked to. Deleted; an
   // old bookmark lands on the integrations catalog instead of a 404.
   { source: '/settings/integrations/apps', destination: '/settings/integrations', permanent: true },
-  // Scope approvals became scan approval (RFC-072).
+  // Scope approvals became scan approval (RFC-073).
   {
     source: '/admin/system/scope-approvals',
     destination: '/admin/system/scan-approval',

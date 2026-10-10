@@ -1,4 +1,4 @@
--- Scan approval governance (docs/rfcs/RFC-072-scan-approval-governance.md).
+-- Scan approval governance (docs/rfcs/RFC-073-scan-approval-governance.md).
 --
 -- The platform administrator's per-organization policy now governs scan
 -- approval (tenant_controlled, off, on, strict) instead of scope-entry
@@ -20,6 +20,6 @@ ALTER TABLE tenants
     ADD CONSTRAINT chk_tenants_scan_approval_policy
     CHECK (scan_approval_policy IS NULL OR scan_approval_policy IN ('tenant_controlled', 'off', 'on', 'strict'));
 COMMENT ON COLUMN tenants.scan_approval_policy IS
-    'Platform administrator override of scan approval (RFC-072): tenant_controlled, off, on (at least on) or strict; NULL follows the platform default';
+    'Platform administrator override of scan approval (RFC-073): tenant_controlled, off, on (at least on) or strict; NULL follows the platform default';
 
 DELETE FROM platform_settings WHERE key = 'scope_approval_policy';
