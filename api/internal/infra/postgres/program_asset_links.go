@@ -21,6 +21,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // entryMatchesAsset is the scope match of program_assign.go (domain
@@ -48,7 +49,9 @@ const programTargetAssets = `
 	SELECT a.id
 	FROM assets a
 	WHERE a.tenant_id = $1
-	  AND EXISTS (SELECT 1 FROM entries e WHERE ` + entryMatchesAsset + `)
+	  AND (EXISTS (SELECT 1 FROM entries e WHERE ` + entryMatchesAsset + `)
+	       OR EXISTS (SELECT 1 FROM bounty_program_target_assets ta
+	                  WHERE ta.tenant_id = $1 AND ta.program_id IN (SELECT id FROM prog) AND ta.asset_id = a.id))
 	  AND NOT EXISTS (
 		SELECT 1 FROM excl x
 		WHERE (x.p LIKE '*.%' AND (lower(a.name) = substr(x.p, 3) OR right(lower(a.name), length(x.p) - 1) = substr(x.p, 2)))
@@ -115,6 +118,57 @@ func recomputeProgramAssetFlags(ctx context.Context, tx *sql.Tx, tenantID string
 		return fmt.Errorf("clear program asset tags: %w", err)
 	}
 	return nil
+}
+
+// ReplaceTargetAssets sets a program's target assets (RFC-065 §16.8) to
+// ids (asset id -> item key) and keeps its links and the derived asset
+// fields current, in one transaction. Ids that are not the tenant's assets
+// are ignored; the program must be the tenant's.
+func (r *BountyProgramRepository) ReplaceTargetAssets(ctx context.Context, tenantID, programID shared.ID, ids map[shared.ID]string) error {
+	assetIDs := make([]string, 0, len(ids))
+	keys := make([]string, 0, len(ids))
+	for id, key := range ids {
+		if len(key) > 600 {
+			key = key[:600]
+		}
+		if key == "" {
+			key = "-"
+		}
+		assetIDs = append(assetIDs, id.String())
+		keys = append(keys, key)
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin program targets: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var ok bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM bounty_programs WHERE tenant_id = $1 AND id = $2)`,
+		tenantID.String(), programID.String()).Scan(&ok); err != nil {
+		return fmt.Errorf("program targets: %w", err)
+	}
+	if !ok {
+		return bountyprogram.ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM bounty_program_target_assets
+		WHERE tenant_id = $1 AND program_id = $2 AND NOT (asset_id = ANY($3::uuid[]))`,
+		tenantID.String(), programID.String(), pq.Array(assetIDs)); err != nil {
+		return fmt.Errorf("drop program targets: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO bounty_program_target_assets (tenant_id, program_id, asset_id, item_key)
+		SELECT $1, $2, a.id, t.key
+		FROM unnest($3::uuid[], $4::text[]) AS t(id, key)
+		JOIN assets a ON a.tenant_id = $1 AND a.id = t.id
+		ON CONFLICT (tenant_id, program_id, asset_id) DO UPDATE SET item_key = EXCLUDED.item_key`,
+		tenantID.String(), programID.String(), pq.Array(assetIDs), pq.Array(keys)); err != nil {
+		return fmt.Errorf("record program targets: %w", err)
+	}
+	if err := syncProgramAssetLinks(ctx, tx, tenantID.String(), programID.String()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ProgramAssetFlagRepository reads the derived program fields of assets; it

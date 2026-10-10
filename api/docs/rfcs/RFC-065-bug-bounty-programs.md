@@ -630,8 +630,15 @@ covers the target.
 
 > Status: points 2 and 3 are built (typed scope items, port/protocol and
 > path limits on entries enforced at dispatch, claim and in the signer's
-> ledger, per-item qualifiers; migration `001800`). Point 1 (CTIS ingest)
-> and the confidentiality of private-program assets follow.
+> ledger, per-item qualifiers; migration `001800`). Point 1 is built
+> (`internal/app/programtarget`, migration `001801`
+> `bounty_program_target_assets`): every application of a program's scope
+> ingests its in-scope targets through the standard CTIS ingest as a
+> trusted server-side binding, source kind `feed` (`programfeed`, run
+> `programfeed:<sequence>`, observed at the record's `last_changed`) or
+> `import` (`program-import` / `program-manual`, run the program and its
+> terms hash); the report opens no exposure and closes no port. The
+> confidentiality of private-program assets follows.
 
 The feed importer is an asset collector, not a second asset pipeline:
 

@@ -128,6 +128,10 @@ type Options struct {
 	// SourceRun is the import, sync run or feed sequence of a server-side
 	// ingest (trusted binding only; informational).
 	SourceRun string
+	// NoExposureProjection: the report lists targets someone published, not
+	// what was observed (program targets, RFC-065 §16.8), so its service
+	// assets open no exposure.
+	NoExposureProjection bool
 }
 
 // ActorScope is the data scope of the person behind an upload.

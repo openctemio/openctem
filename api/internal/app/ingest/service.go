@@ -528,7 +528,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// must never abort ingest. Only the relevant CTIS asset types are re-loaded
 	// (by their AUTHORITATIVE persisted id, so the exposure→asset FK is valid),
 	// keeping non-recon scans (which create no such assets) free of extra work.
-	if s.assetExposureProjector != nil {
+	if s.assetExposureProjector != nil && !opts.NoExposureProjection {
 		s.projectAssetExposures(ctx, tenantID, report, assetMap)
 	}
 

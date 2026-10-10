@@ -74,6 +74,8 @@ type Service struct {
 	isOwner OwnerCheck
 	// catalog is the public program catalog (subscription.go).
 	catalog bp.CatalogRepository
+	// targets ingests program targets as assets (targets.go).
+	targets TargetIngester
 }
 
 // NewService wires the service. Without a FullData checker every caller is
@@ -98,6 +100,8 @@ func (s *Service) SetAssigner(a Assigner) { s.assigner = a }
 // assign reconciles the program's group assignments. Best effort: the
 // change is committed; the periodic pass repeats it.
 func (s *Service) assign(ctx context.Context, p *bp.Program) {
+	// The targets first, so the assignment pass sees their assets.
+	s.ingestTargets(ctx, p)
 	if s.assigner == nil {
 		return
 	}
