@@ -1,0 +1,14 @@
+- id: business_services
+  const: ModuleBusinessServices
+  slug: "business-services"
+  name: Business Services
+  description: Map business services to the underlying assets that power them
+  icon: Building
+  category: scoping
+  order: 7
+  user_facing: true
+  permission: "ctem:business_services:read"
+  depends:
+    - {id: assets, kind: hard, reason: "services map to underlying assets"}
+  routes:
+    - "/api/v1/business-services"

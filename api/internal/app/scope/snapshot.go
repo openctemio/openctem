@@ -72,7 +72,7 @@ func (s *Service) Snapshot(ctx context.Context, tenantID shared.ID, targets []st
 		if t == nil {
 			continue
 		}
-		e := scopedom.SnapshotEntry{ID: via.ID, TargetType: t.TargetType().String(), Pattern: t.Pattern(),
+		e := scopedom.SnapshotEntry{ID: via.ID, TargetType: t.TargetType().String(), Pattern: t.Pattern(), Ports: t.Constraint().Ports, Protocol: t.Constraint().Protocol,
 			Source: string(t.AuthorizationSource()), MaxTier: t.MaxTier().String(), ExpiresAt: t.ExpiresAt(), ApprovedAt: t.ApprovedAt()}
 		if pid := t.ProgramID(); pid != nil {
 			e.ProgramID = pid.String()

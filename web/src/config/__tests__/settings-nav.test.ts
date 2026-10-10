@@ -16,8 +16,7 @@ import {
 import { matchRoutePermission } from '../route-permissions'
 import { resolveLegacyRoute } from '../legacy-routes'
 import { sidebarData } from '../sidebar-data'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 import type { NavCollapsible, NavItem } from '@/components/types'
 
 const APP_DIR = join(process.cwd(), 'src', 'app')

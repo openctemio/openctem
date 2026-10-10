@@ -6,7 +6,7 @@
 
 import { getApiBaseUrl } from '@/lib/api/client'
 
-import type { SbomFormat } from '../types'
+import type { SbomFormat } from './types'
 
 /** File name suffix per format (CycloneDX and SPDX conventions). */
 export const SBOM_FILE_EXTENSION: Record<SbomFormat, string> = {

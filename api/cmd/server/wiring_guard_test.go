@@ -296,6 +296,7 @@ var optionalServiceSetters = map[string]string{
 	// Plan seam: the entitlement layer (plans with SSO) is not built yet;
 	// until it is, every plan may trust another organization.
 	"OrgTrust.SetSSOEntitlement": "plan entitlements not built yet (trusts allowed on every plan)",
+	"VEX.SetClock":               "test seam: replaces the clock; production uses time.Now",
 
 	// Business operations named Set*, not collaborator seams.
 	"ProgramFeedSettings.SetLocalBundle": "business operation (the admin console switch of the local program bundle), not a collaborator seam",
@@ -314,6 +315,10 @@ var optionalServiceSetters = map[string]string{
 	"SensorPairing.SetClock":              "test hook; the service uses time.Now",
 	"SensorPairing.SetMaxOpen":            "the RFC-052 default cap applies; the override exists for tests",
 	"Retest.SetClock":                     "test clock; production uses time.Now",
+	"ScanGovernance.SetClock":             "test clock; production uses time.Now",
+	"ScanGovernance.SetMode":              "request operation, called by the scan governance handler",
+	"ScanGovernance.SetRules":             "request operation, called by the scan governance handler",
+	"ScanGovernance.Settings":             "read operation, called by the scan governance handler",
 	"WebSocketHub.SetAuthorizeFunc":       "superseded by SetChannelAccessChecker",
 	"WebSocketHub.SetPublisher":           "set by websocket.NewRedisBridge on the hub it is given",
 	"WebSocketHub.SetRevocationPublisher": "set by websocket.NewRedisBridge on the hub it is given",
