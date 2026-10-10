@@ -6,7 +6,7 @@ import "strings"
 // Module dependency graph — PLATFORM-WIDE STATIC SPEC.
 //
 // The edges ("module X requires module Y") are declared in the module
-// registry, configs/modules.yaml (`depends`), and derived into
+// registry, configs/modules/<id>.yaml (`depends`), and derived into
 // ModuleDependencies (registry.go). This file holds the toggle rules that
 // read them.
 //
@@ -42,7 +42,6 @@ type Dependency struct {
 	Type     DependencyType
 	Reason   string
 }
-
 
 // ToggleBlocker describes a module that cannot be disabled because
 // another still-enabled module hard-depends on it.

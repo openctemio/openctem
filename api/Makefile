@@ -372,7 +372,7 @@ generate-relationships:
 
 ## generate-modules: Regenerate the module registry (Go + TS) from YAML
 ##
-## Single source of truth: configs/modules.yaml (RFC-064). Edit the YAML, run
+## Single source of truth: configs/modules/<id>.yaml (RFC-064). Edit the YAML, run
 ## this target, commit YAML + the two generated files. If a catalog row
 ## changed (id, name, core, release, parent, order...), also add a migration
 ## whose body is `make modules-sql`.
