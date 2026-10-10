@@ -254,8 +254,17 @@ func (r *ScanApprovalRepository) ExpireOverdue(ctx context.Context, tenantID sha
 	return int(n), nil
 }
 
+// scanApprovalPageCap is the largest page List returns.
+const scanApprovalPageCap = 100
+
 // List returns a page of the tenant's requests, newest first.
 func (r *ScanApprovalRepository) List(ctx context.Context, f scangov.ListFilter) ([]*scangov.Request, int, error) {
+	if f.Limit <= 0 || f.Limit > scanApprovalPageCap {
+		f.Limit = scanApprovalPageCap
+	}
+	if f.Offset < 0 {
+		f.Offset = 0
+	}
 	where := []string{"r.tenant_id = $1"}
 	args := []any{f.TenantID.String()}
 	if len(f.Statuses) > 0 {
@@ -282,7 +291,7 @@ func (r *ScanApprovalRepository) List(ctx context.Context, f scangov.ListFilter)
 		return nil, 0, fmt.Errorf("list scan approval requests: %w", err)
 	}
 	defer rows.Close()
-	out := make([]*scangov.Request, 0, f.Limit)
+	out := make([]*scangov.Request, 0, scanApprovalPageCap)
 	for rows.Next() {
 		q, err := scanRequest(rows)
 		if err != nil {
