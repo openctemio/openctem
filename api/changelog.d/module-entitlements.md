@@ -11,11 +11,11 @@
   shows it as "Not in your plan". A page of such a module says so, and
   `MODULE_NOT_ENABLED` carries reason `not_entitled`. If the entitlement cannot be read, the
   gate answers 503 rather than opening (fail-closed).
-- Migration 001681 adds `tenant_module_grants`.
+- Migration 001781 adds `tenant_module_grants`.
 
 ### Removed: organization-chosen product bundles
 
 - `GET/POST /api/v1/tenants/{tenant}/settings/modules/bundles` and the Products card are
   removed: packaging is the plan's. Onboarding offers one optional starting set (a preset,
-  applied once). No organization had a bundle subscription; migration 001681 clears the
+  applied once). No organization had a bundle subscription; migration 001781 clears the
   setting.
