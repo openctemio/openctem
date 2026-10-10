@@ -264,7 +264,7 @@ func createTestAsset(t *testing.T, svc *assetapp.AssetService, tenantID string) 
 	t.Helper()
 	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
-		Name:        "Test Asset " + shared.NewID().String()[:8],
+		Name:        "Test Asset " + shared.NewID().String()[28:],
 		Type:        "host",
 		Criticality: "high",
 	}

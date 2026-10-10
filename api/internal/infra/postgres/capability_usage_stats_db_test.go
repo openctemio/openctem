@@ -24,7 +24,7 @@ func TestCapabilityUsageStats_TenantScoped(t *testing.T) {
 	tenantB := seedTestTenant(ctx, t, db)
 
 	capID := shared.NewID()
-	capName := "usage-" + capID.String()[:8]
+	capName := "usage-" + capID.String()[28:]
 	exec := func(q string, args ...any) {
 		t.Helper()
 		if _, err := db.ExecContext(ctx, q, args...); err != nil {
@@ -36,7 +36,7 @@ func TestCapabilityUsageStats_TenantScoped(t *testing.T) {
 		capID.String(), capName)
 	platformTool := shared.NewID()
 	exec(`INSERT INTO tools (id, tenant_id, name, display_name, capabilities, is_builtin) VALUES ($1, NULL, $2, $2, ARRAY[$3]::text[], true)`,
-		platformTool.String(), "plat-"+capID.String()[:8], capName)
+		platformTool.String(), "plat-"+capID.String()[28:], capName)
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM tools WHERE id = $1`, platformTool.String())
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM capabilities WHERE id = $1`, capID.String())
@@ -68,7 +68,7 @@ func TestCapabilityUsageStats_TenantScoped(t *testing.T) {
 	seedSensor(tenantB, "b-secret-sensor-1")
 	seedSensor(tenantB, "b-secret-sensor-2")
 
-	platformName := "plat-" + capID.String()[:8]
+	platformName := "plat-" + capID.String()[28:]
 
 	t.Run("single", func(t *testing.T) {
 		stats, err := repo.GetUsageStats(ctx, tenantA, capID)
@@ -160,7 +160,7 @@ func TestCapabilityCategories_TenantScoped(t *testing.T) {
 	repo := NewCapabilityRepository(&DB{DB: db})
 	tenantA := seedTestTenant(ctx, t, db)
 	tenantB := seedTestTenant(ctx, t, db)
-	suffix := shared.NewID().String()[:8]
+	suffix := shared.NewID().String()[28:]
 	for _, row := range []struct {
 		tenant   shared.ID
 		name     string

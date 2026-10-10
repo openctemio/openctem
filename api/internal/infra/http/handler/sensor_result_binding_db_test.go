@@ -388,7 +388,9 @@ func TestResultBinding_BoundResultsStillApply(t *testing.T) {
 	if code != http.StatusCreated || body["binding"] != "command" || body["assets_limited"] != float64(1) {
 		t.Fatalf("bound push: %d %v", code, body)
 	}
-	if got := r.asset("db-1.corp.example"); !got.internet || !got.pii || got.classification != "restricted" {
+	// Its scanner signals apply; the data classification it claims does not:
+	// scanners are not trusted for it by default (RFC-069).
+	if got := r.asset("db-1.corp.example"); !got.internet || !got.pii || got.classification != "" {
 		t.Fatalf("a bound report did not update the asset its command covers: %+v", got)
 	}
 	if got := r.asset("elsewhere.corp.example"); got.internet || got.pii {

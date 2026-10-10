@@ -75,6 +75,13 @@ export interface CreateScopeTargetInput {
   expires_in_days?: number
   /** Probe ceiling; the organization's default_max_tier when omitted. */
   max_tier?: ScopeTier
+  /**
+   * Why the entry authorizes probes: ownership (default) or a letter of
+   * authorization (RFC-065 §13), named by letter_id. Program entries come
+   * from Programs.
+   */
+  authorization_source?: 'ownership' | 'authorization_letter'
+  letter_id?: string
 }
 
 /** Probe tiers (RFC-036): t0 passive, t1 safe active, t2 intrusive. */
@@ -98,6 +105,9 @@ export interface UpdateScopeTargetInput {
 export type ApiScopeSettings = Schemas['internal_infra_http_handler.ScopeSettingsResponse']
 
 export type ScopeOneOffPolicy = 'admins' | 'admins_and_requests' | 'disabled'
+
+/** The longest an intrusive (t2) entry may last (owner-only, RFC-054 §12.4). */
+export type ScopeT2MaxDuration = '7d' | '30d' | '90d' | '365d' | 'permanent'
 
 export interface UpdateScopeSettingsInput {
   auto_join_discovered: boolean

@@ -76,6 +76,22 @@ type ProgramResponse struct {
 	CreatedBy     *ActorRef  `json:"created_by,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	// Sync is the scope source of a synced program (RFC-065 §14); the API
+	// token is never returned, only whether one is stored.
+	Sync *ProgramSyncResponse `json:"sync,omitempty"`
+	// PendingTermsSHA256: a sync found new scope; nothing is added until a
+	// member accepts these terms.
+	PendingTermsSHA256 string `json:"pending_terms_sha256,omitempty"`
+}
+
+// ProgramSyncResponse is a program's scope source.
+type ProgramSyncResponse struct {
+	URL          string     `json:"url,omitempty"`
+	Handle       string     `json:"handle,omitempty"`
+	Username     string     `json:"username,omitempty"`
+	HasToken     bool       `json:"has_token"`
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+	LastError    string     `json:"last_error,omitempty"`
 }
 
 // ProgramDetailResponse is a program with its scope.
@@ -110,6 +126,13 @@ func toProgramResponse(p *bp.Program) ProgramResponse {
 	if p.GroupID != nil {
 		g := p.GroupID.String()
 		out.GroupID = &g
+	}
+	if p.ScopeSource != bp.ScopeSourcePaste && p.ScopeSource != "" {
+		out.Sync = &ProgramSyncResponse{URL: p.Sync.URL, Handle: p.Sync.Handle, Username: p.Sync.Username,
+			HasToken: p.Sync.TokenEncrypted != "", LastSyncedAt: p.Sync.LastSyncedAt, LastError: p.Sync.LastError}
+	}
+	if p.Pending != nil {
+		out.PendingTermsSHA256 = p.Pending.TermsSHA256
 	}
 	return out
 }
@@ -433,4 +456,163 @@ func (h *BountyProgramHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	h.auditProgram(r, audit.ActionBountyProgramResumed, p, "Program resumed", nil)
 	h.auditProgram(r, audit.ActionBountyProgramTermsAccepted, p, "Program terms accepted", nil)
 	writeJSON(w, http.StatusOK, toProgramResponse(p))
+}
+
+// ProgramSourceRequest configures where a program's scope comes from.
+type ProgramSourceRequest struct {
+	ScopeSource string `json:"scope_source"`
+	URL         string `json:"url"`
+	Handle      string `json:"handle"`
+	Username    string `json:"username"`
+	// Token is the researcher's API token; empty keeps the stored one. It
+	// is encrypted and never returned.
+	Token string `json:"token"`
+}
+
+// ProgramSyncResultResponse is what a sync changed.
+type ProgramSyncResultResponse struct {
+	Program          ProgramResponse `json:"program"`
+	RemovedEntries   int             `json:"removed_entries"`
+	AddedExclusions  int             `json:"added_exclusions"`
+	PendingAdditions int             `json:"pending_additions"`
+	Suspended        bool            `json:"suspended"`
+}
+
+// SetSource handles PUT /api/v1/programs/{id}/source
+// @Summary      Set program scope source
+// @Description  Where the program's scope comes from: paste, program_api (the researcher API of the platform that runs the program: handle, username and API token, encrypted and never returned) or program_file (an https scope file on the program's own domain). Needs a recent re-authentication. Audited (RFC-065).
+// @Tags         Programs
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                true  "Program ID"
+// @Param        body  body      ProgramSourceRequest  true  "Source"
+// @Success      200   {object}  ProgramResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /programs/{id}/source [put]
+func (h *BountyProgramHandler) SetSource(w http.ResponseWriter, r *http.Request) {
+	tenantID, actor, ok := h.caller(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	id, ok := h.programID(w, r)
+	if !ok {
+		return
+	}
+	var req ProgramSourceRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	p, err := h.svc.ConfigureSource(r.Context(), tenantID, actor, id, bp.SyncSourceInput{Source: req.ScopeSource, URL: req.URL,
+		Handle: req.Handle, Username: req.Username, Token: req.Token})
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.auditProgram(r, audit.ActionBountyProgramSourceSet, p, "Program scope source set",
+		map[string]any{"scope_source": p.ScopeSource, "token_changed": req.Token != ""})
+	writeJSON(w, http.StatusOK, toProgramResponse(p))
+}
+
+// Sync handles POST /api/v1/programs/{id}/sync
+// @Summary      Sync program scope
+// @Description  Read the program's scope from its source now. Removals apply at once; additions wait as pending terms until a member accepts them (POST /programs/{id}/pending/apply). A closed program is suspended. 502 when the source cannot be read.
+// @Tags         Programs
+// @Produce      json
+// @Param        id   path      string  true  "Program ID"
+// @Success      200  {object}  ProgramSyncResultResponse
+// @Failure      404  {object}  apierror.Error
+// @Failure      502  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /programs/{id}/sync [post]
+func (h *BountyProgramHandler) Sync(w http.ResponseWriter, r *http.Request) {
+	tenantID, actor, ok := h.caller(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	id, ok := h.programID(w, r)
+	if !ok {
+		return
+	}
+	res, err := h.svc.Sync(r.Context(), tenantID, actor, id)
+	if err != nil {
+		if bpapp.IsSyncError(err) {
+			apierror.New(http.StatusBadGateway, "PROGRAM_SYNC_FAILED", err.Error()).WriteJSON(w)
+			return
+		}
+		h.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ProgramSyncResultResponse{Program: toProgramResponse(res.Program),
+		RemovedEntries: res.RemovedEntries, AddedExclusions: res.AddedExclusions,
+		PendingAdditions: res.PendingAdditions, Suspended: res.Suspended})
+}
+
+// Pending handles GET /api/v1/programs/{id}/pending
+// @Summary      Pending program terms
+// @Description  What accepting the new terms a sync found would do (the preview of an import), with the terms hash to accept. 409 when there is none.
+// @Tags         Programs
+// @Produce      json
+// @Param        id   path      string  true  "Program ID"
+// @Success      200  {object}  bpapp.Preview
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /programs/{id}/pending [get]
+func (h *BountyProgramHandler) Pending(w http.ResponseWriter, r *http.Request) {
+	tenantID, actor, ok := h.caller(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	id, ok := h.programID(w, r)
+	if !ok {
+		return
+	}
+	pv, err := h.svc.Pending(r.Context(), tenantID, actor, id)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, pv)
+}
+
+// ApplyPending handles POST /api/v1/programs/{id}/pending/apply
+// @Summary      Accept pending program terms
+// @Description  Put the new terms a sync found into effect on the caller's attestation (accept_terms_sha256 from GET /pending). Needs a recent re-authentication. Audited; administrators are notified.
+// @Tags         Programs
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                true  "Program ID"
+// @Param        body  body      ProgramResumeRequest  true  "Attestation"
+// @Success      200   {object}  ProgramChangeResponse
+// @Failure      404   {object}  apierror.Error
+// @Failure      409   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /programs/{id}/pending/apply [post]
+func (h *BountyProgramHandler) ApplyPending(w http.ResponseWriter, r *http.Request) {
+	tenantID, actor, ok := h.caller(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	id, ok := h.programID(w, r)
+	if !ok {
+		return
+	}
+	var req ProgramResumeRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	p, pv, err := h.svc.Accept(r.Context(), tenantID, actor, id, req.AcceptTermsSHA256)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.auditProgram(r, audit.ActionBountyProgramScopeReplaced, p, "Program scope from its source accepted", planCounts(pv))
+	h.auditProgram(r, audit.ActionBountyProgramTermsAccepted, p, "Program terms accepted", nil)
+	writeJSON(w, http.StatusOK, ProgramChangeResponse{Program: toProgramResponse(p), Preview: pv})
 }

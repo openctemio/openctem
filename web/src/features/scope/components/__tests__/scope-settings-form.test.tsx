@@ -18,7 +18,7 @@ vi.mock('@/lib/permissions', async (orig) => {
   return {
     ...actual,
     useHasPermission: has,
-    usePermissions: () => ({ can: has }),
+    usePermissions: () => ({ can: has, isOwner: () => false }),
     Can: ({ children }: { children: ReactNode }) => <>{children}</>,
   }
 })

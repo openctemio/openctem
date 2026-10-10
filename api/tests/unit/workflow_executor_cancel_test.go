@@ -5,9 +5,9 @@ import (
 	"sync"
 	"testing"
 
-	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
+	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
+	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -27,7 +27,7 @@ func (r *cancelableRunRepo) cancel() {
 	r.mu.Unlock()
 }
 
-func (r *cancelableRunRepo) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*workflow.Run, error) {
+func (r *cancelableRunRepo) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*automation.Run, error) {
 	run, err := r.wfExecMockRunRepo.GetByID(ctx, id)
 	if err != nil || run.TenantID != tenantID {
 		return nil, shared.ErrNotFound
@@ -36,17 +36,17 @@ func (r *cancelableRunRepo) GetByTenantAndID(ctx context.Context, tenantID, id s
 	defer r.mu.Unlock()
 	cp := *run
 	if r.canceled {
-		cp.Status = workflow.RunStatusCanceled
+		cp.Status = automation.RunStatusCanceled
 	}
 	return &cp, nil
 }
 
-func (r *cancelableRunRepo) Update(ctx context.Context, run *workflow.Run) error {
+func (r *cancelableRunRepo) Update(ctx context.Context, run *automation.Run) error {
 	r.mu.Lock()
 	if r.canceled {
 		r.refused++
 		r.mu.Unlock()
-		return workflow.ErrRunAlreadyFinished
+		return automation.ErrRunAlreadyFinished
 	}
 	r.mu.Unlock()
 	return r.wfExecMockRunRepo.Update(ctx, run)
@@ -58,7 +58,7 @@ type cancelingHandler struct {
 	repo *cancelableRunRepo
 }
 
-func (h *cancelingHandler) Execute(ctx context.Context, input *workflowsvc.ActionInput) (map[string]any, error) {
+func (h *cancelingHandler) Execute(ctx context.Context, input *automationsvc.ActionInput) (map[string]any, error) {
 	out, err := h.wfExecMockActionHandler.Execute(ctx, input)
 	h.repo.cancel()
 	return out, err
@@ -71,10 +71,10 @@ func TestWfExec_CanceledRunStartsNoFurtherStep(t *testing.T) {
 	workflowRepo := newWfExecMockWorkflowRepo()
 	runRepo := &cancelableRunRepo{wfExecMockRunRepo: newWfExecMockRunRepo()}
 	nodeRunRepo := newWfExecMockNodeRunRepo()
-	executor := workflowsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, logger.NewNop(),
-		workflowsvc.WithExecutorStepAuthorizer(wfExecAllowAll{}))
+	executor := automationsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, logger.NewNop(),
+		automationsvc.WithExecutorStepAuthorizer(wfExecAllowAll{}))
 	handler := &cancelingHandler{repo: runRepo}
-	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
+	executor.RegisterActionHandler(automation.ActionTypeAddTags, handler)
 
 	wf := wfExecBuildLinearWorkflow(tenantID)
 	_ = workflowRepo.Create(context.Background(), wf)
