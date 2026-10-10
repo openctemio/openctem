@@ -660,6 +660,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Integration admins read private program events scrubbed unless they
 	// own the tenant or are a member of the program (RFC-065 §15.4).
 	handlers.Outbox.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
+	handlers.Integration.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
 	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)

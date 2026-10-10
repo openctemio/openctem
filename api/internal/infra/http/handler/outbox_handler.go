@@ -12,7 +12,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -25,23 +24,8 @@ type OutboxHandler struct {
 	repo   outbox.OutboxRepository
 	logger *logger.Logger
 
-	// Private program names (RFC-065 §15.4): integration admins who are
-	// neither an owner nor a member of a private program read its events
-	// with the program scrubbed. Nil shows entries unchanged.
-	delivery bp.DeliveryResolver
-	readable ProgramReader
-}
-
-// ProgramReader returns which private programs the caller may read the
-// names of (bountyprogram.Service.ReadablePrograms).
-type ProgramReader interface {
-	ReadablePrograms(ctx context.Context, tenantID, actor shared.ID, ids []shared.ID) (map[shared.ID]bool, error)
-}
-
-// SetProgramScrub wires the private program resolver and reader. Both or
-// neither: an outbox handler without them shows entries unchanged.
-func (h *OutboxHandler) SetProgramScrub(d bp.DeliveryResolver, r ProgramReader) {
-	h.delivery, h.readable = d, r
+	// Private program names (RFC-065 §15.4): see programScrubber.
+	programScrubber
 }
 
 // scrubPrograms removes, from the title, body and metadata of each entry,
@@ -49,27 +33,12 @@ func (h *OutboxHandler) SetProgramScrub(d bp.DeliveryResolver, r ProgramReader) 
 // that the caller is neither an owner nor a member of. An unknown decision
 // is an error: the caller answers 500 rather than show the entry.
 func (h *OutboxHandler) scrubPrograms(ctx context.Context, tenantID shared.ID, entries []*outbox.Outbox, items []OutboxEntryResponse) error {
-	if h.delivery == nil || h.readable == nil {
-		return nil
-	}
-	actor, _ := shared.IDFromString(middleware.GetUserID(ctx))
 	for i, e := range entries {
-		d, err := h.delivery.Resolve(ctx, tenantID, outboxapp.DeliverySubject(e.AggregateType(), e.AggregateID(), e.Metadata()))
+		d, allowed, ok, err := h.unreadable(ctx, tenantID, outboxapp.DeliverySubject(e.AggregateType(), e.AggregateID(), e.Metadata()))
 		if err != nil {
 			return err
 		}
-		if len(d.Programs) == 0 {
-			continue
-		}
-		ids := make([]shared.ID, 0, len(d.Programs))
-		for _, p := range d.Programs {
-			ids = append(ids, p.ID)
-		}
-		allowed, err := h.readable.ReadablePrograms(ctx, tenantID, actor, ids)
-		if err != nil {
-			return err
-		}
-		if len(allowed) == len(ids) {
+		if !ok {
 			continue
 		}
 		items[i].Title = d.ScrubFor(allowed, items[i].Title)
@@ -80,41 +49,6 @@ func (h *OutboxHandler) scrubPrograms(ctx context.Context, tenantID shared.ID, e
 		}
 	}
 	return nil
-}
-
-// scrubValue returns a copy of a decoded JSON value with every string
-// scrubbed (the stored metadata is never modified).
-func scrubValue(d bp.Delivery, allowed map[shared.ID]bool, v any) any {
-	switch t := v.(type) {
-	case string:
-		return d.ScrubFor(allowed, t)
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, x := range t {
-			out[k] = scrubValue(d, allowed, x)
-		}
-		return out
-	case []map[string]any:
-		out := make([]any, 0, len(t))
-		for _, x := range t {
-			out = append(out, scrubValue(d, allowed, x))
-		}
-		return out
-	case []any:
-		out := make([]any, 0, len(t))
-		for _, x := range t {
-			out = append(out, scrubValue(d, allowed, x))
-		}
-		return out
-	case []string:
-		out := make([]any, 0, len(t))
-		for _, x := range t {
-			out = append(out, d.ScrubFor(allowed, x))
-		}
-		return out
-	default:
-		return v
-	}
 }
 
 // NewOutboxHandler creates a new OutboxHandler.
