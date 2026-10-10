@@ -32,6 +32,7 @@ const (
 	SectionEASM           = "easm"
 	SectionScope          = "scope"
 	SectionMCP            = "mcp"
+	SectionVulnMatching   = "vuln_matching"
 	// SectionAssetReconciliation is RFC-069.
 	SectionAssetReconciliation = "asset_reconciliation"
 )
@@ -56,6 +57,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionScope:               &s.Scope,
 		SectionMCP:                 &s.MCP,
 		SectionAssetReconciliation: &s.AssetReconciliation,
+		SectionVulnMatching:        &s.VulnMatching,
 	}
 }
 

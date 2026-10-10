@@ -109,6 +109,57 @@ and keeps widening as pending terms: nothing new authorizes until a member
 accepts the pending terms hash (`/pending/apply`, step-up, audited). Every
 sync write goes through the job signer's ledger hook (`CommitEntries`).
 
+## Private programs
+
+A program is `private` (default for new programs) or `public` (RFC-065 §15).
+`/programs/new` starts from a source: entered by hand or imported from a file
+(the platform's CSV export, a Burp Suite target scope, any CSV with a column
+mapping); no link or credential is needed. A Burp host expression becomes an
+entry only when it names exactly one host or one name's subdomains.
+
+```
+caller ──► canSee (access.go)
+             public : full-data caller or program member
+             private: owner or program member          (else 404, like another tenant)
+        ──► attested? (bounty_program_attestations.terms_sha256 == program.terms_sha256)
+             no : locked view (name, platform, terms text) ; details 409 PROGRAM_ATTESTATION_REQUIRED
+             yes: details ; every view of a private program audited (bounty_program.viewed)
+scope views (GET /scope/targets[/{id}]) leave out private program entries the caller may not see
+```
+
+A change of terms locks the program again for everyone until they accept the
+new hash (`POST /programs/{id}/attest`).
+
+## Public program monitor
+
+Public programs come from a signed feed (`openctemio/programfeed`, built like
+the vulnerability feed of RFC-066 §5.5). The platform never calls the
+bug-bounty platforms.
+
+```
+PROGRAMFEED_DIR ──► programfeed.VerifyDir (pinned root, key-set version ≥ last,
+                     sequence > applied, not expired, size + SHA-256 per file)
+                 ──► ReadPrograms (RecordParser v1, every record validated)
+                 ──► public_programs + program_feed_state (one transaction)
+                 ──► reconcile: subscribed programs whose terms differ
+                        narrowing only  → applied at once, still in effect
+                        widening / rules / terms / pending → entries inactive,
+                                          pending_attestation, admins notified
+                        closed / removed → suspended
+POST /programs/subscriptions ──► tenant program (public_feed), entries inactive
+POST /programs/{id}/reactivate (step-up, terms hash) ──► entries in effect (CommitEntries)
+```
+
+Before acceptance only passive work runs: the active-probe gate finds no
+active entry.
+
+A second stream reads the operator's own unsigned local bundle
+(`PROGRAMFEED_LOCAL_BUNDLE_DIR`, `programfeed.VerifyLocalDir`) only while a
+platform administrator has it enabled (admin console, step-up, audited).
+Its programs are local-only: every target is a suggestion until confirmed;
+the signed stream's record wins on the same id. Program assets will carry provenance and system tags and be
+left out of the organization's own metrics by default (RFC-065 §16.5).
+
 ## Evidence
 
 Every scan run links to a scope snapshot: the entry that covered each of its
@@ -134,3 +185,11 @@ the run and hold `scope:read` or `programs:read`.
 | `pkg/domain/scope/letter.go`, `internal/app/scope/letters.go` | letters of authorization |
 | `pkg/domain/bountyprogram/sync.go`, `internal/app/bountyprogram/sync.go`, `internal/infra/bountysource/` | scope sync |
 | `migrations/001549_authorization_letters.*`, `migrations/001610_bounty_program_sync.*` | letters, sync state |
+| `pkg/domain/bountyprogram/scope_file.go` | scope files: platform CSV, Burp scope JSON, CSV with a column mapping |
+| `internal/app/bountyprogram/access.go` | visibility, per-person attestation, hidden program entries |
+| `migrations/001700_private_programs.*` | visibility, terms text, optional link, attestations |
+| `pkg/feedsign/` | shared verification of signed feed bundles (DSSE, root, key set) |
+| `pkg/programfeed/` | program feed bundle: verify, read records (`V1` parser) |
+| `internal/app/programfeed/`, `internal/infra/controller/program_feed.go` | importer and reconcile |
+| `internal/app/bountyprogram/subscription.go`, `internal/infra/postgres/public_program_repository.go` | subscriptions, catalog |
+| `migrations/001736_public_program_feed.*` | catalog, feed state, subscriptions |

@@ -452,6 +452,8 @@ type ListTargetsInput struct {
 	Search      string   `validate:"max=255"`
 	Page        int      `validate:"min=0"`
 	PerPage     int      `validate:"min=0,max=100"`
+	// ExcludeProgramIDs: entries of these programs are not listed.
+	ExcludeProgramIDs []string
 }
 
 // ListTargets retrieves scope targets with filtering and pagination.
@@ -487,6 +489,7 @@ func (s *Service) ListTargets(ctx context.Context, input ListTargetsInput) (pagi
 	if input.Search != "" {
 		filter.Search = &input.Search
 	}
+	filter.ExcludeProgramIDs = input.ExcludeProgramIDs
 
 	page := pagination.New(input.Page, input.PerPage)
 	return s.targetRepo.List(ctx, filter, page)
