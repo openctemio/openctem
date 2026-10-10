@@ -8,6 +8,7 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -27,6 +28,7 @@ interface GroupSourceProps {
 }
 
 export function GroupSource({ selected, onToggle }: GroupSourceProps) {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const debounced = useDebounce(search, 300)
   const { data, total, isLoading } = useAssetGroups({
@@ -47,8 +49,8 @@ export function GroupSource({ selected, onToggle }: GroupSourceProps) {
           aria-hidden
         />
         <Input
-          placeholder="Search asset groups..."
-          aria-label="Search asset groups"
+          placeholder={t('scans.groups.searchPlaceholder')}
+          aria-label={t('scans.groups.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="ps-10"
@@ -57,7 +59,7 @@ export function GroupSource({ selected, onToggle }: GroupSourceProps) {
       <div
         className="max-h-72 overflow-y-auto rounded-md border"
         role="group"
-        aria-label="Asset groups"
+        aria-label={t('scans.groups.list')}
       >
         {isLoading ? (
           <div className="space-y-2 p-2">
@@ -67,7 +69,9 @@ export function GroupSource({ selected, onToggle }: GroupSourceProps) {
           </div>
         ) : groups.length === 0 ? (
           <p className="text-muted-foreground p-4 text-center text-sm">
-            {debounced ? `No asset groups match "${debounced}"` : 'No asset groups yet.'}
+            {debounced
+              ? t('scans.groups.noMatch', undefined, { query: debounced })
+              : t('scans.groups.none')}
           </p>
         ) : (
           <ul className="divide-y">
@@ -90,8 +94,13 @@ export function GroupSource({ selected, onToggle }: GroupSourceProps) {
                       {g.name}
                     </span>
                     <Badge variant="outline" className="shrink-0 text-xs">
-                      {(g.assetCount ?? 0).toLocaleString()}{' '}
-                      {g.assetCount === 1 ? 'asset' : 'assets'}
+                      {t(
+                        g.assetCount === 1 ? 'scans.groups.assetsOne' : 'scans.groups.assetsMany',
+                        undefined,
+                        {
+                          count: (g.assetCount ?? 0).toLocaleString(),
+                        }
+                      )}
                     </Badge>
                   </label>
                 </li>
@@ -102,9 +111,9 @@ export function GroupSource({ selected, onToggle }: GroupSourceProps) {
       </div>
       <p className="text-muted-foreground text-xs">
         {total > groups.length
-          ? `Showing ${groups.length} of ${total} groups: search to find the others. `
+          ? `${t('scans.groups.showing', undefined, { shown: groups.length, total })} `
           : ''}
-        A group&apos;s members are resolved when the scan runs.
+        {t('scans.groups.resolvedAtRun')}
       </p>
     </div>
   )

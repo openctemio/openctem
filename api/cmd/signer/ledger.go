@@ -94,7 +94,8 @@ func ledgerImport(dir string, args []string, out io.Writer) error {
 	return nil
 }
 
-// ledgerConfig reads SIGNER_LEDGER and SIGNER_LEDGER_MIN_APPROVALS.
+// ledgerConfig reads SIGNER_LEDGER, SIGNER_LEDGER_MIN_APPROVALS and
+// SIGNER_LEDGER_T2_MIN_APPROVALS.
 func ledgerConfig(cfg *signer.Config) error {
 	mode, err := signer.ParseLedgerMode(os.Getenv("SIGNER_LEDGER"))
 	if err != nil {
@@ -107,6 +108,14 @@ func ledgerConfig(cfg *signer.Config) error {
 			cfg.LedgerMinApprovals = int(v[0] - '0')
 		default:
 			return errors.New("SIGNER_LEDGER_MIN_APPROVALS must be 0, 1 or 2")
+		}
+	}
+	if v := os.Getenv("SIGNER_LEDGER_T2_MIN_APPROVALS"); v != "" {
+		switch v {
+		case "0", "1", "2":
+			cfg.LedgerT2MinApprovals = int(v[0] - '0')
+		default:
+			return errors.New("SIGNER_LEDGER_T2_MIN_APPROVALS must be 0, 1 or 2")
 		}
 	}
 	return nil

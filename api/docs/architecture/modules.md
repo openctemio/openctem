@@ -3,9 +3,40 @@
 A module is a feature an organization can have on or off: pentest,
 compliance, EASM (`attack_surface`), automations (`workflows`), and so on.
 Design and roadmap: [RFC-064](../rfcs/RFC-064-modules-entitlements-preferences.md).
-Code: `pkg/domain/module` (catalog, core set, presets, dependency graph),
-`internal/app/module` (state, toggles, bundles),
-`internal/infra/http/middleware/module_gate.go` (gate).
+Code: `configs/modules.yaml` (the registry: every module, its dependencies
+and the routes, MCP tools and jobs it owns), `pkg/domain/module` (generated
+catalog, presets, toggle rules), `internal/app/module` (state, toggles,
+bundles), `internal/infra/http/middleware/module_gate.go` (gate).
+
+## The registry
+
+`configs/modules.yaml` is the one declaration. `make generate-modules`
+(`go run ./cmd/gen-modules`) writes:
+
+- `pkg/domain/module/registry_generated.go`: the `Module*` constants and
+  `Registry`; `CoreModuleIDs`, `UserFacingModuleIDs`,
+  `ModulePermissionMapping` and `ModuleDependencies` are derived from it;
+- `web/src/config/modules.generated.ts`: the ids, core set and release status
+  the console uses.
+
+`make modules-sql` prints the block that writes the `modules` rows (insert or
+update every declared module, retire any other row). A migration carries it;
+`make modules-check` (CI: Module Registry Drift) fails when either generated
+file or the newest migration block differs from the YAML.
+
+Coverage tests read the registry:
+
+- `TestEveryRouteFollowsTheModuleRegistry`: every route under a module's
+  `routes` prefix is gated by `RequireModule` for that module, every
+  `RequireModule` gate of a non-core module is declared, and every declared
+  prefix matches a route. The gate is read from the route source, through
+  gate parameters to the call site.
+- `TestMCP_EveryToolAndPromptFollowsTheRegistry`: every MCP tool and prompt
+  is listed under one module and carries that module.
+- `TestEveryJobBelongsToAModule`: every controller the server builds is listed
+  under one module.
+- The web test `module-registry.test.ts`: every module id the console names
+  (route map, sidebar, settings rail, embedded checks) exists.
 
 ## Rules
 
@@ -48,8 +79,8 @@ RFC-064 M3.
 | Surface | How |
 |---|---|
 | REST | `ModuleGate.RequireModule(id)` on the route group. Answers `403 MODULE_NOT_ENABLED`. Cached 60s per organization and dropped on every replica at once by the Redis bus `modules:changed`. |
-| MCP | Each tool and prompt names the module of its REST route (`Module`). When that module is off, the tool is not listed and a call is refused. `TestMCP_EveryToolAndPromptIsClassified` fails on an unclassified tool. |
-| Background jobs | `ModuleGuard` (`TenantDisabledModules`) in the report scheduler, certificate monitor, EASM DNS checks, graph enrichment, threat-model refresh, control-test scheduler and remediation progress. |
+| MCP | Each tool and prompt names the module of its REST route (`Module`), as the registry lists it. When that module is off, the tool is not listed and a call is refused. |
+| Background jobs | `ModuleGuard` (`TenantDisabledModules`) in the report scheduler, certificate monitor, EASM DNS checks, graph enrichment, scope join re-evaluation, threat-model refresh, control-test scheduler and remediation progress. |
 | Automations | `WorkflowEventDispatcher` starts nothing for an organization with `workflows` off. |
 | AI triage | Routes gated on `ai_triage`; auto-triage does not start when it is off. |
 | Ingest | Suppression rules apply only with `suppressions` on. |
@@ -62,12 +93,12 @@ Deliberately not gated:
 
 ## Adding a module
 
-1. Add the constant and its read permission in `pkg/domain/module/module.go`.
-   If it depends on another module, add the edge in `dependency.go`.
-2. Seed the `modules` row in a migration. The catalog parity tests fail
-   otherwise.
-3. Gate every surface it owns: the route group, the MCP tools, the jobs and
-   the automation triggers. Gate the console route, the sidebar entry and
-   every panel that other pages embed.
-4. File its permissions under it (`permissions.module_id`).
+1. Add it to `configs/modules.yaml` (id, const, presentation, read
+   permission, dependencies with a reason), run `make generate-modules`, and
+   add a migration whose body is `make modules-sql`.
+2. Gate every surface it owns and list it in the registry: the route groups
+   (`routes`), the MCP tools (`mcp`), the jobs (`jobs`); give its jobs and
+   automation triggers a module guard. Gate the console route, the sidebar
+   entry and every panel that other pages embed.
+3. File its permissions under it (`permissions.module_id`).
    `TestModuleCatalog_EveryPermissionHasALiveModule` fails otherwise.

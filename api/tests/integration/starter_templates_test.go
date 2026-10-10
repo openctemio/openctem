@@ -29,6 +29,8 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 		"a0000002-0000-0000-0000-000000000003": 3, // Web app
 		"a0000002-0000-0000-0000-000000000004": 3, // Network
 		"a0000002-0000-0000-0000-000000000005": 4, // Code / CI
+		"a0000002-0000-0000-0000-000000000006": 2, // Passive discovery
+		"a0000002-0000-0000-0000-000000000007": 2, // Probe new assets
 	}
 	for idStr, steps := range want {
 		id, _ := shared.IDFromString(idStr)
@@ -54,6 +56,21 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 			if got.Capability() != st.Capabilities[0]+"@1" {
 				t.Fatalf("%s/%s: resolved %s for %s", tpl.Name, st.StepKey, got.Capability(), st.Capabilities[0])
 			}
+		}
+	}
+
+	// Passive discovery sends nothing to the target hosts: every step is a
+	// T0 stage whose tools reach only third-party sources or recursive
+	// resolvers (RFC-071).
+	passiveID, _ := shared.IDFromString("a0000002-0000-0000-0000-000000000006")
+	passive, err := templates.GetWithSteps(ctx, passiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range passive.Steps {
+		sg, err := stage.ForCapabilities(st.Capabilities)
+		if err != nil || !sg.Tier.Passive() {
+			t.Fatalf("Passive discovery/%s: stage %v (%v) is not passive", st.StepKey, sg.Key, err)
 		}
 	}
 
