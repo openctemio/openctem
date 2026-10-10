@@ -41,6 +41,8 @@ func scanDispatchGate(sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
 		Tier:     int(tier),
 		Passive:  tier <= scopedom.TierPassive || IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
 		ActScope: true,
+		// The claim refuses the job above the scan's intensity (RFC-071).
+		Intensity: string(sc.EffectiveIntensity()),
 	}
 	recorded, _ := run.Context[RunContextKeyActor].(string)
 	actor := userIDPtr(recorded)
