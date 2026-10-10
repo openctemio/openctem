@@ -124,6 +124,15 @@ export interface ProgramItem {
   note?: string
   /** Feed programs: published, published_by_platform or inferred. */
   confidence?: 'published' | 'published_by_platform' | 'inferred'
+  /** Port limit of the entry an in-scope target becomes ("8443", "80,443"). */
+  ports?: string
+  protocol?: 'tcp' | 'udp'
+  /** What the program says about the target; shown, never used to authorize. */
+  eligible_for_bounty?: boolean
+  max_severity?: 'none' | 'low' | 'medium' | 'high' | 'critical'
+  environment?: 'production' | 'staging' | 'other'
+  instructions?: string
+  requires?: string
 }
 
 export type PlannedEntryStatus = 'create' | 'keep' | 'already_covered' | 'refused'
@@ -131,6 +140,7 @@ export type PlannedEntryStatus = 'create' | 'keep' | 'already_covered' | 'refuse
 export interface PlannedEntry {
   target_type: string
   pattern: string
+  constraint?: { ports?: string; protocol?: string }
   status: PlannedEntryStatus
   code?: string
   source?: string
@@ -180,6 +190,8 @@ export interface ProgramEntry {
   status: string
   in_effect: boolean
   max_tier: string
+  ports?: string
+  protocol?: string
 }
 
 export interface ProgramDetail extends Program {

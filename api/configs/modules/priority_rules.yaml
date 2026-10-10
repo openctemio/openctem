@@ -1,0 +1,15 @@
+- id: priority_rules
+  const: ModulePriorityRules
+  slug: "priority-rules"
+  name: Priority Rules
+  description: Declarative priority classification rules (P0..P3)
+  icon: Sliders
+  category: prioritization
+  order: 24
+  user_facing: true
+  permission: "findings:read"
+  depends:
+    - {id: findings, kind: hard, reason: "rules classify findings"}
+    - {id: threat_intel, kind: soft, reason: "rule conditions often reference KEV/EPSS"}
+  routes:
+    - "/api/v1/priority-rules"

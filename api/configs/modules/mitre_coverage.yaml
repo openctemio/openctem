@@ -1,0 +1,13 @@
+- id: mitre_coverage
+  const: ModuleMITRECoverage
+  slug: "mitre-coverage"
+  name: MITRE Coverage
+  description: "MITRE ATT&CK technique coverage across detections + controls"
+  icon: Shield
+  category: insights
+  order: 54
+  user_facing: true
+  permission: "threat_intel:read"
+  depends:
+    - {id: threat_intel, kind: hard, reason: "coverage maps detections to MITRE techniques"}
+    - {id: compensating_controls, kind: soft, reason: "control coverage appears on the heatmap"}

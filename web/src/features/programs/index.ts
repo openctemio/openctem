@@ -7,6 +7,8 @@ export { ProgramPendingTerms } from './components/program-pending'
 export { ProgramLocked } from './components/program-locked'
 export { ProgramNotifications } from './components/program-notifications'
 export { ProgramSuggestions } from './components/program-suggestions'
+export { ProgramTargetsTable } from './components/program-targets'
+export { itemLimit, portLimit } from './lib/program-targets'
 export { ProgramChoice, type ChoiceOption } from './components/program-choice'
 export {
   ProgramPreviewView,
