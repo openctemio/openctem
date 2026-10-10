@@ -9,6 +9,9 @@
 -- for the same reason. The organization's own choice lives in
 -- tenants.settings -> scan_governance (no schema change).
 
+-- expand-contract-ok: one-step rename of a platform-admin setting; an old pod
+-- that still reads scope_approval_policy during the rollout fails closed
+-- (required approvals) until it is replaced.
 ALTER TABLE tenants DROP CONSTRAINT IF EXISTS chk_tenants_scope_approval_policy;
 ALTER TABLE tenants RENAME COLUMN scope_approval_policy TO scan_approval_policy;
 UPDATE tenants SET scan_approval_policy = CASE scan_approval_policy WHEN 'disabled' THEN 'off' ELSE NULL END
