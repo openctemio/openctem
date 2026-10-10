@@ -235,7 +235,8 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "components belong to assets (repos, images, runtimes)"},
 		},
-		Routes: []string{"/api/v1/components", "/api/v1/assets/{}/components", "/api/v1/assets/{}/dependency-paths", "/api/v1/assets/{}/dependency-graph"},
+		Routes: []string{"/api/v1/components", "/api/v1/assets/{}/components", "/api/v1/assets/{}/dependency-paths", "/api/v1/assets/{}/dependency-graph", "/api/v1/vex-statements"},
+		Jobs:   []string{"VEXStatementExpiryController"},
 	},
 	{
 		ID: ModuleTemplateSources, Slug: "template-sources", Name: "Template Sources",

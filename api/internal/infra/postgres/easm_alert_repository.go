@@ -61,6 +61,9 @@ type easmAlertRow struct {
 	id, eventType, severity, title, source, fingerprint string
 	assetID, assetName                                  string
 	exp                                                 easmalert.Exposure
+	// restricted: the asset is listed only by private programs, so the
+	// exposure may reach only the programs' own channels (orgRestrictedAssetSQL).
+	restricted bool
 }
 
 // EnqueueInTx announces the tenant's exposures with the given ids (rows the
@@ -77,14 +80,28 @@ func (a *EASMAlerter) EnqueueInTx(ctx context.Context, tx *sql.Tx, tenantID shar
 	if err != nil {
 		return err
 	}
-	var immediate, digest []easmAlertRow
+	var immediate, digest, restricted []easmAlertRow
 	for _, r := range rows {
-		switch easmalert.Classify(r.exp) {
+		cls := easmalert.Classify(r.exp)
+		if r.restricted && cls != easmalert.Skip {
+			// Never folded into the organization-wide digest (its counts
+			// would reveal the private program's assets). It goes out on
+			// its own, outside the hourly budget, and the outbox delivers it
+			// only to the program's channels.
+			restricted = append(restricted, r)
+			continue
+		}
+		switch cls {
 		case easmalert.Immediate:
 			immediate = append(immediate, r)
 		case easmalert.Digest:
 			digest = append(digest, r)
 		case easmalert.Skip:
+		}
+	}
+	for _, r := range restricted {
+		if err := a.enqueueImmediate(ctx, tx, tenantID, r, reason); err != nil {
+			return err
 		}
 	}
 	if len(immediate) == 0 && len(digest) == 0 {
@@ -126,7 +143,8 @@ func (a *EASMAlerter) load(ctx context.Context, tx *sql.Tx, tenantID shared.ID, 
 	q, err := tx.QueryContext(ctx, `
 		SELECT e.id, e.event_type, e.severity, e.title, COALESCE(e.source, ''), e.fingerprint,
 		       COALESCE(e.asset_id::text, ''), COALESCE(a.name, ''),
-		       (a.id IS NOT NULL AND a.deleted_at IS NOT NULL), COALESCE(aa.state, '')
+		       (a.id IS NOT NULL AND a.deleted_at IS NOT NULL), COALESCE(aa.state, ''),
+		       EXISTS (SELECT 1 FROM assets ra WHERE ra.tenant_id = e.tenant_id AND ra.id = e.asset_id AND `+orgRestrictedAssetSQL+`)
 		FROM exposure_events e
 		LEFT JOIN assets a ON a.id = e.asset_id AND a.tenant_id = e.tenant_id
 		LEFT JOIN asset_attributions aa ON aa.asset_id = e.asset_id AND aa.tenant_id = e.tenant_id
@@ -141,7 +159,7 @@ func (a *EASMAlerter) load(ctx context.Context, tx *sql.Tx, tenantID shared.ID, 
 		var deleted bool
 		var state string
 		if err := q.Scan(&r.id, &r.eventType, &r.severity, &r.title, &r.source, &r.fingerprint,
-			&r.assetID, &r.assetName, &deleted, &state); err != nil {
+			&r.assetID, &r.assetName, &deleted, &state, &r.restricted); err != nil {
 			return nil, fmt.Errorf("scan exposure to alert: %w", err)
 		}
 		r.exp = easmalert.Exposure{Severity: r.severity, HasAsset: r.assetID != "", AssetDeleted: deleted, Attribution: state}
