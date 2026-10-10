@@ -39,15 +39,25 @@ export async function checkScope(
   targets: string[],
   opts: Omit<CheckScopeInput, 'targets'> = {}
 ): Promise<ApiScopeCheckResult[]> {
+  return (await checkScopeAt(targets, opts)).results
+}
+
+/** The results, and the probe tier the server checked them at. */
+export async function checkScopeAt(
+  targets: string[],
+  opts: Omit<CheckScopeInput, 'targets'> = {}
+): Promise<{ results: ApiScopeCheckResult[]; tier?: number }> {
   const results: ApiScopeCheckResult[] = []
+  let tier: number | undefined
   for (let i = 0; i < targets.length; i += SCOPE_CHECK_BATCH) {
     const res = await post<ApiCheckScopeResponse>('/api/v1/scope/check', {
       ...opts,
       targets: targets.slice(i, i + SCOPE_CHECK_BATCH),
     })
     results.push(...(res?.results ?? []))
+    tier ??= res?.tier
   }
-  return results
+  return { results, tier }
 }
 
 export interface UseScopeCheckOptions extends Omit<CheckScopeInput, 'targets'> {
@@ -77,11 +87,17 @@ export function useScopeCheck(targets: readonly string[], opts: UseScopeCheckOpt
           ...list,
         ]
       : null
-  const { data, error, isLoading, mutate } = useSWR<ApiScopeCheckResult[]>(
-    key,
-    () => checkScope(list, { sensor_preference, tier, scanner_name }),
-    { revalidateOnFocus: false, keepPreviousData: true, shouldRetryOnError: false }
-  )
+  const {
+    data: answer,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR(key, () => checkScopeAt(list, { sensor_preference, tier, scanner_name }), {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+    shouldRetryOnError: false,
+  })
+  const data = answer?.results
   // Stable between renders while the answer is unchanged, so tables can put
   // `resultFor` in their column memo.
   const resultFor = useMemo(() => {
@@ -94,6 +110,8 @@ export function useScopeCheck(targets: readonly string[], opts: UseScopeCheckOpt
   return {
     available,
     results: data,
+    /** The probe tier the server checked at (0 passive, 1 safe active, 2 intrusive). */
+    tier: answer?.tier,
     /** The result for a target (case-insensitive), if checked. */
     resultFor,
     error,

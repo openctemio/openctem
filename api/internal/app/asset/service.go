@@ -97,6 +97,7 @@ type AssetService struct {
 	// Attribute reconciliation (RFC-069). Optional: nil records no source.
 	attrSources assetdom.AttributeSourceRepository
 	attrTenants ReconciliationSettingsReader
+	changes     assetdom.ChangeEventRepository
 }
 
 // UserMatcher resolves external references (email, username) to user IDs.

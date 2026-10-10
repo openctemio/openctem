@@ -467,7 +467,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Who this report is for attribute reconciliation (RFC-069), and when
 	// its source saw what it reports.
 	sourceKind, sourceName := reportSource(binding, opts, report)
+	clampReportTimestamp(report, binding, time.Now())
 	observedAt := reportObservedAt(report, time.Now())
+	sourceRun := binding.Run()
+	if binding.Kind == BindingTrusted {
+		sourceRun = opts.SourceRun
+	}
 	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind)
 
 	// Step 1: Process assets using batch operations
@@ -497,7 +502,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// The tracked values this report states (RFC-069), before findings are
 	// prioritized on the assets' criticality and exposure.
-	s.recordAttributes(ctx, tenantID, scope, sourceKind, sourceName, observedAt, report, assetMap)
+	s.recordAttributes(ctx, tenantID, scope, attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}, observedAt, report, assetMap)
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
