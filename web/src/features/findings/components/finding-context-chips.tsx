@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { Box, Boxes, FileCode, Layers, Radar, ShieldAlert, Tag, UserRound } from 'lucide-react'
 import { ContextFilterChips, type ContextFilterChip } from '@/features/shared'
 import { useAsset } from '@/features/assets/hooks/use-assets'
-import { useComponent } from '@/lib/api/security-hooks'
+import { useComponentVersion } from '@/features/components/api/hooks'
 
 /**
  * The Findings list's context filters (asset, scan run, CVE, rule, and the
@@ -72,7 +72,7 @@ export function FindingContextChips({
 }: FindingContextChipsProps) {
   const validAssetId = assetId && UUID_RE.test(assetId) ? assetId : null
   const validComponentId = componentId && UUID_RE.test(componentId) ? componentId : null
-  const { data: component, isLoading: componentLoading } = useComponent(validComponentId)
+  const { data: component, isLoading: componentLoading } = useComponentVersion(validComponentId)
   const componentName = (() => {
     const c = component as { name?: string; version?: string } | undefined
     const name = c?.name?.trim()
