@@ -8,4 +8,4 @@
   Console > Organizations > Plan > Modules lists it as "Read-only" with the end date.
 - Getting the module back ends the grace; after 30 days it is off (`not_entitled`). Data is
   never deleted.
-- Migration 001782 adds `tenant_module_grace`.
+- Migration 001872 adds `tenant_module_grace`.
