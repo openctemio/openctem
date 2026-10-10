@@ -2166,6 +2166,48 @@ func (s *TenantService) UpdateRetestSettings(
 	return &out, nil
 }
 
+// GetVulnMatchingSettings returns the organization's vulnerability matching
+// policy (RFC-066 §9).
+func (s *TenantService) GetVulnMatchingSettings(ctx context.Context, tenantID string) (*tenantdom.VulnMatchingSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	vm := t.TypedSettings().VulnMatching
+	return &vm, nil
+}
+
+// UpdateVulnMatchingSettings replaces the organization's vulnerability
+// matching policy and audits the before/after values.
+func (s *TenantService) UpdateVulnMatchingSettings(
+	ctx context.Context,
+	tenantID string,
+	vm tenantdom.VulnMatchingSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.VulnMatchingSettings, error) {
+	var before tenantdom.VulnMatchingSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionVulnMatching, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().VulnMatching
+		return t.UpdateVulnMatchingSettings(vm)
+	})
+	if err != nil {
+		return nil, err
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantVulnMatchingUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().VulnMatching)).
+		WithMessage("Vulnerability matching settings updated").
+		WithMetadata("enabled_before", before.Enabled).
+		WithMetadata("enabled_after", vm.Enabled)
+	s.logAudit(ctx, actx, event)
+	out := t.TypedSettings().VulnMatching
+	return &out, nil
+}
+
 // GetEvidenceSettings returns the tenant's finding-evidence settings. The
 // zero value means the defaults.
 func (s *TenantService) GetEvidenceSettings(ctx context.Context, tenantID string) (*tenantdom.EvidenceSettings, error) {

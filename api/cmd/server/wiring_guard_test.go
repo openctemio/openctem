@@ -297,10 +297,6 @@ var optionalServiceSetters = map[string]string{
 	// until it is, every plan may trust another organization.
 	"OrgTrust.SetSSOEntitlement": "plan entitlements not built yet (trusts allowed on every plan)",
 
-	// The vulnerability matcher (RFC-066 P0, next PR) is the consumer; until
-	// it lands, a software change has nobody to tell.
-	"Ingest.SetSoftwareChangeSink": "consumer (vulnerability matcher, RFC-066) not built yet",
-
 	// Business operations named Set*, not collaborator seams.
 	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
 	"PermVersion.Set":                   "cache operation, not a seam",

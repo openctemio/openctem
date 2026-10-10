@@ -2383,6 +2383,71 @@ func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(rs)
 }
 
+// GetVulnMatchingSettings handles GET /api/v1/organization/settings/vuln-matching.
+// @Summary      Get vulnerability matching settings
+// @Description  The organization's policy for findings created by matching its software inventory against published CVEs (RFC-066). Zero min_confidence and empty min_severity mean the defaults (65, high).
+// @Tags         Tenants
+// @Produce      json
+// @Success      200     {object}  tenant.VulnMatchingSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/vuln-matching [get]
+func (h *TenantHandler) GetVulnMatchingSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	vm, err := h.service.GetVulnMatchingSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionVulnMatching)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(vm)
+}
+
+// UpdateVulnMatchingSettings handles PUT /api/v1/organization/settings/vuln-matching.
+// @Summary      Update vulnerability matching settings
+// @Description  Turns vulnerability matching on or off and sets which matches become findings: minimum confidence (0-100), minimum severity (critical, high, medium, low; KEV or EPSS >= 0.1 always pass), distribution builds, internet-facing assets only, muted products (at most 100). Audited.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body    body      tenant.VulnMatchingSettings  true  "Vulnerability matching settings"
+// @Success      200     {object}  tenant.VulnMatchingSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/vuln-matching [put]
+func (h *TenantHandler) UpdateVulnMatchingSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req tenant.VulnMatchingSettings
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+	vm, err := h.service.UpdateVulnMatchingSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionVulnMatching)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(vm)
+}
+
 // GetEvidenceSettings handles GET /api/v1/organization/settings/evidence.
 // @Summary      Get finding-evidence settings
 // @Description  How long the encrypted secret values masked out of finding evidence are kept (secret_retention_days, default 30). After that the evidence stays readable but its masked values can no longer be revealed.
