@@ -19,7 +19,9 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, Clock, Loader2, Play } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Loader2, Play, ShieldCheck } from 'lucide-react'
+import { submitScanApproval, useScanApprovalPreview } from '@/lib/api/scan-approval-hooks'
+import { ApprovalRequirement, missingEvidence } from '../approval/approval-requirement'
 import { toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
 import { ReviewStep } from './review-step'
 import { useScanReview } from '../../hooks/use-scan-review'
@@ -146,6 +148,28 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     [formData.workflowId, formData.scanZoneId, previewRequest]
   )
   const review = useScanReview(formData, workflowRequest, open && currentStep === 'review')
+
+  // Scan approval (RFC-073): what the organization's rules ask of this scan,
+  // shown on the review step; the scan is then saved and submitted.
+  const [approvalJustification, setApprovalJustification] = useState('')
+  const [approvalTicket, setApprovalTicket] = useState('')
+  const approvalInput = useMemo(() => {
+    if (!open || currentStep !== 'review') return null
+    const req = formDataToCreateRequest(formData)
+    return {
+      targets: directTargets(formData),
+      asset_group_ids: req.asset_group_ids ?? [],
+      scan_type: req.scan_type,
+      scanner_name: req.scanner_name,
+      scan_workflow_id: req.scan_workflow_id,
+      schedule_type: req.schedule_type,
+      sensor_preference: req.sensor_preference,
+      scan_zone_id: req.scan_zone_id ?? undefined,
+    }
+  }, [open, currentStep, formData])
+  const { data: approval } = useScanApprovalPreview(approvalInput)
+  const needsApproval = !!approval?.required
+  const approvalLack = missingEvidence(t, approval, approvalJustification, approvalTicket)
   const { data: chosenWorkflow } = useScanWorkflow(
     formData.mode === 'workflow' && formData.workflowId ? formData.workflowId : null,
     { revalidateOnFocus: false }
@@ -233,6 +257,10 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       toast.error(review.blockers[0])
       return
     }
+    if (approvalLack) {
+      toast.error(approvalLack)
+      return
+    }
 
     const targetProblem = targetsError(formData, t)
     if (targetProblem) {
@@ -280,7 +308,30 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
       const waits = !!(scanConfig as { starts_when_scope_approved?: boolean })
         .starts_when_scope_approved
-      if (waits) {
+      if (needsApproval) {
+        // Saved; submit it for approval. It runs once approved (when the
+        // user asked to run now) or at its schedule.
+        try {
+          await submitScanApproval(scanConfig.id, {
+            justification: approvalJustification.trim(),
+            ticket: approvalTicket.trim(),
+            run_on_approval: formData.schedule.runImmediately,
+          })
+          toast.success(
+            t('scans.approval.submitted', 'Saved "{name}" and submitted it for approval', {
+              name: formData.name,
+            })
+          )
+        } catch (submitError) {
+          toast.error(
+            t(
+              'scans.approval.submitFailed',
+              'Saved "{name}", but it was not submitted for approval: {error}',
+              { name: formData.name, error: getErrorMessage(submitError, '') }
+            )
+          )
+        }
+      } else if (waits) {
         toast.success(t('scans.new.savedWaiting', undefined, { name: formData.name }), {
           description: t('scans.new.savedWaitingHint'),
         })
@@ -407,6 +458,17 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
             zones={zones}
             canReadZones={canReadZones}
             zoneRequest={previewRequest}
+            approvalBlock={
+              approval ? (
+                <ApprovalRequirement
+                  evaluation={approval}
+                  justification={approvalJustification}
+                  ticket={approvalTicket}
+                  onJustification={setApprovalJustification}
+                  onTicket={setApprovalTicket}
+                />
+              ) : null
+            }
           />
         )
       default:
@@ -441,6 +503,9 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               >
                 {t('scans.new.waitNotice')}
               </p>
+            )}
+            {isLastStep && !blocked && approvalLack && (
+              <p className="text-xs text-destructive sm:order-2 sm:max-w-[16rem]">{approvalLack}</p>
             )}
             {isLastStep && blocked && !awaitingApproval && (
               <p
@@ -494,8 +559,8 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               <Button
                 type="button"
                 onClick={() => void handleSubmit()}
-                disabled={isLoading || blocked}
-                title={blocked ? review.blockers[0] : undefined}
+                disabled={isLoading || blocked || !!approvalLack}
+                title={blocked ? review.blockers[0] : approvalLack || undefined}
                 aria-describedby={blocked ? 'review-blocked' : undefined}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
@@ -505,6 +570,11 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                     {formData.schedule.runImmediately
                       ? t('scans.common.starting')
                       : t('scans.common.saving')}
+                  </>
+                ) : needsApproval ? (
+                  <>
+                    <ShieldCheck className="me-2 h-4 w-4" />
+                    {t('scans.approval.submitForApproval', 'Submit for approval')}
                   </>
                 ) : (
                   <>

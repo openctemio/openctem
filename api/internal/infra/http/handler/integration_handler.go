@@ -10,13 +10,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
+	outboxapp "github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -38,6 +42,9 @@ type IntegrationHandler struct {
 	logger               *logger.Logger
 	testNotifRateLimiter *testNotificationRateLimiter
 	audit                *auditapp.AuditService
+
+	// Private program names in event titles and bodies (programScrubber).
+	programScrubber
 }
 
 // SetAuditService wires the audit log for integration changes.
@@ -1688,6 +1695,32 @@ func (h *IntegrationHandler) GetNotificationEvents(w http.ResponseWriter, r *htt
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+
+	// Same rule as the outbox list: private program names the caller may not
+	// read never reach this integration admin (RFC-065 §15.4).
+	tid, _ := shared.IDFromString(tenantID)
+	for i := range result.Data {
+		e := &result.Data[i]
+		var subj bp.DeliverySubject
+		if aid, err := uuid.Parse(e.AggregateID); err == nil {
+			subj = outboxapp.DeliverySubject(e.AggregateType, &aid, nil)
+		}
+		d, allowed, ok, err := h.unreadable(r.Context(), tid, subj)
+		if err != nil {
+			h.logger.Error("failed to scrub notification events", "error", err, "tenant_id", tenantID)
+			apierror.InternalError(err).WriteJSON(w)
+			return
+		}
+		if !ok {
+			continue
+		}
+		e.Title = d.ScrubFor(allowed, e.Title)
+		e.Body = d.ScrubFor(allowed, e.Body)
+		e.LastError = d.ScrubFor(allowed, e.LastError)
+		for j := range e.SendResults {
+			e.SendResults[j].Error = d.ScrubFor(allowed, e.SendResults[j].Error)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

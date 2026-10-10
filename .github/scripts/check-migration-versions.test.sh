@@ -20,7 +20,7 @@ commit() { git -C "$1" add -A; git -C "$1" commit -qm "$2"; }
 # expect <name> <0|1> <repo> [base] [output-substring]
 expect() {
   local name="$1" want="$2" d="$3" base="${4:-}" needle="${5:-}" out rc=0
-  out="$(cd "$d" && bash "$script" ${base:+"$base"} 2>&1)" || rc=$?
+  out="$(cd "$d" && MIGRATION_BELOW_BASE="${MODE:-error}" bash "$script" ${base:+"$base"} 2>&1)" || rc=$?
   if [[ "$rc" -ne "$want" ]] || [[ -n "$needle" && "$out" != *"$needle"* ]]; then
     echo "FAIL: $name (exit $rc, want $want)"; echo "$out"; failed=$((failed + 1))
   else
@@ -47,6 +47,11 @@ d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; commit "$d" base
 git -C "$d" branch base
 mig "$d" 000003 c; commit "$d" pr
 expect "added below base max fails" 1 "$d" base "Renumber it to 000006"
+MODE=warning expect "pull_request: added below base max only warns" 0 "$d" base "::warning::"
+
+# 4b. Warning mode still fails a duplicate version.
+mig "$d" 000005 dupe; commit "$d" dup
+MODE=warning expect "pull_request: duplicate version still fails" 1 "$d" base "::error::"
 
 # 5. Queue: the group ahead already took 000006; this PR also wrote 000006.
 d="$(repo)"; mig "$d" 000005 b; commit "$d" base
@@ -54,6 +59,7 @@ mig "$d" 000006 first; commit "$d" "queued ahead"
 git -C "$d" branch queue-base
 mig "$d" 000006 second; commit "$d" "this pr"
 expect "queue: same version as the group ahead fails" 1 "$d" queue-base "Renumber it to 000007"
+MODE=warning expect "warning mode: same version as base still fails (duplicate)" 1 "$d" queue-base "used more than once"
 
 # 6. Queue: this PR renumbered to 000007 on top.
 d="$(repo)"; mig "$d" 000005 b; mig "$d" 000006 first; commit "$d" base
