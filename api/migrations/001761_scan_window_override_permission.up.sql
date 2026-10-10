@@ -2,6 +2,7 @@
 -- emergency override of scan window policies, which needs a fresh
 -- authenticator code and a reason. Every role and API key that held the old
 -- permission holds the new one; nothing else changes hands.
+-- expand-contract-ok: the only DROP TABLE is the temporary rename table created above
 
 CREATE TEMP TABLE IF NOT EXISTS permission_renames_001761 (old_id VARCHAR(100) PRIMARY KEY, new_id VARCHAR(100) NOT NULL, name VARCHAR(100) NOT NULL, description TEXT NOT NULL);
 INSERT INTO permission_renames_001761 (old_id, new_id, name, description) VALUES

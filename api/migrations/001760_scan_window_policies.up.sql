@@ -16,6 +16,8 @@
 -- Safe on populated tables: two new tables, three nullable columns on
 -- commands (no rewrite), small partial indexes, a copy of at most 50 rows per
 -- organization.
+--
+-- expand-contract-ok: one-step upgrade; the code in the same release no longer reads scan_freeze_windows or the freeze_override columns (data copied into scan_window_policies first)
 
 CREATE TABLE scan_window_policies (
     id             uuid PRIMARY KEY,
