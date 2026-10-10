@@ -297,21 +297,18 @@ var optionalServiceSetters = map[string]string{
 	// until it is, every plan may trust another organization.
 	"OrgTrust.SetSSOEntitlement": "plan entitlements not built yet (trusts allowed on every plan)",
 
-	// The vulnerability matcher (RFC-066 P0, next PR) is the consumer; until
-	// it lands, a software change has nobody to tell.
-	"Ingest.SetSoftwareChangeSink": "consumer (vulnerability matcher, RFC-066) not built yet",
-
 	// Business operations named Set*, not collaborator seams.
-	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
-	"PermVersion.Set":                   "cache operation, not a seam",
-	"Role.SetUserRoles":                 "request operation, called by the role handler",
-	"SCIMGroups.SetRoleMappings":        "request operation, called by the SCIM token handler",
-	"SCIMProvisioning.SetActive":        "SCIM PATCH operation, not a seam",
-	"ScanProfile.SetDefaultScanProfile": "request operation, called by the scan profile handler",
-	"ThreatIntel.SetSyncEnabled":        "request operation, called by the threat-intel handler",
-	"UserDashboard.SetDefault":          "request operation, called by the dashboard handler",
-	"Vulnerability.SetFindingTags":      "request operation, called by the finding handler",
-	"Sensor.SetBearerKeysAllowed":       "request operation, called by the sensor identity-policy handler",
+	"ProgramFeedSettings.SetLocalBundle": "business operation (the admin console switch of the local program bundle), not a collaborator seam",
+	"Branch.SetDefaultBranch":            "request operation, called by the branch handler",
+	"PermVersion.Set":                    "cache operation, not a seam",
+	"Role.SetUserRoles":                  "request operation, called by the role handler",
+	"SCIMGroups.SetRoleMappings":         "request operation, called by the SCIM token handler",
+	"SCIMProvisioning.SetActive":         "SCIM PATCH operation, not a seam",
+	"ScanProfile.SetDefaultScanProfile":  "request operation, called by the scan profile handler",
+	"ThreatIntel.SetSyncEnabled":         "request operation, called by the threat-intel handler",
+	"UserDashboard.SetDefault":           "request operation, called by the dashboard handler",
+	"Vulnerability.SetFindingTags":       "request operation, called by the finding handler",
+	"Sensor.SetBearerKeysAllowed":        "request operation, called by the sensor identity-policy handler",
 	// Real seams left at their defaults on purpose.
 	"ScannerTemplate.SetQuota":            "default quota applies; the override exists for tests and future config",
 	"SensorPairing.SetClock":              "test hook; the service uses time.Now",

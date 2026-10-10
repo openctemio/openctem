@@ -53,6 +53,26 @@ func reportSource(b Binding, opts Options, report *ctis.Report) (asset.SourceKin
 	return asset.SourceKindScan, name
 }
 
+// clampReportTimestamp keeps a sensor's clock from deciding which data wins:
+// a report bound to a command cannot have observed anything before the
+// command was handed to the sensor, nor after it arrived (now). The report
+// timestamp is clamped into that window once, so every consumer
+// (attribute reconciliation, last_seen, the property merge, port closing)
+// uses the same observation time.
+func clampReportTimestamp(report *ctis.Report, b Binding, now time.Time) {
+	if report == nil {
+		return
+	}
+	ts := report.Metadata.Timestamp
+	if ts.IsZero() || ts.After(now) {
+		ts = now
+	}
+	if !b.DispatchedAt.IsZero() && ts.Before(b.DispatchedAt) && !b.DispatchedAt.After(now) {
+		ts = b.DispatchedAt
+	}
+	report.Metadata.Timestamp = ts
+}
+
 // reportObservedAt is when the report's source saw what it reports: its
 // timestamp, never later than now.
 func reportObservedAt(report *ctis.Report, now time.Time) time.Time {
@@ -98,8 +118,15 @@ func (p *AssetProcessor) attributeClaims(a *ctis.Asset) map[asset.TrackedAttribu
 // recordAttributes records the tracked values the report states about the
 // assets it may change, and applies what they decide. Best-effort: a
 // failure is logged and never fails the report.
+// attributeSource is who a report's observations come from.
+type attributeSource struct {
+	kind asset.SourceKind
+	name string
+	run  string // scan task, CI run or import
+}
+
 func (s *Service) recordAttributes(ctx context.Context, tenantID shared.ID, scope *alterScope,
-	kind asset.SourceKind, name string, observedAt time.Time,
+	src attributeSource, observedAt time.Time,
 	report *ctis.Report, assetMap map[string]shared.ID,
 ) {
 	if s.attributes == nil || report == nil || len(assetMap) == 0 {
@@ -122,8 +149,8 @@ func (s *Service) recordAttributes(ctx context.Context, tenantID shared.ID, scop
 				continue
 			}
 			obs = append(obs, asset.AttributeObservation{
-				AssetID: id, Attribute: attr, Kind: kind, Name: name, Value: v,
-				ObservedAt: observedAt, Confidence: confidence,
+				AssetID: id, Attribute: attr, Kind: src.kind, Name: src.name, Value: v,
+				ObservedAt: observedAt, Confidence: confidence, SourceRun: src.run,
 			})
 		}
 		if len(obs) >= maxAttributeObservationsPerReport {

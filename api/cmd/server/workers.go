@@ -455,6 +455,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	).SetScopeTargetExpirer(repos.ScopeTarget))
 
+	// Asset change timeline (RFC-069): partitions, retention, TTL expiry.
+	w.ControllerManager.Register(controller.NewAssetChangeTimelineController(
+		repos.AssetChangeEvents, svc.Asset, cfg.AssetChangeRetentionDays,
+		log.With("controller", "asset-change-timeline")))
+
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
 		&controller.RoleSyncControllerConfig{
@@ -570,6 +575,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		}
 	}
 
+	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
+	// each organization's findings.
+	if svc.VulnMatch != nil {
+		w.ControllerManager.Register(controller.NewVulnMatchController(svc.VulnMatch, log.With("controller", "vuln-match")))
+	}
+
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
 	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
 	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
@@ -589,6 +600,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
 		if svc.BountyProgram != nil {
 			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
+		}
+		// The public program feed (RFC-065 §16), when a bundle directory and
+		// the root key id are configured.
+		if svc.ProgramFeed != nil {
+			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed", svc.ProgramFeed))
+		}
+		// The operator's local bundle (owner option A): imported only while
+		// a platform administrator has the source enabled.
+		if svc.ProgramFeedLocal != nil {
+			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed-local", svc.ProgramFeedLocal))
 		}
 		// Program data scope: assets a program covers stay assigned to its
 		// group (RFC-065 §7), also those that arrived by discovery.

@@ -11,7 +11,11 @@ package asset
 //  2. a source kind the policy does not list for the attribute is not trusted;
 //  3. an observation older than its kind's TTL is stale and no longer counts;
 //  4. the remaining ones rank by the policy's precedence, then by when the
-//     source saw the value (observed_at), then confidence, then ingestion time.
+//     source saw the value (observed_at), then confidence, then ingestion time;
+//  5. when the most trusted rank holds different values (a conflict), the
+//     value the asset already shows keeps winning while a source of that
+//     rank still reports it: equal sources disagreeing are shown, not
+//     flapped between.
 //
 // No candidate left means the asset keeps its current value: staleness never
 // clears a value, it only stops a source from winning.
@@ -164,6 +168,71 @@ type AttributeObservation struct {
 	ObservedAt time.Time // when the source saw the value
 	IngestedAt time.Time // when the platform recorded it
 	Confidence int       // 0-100, a tie-break only
+	// SourceRun is the scan task, CI run, import or feed sequence the value
+	// came from (informational).
+	SourceRun string
+	// Winner: stored flag, this source decided the value the asset shows.
+	Winner bool
+}
+
+// SameSource reports whether o and other are records of the same source.
+func (o AttributeObservation) SameSource(other AttributeObservation) bool {
+	return o.AssetID == other.AssetID && o.Attribute == other.Attribute && o.Kind == other.Kind && o.Name == other.Name
+}
+
+// ObservationVerdict is what recording an observation does to the stored
+// record of the same source.
+type ObservationVerdict string
+
+const (
+	// ObservationNew: the source had no record; it is stored.
+	ObservationNew ObservationVerdict = "new"
+	// ObservationChanged: newer and a different value; it replaces the record.
+	ObservationChanged ObservationVerdict = "changed"
+	// ObservationRefresh: newer, same value, and the record is at least
+	// ResightingRefreshInterval old; only observed_at moves.
+	ObservationRefresh ObservationVerdict = "refresh"
+	// ObservationResighted: newer, same value, recently refreshed: nothing
+	// is written.
+	ObservationResighted ObservationVerdict = "resighted"
+	// ObservationOutOfOrder: the source saw it before its stored record;
+	// ignored (a late report never undoes a newer one).
+	ObservationOutOfOrder ObservationVerdict = "out_of_order"
+	// ObservationReplay: the same observation time as the stored record;
+	// ignored (a replayed report, or two values that cannot be ordered).
+	ObservationReplay ObservationVerdict = "replay"
+)
+
+// Accepted reports whether the verdict writes the record.
+func (v ObservationVerdict) Accepted() bool {
+	return v == ObservationNew || v == ObservationChanged || v == ObservationRefresh
+}
+
+// Rejected reports whether the observation was refused as out of order or
+// replayed.
+func (v ObservationVerdict) Rejected() bool {
+	return v == ObservationOutOfOrder || v == ObservationReplay
+}
+
+// ClassifyObservation decides what an incoming observation does to the
+// stored record of the same source (nil: none). Only an observation the
+// source made strictly after its stored one counts; a re-sighting of the
+// same value refreshes observed_at at most once per refresh interval.
+func ClassifyObservation(stored *AttributeObservation, in AttributeObservation, refresh time.Duration) ObservationVerdict {
+	if stored == nil {
+		return ObservationNew
+	}
+	switch {
+	case in.ObservedAt.Before(stored.ObservedAt):
+		return ObservationOutOfOrder
+	case in.ObservedAt.Equal(stored.ObservedAt):
+		return ObservationReplay
+	case in.Value != stored.Value:
+		return ObservationChanged
+	case in.ObservedAt.Sub(stored.ObservedAt) >= refresh:
+		return ObservationRefresh
+	}
+	return ObservationResighted
 }
 
 // IsLock reports whether the observation is a person's lock.
@@ -220,6 +289,11 @@ func (p ReconciliationPolicy) Trusts(attr TrackedAttribute, kind SourceKind) boo
 	return p.rank(attr, kind) >= 0
 }
 
+// Stale reports whether o is past its kind's TTL at now (a lock never is).
+func (p ReconciliationPolicy) Stale(o AttributeObservation, now time.Time) bool {
+	return p.stale(o, now)
+}
+
 func (p ReconciliationPolicy) stale(o AttributeObservation, now time.Time) bool {
 	if o.IsLock() {
 		return false
@@ -252,15 +326,23 @@ type Resolution struct {
 	Winner *AttributeObservation
 	// Locked: the winner is a person's lock.
 	Locked bool
-	// Conflict: fresh trusted sources report different values.
+	// Conflict: the most trusted fresh sources (equal rank) report
+	// different values.
 	Conflict bool
 	// Candidates are every source's value, the winner first.
 	Candidates []Candidate
 }
 
-// Resolve picks the value of attr from the observations of one asset.
-// Observations of other attributes are ignored.
+// Resolve picks the value of attr from the observations of one asset that
+// shows no value yet. Observations of other attributes are ignored.
 func Resolve(attr TrackedAttribute, obs []AttributeObservation, p ReconciliationPolicy, now time.Time) Resolution {
+	return ResolveFrom(attr, obs, p, now, "")
+}
+
+// ResolveFrom is Resolve for an asset that shows current: when the most
+// trusted fresh rank disagrees, the source of that rank still reporting
+// current keeps winning (the conflict is shown, never flapped between).
+func ResolveFrom(attr TrackedAttribute, obs []AttributeObservation, p ReconciliationPolicy, now time.Time, current string) Resolution {
 	res := Resolution{Attribute: attr}
 	var eligible []AttributeObservation
 	for _, o := range obs {
@@ -292,10 +374,9 @@ func Resolve(attr TrackedAttribute, obs []AttributeObservation, p Reconciliation
 		}
 		return a.Kind+SourceKind(a.Name) < b.Kind+SourceKind(b.Name)
 	})
+	res.Conflict = keepIncumbent(attr, eligible, p, current)
 	ranked := make([]Candidate, 0, len(obs))
-	values := map[string]bool{}
 	for i, o := range eligible {
-		values[o.Value] = true
 		st := CandidateOutranked
 		if i == 0 {
 			st = CandidateWinner
@@ -305,9 +386,38 @@ func Resolve(attr TrackedAttribute, obs []AttributeObservation, p Reconciliation
 		}
 		ranked = append(ranked, Candidate{o, st})
 	}
-	res.Conflict = len(values) > 1
 	res.Candidates = append(ranked, res.Candidates...)
 	return res
+}
+
+// keepIncumbent reports whether the most trusted rank of the sorted
+// eligible observations disagrees, and then moves the newest one of that
+// rank reporting current to the front.
+func keepIncumbent(attr TrackedAttribute, eligible []AttributeObservation, p ReconciliationPolicy, current string) bool {
+	if len(eligible) < 2 {
+		return false
+	}
+	top := p.rank(attr, eligible[0].Kind)
+	values := map[string]bool{}
+	incumbent := -1
+	for i, o := range eligible {
+		if p.rank(attr, o.Kind) != top {
+			break
+		}
+		values[o.Value] = true
+		if incumbent < 0 && current != "" && o.Value == current {
+			incumbent = i
+		}
+	}
+	if len(values) < 2 {
+		return false
+	}
+	if incumbent > 0 {
+		w := eligible[incumbent]
+		copy(eligible[1:incumbent+1], eligible[:incumbent])
+		eligible[0] = w
+	}
+	return true
 }
 
 // AttributeRef names one attribute of one asset.
@@ -329,6 +439,25 @@ type AttributeApply struct {
 	// every other manual row of its attribute (one lock per attribute).
 	Policy ReconciliationPolicy
 	Now    time.Time
+	// Resolve re-resolves these attributes without new observations (a
+	// policy change, a source going stale).
+	Resolve []AttributeRef
+	// Actor is the person behind a manual observation or a release.
+	Actor *shared.ID
+	// Reason is the timeline reason of a change that no observation or
+	// release of this apply caused (ChangeReasonTTLExpiry,
+	// ChangeReasonPolicyChange). Empty: ChangeReasonNewerObservation.
+	Reason ChangeReason
+}
+
+// ApplyResult is what one reconciliation did.
+type ApplyResult struct {
+	// Changes are the values it changed on assets.
+	Changes []AttributeChange
+	// Events is how many timeline events it wrote or folded into a flap.
+	Events int
+	// Verdicts counts the observations by what recording them did.
+	Verdicts map[ObservationVerdict]int
 }
 
 // AttributeChange is a value the reconciliation changed on an asset.
@@ -338,6 +467,8 @@ type AttributeChange struct {
 	Old, New  string
 	// Source is the winning observation.
 	Source AttributeObservation
+	// Reason is why it changed.
+	Reason ChangeReason
 }
 
 // AttributeSourceRepository stores the per-source observations and applies
@@ -345,9 +476,10 @@ type AttributeChange struct {
 type AttributeSourceRepository interface {
 	// Apply records the observations, releases the locks, re-resolves every
 	// attribute it touched and writes the changed values to the assets, in
-	// one transaction with the asset rows locked. Observations of assets not
-	// in tenantID are dropped. It returns the values it changed.
-	Apply(ctx context.Context, tenantID shared.ID, in AttributeApply) ([]AttributeChange, error)
+	// one transaction with the asset rows locked, and records a timeline
+	// event for each changed value or deciding source. Observations of
+	// assets not in tenantID are dropped.
+	Apply(ctx context.Context, tenantID shared.ID, in AttributeApply) (ApplyResult, error)
 	// ListForAsset returns every observation of one asset of the tenant.
 	ListForAsset(ctx context.Context, tenantID, assetID shared.ID) ([]AttributeObservation, error)
 }

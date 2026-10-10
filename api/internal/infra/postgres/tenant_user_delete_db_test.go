@@ -316,7 +316,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	// Bug-bounty programs (RFC-065): hex hashes, an https URL, typed JSON.
 	"bounty_programs": func(*schemaSeeder) map[string]any {
 		return map[string]any{"terms_sha256": strings.Repeat("ab", 32), "program_url": "https://p.example/policy",
-			"status": "active", "scope_source": "paste", "rules": "{}", "scope_items": "[]", "group_id": nil}
+			"status": "active", "scope_source": "paste", "rules": "{}", "scope_items": "[]", "group_id": nil,
+			"public_program_id": nil}
+	},
+	// A person accepting a program's terms (RFC-065 §15): a hex hash.
+	"bounty_program_attestations": func(*schemaSeeder) map[string]any {
+		return map[string]any{"terms_sha256": strings.Repeat("cd", 32)}
 	},
 	"bounty_program_exclusions": func(s *schemaSeeder) map[string]any {
 		return map[string]any{"target_type": "domain", "pattern": s.uniq() + ".example"}
