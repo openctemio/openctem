@@ -32,6 +32,9 @@ type Scan struct {
 	ScannerName    string         // For single type
 	ScannerConfig  map[string]any // Scanner-specific configuration
 	TargetsPerJob  int            // Number of targets per job batch
+	// Intensity is the probe ceiling of every run (RFC-071): passive,
+	// active or intrusive. Copied to each run.
+	Intensity Intensity
 
 	// Schedule
 	ScheduleType     ScheduleType
@@ -117,6 +120,7 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScanType:            scanType,
 		ScannerConfig:       make(map[string]any),
 		TargetsPerJob:       1,
+		Intensity:           DefaultIntensity,
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
@@ -159,6 +163,7 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScanType:            scanType,
 		ScannerConfig:       make(map[string]any),
 		TargetsPerJob:       1,
+		Intensity:           DefaultIntensity,
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},

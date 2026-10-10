@@ -104,3 +104,7 @@ func TestRefuseUnprovenIntrusive(t *testing.T) {
 		t.Fatalf("a safe-active scan needs no proof in mode off: %v", err)
 	}
 }
+
+func (proofGate) UncoveredTargets(context.Context, shared.ID, []string) ([]string, error) {
+	return nil, nil
+}
