@@ -59,14 +59,20 @@ func (s *Service) actor(ctx context.Context, c Caller) (filterspec.Actor, shared
 		}
 	}
 	var scope *shared.DataScope
-	if !c.IsAdmin && c.UserID != "" {
+	switch {
+	case !c.IsAdmin && c.UserID != "":
 		if s.dataScope == nil {
 			return filterspec.Actor{}, tenantID, errors.New("data scope enforcer not configured")
 		}
 		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, APIKey: c.APIKey})
-		if err != nil {
-			return filterspec.Actor{}, tenantID, fmt.Errorf("resolve data scope: %w", err)
-		}
+	case c.UserID != "" && s.dataScope != nil:
+		// Private program assets stay hidden from administrators who are
+		// neither owners nor members (RFC-065 §15.3).
+		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: true,
+			IsOwner: s.dataScope.CallerOf(ctx).IsOwner, APIKey: c.APIKey})
+	}
+	if err != nil {
+		return filterspec.Actor{}, tenantID, fmt.Errorf("resolve data scope: %w", err)
 	}
 	a, err := filterspec.UserActor(filterspec.UserActorInput{TenantID: tenantID, UserID: userID, IsAdmin: c.IsAdmin, Scope: scope})
 	return a, tenantID, err

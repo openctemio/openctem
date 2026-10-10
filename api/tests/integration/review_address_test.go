@@ -53,7 +53,7 @@ func TestReviewAddressStore(t *testing.T) {
 	// A restricted member sees only the names in their data scope.
 	member := seedActUser(t, db)
 	grantScope(t, db, tenantA, member, www)
-	got, err = repo.ResolvedFrom(ctx, tenantA, &member, []string{addr})
+	got, err = repo.ResolvedFrom(ctx, tenantA, &shared.DataScope{TenantID: tenantA, UserID: member}, []string{addr})
 	if err != nil || !slices.Equal(got[addr], []string{"www.example.co.uk"}) {
 		t.Fatalf("restricted resolved_from = %v %v", got[addr], err)
 	}
