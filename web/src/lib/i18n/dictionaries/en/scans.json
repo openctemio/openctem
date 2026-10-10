@@ -984,5 +984,20 @@
   "scans.ruleEditor.day.sun": "Sun",
   "scans.ruleEditor.hint.crown_jewel": "Catches a scan when any target asset is a crown jewel.",
   "scans.ruleEditor.hint.dynamic_selectors": "Catches a scan whose targets include a wildcard domain or a CIDR, which each run resolves again.",
-  "scans.ruleEditor.hint.recurring": "Catches scans that run on a schedule."
+  "scans.ruleEditor.hint.recurring": "Catches scans that run on a schedule.",
+  "scans.intensity.label": "Intensity",
+  "scans.intensity.hint": "How much this scan may touch your targets. Every scanner and workflow step must stay within it; anything above it is never run.",
+  "scans.intensity.passive": "Passive",
+  "scans.intensity.passiveHint": "Nothing is sent to your hosts. Uses third-party sources (certificate logs, passive DNS) and DNS through public resolvers. Safe for names you have not confirmed yet.",
+  "scans.intensity.active": "Active",
+  "scans.intensity.activeHint": "Probes your hosts without trying to break anything: open ports, web servers, safe vulnerability checks. It shows up in their logs.",
+  "scans.intensity.intrusive": "Intrusive (full)",
+  "scans.intensity.intrusiveHint": "Also runs intrusive checks: fuzzing, attack payloads, custom templates. Can change data or slow services; use only on systems you own and may test.",
+  "scans.intensity.aboveCeiling": "Probes at {level}, above this scan's intensity",
+  "scans.intensity.aboveGroup": "Above this scan's intensity",
+  "scans.intensity.badgeTitle": "Intensity: {level}",
+  "scans.basic.continuous": "Continuous discovery",
+  "scans.basic.continuousHint": "Every day: passive discovery of your root domains, then active probing of only the assets confirmed since the last run. Names still under review are never probed.",
+  "scans.new.continuousSecondName": "{name}: new assets",
+  "scans.new.continuousSecondFailed": "The passive discovery scan was saved, but the scan that probes new assets was not: {error}"
 }
