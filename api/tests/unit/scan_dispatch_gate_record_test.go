@@ -16,7 +16,7 @@ func TestScanTrigger_CommandsRecordTheDispatchGate(t *testing.T) {
 	user := shared.NewID()
 	want := command.DispatchGate{Tier: int(scanservice.ProbeTier("nuclei")), ActScope: true, Actor: user.String()}
 
-	tenant, _, _, svc, deps := frozenZoneSetup(t, &fakeFreeze{})
+	tenant, _, _, svc, deps := windowZoneSetup(t, nil)
 	sc := singleScan(t, deps, tenant, "nuclei", 1, nil, "10.1.0.1", "10.2.0.1")
 	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
 		TenantID: tenant.String(), ScanID: sc.ID.String(), TriggeredBy: user.String(),

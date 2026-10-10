@@ -6,6 +6,7 @@
  */
 
 import { CalendarClock } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { useMemo } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -27,23 +28,35 @@ interface SchedulePreviewProps {
 }
 
 export function SchedulePreview({ request, paused = false, title }: SchedulePreviewProps) {
+  const { t, locale } = useTranslation()
   const { preview, isLoading, errorMessage } = useSchedulePreview(request)
+  const intlLocale = locale === 'en' ? undefined : locale
   const viewerZone = useMemo(() => viewerTimeZone(), [])
 
   if (!request) return null
 
   const zone = preview?.timezone ?? request.timezone ?? 'UTC'
   const occurrences = preview?.occurrences ?? []
+  const runCount = occurrences.length || request.count
   const heading =
-    title ?? `Next ${occurrences.length || request.count || ''} runs`.replace(/\s+/g, ' ')
+    title ??
+    (runCount ? t('scans.preview.nextN', undefined, { count: runCount }) : t('scans.preview.next'))
 
   return (
-    <section aria-label="Upcoming runs" className="space-y-2" aria-busy={isLoading || undefined}>
+    <section
+      aria-label={t('scans.preview.upcoming')}
+      className="space-y-2"
+      aria-busy={isLoading || undefined}
+    >
       <div className="flex items-center gap-2 text-sm font-medium">
         <CalendarClock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         <span>{heading}</span>
         <span className="text-xs font-normal text-muted-foreground">({zone})</span>
-        {paused && <span className="text-xs font-normal text-muted-foreground">if resumed</span>}
+        {paused && (
+          <span className="text-xs font-normal text-muted-foreground">
+            {t('scans.preview.ifResumed')}
+          </span>
+        )}
       </div>
 
       <div aria-live="polite">
@@ -52,26 +65,28 @@ export function SchedulePreview({ request, paused = false, title }: SchedulePrev
             {errorMessage}
           </p>
         ) : isLoading && occurrences.length === 0 ? (
-          <div className="space-y-1.5" aria-label="Loading upcoming runs">
+          <div className="space-y-1.5" aria-label={t('scans.preview.loading')}>
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-4 w-64" />
             ))}
           </div>
         ) : occurrences.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            This schedule has no upcoming runs (its rule has ended).
-          </p>
+          <p className="text-sm text-muted-foreground">{t('scans.preview.none')}</p>
         ) : (
           <ol className="space-y-1 text-sm">
             {occurrences.map((iso) => (
               <li key={iso} className="flex flex-wrap items-baseline gap-x-2">
                 <time dateTime={iso} className="tabular-nums">
-                  {formatOccurrence(iso, zone)}
+                  {formatOccurrence(iso, zone, intlLocale)}
                 </time>
-                <span className="text-xs text-muted-foreground">{formatRelativeFuture(iso)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {formatRelativeFuture(iso, undefined, locale)}
+                </span>
                 {viewerZone !== zone && (
                   <span className="text-xs text-muted-foreground">
-                    (your time: {formatOccurrence(iso, viewerZone)})
+                    {t('scans.preview.yourTime', undefined, {
+                      time: formatOccurrence(iso, viewerZone, intlLocale),
+                    })}
                   </span>
                 )}
               </li>

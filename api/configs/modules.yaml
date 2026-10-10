@@ -87,6 +87,7 @@
     - RetestScheduler
     - ThreatIntelRefreshController
     - VulnMatchController
+    - VulnFeedImportController
 - id: scans
   const: ModuleScans
   slug: scans
@@ -104,6 +105,7 @@
     - QueuePriorityController
     - ScanRetryController
     - ScanTimeoutController
+    - ScanWindowClosingController
     - StalledRunRepairController
     - CIAlertsController
     - CIRetentionController

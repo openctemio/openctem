@@ -9,7 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
+
+	"github.com/openctemio/sdk-go/pkg/transfer"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -53,6 +56,21 @@ type Importer struct {
 	settings bp.FeedSourceSettings
 	log      *logger.Logger
 	now      func() time.Time
+
+	// chunks and transfer enable bundle format v2 (WithChunks).
+	chunks             ChunkStore
+	transfer           Transfer
+	fetchMu            sync.Mutex
+	fetcher            *transfer.Fetcher
+	consumerRegistered bool
+}
+
+// WithChunks enables chunked (v2) bundles: read through the SDK consumer
+// when the source offers them, with the durable checkpoint of store. The
+// whole-bundle (v1) reader stays the fallback for this release.
+func (i *Importer) WithChunks(store ChunkStore, t Transfer) *Importer {
+	i.chunks, i.transfer = store, t
+	return i
 }
 
 // NewImporter wires the signed feed importer. pinnedRoot is the key id of
@@ -89,6 +107,10 @@ type Result struct {
 	Delta    bool
 	Programs int
 	Changes  int
+	// Chunks applied by this run (v2) and whether it resumed a bundle a
+	// previous run left half-applied.
+	Chunks  int
+	Resumed bool
 	// Subscribers counts subscribed programs by outcome.
 	Subscribers map[string]int
 }
@@ -126,6 +148,9 @@ func (i *Importer) Import(ctx context.Context) (*Result, error) {
 		if i.pinnedRoot == "" {
 			return nil, errors.New("program feed root key id is not configured")
 		}
+	}
+	if i.useV2() {
+		return i.importV2(ctx)
 	}
 	state, err := i.catalog.FeedState(ctx, i.stream)
 	if err != nil {

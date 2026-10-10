@@ -332,6 +332,11 @@ type Filter struct {
 	// this scope entry (matches_scope_target evidence from it).
 	CoveredByScopeTarget *shared.ID
 
+	// ProgramAssets: "only" keeps the assets a bug-bounty program lists or
+	// covers (system tag bug-bounty); "exclude" leaves out the program-only
+	// ones (RFC-065 §16.5). Empty: no filter.
+	ProgramAssets string
+
 	// Layer 2: Data Scope. When set, only the assets in this user's scope
 	// rows (user_accessible_assets) are returned; a user with none sees none.
 	DataScopeUserID *shared.ID

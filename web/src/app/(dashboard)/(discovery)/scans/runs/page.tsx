@@ -1,7 +1,7 @@
 'use client'
 
 import { Main } from '@/components/layout'
-import { FreezeBanner } from '@/features/scan-freeze'
+import { ScanWindowsBanner } from '@/features/scan-windows'
 import { ScanRunsTab } from '@/features/scans/components/scan-runs-tab'
 import {
   ScanCreateActions,
@@ -17,7 +17,7 @@ export default function ScanRunsPage() {
         <ScanCreateActions />
       </ScansPageHeader>
       <ScansSectionTabs />
-      <FreezeBanner className="mt-5" />
+      <ScanWindowsBanner className="mt-5" />
       <ScanRunsTab />
     </Main>
   )
