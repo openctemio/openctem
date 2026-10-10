@@ -53,7 +53,7 @@ type ToolContract struct {
 	Version    string   `json:"version"`
 	Class      string   `json:"class" enums:"target-scan,connector,parser,enricher"`
 	Tier       string   `json:"tier" enums:"T0,T1,T2"`
-	Network    string   `json:"network,omitempty" enums:"none,targets,egress-proxy,vendor"`
+	Network    string   `json:"network,omitempty" enums:"none,targets,resolver,egress-proxy,vendor"`
 	Consumes   []string `json:"consumes,omitempty"`
 	Produces   []string `json:"produces"`
 	// Implements are the capabilities (ctis/capability references,
@@ -95,7 +95,7 @@ var (
 
 	contractClasses  = []string{"target-scan", "connector", "parser", "enricher"}
 	contractTiers    = []string{"T0", "T1", "T2"}
-	contractNetworks = []string{"", "none", "targets", "egress-proxy", "vendor"}
+	contractNetworks = []string{"", "none", "targets", "resolver", "egress-proxy", "vendor"}
 )
 
 // SanitizeToolContract returns the contract as it is stored, or nil and the
