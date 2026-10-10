@@ -1000,6 +1000,23 @@ from exactly two sources:
 | **Group assignment**: the assets assigned to the user's active groups | `team:groups:write` (Groups → Assets, scope rules, or a *group* owner on an asset's Owners tab) | `asset_owners` rows with `group_id` × `group_members` |
 | **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000372`) |
 
+**Private program assets** (RFC-065 §15.3): the program-only assets of
+private bug-bounty programs, and their findings, are seen only by the
+programs' members and the organization's owners. An administrator or
+full-data role who is neither gets `DataScope{Unrestricted: true}` from the
+enforcer (only while something is hidden from them; otherwise `nil` as
+before): every asset of the tenant but the hidden ones. `dataScopeCondAt` /
+`filterspec.ScopeSQL` add `filterspec.NotHiddenSQL` to every scoped read
+(restricted scopes too), the id checks (`AssertAsset`, `AssertFinding`,
+`Filter`) use the same rule, and acting (`CanActOnAssets`, `Delegable`)
+stays unrestricted. `Caller.IsOwner` (and `SetOwnerLookup` outside a
+request) decides who is an owner; `ResolveActing` keeps it only when the
+acting user is the request's caller. Program system tags shown to, or
+matched by the tag filter of, a non-owner are derived only from programs
+not hidden from them (`filterspec.ProgramHiddenSQL`, the one "program
+hidden" predicate). Notification pushes for a hidden asset reach only
+owners and the program's members.
+
 **Being an owner is not an access grant** (owner decision O1, 2026-10-03).
 Naming a user as an owner of an asset, in any RACI role or through the
 `owner_ref` email match, is an assignment (accountability, finding
