@@ -303,6 +303,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 
 	for _, check := range []func(context.Context, DispatchTargetsInput, []string, *DispatchTargets) ([]string, error){
 		s.refuseUnconfirmed,
+		s.refusePassiveOutOfScope,
 		s.refuseOutOfActScopeTargets,
 		s.refuseInternalOutsideZones,
 		s.refuseOverTier,
@@ -443,6 +444,46 @@ func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput
 				s.logRefusedTarget(ctx, in.TenantID, in.gatePath(), t, state)
 			}
 			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: ReasonOwnershipNotConfirmed, Code: RefusalCodeForState(state)})
+			continue
+		}
+		allowed = append(allowed, t)
+	}
+	return allowed, nil
+}
+
+// ReasonPassiveOutOfScope is the reason a passive dispatch refuses a name
+// outside the organization's scope.
+const ReasonPassiveOutOfScope = "a passive step takes only names in the organization's scope (a scope target, or a name at or under a root domain or verified domain)"
+
+// refusePassiveOutOfScope moves every kept target of a passive dispatch
+// that no scope authority of the tenant covers to Refused (no_entry). A
+// passive step may resolve a name nobody confirmed yet, but never one
+// outside the organization's scope: the platform is not a free lookup
+// service for arbitrary domains (RFC-071). Asset-backed targets are checked
+// by the asset's name; private and internal names are left to the scan
+// zones, as on the active path.
+func (s *Service) refusePassiveOutOfScope(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) ([]string, error) {
+	if !in.PassiveOnly || len(kept) == 0 {
+		return kept, nil
+	}
+	if s.attributionGate == nil {
+		return nil, ErrAttributionGateUnavailable
+	}
+	uncovered, err := s.attributionGate.UncoveredTargets(ctx, in.TenantID, kept)
+	if err != nil {
+		return nil, fmt.Errorf("scope coverage check failed, nothing dispatched: %w", err)
+	}
+	if len(uncovered) == 0 {
+		return kept, nil
+	}
+	no := make(map[string]bool, len(uncovered))
+	for _, t := range uncovered {
+		no[t] = true
+	}
+	allowed := make([]string, 0, len(kept))
+	for _, t := range kept {
+		if no[t] {
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Code: scopedom.RefusalNoEntry, Reason: ReasonPassiveOutOfScope})
 			continue
 		}
 		allowed = append(allowed, t)

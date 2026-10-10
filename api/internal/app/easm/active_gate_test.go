@@ -3,6 +3,7 @@ package easm
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -526,6 +527,35 @@ func TestActiveGate_AssetTargets(t *testing.T) {
 	}
 	if _, err := (&ActiveGate{}).AssetTargets(context.Background(), f.tenant, []shared.ID{a.ID()}); err == nil {
 		t.Fatal("an unwired gate must refuse")
+	}
+}
+
+// A passive step takes only names in the organization's scope (RFC-071):
+// UncoveredTargets lists the internet names and addresses no scope entry of
+// the tenant covers. Private targets are left to the scan zones; another
+// tenant's entries cover nothing.
+func TestActiveGate_UncoveredTargets(t *testing.T) {
+	f := newGateFixture(t)
+	g := NewActiveGate(f, f, f, f)
+	ctx := context.Background()
+	targets := []string{"app.scoped.com", "198.51.100.7", "victim.example.org", "10.0.0.5", "203.0.113.9"}
+
+	got, err := g.UncoveredTargets(ctx, f.tenant, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"victim.example.org", "203.0.113.9"}; !slices.Equal(got, want) {
+		t.Fatalf("uncovered = %v, want %v", got, want)
+	}
+	other, err := g.UncoveredTargets(ctx, shared.NewID(), targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"app.scoped.com", "198.51.100.7", "victim.example.org", "203.0.113.9"}; !slices.Equal(other, want) {
+		t.Fatalf("another tenant: uncovered = %v, want %v (this tenant's entries cover nothing for it)", other, want)
+	}
+	if _, err := (&ActiveGate{}).UncoveredTargets(ctx, f.tenant, targets); err == nil {
+		t.Error("an unwired gate must refuse")
 	}
 }
 
