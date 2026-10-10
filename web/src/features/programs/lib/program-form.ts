@@ -29,6 +29,7 @@ export const PROGRAM_STATUS_LABEL: Record<ProgramStatus, string> = {
   active: 'Active',
   paused: 'Suspended',
   ended: 'Ended',
+  pending_attestation: 'Waiting for acceptance',
 }
 
 /**
