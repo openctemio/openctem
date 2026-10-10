@@ -17,6 +17,7 @@ package scangov
 import (
 	"context"
 	"fmt"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -44,6 +45,15 @@ type Service struct {
 	modes    ModeSource
 	settings SettingsStore
 	log      *logger.Logger
+
+	// Requests and the run gate (wiring.go).
+	repo      scangov.Repository
+	approvers ApproverDirectory
+	scans     ScanSource
+	totp      TOTPVerifier
+	inApp     InAppNotifier
+	audit     AuditLogger
+	now       func() time.Time
 }
 
 // NewService creates the service.

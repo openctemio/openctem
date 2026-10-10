@@ -149,6 +149,9 @@ const (
 	ScansWrite   Permission = "scans:write"
 	ScansDelete  Permission = "scans:delete"
 	ScansExecute Permission = "scans:execute"
+	// ScansApprove approves or rejects scan approval requests and starts
+	// emergency runs (RFC-072). Owners and administrators by default.
+	ScansApprove Permission = "scans:approve"
 
 	// Scan Profile permissions (scans:profiles:*)
 	ScanProfilesRead   Permission = "scans:profiles:read"
@@ -457,7 +460,7 @@ func AllPermissions() []Permission {
 		WorkflowsRead, WorkflowsWrite,
 
 		// Scans module
-		ScansRead, ScansWrite, ScansDelete, ScansExecute,
+		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
 		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,

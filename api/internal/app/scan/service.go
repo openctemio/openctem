@@ -194,9 +194,12 @@ type Service struct {
 	assetGroupRepo assetgroup.Repository
 	// selectorAssets reads the inventory behind dynamic target selectors
 	// (target_selectors.go); nil refuses a run that has one.
-	selectorAssets      SelectorAssets
-	runRepo             scanrun.RunRepository
-	stepRepo            scanworkflow.StepRepository
+	selectorAssets SelectorAssets
+	runRepo        scanrun.RunRepository
+	stepRepo       scanworkflow.StepRepository
+	// approvalGate and governanceAssets: scan approval (governance.go).
+	approvalGate        ApprovalGate
+	governanceAssets    GovernanceAssets
 	stepRunRepo         scanrun.StepRunRepository
 	commandRepo         command.Repository
 	scannerTemplateRepo scannertemplate.Repository
