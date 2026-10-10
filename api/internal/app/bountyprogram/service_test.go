@@ -52,6 +52,13 @@ func (f *fakeRepo) ReplaceScope(_ context.Context, w bp.ScopeWrite) error {
 	for _, e := range w.CreateEntries {
 		f.entries[e.ID()] = e
 	}
+	if w.DeactivateEntries {
+		for _, e := range f.entries {
+			if e.ProgramID() != nil && e.ProgramID().Equals(w.Program.ID) {
+				e.Deactivate()
+			}
+		}
+	}
 	f.excl[w.Program.ID] = w.Exclusions
 	return nil
 }
