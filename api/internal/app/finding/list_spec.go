@@ -59,14 +59,20 @@ func filterActor(ctx context.Context, e *datascope.Enforcer, c FilterCaller) (fi
 		}
 	}
 	var scope *shared.DataScope
-	if !c.IsAdmin && c.UserID != "" {
+	switch {
+	case !c.IsAdmin && c.UserID != "":
 		if e == nil {
 			return filterspec.Actor{}, errors.New("data scope enforcer not configured")
 		}
 		scope, err = e.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: false})
-		if err != nil {
-			return filterspec.Actor{}, fmt.Errorf("resolve data scope: %w", err)
-		}
+	case c.UserID != "" && e != nil:
+		// An administrator is not narrowed to scope rows, but private
+		// program assets stay hidden unless they are an owner or a member
+		// (RFC-065 §15.3).
+		scope, err = e.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: true, IsOwner: e.CallerOf(ctx).IsOwner})
+	}
+	if err != nil {
+		return filterspec.Actor{}, fmt.Errorf("resolve data scope: %w", err)
 	}
 	return filterspec.UserActor(filterspec.UserActorInput{
 		TenantID: tenantID, UserID: userID, IsAdmin: c.IsAdmin, Scope: scope, Has: c.Has,
