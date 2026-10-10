@@ -28,6 +28,14 @@ func (s *Service) CheckRun(ctx context.Context, sc *scan.Scan, def scangov.Defin
 	if err := s.requireRepo(); err != nil {
 		return fmt.Errorf("scan approval could not be checked, run refused: %w", err)
 	}
+	fallback := actor
+	if fallback == "" {
+		fallback = creatorOf(sc)
+	}
+	facts, err = s.withRequester(ctx, sc.TenantID, st.Rules, facts, fallback, s.clock())
+	if err != nil {
+		return fmt.Errorf("scan approval could not be checked, run refused: %w", err)
+	}
 	ev := scangov.Evaluate(m, st.Rules, facts)
 	actx := auditapp.AuditContext{ActorID: actor}
 	if !ev.Required {

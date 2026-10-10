@@ -80,6 +80,45 @@ func (r *ScanApprovalRepository) ScanApprovers(ctx context.Context, tenantID sha
 	return out, rows.Err()
 }
 
+// RequesterProfile answers what the requester conditions of the approval
+// rules read about a member of the tenant: the effective role and every
+// role id held there, the tenant's active groups they belong to, and
+// whether they are one of the tenant's service accounts. Not a member:
+// an empty profile.
+func (r *ScanApprovalRepository) RequesterProfile(ctx context.Context, tenantID shared.ID, userID string) (scangov.Requester, error) {
+	out := scangov.Requester{UserID: userID}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return out, nil //nolint:nilerr // not a user id: nobody, an empty profile
+	}
+	var role string
+	var roles, groups pq.StringArray
+	err = r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(ver.role, ''),
+		       COALESCE(u.kind = 'service' AND u.service_tenant_id = m.tenant_id, false),
+		       COALESCE(ARRAY(SELECT ur.role_id::text FROM user_roles ur
+		                      WHERE ur.tenant_id = m.tenant_id AND ur.user_id = m.user_id ORDER BY 1), '{}'),
+		       COALESCE(ARRAY(SELECT g.id::text FROM group_members gm JOIN groups g ON g.id = gm.group_id
+		                      WHERE g.tenant_id = m.tenant_id AND g.is_active AND gm.user_id = m.user_id ORDER BY 1 LIMIT 200), '{}')
+		FROM tenant_members m
+		JOIN users u ON u.id = m.user_id
+		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active'`,
+		tenantID.String(), uid.String()).Scan(&role, &out.ServiceAccount, &roles, &groups)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, nil
+	}
+	if err != nil {
+		return out, fmt.Errorf("read scan requester: %w", err)
+	}
+	if role != "" {
+		out.Roles = append(out.Roles, role)
+	}
+	out.Roles = append(out.Roles, roles...)
+	out.GroupIDs = groups
+	return out, nil
+}
+
 const scanApprovalColumns = `r.id, r.tenant_id, r.scan_id, COALESCE(s.name, ''), r.status, r.definition_digest, r.definition,
 	r.changes, r.evaluation, r.justification, r.ticket, r.run_on_approval, r.requested_by, r.requested_at, r.expires_at,
 	r.approvals, r.valid_until, r.consumed_at, r.decided_at, r.decided_by, r.decision_note, r.reminded_at, r.emergency,
