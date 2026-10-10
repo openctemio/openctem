@@ -1,3 +1,4 @@
+-- expand-contract-ok: one-step move of the legacy component tables into the software catalog (owner rule: minimal back-compat); the API stops during the deploy and ships the new readers in the same release (changelog upgrade note).
 -- Software components move into the software catalog (RFC-070).
 --
 -- Packages become catalog products with a package URL identity and versions;
