@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 )
 
 func authzCtx(isAdmin bool, perms ...string) context.Context {
@@ -128,8 +128,8 @@ func TestWorkflowActionAuthz_MixedGraphDeniedOnFirstGap(t *testing.T) {
 // reader of the workflow sees their values. Other configs pass unchanged.
 func TestWorkflowResponse_RedactsHTTPRequestHeaders(t *testing.T) {
 	cfg := map[string]any{"url": "https://hooks.example.com", "headers": map[string]any{"Authorization": "Bearer s3cr3t"}}
-	node, _ := workflow.NewNode(shared.NewID(), "a", workflow.NodeTypeAction, "a")
-	_ = node.SetActionConfig(workflow.ActionTypeHTTPRequest, cfg)
+	node, _ := automation.NewNode(shared.NewID(), "a", automation.NodeTypeAction, "a")
+	_ = node.SetActionConfig(automation.ActionTypeHTTPRequest, cfg)
 	resp := toNodeResponse(node)
 	hdrs, _ := resp.Config.ActionConfig["headers"].(map[string]any)
 	if hdrs["Authorization"] != redactedValue {
@@ -142,7 +142,7 @@ func TestWorkflowResponse_RedactsHTTPRequestHeaders(t *testing.T) {
 		t.Fatal("redaction dropped other fields")
 	}
 	other := map[string]any{"tags": []any{"x"}}
-	if got := redactActionConfig(workflow.ActionTypeAddTags, other); got["tags"] == nil {
+	if got := redactActionConfig(automation.ActionTypeAddTags, other); got["tags"] == nil {
 		t.Fatal("other actions must pass unchanged")
 	}
 }

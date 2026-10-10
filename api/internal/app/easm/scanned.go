@@ -51,11 +51,30 @@ type VerifiedRoots interface {
 	VerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
+// ProgramAssigner keeps the tenant's program group assignments current
+// (*postgres.BountyProgramRepository, RFC-065 §7).
+type ProgramAssigner interface {
+	AssignTenantPrograms(ctx context.Context, tenantID shared.ID) (int64, error)
+}
+
 // ScanStamper implements ingest.ScanAttributionStamper.
 type ScanStamper struct {
 	store ScanEvidenceStore
 	roots VerifiedRoots
 	join  *ScopeJoin
+	// programs assigns new assets a program covers to its group, so the
+	// program's researchers see what their scan found.
+	programs ProgramAssigner
+}
+
+// SetProgramAssigner wires the program data scope.
+func (s *ScanStamper) SetProgramAssigner(p ProgramAssigner) { s.programs = p }
+
+// assignPrograms is best effort: the periodic pass repeats it.
+func (s *ScanStamper) assignPrograms(ctx context.Context, tenantID shared.ID) {
+	if s.programs != nil {
+		_, _ = s.programs.AssignTenantPrograms(ctx, tenantID)
+	}
 }
 
 // SetScopeJoin confirms the new names a scan found under a permanent scope
@@ -92,6 +111,7 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 	if prov.Unsolicited {
 		return s.holdUnsolicited(ctx, tenantID, assets)
 	}
+	defer s.assignPrograms(ctx, tenantID)
 	observed, err := s.observed(ctx, tenantID, prov)
 	if err != nil {
 		return err

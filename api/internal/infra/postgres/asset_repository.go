@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strconv"
@@ -1224,6 +1225,26 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
 	}
 
+	// Address assets inside these ranges. The address is the asset's name
+	// (text); a name that is not an address is never cast.
+	if len(filter.InCIDRs) > 0 {
+		cidrs := make([]string, 0, len(filter.InCIDRs))
+		for _, c := range filter.InCIDRs {
+			if p, err := netip.ParsePrefix(strings.TrimSpace(c)); err == nil {
+				cidrs = append(cidrs, p.Masked().String())
+			}
+		}
+		if len(cidrs) == 0 {
+			conditions = append(conditions, "FALSE")
+		} else {
+			conditions = append(conditions, fmt.Sprintf(
+				`(a.asset_type IN ('ip_address', 'host') AND position('/' IN a.name) = 0
+				  AND pg_input_is_valid(a.name, 'inet') AND a.name::inet <<= ANY($%d::inet[]))`, argIndex))
+			args = append(args, pq.Array(cidrs))
+			argIndex++
+		}
+	}
+
 	// Business unit membership filter (business_unit_assets join).
 	if len(filter.BusinessUnitIDs) > 0 {
 		placeholders := make([]string, len(filter.BusinessUnitIDs))
@@ -1567,6 +1588,14 @@ func assetUpsertConflictSQL() string {
 				ELSE merge_jsonb_deep(EXCLUDED.properties, assets.properties)
 			END,
 			last_seen = GREATEST(assets.last_seen, EXCLUDED.last_seen),
+			-- A re-observed stale asset is active again (Asset.MarkSeen set
+			-- it; this clause used to drop it while history said
+			-- "recovered"). Inactive (a closed port, a person's decision)
+			-- and a manual status are left to their own paths.
+			status = CASE
+				WHEN assets.status = 'stale' AND EXCLUDED.status = 'active' AND NOT assets.manual_status_override
+				THEN 'active' ELSE assets.status
+			END,
 			updated_at = NOW(),
 			discovery_source = COALESCE(assets.discovery_source, EXCLUDED.discovery_source),
 			discovery_tool = COALESCE(assets.discovery_tool, EXCLUDED.discovery_tool),

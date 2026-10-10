@@ -68,6 +68,10 @@ type Repository interface {
 	List(ctx context.Context, tenantID shared.ID, memberOf *shared.ID) ([]*Program, error)
 	// Entries lists a program's scope entries (any status).
 	Entries(ctx context.Context, tenantID, programID shared.ID) ([]*scope.Target, error)
+	// TenantEntries lists every scope entry of the tenant (any status, any
+	// source): an import reports patterns that already exist and where a
+	// program exclusion overlaps the organization's own scope.
+	TenantEntries(ctx context.Context, tenantID shared.ID) ([]*scope.Target, error)
 	// Exclusions lists the program exclusions of one program, or of every
 	// program of the tenant when programID is nil.
 	Exclusions(ctx context.Context, tenantID shared.ID, programID *shared.ID) ([]Exclusion, error)
@@ -75,4 +79,15 @@ type Repository interface {
 	IsMember(ctx context.Context, tenantID, programID, userID shared.ID) (bool, error)
 	// MemberProgramIDs lists the programs whose group has the user.
 	MemberProgramIDs(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
+	// SaveSync writes the source settings, sync state and pending terms.
+	SaveSync(ctx context.Context, p *Program) error
+	// SyncDue lists active programs with a source not synced since
+	// olderThan (all tenants: the controller).
+	SyncDue(ctx context.Context, olderThan time.Time, limit int) ([]ProgramRef, error)
+}
+
+// ProgramRef names one program of one tenant.
+type ProgramRef struct {
+	TenantID  shared.ID
+	ProgramID shared.ID
 }

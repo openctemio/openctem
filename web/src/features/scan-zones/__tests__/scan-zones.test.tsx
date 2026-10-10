@@ -165,6 +165,35 @@ describe('RunDispatchPanel', () => {
     expect(within(warnings).queryByText(/10\.9\.9\.9/)).not.toBeInTheDocument()
     expect(within(warnings).getByText('other note')).toBeInTheDocument()
     expect(screen.getByText('HQ')).toBeInTheDocument()
+    expect(screen.queryByTestId('run-target-expansion')).not.toBeInTheDocument()
+  })
+
+  it('shows what each dynamic target resolved to when the run started (RFC-068)', () => {
+    perms.granted.clear()
+    render(
+      <RunDispatchPanel
+        dispatch={{
+          resolved_targets: 5001,
+          excluded_targets: 0,
+          target_expansion: [
+            {
+              selector: '*.example.com',
+              kind: 'wildcard',
+              matched: 5000,
+              capped: true,
+              sample: ['a.example.com', 'b.example.com'],
+            },
+            { selector: '203.0.113.0/24', kind: 'cidr', matched: 1 },
+          ],
+        }}
+      />
+    )
+    const list = screen.getByTestId('run-target-expansion')
+    expect(within(list).getByText('*.example.com')).toBeInTheDocument()
+    expect(within(list).getByText(/5,000 known names/)).toBeInTheDocument()
+    expect(within(list).getByText('Capped')).toBeInTheDocument()
+    expect(within(list).getByText('a.example.com, b.example.com')).toBeInTheDocument()
+    expect(within(list).getByText(/1 known host$/)).toBeInTheDocument()
   })
 })
 

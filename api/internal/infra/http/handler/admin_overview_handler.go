@@ -72,6 +72,12 @@ type AdminOverviewSensors struct {
 	Offline int64 `json:"offline"`
 }
 
+// AdminOverviewRequests counts what waits in the Requests inbox.
+type AdminOverviewRequests struct {
+	AccessPending       int64 `json:"access_pending"`
+	AccessOldestSeconds int64 `json:"access_oldest_pending_seconds"`
+}
+
 // AdminOverviewPlatform is the platform-health part of the overview.
 type AdminOverviewPlatform struct {
 	SchemaVersion        int64                `json:"schema_version"`
@@ -90,6 +96,7 @@ type AdminOverviewPlatform struct {
 type AdminOverviewResponse struct {
 	Organizations AdminOverviewOrganizations `json:"organizations"`
 	Security      AdminOverviewSecurity      `json:"security"`
+	Requests      AdminOverviewRequests      `json:"requests"`
 	Platform      AdminOverviewPlatform      `json:"platform"`
 	GeneratedAt   time.Time                  `json:"generated_at"`
 }
@@ -163,6 +170,9 @@ func buildAdminOverview(c postgres.AdminOverviewCounts, ops postgres.OpsSnapshot
 			BreakGlassSignIns7d:    c.BreakGlassSignIns7d,
 			FailedAdminActions24h:  c.FailedAdminActions24h,
 			BreakGlassTestsOverdue: overdue,
+		},
+		Requests: AdminOverviewRequests{
+			AccessPending: c.AccessRequestsPending, AccessOldestSeconds: int64(c.AccessRequestOldestPendSec),
 		},
 		Platform: AdminOverviewPlatform{
 			SchemaVersion:        ops.SchemaVersion,

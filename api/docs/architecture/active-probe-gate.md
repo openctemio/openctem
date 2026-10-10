@@ -28,6 +28,21 @@ controller then marks it `expired`.
 
 - **One-off entries** carry `expires_at` (default 7 days, at most the
   organization's `one_off_max_days`, 30 at most) and a `reason`.
+- **Intrusive (t2) entries** have their own bound, the owner-only
+  `t2_max_duration` (`7d`, `30d` default, `90d`, `365d`, `permanent`;
+  RFC-054 §12.4), checked in `scope.resolveExpiry` on create and update
+  (also when only the tier is raised: `INTRUSIVE_TOO_LONG`,
+  `INTRUSIVE_NEEDS_EXPIRY`). The one-off policy does not apply to them.
+  Only `PUT /scope/settings/intrusive` (owner, step-up, reason) changes
+  it; `PUT /scope/settings` keeps it (`ScopeSettings.WithIntrusive`).
+- **Re-attestation** (RFC-054 §12.5). An active t2 entry that outlives its
+  attestation period (owner-set `t2_attestation_days`, default 90) is
+  confirmed with `POST /scope/targets/{id}/attest` (`scope:approve`). The
+  `scope-attestation` controller (hourly) opens the request (owners and
+  administrators told in-app, approvers by email, channels) and, after 14
+  days without an answer, sets the entry to t1 with a conditional update
+  (`ScopeTargetRepository.DowngradeUnattested`; never a delete), audited as
+  `scope_target.t2_downgraded`.
 - **Who widens.** Creating, activating, extending or raising the tier of an
   entry is widening. A holder of `attack_surface:scope:approve` re-authenticates
   (step-up) and the entry needs the organization's approval count of other
@@ -38,6 +53,19 @@ controller then marks it `expired`.
 - **Approving** (`POST /scope/targets/{id}/approve`) needs the approval
   permission and step-up; the requester never approves, nobody approves
   twice. Exclusion removal, deactivation and shortening need step-up too.
+- **Who approves** (RFC-054 §12.2). A pending entry answers `approval`:
+  the approvals still needed and the members who can give them (owners,
+  administrators, holders of `scope:approve`; never the requester or a
+  prior approver), named only for callers with `team:members:read`
+  (`postgres.ScopeActorRepository.ScopeApprovers`). They are told in-app,
+  by email and on the channels; `POST /scope/targets/{id}/remind` repeats
+  it once an hour at most (atomic `approval_reminded_at`).
+- **No other approver** (RFC-054 §12.3). `POST /scope/targets/{id}/self-approve`
+  lets the owner who requested the entry approve it when the eligible
+  approvers cannot, with a reason and a code from their authenticator app
+  in the request (`auth.AuthService.VerifyFreshTOTP`; replay-proof, counts
+  towards the lockout). The approval row is marked `self_approved`; the
+  audit event is high severity; every administrator is told.
 - Every widening that takes effect, every request, and every settings change
   notifies all active owners and administrators in-app, and is audited.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one

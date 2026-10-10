@@ -39,6 +39,7 @@ import type {
 } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { TIER_HINT, TIER_LABEL } from '../lib/scope-entry'
+import { ScopeIntrusiveSettings } from './scope-intrusive-settings'
 
 export const ACTIVE_PROOF_TEXT: Record<string, { label: string; hint: string }> = {
   off: {
@@ -71,6 +72,22 @@ const ONE_OFF_TEXT: Record<ScopeOneOffPolicy, { label: string; hint: string }> =
 }
 
 const DEFAULT_SENTINEL = 'default'
+
+/** The platform administrator's approval policy (RFC-054 §12.6). */
+export const APPROVAL_POLICY_TEXT: Record<string, { label: string; hint: string }> = {
+  required: {
+    label: 'Approvals required',
+    hint: 'Widening waits for the approvals below; intrusive (T2) entries always need one.',
+  },
+  tenant_controlled: {
+    label: 'Your organization decides',
+    hint: 'An owner sets the approval count below for every tier, intrusive (T2) included.',
+  },
+  disabled: {
+    label: 'Approvals disabled',
+    hint: 'Approvals disabled by your platform administrator: widening takes effect without a second person. Re-authentication, the deny list, audit and notifications still apply.',
+  },
+}
 
 export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
   return {
@@ -144,7 +161,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
         description="Read-only. These follow from your settings and the platform's configuration."
       >
         <Card>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
+          <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Fact
               label="Approvals a widening needs"
               value={String(saved.effective_widening_approvals ?? 0)}
@@ -154,6 +171,12 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
               label="Active-probe proof"
               value={proof.label}
               hint={`${proof.hint} Set by the platform operator.`}
+              locked
+            />
+            <Fact
+              label="Approval policy"
+              value={APPROVAL_POLICY_TEXT[saved.approval_policy?.mode ?? 'required'].label}
+              hint={`${APPROVAL_POLICY_TEXT[saved.approval_policy?.mode ?? 'required'].hint} Set by your platform administrator.`}
               locked
             />
             <Fact
@@ -293,6 +316,14 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
           </CardContent>
         </Card>
       </SettingsSection>
+
+      <ScopeIntrusiveSettings
+        settings={saved}
+        onSaved={(out) => {
+          setSaved(out)
+          setForm(settingsToInput(out))
+        }}
+      />
     </div>
   )
 }

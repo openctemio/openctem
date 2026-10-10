@@ -6,23 +6,26 @@
  */
 import {
   AlertTriangle,
-  ClipboardCheck,
-  Globe,
   Bug,
   Building,
   Building2,
-  Crosshair,
+  ClipboardCheck,
   Container,
+  Crosshair,
   Crown,
+  Fence,
   FileKey,
+  FileSignature,
   FileWarning,
   FolderKanban,
   GitBranch,
-  ListChecks,
-  Radar,
+  Globe,
   History,
   Link2,
+  ListChecks,
+  Radar,
   Swords,
+  Trophy,
   Wrench,
 } from 'lucide-react'
 import type { SectionTab } from '@/features/shared/components/section-tabs'
@@ -46,6 +49,36 @@ export const EXPOSURES_SECTION_TABS: readonly SectionTab[] = [
 export const REMEDIATION_SECTION_TABS: readonly SectionTab[] = [
   { label: 'Tasks', href: '/remediation' },
   { label: 'Solution families', href: '/remediations' },
+]
+
+/**
+ * Scoping > Scope: the organization's own scope entries and exclusions, and
+ * the bug-bounty programs it tests (RFC-065). Each tab carries the route
+ * guard's permission, so a researcher with only programs:read sees Programs.
+ * Render with `GatedSectionTabs`.
+ */
+export const SCOPE_SECTION_TABS: readonly SectionTab[] = [
+  {
+    label: 'Scope',
+    href: '/scope',
+    icon: Fence,
+    module: 'scope_config',
+    permission: Permission.ScopeRead,
+  },
+  {
+    label: 'Programs',
+    href: '/programs',
+    icon: Trophy,
+    module: 'scope_config',
+    permission: Permission.ProgramsRead,
+  },
+  {
+    label: 'Letters',
+    href: '/scope/letters',
+    icon: FileSignature,
+    module: 'scope_config',
+    permission: Permission.ScopeRead,
+  },
 ]
 
 /**

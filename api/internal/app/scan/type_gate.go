@@ -236,6 +236,8 @@ func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 	out := maps.Clone(runContext)
 	delete(out, RunContextKeyTargetTypes)
 	delete(out, RunContextKeyActor)
+	delete(out, RunContextKeyTargetExpansion)
+	delete(out, RunContextKeySelectorRoots)
 	if st != nil && st.Targets != nil {
 		if _, had := out["targets"]; had {
 			out["targets"] = st.Targets
@@ -248,6 +250,24 @@ func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 // is stored, a []any after a JSON round trip).
 func contextTargets(rc map[string]any) []string {
 	switch ts := rc["targets"].(type) {
+	case []string:
+		return ts
+	case []any:
+		out := make([]string, 0, len(ts))
+		for _, v := range ts {
+			if str, ok := v.(string); ok {
+				out = append(out, str)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// contextStrings reads a string list from the run context (a []string
+// before the run is stored, a []any after a JSON round trip).
+func contextStrings(rc map[string]any, key string) []string {
+	switch ts := rc[key].(type) {
 	case []string:
 		return ts
 	case []any:
