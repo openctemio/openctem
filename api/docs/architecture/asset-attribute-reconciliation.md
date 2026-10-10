@@ -183,13 +183,43 @@ Web: the asset sheet's Timeline tab and the asset page's Timeline card
 
 Out-of-scope or another tenant's asset answers 404.
 
+## Set attributes (RFC-069 §13)
+
+IP addresses, technologies and open ports are kept per source and per
+element in `asset_attribute_set_elements` (`first_seen`, `last_seen`,
+`removed_at`, `coverage_key`, `source_run`).
+
+```
+report ──▶ ingest.recordSets ──▶ AssetService.ReconcileSets ──▶ ApplySets (one tx, asset rows locked)
+             coverage from the          policy (§12 class rules)    PlanSetObservation per source
+             command's port settings                                ResolveSet = union of trusted, fresh
+             and the tool                                           write properties / open_port status
+                                                                    one timeline event per changed set
+```
+
+- **Coverage:** `full` (DNS resolvers for addresses, fingerprinting probes
+  for technologies), `ranges` (port scan with an explicit list or `full`),
+  `keyed` (top-N or default port scan: removes only what the same setting
+  found), `sightings` (everything else; TTL only).
+- **Removal:** only the same source observing a coverage that includes the
+  element without it. A partial scan leaves everything outside its coverage.
+- **Shown set:** union of the elements a trusted source still reports within
+  its TTL, plus untracked values (pre-upgrade or written elsewhere), which
+  only a trusted `full`/`ranges` observation naming them can remove.
+- **Writers:** `properties.ip_addresses` and `properties.technologies` are
+  written by the reconciliation (ingest keeps the existing values when it
+  merges a report into an existing asset); open ports become the status of
+  the address's `open_port` assets (closed: `inactive`, `disappeared`
+  history, exposures resolved; reopened: `recovered`).
+- **Ordering and timeline:** strictly newer per element; re-sightings
+  refresh hourly and record nothing; `added`/`removed` events, exact
+  reversals within an hour fold (`flap_count`); the daily sweep and policy
+  changes re-resolve sets (`ttl_expiry`, `policy_change`).
+
 ## What is not reconciled here
 
-- Open ports: `open_port` assets, closed only by the same kind of scan
-  ([easm.md](./easm.md)).
 - Software: `asset_software` with source and confidence
   ([vulnerability-matching.md](./vulnerability-matching.md)).
-- Tags, description, name, `properties` (P1: IP addresses, technologies,
-  OS as per-source values in the same table).
+- Tags, description, name, other `properties` (OS, hostname, region).
 - Existence: any source keeps an asset active; the lifecycle worker demotes
   it when none has reported it within the threshold.

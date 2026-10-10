@@ -162,6 +162,7 @@ func (s *Service) recheck(ctx context.Context, tenantID shared.ID, sensorID *sha
 	outcomes := make(map[shared.ID]recheckOutcome, len(cmds))
 	replaced := map[shared.ID]*commanddom.Command{}
 	jobs := make([]recheckJob, 0, len(cmds))
+	enforced := s.enforcesLimits(ctx, tenantID, sensorID)
 	for _, c := range cmds {
 		if !c.TenantID.Equals(tenantID) {
 			// Never another tenant's command (the poll is tenant-scoped;
@@ -188,7 +189,9 @@ func (s *Service) recheck(ctx context.Context, tenantID shared.ID, sensorID *sha
 			}
 			continue
 		}
-		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate, job: jobShapeOf(c)})
+		shape := jobShapeOf(c)
+		shape.LimitsEnforced = enforced
+		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate, job: shape})
 	}
 	for _, batch := range recheckBatches(jobs) {
 		s.recheckBatch(ctx, tenantID, sensorID, batch, outcomes, replaced)
@@ -364,6 +367,14 @@ func (s *Service) settle(ctx context.Context, j recheckJob, v targetVerdict,
 	kept, refused := v.split(j)
 	if len(refused) == 0 {
 		outcomes[j.cmd.ID] = recheckKeep
+		return
+	}
+	if !j.job.LimitsEnforced && s.jobs != nil && s.limits != nil && hasCode(refused, scopedom.RefusalConstrained) {
+		// A sensor that enforces scope limits may run this job inside them:
+		// it stays pending for one rather than being narrowed or failed.
+		outcomes[j.cmd.ID] = recheckWithheld
+		s.logger.Info("job withheld at claim: its targets are limited to some ports or paths and this sensor does not enforce scope limits",
+			"tenant_id", j.cmd.TenantID.String(), "command_id", j.cmd.ID.String())
 		return
 	}
 	store, ok := s.repo.(ScopeRecheckStore)
@@ -558,4 +569,14 @@ func narrowTargets(fields map[string]any, keep map[string]bool) {
 			delete(fields, "target")
 		}
 	}
+}
+
+// hasCode reports whether any refused target has code.
+func hasCode(refused map[string]string, code string) bool {
+	for _, c := range refused {
+		if c == code {
+			return true
+		}
+	}
+	return false
 }

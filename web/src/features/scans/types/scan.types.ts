@@ -4,7 +4,7 @@
  * Type definitions for scan management
  */
 
-import type { ScanTargetOptions } from '@/lib/api/scan-types'
+import type { ScanIntensity, ScanTargetOptions } from '@/lib/api/scan-types'
 import type { Status } from '@/features/shared/types'
 
 // ============================================
@@ -83,10 +83,10 @@ export interface ScanOptions {
 }
 
 // ============================================
-// INTENSITY
+// INTENSITY (RFC-071: passive, active, intrusive)
 // ============================================
 
-export type ScanIntensity = 'low' | 'medium' | 'high'
+export type { ScanIntensity }
 
 // ============================================
 // SCHEDULE
@@ -189,6 +189,18 @@ export const DEFAULT_TARGETS: ScanTargets = {
 export interface NewScanFormData {
   // Step 1: Basic Info
   name: string
+  /**
+   * The probe ceiling of every run (RFC-071), asked first: passive sends
+   * nothing to the targets, active probes without intrusive checks,
+   * intrusive allows them. The scanner and workflow choices are filtered by it.
+   */
+  intensity: ScanIntensity
+  /**
+   * Continuous discovery preset: the scan saved is the passive discovery of
+   * the roots, and a second scan of this workflow (Probe new assets) probes,
+   * actively, only the assets that came into scope since its previous run.
+   */
+  continuousProbeWorkflowId?: string
   mode: ScanMode
   /** Tool registry name of the scanner (mode "single"); the API requires it. */
   scannerName: string
@@ -225,6 +237,7 @@ export interface NewScanFormData {
 
 export const DEFAULT_NEW_SCAN: NewScanFormData = {
   name: '',
+  intensity: 'active',
   mode: 'single',
   scannerName: '',
   workflowId: undefined,

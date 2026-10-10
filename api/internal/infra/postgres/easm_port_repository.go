@@ -1,6 +1,8 @@
 package postgres
 
-// Open-port assets for port reconciliation (research/22 P0-6). Every query
+// Open-port asset status for port reconciliation (research/22 P0-6): set
+// reconciliation (asset_attribute_set_repository.go, RFC-069) closes and
+// reopens an address's open_port assets through these helpers. Every query
 // is tenant-scoped. Architecture: docs/architecture/easm.md.
 
 import (
@@ -11,77 +13,25 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// EASMPortRepository implements ingest.PortReconciler.
-type EASMPortRepository struct {
-	db *DB
-}
-
-// NewEASMPortRepository creates the repository.
-func NewEASMPortRepository(db *DB) *EASMPortRepository { return &EASMPortRepository{db: db} }
-
-var _ ingest.PortReconciler = (*EASMPortRepository)(nil)
-
 // portClosedNote marks an exposure resolved because its port was closed.
-const portClosedNote = "Resolved automatically: the port was not seen open by the latest port scan."
+const portClosedNote = "Resolved automatically: the port scan that had found the port open no longer sees it."
 
-// ActiveOpenPorts returns the tenant's active open_port assets of the given
-// hosts (properties.host), by host.
-func (r *EASMPortRepository) ActiveOpenPorts(ctx context.Context, tenantID shared.ID, hosts []string) (map[string][]ingest.OpenPortAsset, error) {
-	out := map[string][]ingest.OpenPortAsset{}
-	if len(hosts) == 0 {
-		return out, nil
-	}
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, properties->>'host'
-		FROM assets
-		WHERE tenant_id = $1 AND deleted_at IS NULL AND status = 'active'
-		  AND asset_type = 'service' AND sub_type = 'open_port'
-		  AND properties->>'host' = ANY($2)`,
-		tenantID.String(), pq.Array(hosts))
-	if err != nil {
-		return nil, fmt.Errorf("list open ports: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, name, host string
-		if err := rows.Scan(&id, &name, &host); err != nil {
-			return nil, err
-		}
-		aid, err := shared.IDFromString(id)
-		if err != nil {
-			continue
-		}
-		out[host] = append(out[host], ingest.OpenPortAsset{ID: aid, Name: name})
-	}
-	return out, rows.Err()
-}
-
-// ClosePorts marks the tenant's active open_port assets inactive, records a
-// "disappeared" entry for each and resolves their active port_open and
-// service_detected exposures, in one transaction.
-func (r *EASMPortRepository) ClosePorts(ctx context.Context, tenantID shared.ID, ids []shared.ID, seenBefore time.Time, reason string) ([]shared.ID, error) {
+// closePortsTx marks the tenant's active open_port assets among ids
+// inactive, records a "disappeared" entry for each and resolves their
+// active port_open and service_detected exposures, inside tx. A port seen
+// open at or after seenBefore is not closed. It returns the ids it closed.
+func closePortsTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string, seenBefore time.Time, reason string) ([]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	raw := make([]string, 0, len(ids))
-	for _, id := range ids {
-		raw = append(raw, id.String())
-	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	closed, err := portQueryIDs(ctx, tx, `
 		UPDATE assets SET status = 'inactive', updated_at = now()
 		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL AND status = 'active'
 		  AND asset_type = 'service' AND sub_type = 'open_port' AND last_seen < $3
-		RETURNING id`, tenantID.String(), pq.Array(raw), seenBefore.UTC())
+		RETURNING id`, tenantID.String(), pq.Array(ids), seenBefore.UTC())
 	if err != nil {
 		return nil, fmt.Errorf("close ports: %w", err)
 	}
@@ -114,34 +64,20 @@ func (r *EASMPortRepository) ClosePorts(ctx context.Context, tenantID shared.ID,
 			}
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	out := make([]shared.ID, 0, len(closed))
-	for _, s := range closed {
-		if id, err := shared.IDFromString(s); err == nil {
-			out = append(out, id)
-		}
-	}
-	return out, nil
+	return closed, nil
 }
 
-// ReopenPorts marks the tenant's inactive open_port assets with the given
-// (normalized) names active again, with a "recovered" history entry.
-func (r *EASMPortRepository) ReopenPorts(ctx context.Context, tenantID shared.ID, names []string, reason string) ([]shared.ID, error) {
-	if len(names) == 0 {
+// reopenPortsTx marks the tenant's inactive open_port assets among ids
+// active again, with a "recovered" history entry, inside tx.
+func reopenPortsTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string, reason string) ([]string, error) {
+	if len(ids) == 0 {
 		return nil, nil
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
 	back, err := portQueryIDs(ctx, tx, `
 		UPDATE assets SET status = 'active', updated_at = now()
-		WHERE tenant_id = $1 AND name = ANY($2) AND deleted_at IS NULL AND status = 'inactive'
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL AND status = 'inactive'
 		  AND asset_type = 'service' AND sub_type = 'open_port'
-		RETURNING id`, tenantID.String(), pq.Array(names))
+		RETURNING id`, tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("reopen ports: %w", err)
 	}
@@ -155,16 +91,7 @@ func (r *EASMPortRepository) ReopenPorts(ctx context.Context, tenantID shared.ID
 			return nil, fmt.Errorf("record port reopened: %w", err)
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	out := make([]shared.ID, 0, len(back))
-	for _, s := range back {
-		if id, err := shared.IDFromString(s); err == nil {
-			out = append(out, id)
-		}
-	}
-	return out, nil
+	return back, nil
 }
 
 func portQueryIDs(ctx context.Context, tx *sql.Tx, q string, args ...any) ([]string, error) {
