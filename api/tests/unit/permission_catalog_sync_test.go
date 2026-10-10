@@ -48,11 +48,27 @@ var permRenameMigrations = []string{
 
 // permRemoveMigrations delete permission ids. Each lists the removed ids as
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
-// order, after the renames.
+// order, after the renames. An entry without a version prefix is found by
+// name (migrationFile), so the merge queue can renumber it.
 var permRemoveMigrations = []string{
 	"001179_drop_tenant_tools_delete_permission.up.sql",
 	"001184_drop_vulnerability_write_permissions.up.sql",
 	"001286_drop_scan_workflow_execute_permission.up.sql",
+	"drop_components_delete_permission",
+}
+
+// migrationFile resolves a list entry to its file under migrations/: a full
+// file name as is, a bare migration name by its one *_<name>.up.sql file.
+func migrationFile(t *testing.T, root, entry string) string {
+	t.Helper()
+	if strings.HasSuffix(entry, ".sql") {
+		return filepath.Join(root, "migrations", entry)
+	}
+	files, err := filepath.Glob(filepath.Join(root, "migrations", "*_"+entry+".up.sql"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("want exactly one migration named %s, found %v (%v)", entry, files, err)
+	}
+	return files[0]
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
@@ -128,7 +144,7 @@ func seededPermissionIDs(t *testing.T) map[string]string {
 		}
 	}
 	for _, m := range permRemoveMigrations {
-		data, err := os.ReadFile(filepath.Join(root, "migrations", m))
+		data, err := os.ReadFile(migrationFile(t, root, m))
 		if err != nil {
 			t.Fatalf("read remove migration %s: %v", m, err)
 		}
