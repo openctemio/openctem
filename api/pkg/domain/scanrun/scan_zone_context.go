@@ -19,3 +19,8 @@ func ScanZoneFromContext(runContext map[string]any) *shared.ID {
 	}
 	return &id
 }
+
+// RunContextKeyIntensity holds the scan intensity a run started with
+// (RFC-071): "passive", "active" or "intrusive". Absent: no ceiling beyond
+// the dispatch gate (a workflow run started without a scan).
+const RunContextKeyIntensity = "intensity"

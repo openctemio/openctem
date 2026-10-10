@@ -211,6 +211,9 @@ func (g *dispatchGate) refusal(c *commanddom.Command) *sensordom.DispatchRefusal
 	if r := g.grantRefusal(c); r != nil {
 		return &sensordom.DispatchRefusal{Layer: RefusalLayerGrant, Rule: r.Dimension, Detail: r.Detail}
 	}
+	if r := g.intensityRefusal(c); r != nil {
+		return r
+	}
 	return sensordom.Accepts(g.report, sensordom.JobOf(string(c.Type), c.Payload), g.opts)
 }
 
@@ -225,6 +228,35 @@ func (g *dispatchGate) grantRefusal(c *commanddom.Command) *sensordom.GrantRefus
 		contract = g.manifest.ToolContract(sensordom.JobOf(string(c.Type), c.Payload).Tool)
 	}
 	return g.grant.AdmitContract(string(c.Type), c.Payload, c.ScanZoneID, contract)
+}
+
+// RuleIntensity is the refusal rule of a job whose tier on this sensor
+// (the tier its tool contract gives it) is above its scan's intensity.
+const RuleIntensity = "intensity"
+
+// intensityRefusal withholds c from this sensor when the tier the sensor's
+// tool contract gives the job (custom templates, out-of-band callbacks, an
+// operator-installed tool) is above the scan intensity it was queued under
+// (RFC-071). Another sensor whose contract keeps the job within it may
+// still take it.
+func (g *dispatchGate) intensityRefusal(c *commanddom.Command) *sensordom.DispatchRefusal {
+	if c.DispatchGate == nil {
+		return nil
+	}
+	max, capped := c.DispatchGate.IntensityMaxTier()
+	if !capped {
+		return nil
+	}
+	job := sensordom.JobOf(string(c.Type), c.Payload)
+	var contract *sensordom.ToolContract
+	if g.manifest != nil {
+		contract = g.manifest.ToolContract(job.Tool)
+	}
+	if t := sensordom.CommandTierFor(string(c.Type), job, contract); t > max {
+		return &sensordom.DispatchRefusal{Layer: RefusalLayerGrant, Rule: RuleIntensity,
+			Detail: fmt.Sprintf("tier T%d above the scan's %s intensity", t, c.DispatchGate.Intensity)}
+	}
+	return nil
 }
 
 // accepted keeps the commands the gate does not withhold, in order.
