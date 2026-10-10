@@ -25,6 +25,26 @@ type DispatchGate struct {
 	// zones (a connector scan runs outside every zone, on its pinned
 	// sensor), so the claim does not either.
 	NoZoneRouting bool `json:"no_zone_routing,omitempty"`
+	// Intensity is the scan intensity the command was queued under
+	// ("passive", "active", "intrusive"; "" = none): the claim refuses it
+	// when its tier, or the tier the sensor's tool contract gives it, is
+	// above (RFC-071).
+	Intensity string `json:"intensity,omitempty"`
+}
+
+// IntensityMaxTier is the highest tier the gate's intensity allows, and
+// false when the command has no intensity. An unknown value allows only
+// passive (fail closed).
+func (g DispatchGate) IntensityMaxTier() (int, bool) {
+	switch g.Intensity {
+	case "":
+		return 0, false
+	case "active":
+		return 1, true
+	case "intrusive":
+		return 2, true
+	}
+	return 0, true
 }
 
 // ProbeDispatchGate is the record of a validate or retest command: the
