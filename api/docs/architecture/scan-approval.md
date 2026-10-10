@@ -1,6 +1,6 @@
 # Scan approval governance
 
-Design: [RFC-072](../rfcs/RFC-072-scan-approval-governance.md).
+Design: [RFC-073](../rfcs/RFC-073-scan-approval-governance.md).
 
 An organization chooses how much human approval its scans need: **Off**
 (default), **On** (its approval rules decide) or **Strict** (the rules

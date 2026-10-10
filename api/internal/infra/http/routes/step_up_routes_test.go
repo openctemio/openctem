@@ -72,7 +72,7 @@ var stepUpRoutes = []string{
 	// taking an exclusion out of effect.
 	"PUT /api/v1/scope/settings",
 	"PUT /api/v1/scope/settings/intrusive",
-	// Scan approval governance (RFC-072): loosening it is the guarded direction.
+	// Scan approval governance (RFC-073): loosening it is the guarded direction.
 	"PUT /api/v1/organization/settings/scan-governance/mode",
 	"PUT /api/v1/organization/settings/scan-governance/rules",
 	"POST /api/v1/scans/{id}/emergency-run",

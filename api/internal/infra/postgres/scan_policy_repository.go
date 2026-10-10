@@ -1,6 +1,6 @@
 package postgres
 
-// The platform policy for scan approval (RFC-072 §5): the
+// The platform policy for scan approval (RFC-073 §5): the
 // platform default in platform_settings, the per-organization override in
 // tenants.scan_approval_policy. Written only by the admin console service.
 

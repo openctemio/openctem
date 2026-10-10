@@ -64,7 +64,7 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 		return
 	}
 	// The platform policy for scan approval and the organization's scan
-	// approval mode (RFC-072): scope entries need approval only in Strict;
+	// approval mode (RFC-073): scope entries need approval only in Strict;
 	// an unreadable mode counts as Strict for them.
 	if repos != nil && repos.ScanPolicy != nil {
 		svc.ScanPolicy = scanpolicy.NewService(repos.ScanPolicy, repos.AdminAuditLog, repos.Admin,
@@ -116,7 +116,7 @@ func (m scopePolicyMailer) NotifyScopePolicyChanged(_ context.Context, to []stri
 	}()
 }
 
-// wireScanGovernance builds scan approval governance (RFC-072): the settings,
+// wireScanGovernance builds scan approval governance (RFC-073): the settings,
 // the approval requests, the approver directory, the authenticator check for
 // an owner's own approval, notifications and audit, and the gate every scan
 // run passes.
@@ -124,24 +124,23 @@ func wireScanGovernance(svc *Services, repos *Repositories, log *logger.Logger) 
 	if svc.Tenant == nil {
 		return
 	}
-	g := scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log)
+	svc.ScanGovernance = scangovapp.NewService(svc.ScanPolicy, svc.Tenant, log)
 	if repos.ScanApproval != nil {
-		g.SetRequests(repos.ScanApproval)
+		svc.ScanGovernance.SetRequests(repos.ScanApproval)
 		var totp scangovapp.TOTPVerifier
 		if svc.Auth != nil {
 			totp = scopeTOTP{auth: svc.Auth}
 		}
-		g.SetApprovers(repos.ScanApproval, totp)
+		svc.ScanGovernance.SetApprovers(repos.ScanApproval, totp)
 	}
 	if svc.Notification != nil {
-		g.SetNotifier(svc.Notification)
+		svc.ScanGovernance.SetNotifier(svc.Notification)
 	}
 	if svc.Audit != nil {
-		g.SetAudit(svc.Audit)
+		svc.ScanGovernance.SetAudit(svc.Audit)
 	}
 	if svc.Scan != nil {
-		g.SetScans(svc.Scan)
-		svc.Scan.SetApprovalGate(g, repos.ScanApproval)
+		svc.ScanGovernance.SetScans(svc.Scan)
+		svc.Scan.SetApprovalGate(svc.ScanGovernance, repos.ScanApproval)
 	}
-	svc.ScanGovernance = g
 }

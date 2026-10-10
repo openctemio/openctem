@@ -150,7 +150,7 @@ const (
 	ScansDelete  Permission = "scans:delete"
 	ScansExecute Permission = "scans:execute"
 	// ScansApprove approves or rejects scan approval requests and starts
-	// emergency runs (RFC-072). Owners and administrators by default.
+	// emergency runs (RFC-073). Owners and administrators by default.
 	ScansApprove Permission = "scans:approve"
 
 	// Scan Profile permissions (scans:profiles:*)

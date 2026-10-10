@@ -126,7 +126,7 @@ type ScopeSettingsResponse struct {
 	// Owner-only.
 	T2AttestationDays int `json:"t2_attestation_days"`
 	// ApprovalPolicy is the organization's scan approval in force and
-	// whether scope entries need approval under it (read-only; RFC-072 §6).
+	// whether scope entries need approval under it (read-only; RFC-073 §6).
 	ApprovalPolicy ScopeApprovalPolicyView `json:"approval_policy"`
 }
 

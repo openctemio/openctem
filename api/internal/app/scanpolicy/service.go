@@ -1,5 +1,5 @@
-// Package scanpolicy serves the platform policy for scan approval (RFC-072,
-// docs/rfcs/RFC-072-scan-approval-governance.md §5): a platform default and
+// Package scanpolicy serves the platform policy for scan approval (RFC-073,
+// docs/rfcs/RFC-073-scan-approval-governance.md §5): a platform default and
 // a per-organization override, set only by a platform administrator, that
 // lets the organization choose its scan approval mode or forces one; and the
 // effective mode of an organization (its owner's choice under that policy).

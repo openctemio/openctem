@@ -1,6 +1,6 @@
 package audit
 
-// Scan approval governance actions (docs/rfcs/RFC-072-scan-approval-governance.md).
+// Scan approval governance actions (docs/rfcs/RFC-073-scan-approval-governance.md).
 // The resource of a request action is the scan (scan_config); the settings
 // actions are on the organization (tenant).
 const (

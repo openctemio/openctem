@@ -1,7 +1,7 @@
 ### Behaviour change: scope entries need approval only under Strict scan approval
 
 - New organization setting **Scan approval**: Off (default), On or Strict
-  (RFC-072). Owner only, with step-up re-authentication and a reason;
+  (RFC-073). Owner only, with step-up re-authentication and a reason;
   approval rules (intensity, tools, asset tags, criticality, crown jewels,
   selectors, blast radius, schedule, sensor placement, zone) with Light,
   Standard and Strict presets. `GET/PUT /api/v1/organization/settings/scan-governance`.
