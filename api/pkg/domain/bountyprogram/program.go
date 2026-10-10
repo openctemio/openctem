@@ -310,7 +310,7 @@ func NewTerms(programURL string, rules Rules, items []Item) Terms {
 	for _, it := range items {
 		key := it.Raw
 		if it.Pattern != "" {
-			key = string(it.TargetType) + ":" + it.Pattern
+			key = it.EntryKey()
 		}
 		if it.InScope {
 			t.InScope = append(t.InScope, key)
@@ -338,6 +338,8 @@ func (t Terms) SHA256() string {
 type Planned struct {
 	TargetType scope.TargetType `json:"target_type"`
 	Pattern    string           `json:"pattern"`
+	// Constraint is an entry's port limit (exclusions have none).
+	Constraint scope.Constraint `json:"constraint,omitzero"`
 	// Reason says why a program exclusion exists.
 	Reason string `json:"reason,omitempty"`
 }
@@ -375,7 +377,7 @@ func PlanScope(items []Item) Plan {
 		case !it.Scannable():
 			p.NotScannable = append(p.NotScannable, it)
 		case it.InScope:
-			p.Entries = append(p.Entries, Planned{TargetType: it.TargetType, Pattern: it.Pattern})
+			p.Entries = append(p.Entries, Planned{TargetType: it.TargetType, Pattern: it.Pattern, Constraint: it.Constraint()})
 			if it.Kind == KindWildcard {
 				apex := strings.TrimPrefix(it.Pattern, "*.")
 				key := string(scope.TargetTypeDomain) + ":" + apex
@@ -384,11 +386,40 @@ func PlanScope(items []Item) Plan {
 					p.Exclusions = append(p.Exclusions, Planned{TargetType: scope.TargetTypeDomain, Pattern: apex, Reason: ReasonApexNotListed})
 				}
 			}
+		case it.Ports != "" && !inScopeReaches(items, it):
+			// An out-of-scope service no in-scope entry reaches (the host
+			// is in scope only on other ports): nothing to exclude.
+			it.Note = "outside the in-scope ports already"
+			p.NotScannable = append(p.NotScannable, it)
 		default:
+			// Out of scope wins. An out-of-scope service excludes its whole
+			// host: an exclusion carries no port, and excluding more is the
+			// safe side.
 			p.Exclusions = append(p.Exclusions, Planned{TargetType: it.TargetType, Pattern: it.Pattern, Reason: ReasonOutOfScope})
 		}
 	}
 	return p
+}
+
+// inScopeReaches reports whether an in-scope item could reach the port of
+// the out-of-scope service out: it covers out's host without a port limit,
+// or with one that allows out's port.
+func inScopeReaches(items []Item, out Item) bool {
+	c := scope.Constraint{Ports: out.Ports}
+	for _, in := range items {
+		if !in.InScope || !in.Scannable() {
+			continue
+		}
+		if !scope.EntryMatches(in.TargetType, in.Pattern, scope.Constraint{}, out.Pattern) &&
+			!(in.TargetType == out.TargetType && strings.EqualFold(in.Pattern, out.Pattern)) {
+			continue
+		}
+		ic := in.Constraint()
+		if ic.IsZero() || ic.Overlaps(c) {
+			return true
+		}
+	}
+	return false
 }
 
 // refusedHeaders cannot be required by a program: credentials and the

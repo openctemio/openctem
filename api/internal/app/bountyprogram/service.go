@@ -175,6 +175,8 @@ const (
 type PlannedEntry struct {
 	TargetType scopedom.TargetType `json:"target_type"`
 	Pattern    string              `json:"pattern"`
+	// Constraint limits the entry to ports and a protocol (zero: none).
+	Constraint scopedom.Constraint `json:"constraint,omitzero"`
 	Status     string              `json:"status"`
 	// Code is the guardrail refusal (PUBLIC_SUFFIX, DENY_LIST, ...).
 	Code string `json:"code,omitempty"`
@@ -255,16 +257,16 @@ func (s *Service) previewItems(ctx context.Context, tenantID shared.ID, programU
 	}
 	byKey := make(map[string]*scopedom.Target, len(existing))
 	for _, t := range existing {
-		byKey[entryKey(t.TargetType(), t.Pattern())] = t
+		byKey[entryKey(t.TargetType(), t.Pattern(), t.Constraint())] = t
 	}
 	out := &Preview{Items: items, NotScannable: plan.NotScannable, MaxTier: rules.MaxTier().String(),
 		TermsSHA256: bp.NewTerms(programURL, rules, items).WithText(termsText).SHA256(), rules: rules,
 		Entries: make([]PlannedEntry, 0, len(plan.Entries)), Exclusions: make([]PlannedExclusion, 0, len(plan.Exclusions))}
 	for _, e := range plan.Entries {
-		pe := PlannedEntry{TargetType: e.TargetType, Pattern: e.Pattern, Status: PlanCreate}
+		pe := PlannedEntry{TargetType: e.TargetType, Pattern: e.Pattern, Constraint: e.Constraint, Status: PlanCreate}
 		if err := s.guardrails.CheckPattern(e.TargetType, e.Pattern); err != nil {
 			pe.Status, pe.Code = PlanRefused, refusalCode(err)
-		} else if t := byKey[entryKey(e.TargetType, e.Pattern)]; t != nil {
+		} else if t := byKey[entryKey(e.TargetType, e.Pattern, e.Constraint)]; t != nil {
 			if program != nil && t.ProgramID() != nil && t.ProgramID().Equals(program.ID) {
 				pe.Status = PlanKeep
 			} else {
@@ -280,8 +282,9 @@ func (s *Service) previewItems(ctx context.Context, tenantID shared.ID, programU
 	return out, nil
 }
 
-func entryKey(t scopedom.TargetType, pattern string) string {
-	return string(t) + "|" + strings.ToLower(pattern)
+// entryKey identifies an entry: type, pattern and port limit.
+func entryKey(t scopedom.TargetType, pattern string, c scopedom.Constraint) string {
+	return strings.ToLower(bp.EntryKey(t, pattern, c))
 }
 
 func refusalCode(err error) string {
@@ -347,6 +350,9 @@ func (s *Service) newEntries(p *bp.Program, pv *Preview, actor shared.ID, active
 		}
 		if err := t.SetAuthorization(scopedom.AuthProgram, &p.ID); err != nil {
 			return nil, err
+		}
+		if err := t.SetConstraint(e.Constraint); err != nil {
+			return nil, fmt.Errorf("entry %s: %w", e.Pattern, err)
 		}
 		if !active {
 			t.Deactivate()
@@ -584,12 +590,12 @@ func (s *Service) applyScope(ctx context.Context, p *bp.Program, pv *Preview, ac
 	keep := map[string]bool{}
 	for _, e := range pv.Entries {
 		if e.Status == PlanKeep {
-			keep[entryKey(e.TargetType, e.Pattern)] = true
+			keep[entryKey(e.TargetType, e.Pattern, e.Constraint)] = true
 		}
 	}
 	var drop []shared.ID
 	for _, e := range current {
-		if !keep[entryKey(e.TargetType(), e.Pattern())] {
+		if !keep[entryKey(e.TargetType(), e.Pattern(), e.Constraint())] {
 			drop = append(drop, e.ID())
 		}
 	}
