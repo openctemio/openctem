@@ -44,10 +44,6 @@ const NOT_A_SCALE = new Map<string, string>([
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],
   [
-    'app/(dashboard)/(discovery)/components/page.tsx|critical,high,medium,low,unknown',
-    'component license risk (chk_license_risk), not severity',
-  ],
-  [
     'app/(dashboard)/(validation)/control-testing/page.tsx|critical,high,medium,low',
     'control-test risk level of a compensating control, not finding severity',
   ],

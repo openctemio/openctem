@@ -98,6 +98,11 @@ export const SCOPE_REFUSAL_TEXT = {
     label: 'Program target',
     message: 'Platform sensors never probe bug-bounty program targets; use your own sensors.',
   },
+  constrained: {
+    label: 'Limited entry',
+    message:
+      'The scope entries covering this target are limited to some ports or a path, and this job could reach others.',
+  },
 } as const satisfies Record<string, { label: string; message: string }>
 
 export type ScopeRefusalCode = keyof typeof SCOPE_REFUSAL_TEXT

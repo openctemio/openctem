@@ -170,6 +170,25 @@ Its programs are local-only: every target is a suggestion until confirmed;
 the signed stream's record wins on the same id. Program assets will carry provenance and system tags and be
 left out of the organization's own metrics by default (RFC-065 §16.5).
 
+## Typed targets and per-target qualifiers
+
+The classifier keeps what a program lists: `api.x.com:8443/tcp`,
+`10.0.0.5:22` and `https://api.x.com:8443` become entries of the host
+limited to that port (never the whole host); a URL with a path becomes a
+path-limited URL entry; feed targets carry `ports`, `protocol` and
+`path_prefix` (schema 1.1) into the same limits, and a limit an entry cannot
+carry leaves the target not scannable. An out-of-scope service excludes its
+whole host when an in-scope item reaches its port, and is only listed when
+the host is in scope on other ports alone. The limit is part of the terms
+hash and of a sync diff (relaxing it is a widening).
+
+Each item also keeps what the program says about it, stored with the
+program's items and shown on the program page, never used to authorize:
+bounty eligibility, maximum severity, environment, testing instructions
+(1 000 characters), prerequisites (500) and trust (`published`,
+`published_by_platform`, `inferred`). Enforcement of the limits:
+[active-probe-gate.md](active-probe-gate.md#port--and-path-limited-entries-rfc-065-168).
+
 ### Chunked bundles (format v2)
 
 When the source offers bundle format v2 (a `latest.v2.dsse.json` pointer in
@@ -229,6 +248,7 @@ decides for every path:
 | Notification outbox (Slack, Teams, Telegram, email, webhook, Splunk HEC) | restricted entry sent only to program channels; private program names scrubbed for every other destination; resolver error = retry, no send |
 | Automations | restricted findings and assets start no automation |
 | EASM alerts | restricted exposures skip the organization digest and go out on their own (then routed by the outbox) |
+| Outbox view (`GET /notification-outbox`, `/{id}`) | integration admins who are neither an owner nor a member read private program names, handles and tags scrubbed in title, body, last error and metadata; resolver error = 500 |
 
 An owner may let a private program's events reach every organization
 channel (`PUT /programs/{id}/org-channels`, reason, step-up, audited);

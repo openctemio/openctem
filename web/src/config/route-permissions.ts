@@ -518,10 +518,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.DashboardRead,
     module: Module.CTEMMaturity,
   },
-  '/components/sbom-export': {
-    permission: Permission.ComponentsRead,
-    module: Module.SBOMExport,
-  },
 
   // ========================================
   // Settings - Sensors (Module: sensors)
@@ -544,6 +540,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.ScopeConfig,
   },
   '/settings/scanning/scan-windows': {
+    permission: Permission.ScansRead,
+    module: Module.Scans,
+  },
+  '/settings/scanning/scan-approval': {
     permission: Permission.ScansRead,
     module: Module.Scans,
   },

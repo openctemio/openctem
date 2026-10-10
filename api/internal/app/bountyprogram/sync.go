@@ -15,6 +15,7 @@ import (
 	"time"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -213,7 +214,7 @@ func (s *Service) sync(ctx context.Context, p *bp.Program, actor shared.ID) (*Sy
 func (s *Service) narrow(ctx context.Context, p *bp.Program, d bp.SyncDiff) error {
 	removed := make(map[string]bool, len(d.RemovedEntries))
 	for _, e := range d.RemovedEntries {
-		removed[entryKey(e.TargetType, e.Pattern)] = true
+		removed[entryKey(e.TargetType, e.Pattern, e.Constraint)] = true
 	}
 	current, err := s.repo.Entries(ctx, p.TenantID, p.ID)
 	if err != nil {
@@ -221,7 +222,7 @@ func (s *Service) narrow(ctx context.Context, p *bp.Program, d bp.SyncDiff) erro
 	}
 	var drop []shared.ID
 	for _, e := range current {
-		if removed[entryKey(e.TargetType(), e.Pattern())] {
+		if removed[entryKey(e.TargetType(), e.Pattern(), e.Constraint())] {
 			drop = append(drop, e.ID())
 		}
 	}
@@ -231,10 +232,10 @@ func (s *Service) narrow(ctx context.Context, p *bp.Program, d bp.SyncDiff) erro
 	}
 	have := make(map[string]bool, len(excl))
 	for _, x := range excl {
-		have[entryKey(x.TargetType, x.Pattern)] = true
+		have[entryKey(x.TargetType, x.Pattern, scopedom.Constraint{})] = true
 	}
 	for _, x := range d.AddedExclusion {
-		if !have[entryKey(x.TargetType, x.Pattern)] {
+		if !have[entryKey(x.TargetType, x.Pattern, scopedom.Constraint{})] {
 			excl = append(excl, bp.Exclusion{ID: shared.NewID(), TenantID: p.TenantID, ProgramID: p.ID,
 				TargetType: x.TargetType, Pattern: x.Pattern, Reason: x.Reason, CreatedAt: s.now()})
 		}

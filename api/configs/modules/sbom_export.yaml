@@ -1,0 +1,12 @@
+- id: sbom_export
+  const: ModuleSBOMExport
+  slug: "sbom-export"
+  name: SBOM Export
+  description: Export Software Bill of Materials in CycloneDX / SPDX
+  icon: Download
+  category: insights
+  order: 55
+  user_facing: true
+  permission: "assets:components:read"
+  depends:
+    - {id: components, kind: hard, reason: "SBOM is generated from the component inventory"}
