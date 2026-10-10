@@ -224,9 +224,9 @@ describe('BasicInfoStep', () => {
   it('Edit (lockMode) does not offer switching between single and workflow', async () => {
     render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} lockMode />)
     expect(screen.queryByRole('radio', { name: 'Single check' })).toBeNull()
-    await userEvent.click(screen.getByText('Advanced Options'))
     expect(screen.queryByText('Workflow Scan')).not.toBeInTheDocument()
-    expect(screen.getByText('Sensor Preference')).toBeInTheDocument()
+    // Where the scan runs is chosen on the Options step now.
+    expect(screen.queryByText('Sensor Preference')).toBeNull()
     // Nothing to offer: the workflows are not fetched.
     expect(workflowCalls.every((f) => f === undefined)).toBe(true)
   })

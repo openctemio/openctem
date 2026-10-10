@@ -427,6 +427,12 @@ func (r *ScopeTargetRepository) List(ctx context.Context, filter scope.TargetFil
 		argNum++
 	}
 
+	if len(filter.ExcludeProgramIDs) > 0 {
+		conditions = append(conditions, fmt.Sprintf("(program_id IS NULL OR NOT (program_id = ANY($%d::uuid[])))", argNum))
+		args = append(args, pq.StringArray(filter.ExcludeProgramIDs))
+		argNum++
+	}
+
 	whereClause := ""
 	if len(conditions) > 0 {
 		whereClause = " WHERE " + strings.Join(conditions, " AND ")
