@@ -1,0 +1,17 @@
+- id: team
+  const: ModuleTeam
+  slug: team
+  name: Team
+  description: Team members management and invitations
+  icon: Users
+  category: settings
+  order: 62
+  core: true
+  user_facing: true
+  permission: "team:read"
+  jobs:
+    - MemberAccessExpiryController
+    - TeamMembershipExpiryController
+    - AccessRequestRetentionController
+    - RoleSyncController
+    - IdleWorkspaceController

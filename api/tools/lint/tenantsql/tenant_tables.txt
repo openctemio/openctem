@@ -124,6 +124,7 @@ roles
 runtime_telemetry_events
 saml_providers
 saved_views
+scan_approval_requests
 scan_coverage_state
 scan_profiles
 scan_run_scope_snapshots

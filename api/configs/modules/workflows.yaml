@@ -1,0 +1,18 @@
+- id: workflows
+  const: ModuleWorkflows
+  slug: workflows
+  name: Workflows
+  description: "Trigger-action automation for finding lifecycle (assignment, notification, sync)"
+  icon: GitPullRequest
+  category: mobilization
+  order: 43
+  user_facing: true
+  permission: "findings:workflows:read"
+  depends:
+    - {id: findings, kind: soft, reason: "finding-lifecycle triggers are a subset of workflow triggers"}
+    - {id: integrations, kind: soft, reason: "most workflow actions route through integrations (Jira, Slack)"}
+  routes:
+    - /api/v1/workflows
+    - "/api/v1/workflow-runs"
+  jobs:
+    - AutomationRunReaper

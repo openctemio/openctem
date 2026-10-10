@@ -543,6 +543,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScansRead,
     module: Module.Scans,
   },
+  '/settings/scanning/scan-approval': {
+    permission: Permission.ScansRead,
+    module: Module.Scans,
+  },
   '/ci-cd': {
     permission: Permission.CIRead,
     module: Module.Scans,

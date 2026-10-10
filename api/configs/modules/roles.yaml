@@ -1,0 +1,11 @@
+- id: roles
+  const: ModuleRoles
+  slug: roles
+  name: Roles
+  description: Custom RBAC roles and permission management
+  icon: Shield
+  category: settings
+  order: 64
+  core: true
+  user_facing: true
+  permission: "team:roles:read"
