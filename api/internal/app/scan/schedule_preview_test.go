@@ -69,3 +69,22 @@ func TestPreviewSchedule_RefusesWhatSavingRefuses(t *testing.T) {
 		}
 	}
 }
+
+func TestPreviewSchedule_Once(t *testing.T) {
+	now := time.Now()
+	runAt := now.Add(3 * time.Hour).Truncate(time.Second)
+	p, err := PreviewSchedule(SchedulePreviewInput{ScheduleType: "once", RunAt: &runAt, Timezone: "Asia/Ho_Chi_Minh"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Timezone != "Asia/Ho_Chi_Minh" || len(p.Occurrences) != 1 || !p.Occurrences[0].Equal(runAt) {
+		t.Fatalf("preview = %+v, want the one run at %v", p, runAt)
+	}
+	past := now.Add(-time.Hour)
+	if _, err := PreviewSchedule(SchedulePreviewInput{ScheduleType: "once", RunAt: &past}, now); err == nil {
+		t.Fatal("a past run_at previewed without error")
+	}
+	if _, err := PreviewSchedule(SchedulePreviewInput{ScheduleType: "once"}, now); err == nil {
+		t.Fatal("once without run_at previewed without error")
+	}
+}

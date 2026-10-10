@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -39,6 +40,38 @@ type ScopeHandler struct {
 	activeProof string
 	actors      MemberNamer
 	sweeper     DiscoverySweeper
+	programs    HiddenPrograms
+}
+
+// HiddenPrograms lists the private programs whose entries the caller may
+// not see (*bountyprogram.Service, RFC-065 §15.3).
+type HiddenPrograms interface {
+	HiddenProgramIDs(ctx context.Context, tenantID, actor shared.ID) ([]shared.ID, error)
+}
+
+// SetHiddenPrograms wires the private-program filter of the scope views.
+func (h *ScopeHandler) SetHiddenPrograms(p HiddenPrograms) { h.programs = p }
+
+// hiddenProgramIDs is the caller's hidden programs; an error refuses the
+// request (fail closed).
+func (h *ScopeHandler) hiddenProgramIDs(r *http.Request) ([]string, error) {
+	if h.programs == nil {
+		return nil, nil
+	}
+	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		return nil, err
+	}
+	uid, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	ids, err := h.programs.HiddenProgramIDs(r.Context(), tid, uid)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out, nil
 }
 
 // DiscoverySweeper starts a discovery sweep for a tenant (*easm.SweepService).
@@ -659,6 +692,12 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 		Page:        paging.Page,
 		PerPage:     paging.PerPage,
 	}
+	hidden, err := h.hiddenProgramIDs(r)
+	if err != nil {
+		h.handleServiceError(w, "Scope target", err)
+		return
+	}
+	input.ExcludeProgramIDs = hidden
 
 	result, err := h.service.ListTargets(r.Context(), input)
 	if err != nil {
@@ -790,6 +829,17 @@ func (h *ScopeHandler) GetTarget(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
+	}
+	if pid := target.ProgramID(); pid != nil {
+		hidden, err := h.hiddenProgramIDs(r)
+		if err != nil {
+			h.handleServiceError(w, "Scope target", err)
+			return
+		}
+		if slices.Contains(hidden, pid.String()) {
+			apierror.NotFound("Scope target").WriteJSON(w)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1433,6 +1483,10 @@ type ScopeCheckResult struct {
 // CheckScopeResponse lists the answers in input order.
 type CheckScopeResponse struct {
 	Results []ScopeCheckResult `json:"results"`
+	// Tier is the probe tier the targets were checked at (0 passive, 1 safe
+	// active, 2 intrusive): the request tier, else the scanner tier. A client
+	// compares it with a pending entry tier to say what still blocks.
+	Tier int `json:"tier"`
 }
 
 // CheckScope handles POST /api/v1/scope/check
@@ -1514,7 +1568,7 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	has := func(p string) bool { return middleware.HasPermission(ctx, p) }
-	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results))}
+	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results)), Tier: tier}
 	for _, res := range results {
 		item := ScopeCheckResult{Target: res.Target, AssetID: res.AssetID, Allowed: res.Allowed}
 		if res.Allowed {

@@ -30,8 +30,8 @@ vi.mock('@/lib/api/tool-hooks', () => ({
   useToolAvailability: () => ({ data: undefined }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
-// The live scope preview has its own tests (new-scan/__tests__/scope-preview).
-vi.mock('../new-scan/scope-preview', () => ({ ScopePreview: () => null }))
+// The selection summary (live scope check) has its own tests.
+vi.mock('../target-picker/selection-summary', () => ({ SelectionSummary: () => null }))
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', name: 'ORG' } }),
 }))
