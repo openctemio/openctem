@@ -15,7 +15,7 @@ their approvals). A platform administrator can force the mode.
 | Organization settings section `scan_governance` | `pkg/domain/tenant/scan_governance.go`, `internal/app/tenant/scan_governance.go` |
 | Settings service (mode, rules) | `internal/app/scangov` |
 | Platform policy and the mode in force | `internal/app/scanpolicy` (`EffectiveMode`, `ScanGovernanceMode`) |
-| Routes | `GET/PUT /api/v1/organization/settings/scan-governance[/mode|/rules]`, `GET/PUT /api/v1/admin/settings/scan-approval-policy`, `GET/PUT /api/v1/admin/tenants/{id}/scan-approval-policy` |
+| Routes | `GET/PUT /api/v1/organization/settings/scan-governance[/mode|/rules]`, `POST .../scan-governance/test` (rule tester, `internal/app/scangov/tester.go`), `GET/PUT /api/v1/admin/settings/scan-approval-policy`, `GET/PUT /api/v1/admin/tenants/{id}/scan-approval-policy` |
 | Scope entries | `internal/app/scope/entries.go` (`loadPolicy`: approvals only in Strict) |
 | Requests and run gate | `pkg/domain/scangov/request.go`, `definition.go`; `internal/app/scangov/requests.go`, `gate.go`; `internal/app/scan/governance.go` (definition, facts, gate call in `triggerLoadedScan`); `internal/infra/postgres/scan_approval_repository.go` |
 | Signer floors | `SIGNER_LEDGER_MIN_APPROVALS`, `SIGNER_LEDGER_T2_MIN_APPROVALS` (`internal/signer/ledger.go`) |

@@ -158,6 +158,19 @@ two); OT zone scans (zone condition, named plant engineers); wide blast
 radius (> 500 targets or wildcard/CIDR selectors, security lead);
 credentialed or brute-force tools (tool condition, security lead).
 
+### 4.3 Rule tester
+
+`POST /api/v1/organization/settings/scan-governance/test` `{"rules": [...]}`
+(owner or administrator; no step-up, it writes nothing): the rule set is
+validated as a save would validate it, then evaluated against the
+organization's saved scans (at most 200, newest first), each as a run its
+creator starts from the console at its next scheduled time (else now). Off
+is evaluated as On (what turning it on would do), Strict as Strict. The
+answer lists the scans it would hold for approval (with the matched rules
+and the merged requirement), those only monitor rules catch, how many
+scans each rule catches, and whether the organization has more scans than
+were tested. Only the caller's organization's scans are read.
+
 ## 5. Platform policy
 
 `GET/PUT /api/v1/admin/settings/scan-approval-policy` (platform default)
@@ -314,6 +327,80 @@ steps probe at; when RFC-071 lands it is the scan's declared intensity.
 |---|---|
 | Setting | modes, platform policy renamed to scans, rules and presets (validation, evaluation), settings API, scope entries Strict-only, signer t2 floor, admin console and scope page texts (migration `001881`) |
 | Requests | `scans:approve`, `scan_approval_requests`, definition digest and diff, the run gate, submit/approve/reject/self-approve/remind/emergency, inbox API, list badge (migration `001921`) |
-| Web | Settings > Scanning (mode, rule builder, presets), New Scan review "needs approval by…", Submit for approval, Approvals inbox, scan list badge |
+| Web | Settings > Scanning > Scan approval (mode; presets; rules on, off, monitor, remove), New Scan review "needs approval by…" with the evidence the rules ask and Submit for approval, Scans > Approvals inbox (details, diff, approve, reject, own approval with an authenticator code, remind, withdraw), scan list badge |
+| Web, rule editor | the rule editor (condition chips, requirement form, drag order), the rule tester, approval state and emergency run on the scan page |
 | Requester conditions | requester role and group, origin with trusted service accounts, business hours (§4.1) |
-| Later | monitor-mode report, rule tester, the §4.1 later conditions, asset-owner approvers |
+| Rule tester | `POST .../scan-governance/test` (§4.3) |
+| Asset-owner model | `approver_source`, `fallback_group_id`, `SplitByOwner`, `PartsApproved` (§10); refused on save until enforced |
+| Asset-owner approvals | parts on requests, inbox per part, gate (§10.4) |
+| Later | monitor-mode report, the §4.1 later conditions |
+
+## 10. Asset owners as approvers
+
+The people who own an asset know whether a scan of it is safe this week.
+A rule may let them approve instead of (or before) a central approver.
+
+### 10.1 Rule
+
+```json
+"requirement": {"approvals": 1, "approver_source": "asset_owners",
+                "fallback_group_id": "uuid"}
+```
+
+`approver_source`: `rule` (default: `approver_roles` and
+`approver_user_ids`) or `asset_owners`. `fallback_group_id`: a group of the
+organization that approves the targets nobody owns; without it the rule's
+roles and people do (owners and administrators when the rule names none).
+
+### 10.2 Parts
+
+At submit the request's targets are split by owner (`SplitByOwner`): each
+target maps to the asset behind it (direct targets by name, asset-group
+members by id) and that asset's owners in `asset_owners` (a user owner, a
+group owner). Every owner of a target gets it in their part, so a target
+owned by a person and a group needs both. Targets with no owner, no known
+asset, private addresses and wildcard or CIDR selectors go to the fallback
+part (a selector is resolved at each run, so it cannot be owned in
+advance). The parts are recorded on the request with the definition; a
+change of ownership after submit does not change who approves an existing
+request (the next definition change does).
+
+### 10.3 Approving
+
+- A part is approved by one of its approvers: the owner user; any active
+  member of the owner group; the fallback group's members, else the rule's
+  approvers. `PartsApproved` decides; the requester and a self-approval
+  never count, and one approval counts for every part its approver may
+  approve.
+- The request is approved when every part is approved and the merged
+  requirement holds (`approvals` distinct approvers overall; Strict: two).
+  An owner approving a part needs no `scans:approve`: the rule delegates to
+  owners. Owning an asset still grants no data scope: an owner sees the
+  request's targets of their part, the scan name and requirement, not the
+  other parts' targets.
+- Reject: any part's approver rejects the whole request (with a note).
+  Remind goes to the approvers of the waiting parts only.
+- Emergency runs and the sole-owner self-approval are unchanged.
+
+### 10.4 Enforcement order
+
+The model (`approver_source`, `fallback_group_id`, `Part`, `SplitByOwner`,
+`PartsApproved`) is in `pkg/domain/scangov/owners.go`. Until the request,
+inbox and gate paths apply it, saving a rule with `asset_owners` is
+refused (`400`), so no rule claims a control that is not applied. The
+enforcement PR adds `parts` to `scan_approval_requests` (JSONB, recorded at
+submit), the owner lookup (tenant-scoped `asset_owners` and
+`group_members`), per-part decisions in approve and reject, the inbox's
+per-part view and the gate's `PartsApproved` check, with tests for: an
+owner approving only their part, a group member approving for the group,
+the fallback group, the requester owning a part (someone else must
+approve it), and another organization's owners never counting.
+
+### 10.5 Threat model
+
+| Actor | Goal | Control |
+|---|---|---|
+| Owner of one asset | approves a scan of assets they do not own | approvals count per part; their approval covers only parts they may approve |
+| Requester who owns a part | approves their own part | the requester never counts, for any part |
+| Member added to an owner group to approve | gains approval | group membership changes are audited (`team:groups:write`); the request records parts at submit |
+| Cross-tenant | owner of a same-named asset elsewhere | owners are looked up by asset id within the tenant; group membership within the tenant |
