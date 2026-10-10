@@ -75,6 +75,6 @@ describe('WorkflowPreviewBody', () => {
     expect(screen.getByText('Step "iac": No sensor has checkov.')).toBeInTheDocument()
     expect(screen.getByText('runs checkov')).toBeInTheDocument()
     expect(screen.getByText('no sensor')).toBeInTheDocument()
-    expect(screen.getByText('Change freeze')).toBeInTheDocument()
+    expect(screen.getByText(/Freeze window Change freeze is active/)).toBeInTheDocument()
   })
 })
