@@ -41,5 +41,15 @@ func registerProgramRoutes(router Router, h *handler.BountyProgramHandler, authM
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.ProgramsWrite))
 		r.GET("/{id}/pending", h.Pending, middleware.Require(permission.ProgramsRead))
 		r.POST("/{id}/pending/apply", h.ApplyPending, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		// Delivery of events about the program's private assets (RFC-065
+		// §15.4). Attaching a channel widens who receives them (step-up);
+		// the organization-channel opt-in is owner-only in the service,
+		// with a reason (step-up). Both are audited.
+		r.GET("/{id}/delivery", h.Delivery, middleware.Require(permission.ProgramsRead))
+		r.PUT("/{id}/channels/{integrationId}", h.AttachChannel,
+			middleware.RequireAll(permission.ProgramsWrite, permission.IntegrationsManage), requireStepUp())
+		r.DELETE("/{id}/channels/{integrationId}", h.DetachChannel,
+			middleware.RequireAll(permission.ProgramsWrite, permission.IntegrationsManage))
+		r.PUT("/{id}/org-channels", h.SetOrgChannels, middleware.Require(permission.ProgramsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }

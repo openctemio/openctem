@@ -74,6 +74,9 @@ type Service struct {
 	isOwner OwnerCheck
 	// catalog is the public program catalog (subscription.go).
 	catalog bp.CatalogRepository
+	// delivery keeps program channels and the organization-channel opt-in
+	// (delivery.go).
+	delivery bp.DeliveryStore
 }
 
 // NewService wires the service. Without a FullData checker every caller is
