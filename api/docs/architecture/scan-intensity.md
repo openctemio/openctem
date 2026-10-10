@@ -53,7 +53,30 @@ claim     scope_recheck.go: recorded tier > intensity -> INTENSITY_EXCEEDED (com
 
 ## Discovery
 
-- `Passive discovery` starter workflow: `discover.subdomains` → `resolve.dns`.
+- `Passive discovery` starter workflow: `discover.subdomains` → `resolve.dns`
+  → `lookup.asn`, and `lookup.rdap` on the roots (migration
+  `001860_passive_lookup_tools`, version 2 of the template).
+- The passive lookups (sensor tools `rdap`, `asn`; `network: egress-proxy`):
+  - `lookup.rdap`: registration data of a root domain from its registry's
+    RDAP service, found through the IANA bootstrap
+    (`data.iana.org/rdap/dns.json`), optionally the registrar's RDAP service
+    the registry links to. Stored on the domain (`registrar`, `nameservers`,
+    `registered_at`, `expires_at`, `whois`: `registrant_org`,
+    `registrant_country`, `rdap_server`, `status`). No person name, e-mail,
+    phone or street address is kept.
+  - `lookup.asn`: origin autonomous system, holder, country and announced
+    prefixes of an address or network, from the public-domain IPtoASN
+    dataset (PDDL 1.0), downloaded by the sensor at most once a day and
+    looked up locally. Stored on the address (`asn`, `asn_org`, `country`,
+    `asn_prefixes`) or network. With `include_announced` the other ranges of
+    the system are reported as networks (at most `max_ranges`).
+  - Neither ever requests a target host, a host under a target name or an
+    address inside a target network, a registrar link or redirect included;
+    both use https only.
+  - A network a sensor report creates gets an attribution record like an
+    internet-facing name (`heldForReviewOnCreate`): needs_review from a scan,
+    candidate from an unsolicited report. An existing network without a
+    record is left alone.
 - `Probe new assets` starter workflow: `scan.ports`, `probe.http`.
 - `target_options.new_since_last_run` on a `*.<root>` selector: only assets
   confirmed (or first seen without a record) since the previous successful
