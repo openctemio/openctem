@@ -62,7 +62,7 @@ export function approversText(entry: ApiScopeTarget): string | null {
   return `${needs}. ${count} ${count === 1 ? 'member' : 'members'} can approve it.`
 }
 
-function RemindButton({ entry }: { entry: ApiScopeTarget }) {
+export function RemindButton({ entry }: { entry: ApiScopeTarget }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   // The API sends can_remind_at only while the next reminder is not due yet.
