@@ -2,13 +2,14 @@
 
 import { useState } from 'react'
 import useSWR from 'swr'
-import { del, get, put } from '@/lib/api/client'
+import { del, get, post, put } from '@/lib/api/client'
 import { usePermissions, Permission } from '@/lib/permissions'
 import type {
   AttributeSources,
   AttributeSourcesList,
-  ReconciliationPolicy,
+  PolicyPreview,
   ReconciliationSettings,
+  SourcePolicy,
   TrackedAttribute,
 } from '../lib/attribute-sources'
 
@@ -45,7 +46,7 @@ export function useAttributeLock(assetId: string) {
 
 export const RECONCILIATION_SETTINGS_PATH = '/api/v1/organization/settings/asset-reconciliation'
 
-/** The organization's source precedence and TTLs (owner/admin). */
+/** The organization's source precedence per attribute class (owner/admin). */
 export function useReconciliationSettings(enabled: boolean) {
   const { data, error, isLoading, mutate } = useSWR<ReconciliationSettings>(
     enabled ? RECONCILIATION_SETTINGS_PATH : null,
@@ -55,8 +56,23 @@ export function useReconciliationSettings(enabled: boolean) {
   return { data, error, isLoading, mutate }
 }
 
+/**
+ * Saves the policy. Demoting a connector needs step-up re-authentication:
+ * the shared client shows the re-authentication dialog and retries.
+ */
 export async function saveReconciliationSettings(
-  body: ReconciliationPolicy
+  body: SourcePolicy
 ): Promise<ReconciliationSettings> {
   return put<ReconciliationSettings>(RECONCILIATION_SETTINGS_PATH, body)
+}
+
+/** What a policy would change, on one asset or the organization's assets. Writes nothing. */
+export async function previewReconciliationSettings(
+  body: SourcePolicy,
+  assetId?: string
+): Promise<PolicyPreview> {
+  return post<PolicyPreview>(`${RECONCILIATION_SETTINGS_PATH}/preview`, {
+    ...body,
+    ...(assetId ? { asset_id: assetId } : {}),
+  })
 }

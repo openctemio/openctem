@@ -102,6 +102,7 @@ from the report:
 | `integration` | a connector the organization configured (DefectDojo sync today; cloud and inventory connectors when built) |
 | `import` | a file a person uploaded (finding import, CTIS / SARIF upload) |
 | `scan` | every sensor report (command-bound, unsolicited, CI run), platform scanners, and any server-side ingest that does not say otherwise, including a quarantined sensor report a person accepted |
+| `feed` | a subscribed passive or published feed applied by a server-side importer (program feed, passive DNS); added in §12 |
 
 Only a trusted binding (a server-side ingest) may name its kind
 (`ingest.Options.SourceKind`); every sensor binding is `scan`. The source
@@ -329,11 +330,50 @@ pagination (`cursor`, `limit` ≤ 200).
 | Reading another tenant's or an out-of-scope asset's history | every query `WHERE tenant_id`; asset timeline behind `GetAssetInCallerScope` (404); feed narrowed to `user_accessible_assets` | `TestAssetChanges_*`, `TestAssetTimeline_ListIsTenantAndScopeIsolated` |
 | History outliving erasure | FK cascade from assets (and so tenants); retention by month | `TestAssetTimeline_ListIsTenantAndScopeIsolated`, `TestAssetTimeline_PartitionsAndRetention` |
 
-### 11.4 Status
+### 11.4 Status (see §12 for precedence)
 
-Delivered here: ordering, clock clamp, `source_run`, winner flag, equal-rank
-conflicts, timeline table, API, controller. Next: the web Timeline tab and
-the organization feed; precedence per attribute class with per-source rows
-and a preview; per-source set attributes (IP addresses, program targets) with
-per-element `last_seen`; feed bundle sequence and expiry checks for
-programfeed sources.
+Delivered: ordering, clock clamp, `source_run`, winner flag, equal-rank
+conflicts, timeline table, API, controller (#1688). Next: the web Timeline
+tab and the organization feed; per-source set attributes (IP addresses,
+program targets) with per-element `last_seen`; feed bundle sequence and
+expiry checks for programfeed sources.
+
+## 12. Precedence per attribute class (owner requirements, 2026-10-10)
+
+Replaces the per-attribute kind lists of §5.4 (settings saved in the old
+shape are dropped and the defaults apply; the feature was one day old).
+
+- **Classes:** `identity`, `network` (exposure), `software`, `ownership`
+  (criticality, owner_ref, data_classification), `cloud_tags`, `lifecycle`.
+  Classes without reconciled attributes yet can be ranked already.
+- **Rules:** each class has a ranked list or inherits the organization's
+  default list. A rule names a kind or one source (`scan:nmap`), with its
+  TTL and a trust flag. An observation takes the rank of the rule naming its
+  source, else of its kind's rule; none or untrusted: it does not decide.
+  Equal rank = same rule (§5.4 step 6 conflicts).
+- **Kinds:** `feed` added for passive and published feeds (migration
+  `asset_source_kind_feed`), named only by a trusted server-side ingest.
+- **Defaults:** default list integration, scan, import, feed; ownership
+  integration, import (scan, feed untrusted: D1 kept); network scan,
+  integration, import, feed; TTL 30 d, import 90 d.
+- **Saving** (owner/admin): a change that demotes a connector (an
+  integration rule loses trust or its row, or a source ranks above it that
+  did not) needs step-up re-authentication (`RecentAuthGate`, 403
+  `STEP_UP_REQUIRED`); audited with `demotes_connector`. The organization's
+  assets are then re-resolved in the background in batches; only changed
+  values get a timeline event (`policy_change`). The daily sweep catches up
+  if the process stops.
+- **Preview:** `POST …/asset-reconciliation/preview` resolves the posted
+  policy against one asset or up to 5000 assets with sources, read only:
+  changed assets and values, conflicts, 25 samples.
+- **Sources seen:** `GET` lists the sources that reported the
+  organization's assets (kind, name, last seen, assets) for the settings
+  rows.
+
+| Threat | Control | Test |
+|---|---|---|
+| A member reorders sources to change owners or criticality | owner/admin only (`RequireAdmin`) | `TestAssetReconciliationSettings_RefusesInvalidAndNonAdmin` |
+| A hijacked admin session quietly demotes the connector of record | step-up re-authentication for any demotion | `TestDemotesAuthoritative`, `TestAssetReconciliationSettings_DemotingAConnectorNeedsStepUp` |
+| Preview or re-resolution crosses tenants | every read `WHERE tenant_id`; asset preview of another tenant's asset is 404 | `TestAssetReconciliationSettings_PreviewAndBackgroundReResolve` |
+| A feed claims ownership data | feeds untrusted for ownership by default | `TestReconciliationPolicy_ClassesInheritTheDefault`, `TestAssetTimeline_FeedSourceKind` |
+| Oversized policy | 50 rules per list, 64 KiB body, names ≤ 100 | `TestPolicyFromSettings` |

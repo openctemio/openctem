@@ -305,3 +305,64 @@ func editedAttributes(a *assetdom.Asset, criticality, exposure, ownerRef bool) m
 	}
 	return out
 }
+
+// AttributeSourceSummaries lists the sources that reported the tenant's
+// assets (for the precedence settings).
+func (s *AssetService) AttributeSourceSummaries(ctx context.Context, tenantID shared.ID) ([]assetdom.SourceSummary, error) {
+	if s.attrSources == nil {
+		return nil, nil
+	}
+	return s.attrSources.SourceSummaries(ctx, tenantID)
+}
+
+// maxPreviewAssets bounds how many assets a precedence preview resolves.
+const maxPreviewAssets = 5000
+
+// PreviewReconciliationPolicy reports what p would change on the tenant's
+// assets with a recorded source (at most maxPreviewAssets), or on the one
+// asset assetID when given. It writes nothing.
+func (s *AssetService) PreviewReconciliationPolicy(ctx context.Context, tenantID shared.ID, p assetdom.ReconciliationPolicy, assetID *shared.ID) (*assetdom.PolicyPreview, error) {
+	pv := &assetdom.PolicyPreview{}
+	if s.attrSources == nil {
+		return pv, nil
+	}
+	now := time.Now()
+	if assetID != nil {
+		snaps, err := s.attrSources.Snapshot(ctx, tenantID, []shared.ID{*assetID})
+		if err != nil {
+			return nil, err
+		}
+		if len(snaps) == 0 {
+			return nil, shared.ErrNotFound
+		}
+		assetdom.PreviewSnapshots(pv, snaps, p, now)
+		return pv, nil
+	}
+	if s.attrLister == nil {
+		return pv, nil
+	}
+	var after *shared.ID
+	for pv.ScannedAssets < maxPreviewAssets {
+		ids, err := s.attrLister.AssetsWithAttributeSources(ctx, tenantID, after, reResolveBatch)
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) == 0 {
+			return pv, nil
+		}
+		snaps, err := s.attrSources.Snapshot(ctx, tenantID, ids)
+		if err != nil {
+			return nil, err
+		}
+		assetdom.PreviewSnapshots(pv, snaps, p, now)
+		if len(ids) < reResolveBatch {
+			return pv, nil
+		}
+		last := ids[len(ids)-1]
+		after = &last
+	}
+	if more, err := s.attrLister.AssetsWithAttributeSources(ctx, tenantID, after, 1); err == nil && len(more) > 0 {
+		pv.Truncated = true
+	}
+	return pv, nil
+}
