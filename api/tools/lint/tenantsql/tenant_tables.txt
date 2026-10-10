@@ -123,7 +123,6 @@ runtime_telemetry_events
 saml_providers
 saved_views
 scan_coverage_state
-scan_freeze_windows
 scan_profiles
 scan_run_scope_snapshots
 scan_run_stage_plans
@@ -131,6 +130,8 @@ scan_run_targets
 scan_runs
 scan_scope_waits
 scan_step_outputs
+scan_window_overrides
+scan_window_policies
 scan_workflow_versions
 scan_workflows
 scan_zone_sensors

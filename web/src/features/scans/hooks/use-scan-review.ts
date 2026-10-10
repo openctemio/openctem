@@ -4,7 +4,7 @@
  * Everything the Review step shows and the reasons Start is disabled, from
  * the server's answers only: the scope check of the direct targets (the same
  * request the selection summary made, so it is cached), the workflow preview
- * (readiness, blocking steps, an active freeze window) and the form's own
+ * (readiness, blocking steps, targets waiting for their scan windows) and the form's own
  * completeness. The create request is re-validated by the API anyway.
  */
 
@@ -83,16 +83,24 @@ export function useScanReview(
           : t('scans.review.workflowWouldNotStart')
       )
     }
-    if (wf?.freeze) {
+    const windows = wf?.targets?.windows
+    if ((windows?.never_count ?? 0) > 0) {
+      // The trigger refuses a run with a target whose windows never open.
+      blockers.push(
+        t(
+          'scanWindows.review.never',
+          '{n} targets have scan windows that never open: starting the scan is refused until a policy changes',
+          { n: windows?.never_count ?? 0 }
+        )
+      )
+    }
+    if ((windows?.waiting_count ?? 0) > 0) {
       warnings.push(
-        t('scans.review.freeze', undefined, {
-          window: wf.freeze.window ?? '',
-          until: wf.freeze.until
-            ? t('scans.review.freezeUntil', undefined, {
-                time: new Date(wf.freeze.until).toLocaleString(),
-              })
-            : '',
-        })
+        t(
+          'scanWindows.review.waiting',
+          '{n} targets wait for their scan windows; they are scanned when their windows open',
+          { n: windows?.waiting_count ?? 0 }
+        )
       )
     }
     if (form.targets.assetGroupIds.length > 0) {

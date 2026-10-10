@@ -372,6 +372,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 	w.ControllerManager.Register(scanTimeout)
 
+	// Scan windows (RFC-067 §6.4): a running job whose window closed gets
+	// its grace, then goes back to the queue for the next opening.
+	if svc.Command != nil && repos.ScanWindowPolicy != nil {
+		w.ControllerManager.Register(controller.NewScanWindowClosingController(
+			svc.Command, repos.ScanWindowPolicy, time.Minute, log.With("controller", "scan-window-closing")))
+	}
+
 	// Stalled run repair (research/62 SG-10): a run whose chained step waits
 	// for a report that failed or expired, or whose plan was saved without
 	// its commands, is advanced again.

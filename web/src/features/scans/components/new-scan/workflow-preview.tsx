@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import useSWR from 'swr'
-import { AlertCircle, CheckCircle2, Snowflake } from 'lucide-react'
+import { AlertCircle, CheckCircle2 } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SCAN_WINDOW_NEVER_OPENS, WindowWaits } from '@/features/scan-windows'
 import { post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import type { components } from '@/lib/api/generated/api.types'
@@ -105,16 +106,14 @@ export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
           <CheckCircle2 className="h-4 w-4" /> {t('scans.wfPreview.everyStep')}
         </p>
       )}
-      {preview.freeze && (
-        <p className="flex items-center gap-1.5 text-sm">
-          <Snowflake className="h-4 w-4 shrink-0" />
-          {t('scans.wfPreview.freeze', undefined, {
-            window: preview.freeze.window ?? '',
-            until: preview.freeze.until
-              ? new Date(preview.freeze.until).toLocaleString()
-              : t('scans.wfPreview.later'),
-          })}
-        </p>
+      {targets?.windows && (
+        <WindowWaits
+          waitingCount={targets.windows.waiting_count}
+          waiting={targets.windows.waiting}
+          nextOpenAt={targets.windows.next_open_at}
+          neverCount={targets.windows.never_count}
+          never={targets.windows.never}
+        />
       )}
       <ol className="space-y-2">
         {(preview.nodes ?? []).map((n, i) => (
@@ -177,7 +176,10 @@ export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
           {targets.uncovered_targets
             ? t('scans.wfPreview.uncovered', undefined, { count: targets.uncovered_targets })
             : ''}
-          .{targets.error?.message ? ` ${targets.error.message}` : ''}
+          .
+          {targets.error?.message && targets.error.code !== SCAN_WINDOW_NEVER_OPENS
+            ? ` ${targets.error.message}`
+            : ''}
         </p>
       )}
     </div>
