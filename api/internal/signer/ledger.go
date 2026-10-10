@@ -407,7 +407,7 @@ func classify(cur *tenantLedger, ops []jobsign.LedgerOp, now time.Time) string {
 }
 
 func sameEntry(a, b jobsign.LedgerEntry) bool {
-	return a.ID == b.ID && a.Type == b.Type && a.Pattern == b.Pattern && a.MaxTier == b.MaxTier && sameTime(a.ExpiresAt, b.ExpiresAt)
+	return a.ID == b.ID && a.SameScope(b) && a.MaxTier == b.MaxTier && sameTime(a.ExpiresAt, b.ExpiresAt)
 }
 
 func sameExclusion(a, b jobsign.LedgerExclusion) bool {
@@ -509,7 +509,7 @@ func narrowingOps(cur *tenantLedger, snap jobsign.LedgerSnapshot, now time.Time)
 	for _, id := range sortedKeys(cur.entries) {
 		old := cur.entries[id]
 		e, ok := inSnap[id]
-		if !ok || e.Type != old.Type || e.Pattern != old.Pattern {
+		if !ok || !e.SameScope(old) {
 			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpRemoveEntry, ID: id})
 			continue
 		}
@@ -626,8 +626,11 @@ func (l *Ledger) Check(st *jobsign.Statement, now time.Time) *refusal {
 		if tier <= jobsign.TierPassive || !scopedom.NeedsAuthority(target) {
 			continue
 		}
-		covered, below := t.covers(target, tier, now)
+		covered, below, limited := t.covers(target, tier, now)
 		switch {
+		case covered && limited != nil && !scopedom.ConstrainedToolAllowed(st.Tool, limited.ports, limited.path):
+			return refuse(http.StatusForbidden, ReasonOutOfLedger,
+				"target %q is approved only for some ports or a path, and tool %q could reach others", clip(target, 128), clip(st.Tool, maxToolLength))
 		case covered:
 		case below:
 			return refuse(http.StatusForbidden, ReasonTierExceedsLedge,
@@ -674,25 +677,48 @@ func (t *tenantLedger) excludes(target string, now time.Time) string {
 	return ""
 }
 
+// ledgerLimits says which limits cover a target when only port- or
+// path-limited entries do.
+type ledgerLimits struct{ ports, path bool }
+
 // covers reports whether an entry in effect covers target at tier, and
-// whether one covers it only below tier.
-func (t *tenantLedger) covers(target string, tier int, now time.Time) (covered, below bool) {
+// whether one covers it only below tier. limited is nil when an entry
+// without a port or path limit covers it, else the kinds of limits of the
+// covering entries. Matching is the API's own (scopedom.EntryMatches): a
+// port-limited entry covers only a target that names an allowed port, a
+// path-limited URL entry only URLs under its path.
+func (t *tenantLedger) covers(target string, tier int, now time.Time) (covered, below bool, limited *ledgerLimits) {
 	forms := scopedom.AuthorityForms(target)
+	lim := &ledgerLimits{}
 	for _, e := range t.entries {
 		if jobsign.Expired(e.ExpiresAt, now) {
 			continue
 		}
+		tt := scopedom.TargetType(e.Type)
+		c := scopedom.Constraint{Ports: e.Ports, Protocol: e.Protocol}
 		for _, f := range forms {
-			if !scopedom.MatchesPattern(scopedom.TargetType(e.Type), e.Pattern, f) {
+			if !scopedom.EntryMatches(tt, e.Pattern, c, f) {
 				continue
 			}
-			if e.MaxTier >= tier {
-				return true, false
+			if e.MaxTier < tier {
+				below = true
+				continue
 			}
-			below = true
+			covered = true
+			switch {
+			case scopedom.URLPathLimited(tt, e.Pattern):
+				lim.path = true
+			case !c.IsZero():
+				lim.ports = true
+			default:
+				return true, false, nil
+			}
 		}
 	}
-	return false, below
+	if covered {
+		return true, false, lim
+	}
+	return false, below, nil
 }
 
 // ledgerExclusionTypes are the exclusion types that name targets.
@@ -773,8 +799,25 @@ func validateEntry(e jobsign.LedgerEntry) error {
 		return errors.New("entry max_tier must be 0, 1 or 2")
 	case e.MaxTier == jobsign.TierIntrusive && e.ExpiresAt == nil:
 		return errors.New("an intrusive (t2) entry needs an expiry")
+	case !canonicalConstraint(tt, e.Ports, e.Protocol):
+		return errors.New("entry ports and protocol must be a canonical port limit for its type")
 	}
 	return nil
+}
+
+// canonicalConstraint reports whether ports and protocol are a port limit
+// in the API's canonical form (a list that normalizes to itself), so the
+// signer and the API read one limit the same way.
+func canonicalConstraint(tt scopedom.TargetType, ports, protocol string) bool {
+	if ports == "" && protocol == "" {
+		return true
+	}
+	var list []string
+	if ports != "" {
+		list = []string{ports}
+	}
+	c, err := scopedom.NormalizeConstraint(tt, list, protocol)
+	return err == nil && c.Ports == ports && c.Protocol == protocol
 }
 
 func validateTemplate(t jobsign.LedgerTemplate) error {
