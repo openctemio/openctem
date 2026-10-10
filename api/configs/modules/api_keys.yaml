@@ -1,0 +1,10 @@
+- id: api_keys
+  const: ModuleAPIKeys
+  slug: api_keys
+  name: API Keys
+  description: API key management for programmatic access
+  icon: Key
+  category: settings
+  order: 66
+  core: true
+  permission: "integrations:api_keys:read"

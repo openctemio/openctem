@@ -15,7 +15,7 @@ import (
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 )
 
-// Every route follows the module the registry (configs/modules.yaml) says it
+// Every route follows the module the registry (configs/modules/<id>.yaml) says it
 // belongs to, in both directions (RFC-064 R2, R5):
 //
 //   - a route under a module's `routes` prefix is gated by RequireModule for
@@ -32,20 +32,26 @@ import (
 // registryConsts maps a Go constant name of the registry to its module id.
 func registryConsts(t *testing.T, root string) map[string]string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(root, "configs", "modules.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var mods []struct {
-		ID    string `yaml:"id"`
-		Const string `yaml:"const"`
-	}
-	if err := yaml.Unmarshal(raw, &mods); err != nil {
-		t.Fatal(err)
+	files, err := filepath.Glob(filepath.Join(root, "configs", "modules", "*.yaml"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("configs/modules/*.yaml: %v (%d files)", err, len(files))
 	}
 	out := map[string]string{}
-	for _, m := range mods {
-		out[m.Const] = m.ID
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var mods []struct {
+			ID    string `yaml:"id"`
+			Const string `yaml:"const"`
+		}
+		if err := yaml.Unmarshal(raw, &mods); err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range mods {
+			out[m.Const] = m.ID
+		}
 	}
 	return out
 }
@@ -224,7 +230,7 @@ func TestEveryRouteFollowsTheModuleRegistry(t *testing.T) {
 		case actual == want:
 		case want == "":
 			problems = append(problems, r.method+" "+r.path+" ("+r.pos+"): gated by "+actual+
-				" but not declared: add the prefix to "+actual+".routes in configs/modules.yaml")
+				" but not declared: add the prefix to "+actual+".routes in configs/modules/<id>.yaml")
 		case actual == "":
 			problems = append(problems, r.method+" "+r.path+" ("+r.pos+"): declared under "+want+
 				" ("+prefix+") but not gated: add RequireModule(...) for it, or move the prefix")

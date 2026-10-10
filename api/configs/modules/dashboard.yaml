@@ -1,0 +1,11 @@
+- id: dashboard
+  const: ModuleDashboard
+  slug: dashboard
+  name: Dashboard
+  description: Main dashboard with security overview and statistics
+  icon: LayoutDashboard
+  category: core
+  order: 1
+  core: true
+  user_facing: true
+  permission: "dashboard:read"

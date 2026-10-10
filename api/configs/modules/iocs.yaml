@@ -1,0 +1,13 @@
+- id: iocs
+  const: ModuleIOCs
+  slug: iocs
+  name: IOCs
+  description: Indicators of Compromise
+  icon: Fingerprint
+  category: operations
+  order: 84
+  permission: "threat_intel:read"
+  depends:
+    - {id: threat_intel, kind: soft, reason: "IOC enrichment pulls from threat intel feeds"}
+  routes:
+    - /api/v1/iocs
