@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
+	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -13,7 +13,7 @@ import (
 
 // authorizeActionConfigs checks the caller holds the permission of every
 // action and notification node in the supplied configs (see
-// workflowsvc.NodePermission: the permission of the equivalent direct API
+// automationsvc.NodePermission: the permission of the equivalent direct API
 // route). It returns the first permission the caller lacks and false when
 // unauthorized; ("", true) means the caller may build these nodes.
 // Owners/admins bypass via middleware.HasPermission. nil configs and trigger
@@ -24,13 +24,13 @@ import (
 // findings, start scans or send data out, which they were never granted (an
 // intra-tenant privilege escalation: permission matching is exact). The same
 // permissions are checked again, on the person a run acts as, before every
-// step runs (workflowsvc.StepAuthorizer).
+// step runs (automationsvc.StepAuthorizer).
 func authorizeActionConfigs(ctx context.Context, configs ...*NodeConfigRequest) (permission.Permission, bool) {
 	for _, c := range configs {
 		if c == nil {
 			continue
 		}
-		if perm, required := workflowsvc.NodePermission(toNodeConfig(c)); required && !middleware.HasPermission(ctx, string(perm)) {
+		if perm, required := automationsvc.NodePermission(toNodeConfig(c)); required && !middleware.HasPermission(ctx, string(perm)) {
 			return perm, false
 		}
 	}

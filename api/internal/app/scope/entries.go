@@ -88,10 +88,35 @@ var (
 type policy struct {
 	settings tenant.ScopeSettings
 	admins   int
+	// mode is the platform approval policy in force (RFC-054 §12.6).
+	mode tenant.ScopeApprovalMode
+}
+
+// ApprovalPolicySource answers the platform approval policy of a tenant
+// (*scopepolicy.Service). It fails closed (required).
+type ApprovalPolicySource interface {
+	EffectiveScopeApprovalMode(ctx context.Context, tenantID shared.ID) (tenant.ScopeApprovalMode, string)
+}
+
+// SetApprovalPolicy wires the platform approval policy. Without it every
+// tenant is `required`.
+func (s *Service) SetApprovalPolicy(src ApprovalPolicySource) { s.approvalPolicy = src }
+
+// ApprovalPolicy answers the tenant's approval mode and its source
+// (platform_default or organization_override).
+func (s *Service) ApprovalPolicy(ctx context.Context, tenantID string) (tenant.ScopeApprovalMode, string) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil || s.approvalPolicy == nil {
+		return tenant.ScopeApprovalRequired, "platform_default"
+	}
+	return s.approvalPolicy.EffectiveScopeApprovalMode(ctx, id)
 }
 
 func (s *Service) loadPolicy(ctx context.Context, tenantID shared.ID) (policy, error) {
-	p := policy{admins: 2}
+	p := policy{admins: 2, mode: tenant.ScopeApprovalRequired}
+	if s.approvalPolicy != nil {
+		p.mode, _ = s.approvalPolicy.EffectiveScopeApprovalMode(ctx, tenantID)
+	}
 	if s.settings != nil {
 		st, err := s.settings.GetScopeSettings(ctx, tenantID.String())
 		if err != nil {
@@ -113,7 +138,7 @@ func (s *Service) loadPolicy(ctx context.Context, tenantID shared.ID) (policy, e
 
 // approvals is the approval count for a widening of an entry of tier tier.
 func (p policy) approvals(tier scopedom.Tier, request bool) int {
-	n := p.settings.EffectiveApprovals(p.admins, tier == scopedom.TierIntrusive)
+	n := p.settings.EffectiveApprovalsUnder(p.mode, p.admins, tier == scopedom.TierIntrusive)
 	if request && n < 1 {
 		n = 1
 	}
@@ -131,14 +156,25 @@ func (s *Service) requireStepUp(ctx context.Context, a Actor) error {
 	return s.stepUp.RequireRecentAuth(ctx, a.UserID)
 }
 
+// expiryBound is the longest an entry of tier may last, in days, and the
+// error for going past it: the organization's t2 maximum for an intrusive
+// entry (RFC-054 §12.4), the one-off bound for any other.
+func expiryBound(p policy, tier scopedom.Tier) (int, error) {
+	if tier == scopedom.TierIntrusive {
+		days, _ := p.settings.T2Max()
+		return days, scopedom.ErrIntrusiveTooLong
+	}
+	return p.settings.MaxDays(), ErrOneOffTooLong
+}
+
 // resolveExpiry turns expires_in_days / expires_at into an expiry within the
-// tenant's one-off bound (nil: permanent).
-func resolveExpiry(p policy, now time.Time, at *time.Time, days *int) (*time.Time, error) {
-	maxDays := p.settings.MaxDays()
+// tenant's bound for tier (nil: permanent).
+func resolveExpiry(p policy, tier scopedom.Tier, now time.Time, at *time.Time, days *int) (*time.Time, error) {
+	maxDays, tooLong := expiryBound(p, tier)
 	switch {
 	case days != nil:
 		if *days < 1 || *days > maxDays {
-			return nil, fmt.Errorf("%w: expires_in_days must be between 1 and %d", ErrOneOffTooLong, maxDays)
+			return nil, fmt.Errorf("%w: expires_in_days must be between 1 and %d", tooLong, maxDays)
 		}
 		e := now.Add(time.Duration(*days) * 24 * time.Hour)
 		return &e, nil
@@ -147,12 +183,19 @@ func resolveExpiry(p policy, now time.Time, at *time.Time, days *int) (*time.Tim
 			return nil, fmt.Errorf("%w: expires_at must be in the future", shared.ErrValidation)
 		}
 		if at.After(now.Add(time.Duration(maxDays)*24*time.Hour + time.Minute)) {
-			return nil, fmt.Errorf("%w: at most %d days", ErrOneOffTooLong, maxDays)
+			return nil, fmt.Errorf("%w: at most %d days", tooLong, maxDays)
 		}
 		e := at.UTC()
 		return &e, nil
 	}
 	return nil, nil
+}
+
+// intrusivePermanent reports whether the organization allows permanent t2
+// entries.
+func (p policy) intrusivePermanent() bool {
+	_, permanent := p.settings.T2Max()
+	return permanent
 }
 
 // singleTarget reports whether a pattern names one name or one address.
@@ -177,6 +220,8 @@ type entryDecision struct {
 	tier      scopedom.Tier
 	approvals int
 	request   bool
+	// intrusivePermanent: the organization allows permanent t2 entries.
+	intrusivePermanent bool
 }
 
 func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, targetType scopedom.TargetType, in CreateTargetInput, now time.Time, preview bool) (entryDecision, error) {
@@ -192,11 +237,16 @@ func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, target
 	if d.tier, err = scopedom.ParseTier(tierText); err != nil {
 		return d, err
 	}
-	if d.expiresAt, err = resolveExpiry(p, now, in.ExpiresAt, in.ExpiresInDays); err != nil {
+	if d.expiresAt, err = resolveExpiry(p, d.tier, now, in.ExpiresAt, in.ExpiresInDays); err != nil {
 		return d, err
 	}
-	if d.expiresAt != nil && p.settings.OneOffPolicy() == tenant.OneOffDisabled {
+	// A t2 entry's expiry is its own bound (t2_max_duration), not a one-off.
+	if d.expiresAt != nil && d.tier != scopedom.TierIntrusive && p.settings.OneOffPolicy() == tenant.OneOffDisabled {
 		return d, ErrOneOffDisabled
+	}
+	d.intrusivePermanent = p.intrusivePermanent()
+	if d.tier == scopedom.TierIntrusive && d.expiresAt == nil && !d.intrusivePermanent {
+		return d, scopedom.ErrIntrusiveNeeds
 	}
 	if in.Actor.system() {
 		return d, nil
@@ -375,13 +425,6 @@ func (s *Service) ExpireTargets(ctx context.Context) (int64, error) {
 func (s *Service) notifyWidened(ctx context.Context, t *scopedom.Target, title string) {
 	body := fmt.Sprintf("%s %s (%s, max tier %s)", t.TargetType(), t.Pattern(), describeExpiry(t), t.MaxTier())
 	s.NotifyAdmins(ctx, t.TenantID(), title, body)
-}
-
-// notifyRequested tells the administrators that an entry waits for approval.
-func (s *Service) notifyRequested(ctx context.Context, t *scopedom.Target) {
-	body := fmt.Sprintf("%s %s (%s) needs %d approval(s). Reason: %s",
-		t.TargetType(), t.Pattern(), describeExpiry(t), t.ApprovalsRequired(), t.Reason())
-	s.NotifyAdmins(ctx, t.TenantID(), "Scope entry awaiting approval", body)
 }
 
 func describeExpiry(t *scopedom.Target) string {

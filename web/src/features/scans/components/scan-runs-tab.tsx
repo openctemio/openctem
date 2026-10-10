@@ -67,7 +67,7 @@ import {
   fetchRunsForExport,
 } from '@/features/scans/lib/export-runs'
 
-/** Run statuses as the API stores them (workflow.RunStatus). */
+/** Run statuses as the API stores them (scanrun.RunStatus). */
 export const RUN_STATUS_FILTERS = [
   { value: 'all', label: 'All statuses' },
   { value: 'running', label: 'Running' },

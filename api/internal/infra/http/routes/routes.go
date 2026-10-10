@@ -156,8 +156,10 @@ type Handlers struct {
 	RelationshipSuggestion *handler.RelationshipSuggestionHandler // nil if not initialized (no database)
 
 	// Access Control handlers
-	Group          *handler.GroupHandler          // nil if not initialized (no database)
-	Role           *handler.RoleHandler           // nil if not initialized (no database)
+	Group *handler.GroupHandler // nil if not initialized (no database)
+	Role  *handler.RoleHandler  // nil if not initialized (no database)
+	// ServiceAccount serves /api/v1/service-accounts; nil when not wired.
+	ServiceAccount *handler.ServiceAccountHandler
 	Permission     *handler.PermissionHandler     // nil if not initialized (permission sync handler)
 	AssignmentRule *handler.AssignmentRuleHandler // nil if not initialized (no database)
 	ScopeRule      *handler.ScopeRuleHandler      // nil if not initialized (no database)
@@ -259,6 +261,9 @@ type Handlers struct {
 	IdleReadOnly middleware.IdleReadOnlyChecker
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
+	// AdminScopePolicy: the platform policy for scope-widening approvals
+	// (RFC-054 §12.6), platform default and per organization.
+	AdminScopePolicy *handler.AdminScopePolicyHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
@@ -580,6 +585,7 @@ func Register(
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerAssetReconciliationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	// Finding evidence: masked proof per detection / retest + audited reveal.
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
@@ -968,6 +974,9 @@ func Register(
 	// Role routes (Access Control - tenant from JWT token)
 	if h.Role != nil {
 		registerRoleRoutes(router, h.Role, authMiddleware, userSync)
+	}
+	if h.ServiceAccount != nil {
+		registerServiceAccountRoutes(router, h.ServiceAccount, authMiddleware, userSync)
 	}
 
 	// Assignment Rule routes (Access Control - tenant from JWT token)

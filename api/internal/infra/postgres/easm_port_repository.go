@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -62,7 +63,7 @@ func (r *EASMPortRepository) ActiveOpenPorts(ctx context.Context, tenantID share
 // ClosePorts marks the tenant's active open_port assets inactive, records a
 // "disappeared" entry for each and resolves their active port_open and
 // service_detected exposures, in one transaction.
-func (r *EASMPortRepository) ClosePorts(ctx context.Context, tenantID shared.ID, ids []shared.ID, reason string) ([]shared.ID, error) {
+func (r *EASMPortRepository) ClosePorts(ctx context.Context, tenantID shared.ID, ids []shared.ID, seenBefore time.Time, reason string) ([]shared.ID, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -79,8 +80,8 @@ func (r *EASMPortRepository) ClosePorts(ctx context.Context, tenantID shared.ID,
 	closed, err := portQueryIDs(ctx, tx, `
 		UPDATE assets SET status = 'inactive', updated_at = now()
 		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL AND status = 'active'
-		  AND asset_type = 'service' AND sub_type = 'open_port'
-		RETURNING id`, tenantID.String(), pq.Array(raw))
+		  AND asset_type = 'service' AND sub_type = 'open_port' AND last_seen < $3
+		RETURNING id`, tenantID.String(), pq.Array(raw), seenBefore.UTC())
 	if err != nil {
 		return nil, fmt.Errorf("close ports: %w", err)
 	}

@@ -245,6 +245,7 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	existing *asset.Asset,
 	ctisAsset *ctis.Asset,
 	tool *ctis.Tool,
+	observedAt time.Time,
 	recovered *[]shared.ID,
 	becameExposed *[]*asset.Asset,
 ) []*asset.AssetStateChange {
@@ -252,7 +253,7 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	oldInternet := existing.IsInternetAccessible()
 	wasFacing := oldInternet || oldExposure == asset.ExposurePublic
 
-	p.mergeCTISIntoAsset(existing, ctisAsset, tool, recovered)
+	p.mergeCTISIntoAsset(existing, ctisAsset, tool, observedAt, recovered)
 
 	if becameExposed != nil && !wasFacing &&
 		(existing.IsInternetAccessible() || existing.Exposure() == asset.ExposurePublic) {
@@ -477,6 +478,9 @@ func (p *AssetProcessor) processBatch(
 		source = report.Tool.Name
 	}
 	allKinds := len(asset.AllIdentifierKinds())
+	// When the report's source saw what it reports: last_seen and the
+	// property merge keep the newer observation, whatever the arrival order.
+	observedAt := reportObservedAt(report, time.Now())
 	isNew := map[string]bool{}
 	queued := map[string]bool{}
 	var renames []pendingRename
@@ -510,7 +514,7 @@ func (p *AssetProcessor) processBatch(
 			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, observedAt, &recoveredIDs, &becameExposed)...)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -518,7 +522,7 @@ func (p *AssetProcessor) processBatch(
 					assetMap[ctisAsset.ID] = existing.ID()
 					return
 				}
-				existing.MarkSeen()
+				existing.MarkSeenAt(observedAt)
 			}
 			if !isNew[id] && !queued[id] {
 				updateAssets = append(updateAssets, existing)
@@ -558,6 +562,10 @@ func (p *AssetProcessor) processBatch(
 				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, shortName(normalizedName), createErr))
 				return
 			}
+			scope.dropUntrustedClaims(newAsset)
+			// Seen when its source saw it, so a later report observed earlier
+			// cannot pass it.
+			newAsset.MarkSeenAt(observedAt)
 			if skipExcluded(excl, newAsset, ctisAsset.ID, output) {
 				return
 			}
@@ -1868,7 +1876,7 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	// this seam — internet-exposure, compliance scope, data classification, and
 	// PII/PHI all feed the prioritization engine's reachability + business-
 	// context gates. Before this, only regulatory_owner was read.
-	p.applyCTEMSignals(newAsset, ctisAsset)
+	p.applyCTEMSignals(newAsset, ctisAsset, true)
 
 	// Infer internet exposure when the scanner didn't provide one. Exposure is
 	// the reachability signal the prioritization engine reads, and it was
@@ -1888,7 +1896,10 @@ func (p *AssetProcessor) createAssetFromCTIS(
 // engine; before this they were silently dropped at the ingest mapping seam
 // (only regulatory_owner was consumed). Trusting an explicit
 // is_internet_accessible also beats the heuristic exposure inference.
-func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset) {
+//
+// The data classification is applied only to a new asset (classify);
+// an existing asset's is decided by attribute reconciliation (RFC-069).
+func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset, classify bool) {
 	if ctisAsset.IsInternetAccessible {
 		a.SetInternetAccessible(true)
 		if a.Exposure() == asset.ExposureUnknown {
@@ -1903,7 +1914,7 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset)
 	if len(c.Frameworks) > 0 {
 		a.SetComplianceScope(c.Frameworks)
 	}
-	if c.DataClassification != "" {
+	if classify && c.DataClassification != "" {
 		if err := a.SetDataClassification(asset.DataClassification(c.DataClassification)); err != nil {
 			p.logger.Warn("invalid data_classification from scanner",
 				"value", logger.SanitizeValue(c.DataClassification), "asset", logger.SanitizeValue(a.Name()), "error", err)
@@ -1951,21 +1962,18 @@ func isPublicIP(s string) bool {
 }
 
 // mergeCTISIntoAsset merges CTIS data into an existing asset.
-func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool, recovered *[]shared.ID) {
+// observedAt is when the report's source saw the asset (reportObservedAt).
+func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool, observedAt time.Time, recovered *[]shared.ID) {
 	// Mark as seen. Capture the prior status first so we can tell when this
 	// scan reactivates a stale/inactive asset (MarkSeen flips it to active).
 	wasInactive := existing.Status() == asset.StatusStale || existing.Status() == asset.StatusInactive
-	existing.MarkSeen()
+	existing.MarkSeenAt(observedAt)
 	if recovered != nil && wasInactive && existing.Status() == asset.StatusActive {
 		*recovered = append(*recovered, existing.ID())
 	}
 
-	// Update owner ref if provided and not already set
-	if existing.OwnerRef() == "" {
-		if ownerRef := p.extractOwnerRef(ctisAsset); ownerRef != "" {
-			existing.SetOwnerRef(ownerRef)
-		}
-	}
+	// owner_ref and data classification of an existing asset are decided
+	// by attribute reconciliation (attributes.go, RFC-069), not here.
 
 	// Merge tags
 	for _, tag := range ctisAsset.Tags {
@@ -1987,7 +1995,7 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// Re-apply the scanner's explicit CTEM signals on re-scan (compliance /
 	// classification / PII-PHI / internet-exposure) so a later scan that learns
 	// them updates the inventory instead of dropping them.
-	p.applyCTEMSignals(existing, ctisAsset)
+	p.applyCTEMSignals(existing, ctisAsset, false)
 
 	// Backfill exposure on re-scan for assets that predate exposure inference
 	// (or that had no signal before) — only when still unknown, never overriding.

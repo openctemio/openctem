@@ -133,6 +133,14 @@ func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, even
 	return h
 }
 
+// withScopeSnapshots gives the workflow handler the run scope snapshot route.
+func withScopeSnapshots(h *handler.ScanWorkflowHandler, snaps *postgres.ScopeSnapshotRepository) *handler.ScanWorkflowHandler {
+	if snaps != nil {
+		h.SetScopeSnapshots(snaps)
+	}
+	return h
+}
+
 // withReadiness gives the workflow handler ?include=readiness.
 func withReadiness(h *handler.ScanWorkflowHandler, scans *scanapp.Service) *handler.ScanWorkflowHandler {
 	if scans != nil {
@@ -477,7 +485,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:                  handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:             ciAdmin,
 		CIRunner:            ciRunner,
-		ScanWorkflow:        withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan),
+		ScanWorkflow:        withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -526,6 +534,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
 		Role:           handler.NewRoleHandler(svc.Role, v, log),
+		ServiceAccount: handler.NewServiceAccountHandler(svc.ServiceAccount, svc.APIKey, v, log),
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
 		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),
@@ -616,6 +625,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// People on scope responses are named from this tenant's members only.
 	scopeActors := postgres.NewScopeActorRepository(deps.DB)
 	handlers.Scope.SetActorNamer(scopeActors)
+	// Pending entries name their approvers; an owner without another
+	// approver approves with a fresh authenticator code (RFC-054 §7).
+	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	if svc.EASMSweep != nil {
 		handlers.Scope.SetSweeper(svc.EASMSweep)
 	}
@@ -634,6 +646,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
+	handlers.AssetOwner.SetAttributeLocker(svc.Asset)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {
@@ -706,6 +719,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
+	}
+	// The platform policy for scope-widening approvals (RFC-054 §12.6).
+	if svc.ScopePolicy != nil {
+		handlers.AdminScopePolicy = handler.NewAdminScopePolicyHandler(svc.ScopePolicy, adminConsoleSvc, log)
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {

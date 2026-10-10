@@ -38,6 +38,8 @@ type Settings struct {
 	MCP MCPSettings `json:"mcp,omitempty"`
 	// VulnMatching is the policy of inventory vulnerability matching (RFC-066 §9).
 	VulnMatching VulnMatchingSettings `json:"vuln_matching,omitempty"`
+	// AssetReconciliation is which source decides an asset attribute (RFC-069).
+	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
 
 	// SubscribedBundles is the set of product-bundle IDs the tenant runs
 	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
@@ -778,6 +780,9 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.VulnMatching.Validate(); err != nil {
 		return fmt.Errorf("vuln_matching settings: %w", err)
+	}
+	if err := s.AssetReconciliation.Validate(); err != nil {
+		return fmt.Errorf("asset_reconciliation settings: %w", err)
 	}
 	return nil
 }

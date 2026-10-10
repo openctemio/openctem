@@ -39,7 +39,7 @@ func TestUserMFARepository(t *testing.T) {
 
 	userID := shared.NewID()
 	if _, err := sqlDB.Exec(`INSERT INTO users (id, email, name, auth_provider, status, email_verified)
-		VALUES ($1, $2, 'MFA Repo Test', 'local', 'active', true)`, userID.String(), "mfa-repo-"+userID.String()[:8]+"@example.test"); err != nil {
+		VALUES ($1, $2, 'MFA Repo Test', 'local', 'active', true)`, userID.String(), "mfa-repo-"+userID.String()[28:]+"@example.test"); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 	t.Cleanup(func() { _, _ = sqlDB.Exec(`DELETE FROM users WHERE id = $1`, userID.String()) })

@@ -436,9 +436,9 @@ const maxTransitionsPerRun = 50_000
 //     API, so they count as "manual" and are left alone by default.
 //
 // The clock is assets.last_seen, which only ingest and integrations move forward
-// (Asset.MarkSeen, the ingest upsert's GREATEST(last_seen, ...)). Before,
-// the provenance check read asset_sources, a table nothing wrote, so the
-// worker never demoted an asset ingest had created.
+// (Asset.MarkSeen, the ingest upsert's GREATEST(last_seen, ...)): any source
+// that reports the asset keeps it active. Which source decides an attribute
+// is attribute reconciliation (RFC-069), not this worker.
 const lifecycleCandidateClauses = `
 	WHERE tenant_id = $1
 	  AND deleted_at IS NULL

@@ -37,7 +37,7 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 	// Seed tenant + sensor (sensor_api_keys.sensor_id REFERENCES sensors; deleting
 	// the tenant CASCADEs both away).
 	tenantID := shared.NewID()
-	slug := "aak-" + tenantID.String()[:8]
+	slug := "aak-" + tenantID.String()[28:]
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
 		tenantID.String(), "sensor-apikey-test", slug); err != nil {
@@ -133,7 +133,7 @@ func TestSensorAPIKeyRepository_RotateKey(t *testing.T) {
 
 	tenantID := shared.NewID()
 	if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
-		tenantID.String(), "sensor-retire-test", "srt-"+tenantID.String()[:8]); err != nil {
+		tenantID.String(), "sensor-retire-test", "srt-"+tenantID.String()[28:]); err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
@@ -307,7 +307,7 @@ func TestSensorAPIKeyRepository_RenewalRechecksPresentedKey(t *testing.T) {
 
 	tenantID := shared.NewID()
 	if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
-		tenantID.String(), "sensor-recheck-test", "src-"+tenantID.String()[:8]); err != nil {
+		tenantID.String(), "sensor-recheck-test", "src-"+tenantID.String()[28:]); err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
