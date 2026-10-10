@@ -99,7 +99,6 @@ export const Permission = {
   // Note: Components (SBOM) is a separate module with its own permissions
   ComponentsRead: 'assets:components:read',
   ComponentsWrite: 'assets:components:write',
-  ComponentsDelete: 'assets:components:delete',
 
   // Note: Repositories and Branches use general assets:* permissions
   // as they are just asset types, not separate security boundaries
@@ -161,6 +160,7 @@ export const Permission = {
   ScansWrite: 'scans:write',
   ScansDelete: 'scans:delete',
   ScansExecute: 'scans:execute',
+  ScansApprove: 'scans:approve',
 
   // Scan Profiles (scans:profiles:*)
   ScanProfilesRead: 'scans:profiles:read',
@@ -535,7 +535,6 @@ export const PermissionGroups = {
   AllDelete: [
     Permission.AssetsDelete,
     Permission.AssetGroupsDelete,
-    Permission.ComponentsDelete,
     Permission.FindingsDelete,
     Permission.ExposuresDelete,
     Permission.SuppressionsDelete,
@@ -620,7 +619,6 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.AssetGroupsDelete]: 'Delete Asset Groups',
   [Permission.ComponentsRead]: 'View Components',
   [Permission.ComponentsWrite]: 'Edit Components',
-  [Permission.ComponentsDelete]: 'Delete Components',
 
   // Findings
   [Permission.FindingsRead]: 'View Findings',
@@ -653,6 +651,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ScansWrite]: 'Manage Scans',
   [Permission.ScansDelete]: 'Delete Scans',
   [Permission.ScansExecute]: 'Execute Scans',
+  [Permission.ScansApprove]: 'Approve Scans',
   [Permission.ScanProfilesRead]: 'View Scan Profiles',
   [Permission.ScanProfilesWrite]: 'Manage Scan Profiles',
   [Permission.ScanProfilesDelete]: 'Delete Scan Profiles',
@@ -826,7 +825,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.AssetGroupsDelete,
     Permission.ComponentsRead,
     Permission.ComponentsWrite,
-    Permission.ComponentsDelete,
     // Findings
     Permission.FindingsRead,
     Permission.FindingsWrite,
@@ -857,6 +855,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScansWrite,
     Permission.ScansDelete,
     Permission.ScansExecute,
+    Permission.ScansApprove,
     Permission.ScanProfilesRead,
     Permission.ScanProfilesWrite,
     Permission.ScanProfilesDelete,
@@ -990,7 +989,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.AssetGroupsDelete,
     Permission.ComponentsRead,
     Permission.ComponentsWrite,
-    Permission.ComponentsDelete,
     // Findings
     Permission.FindingsRead,
     Permission.FindingsWrite,
@@ -1020,6 +1018,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScansWrite,
     Permission.ScansDelete,
     Permission.ScansExecute,
+    Permission.ScansApprove,
     Permission.ScanProfilesRead,
     Permission.ScanProfilesWrite,
     Permission.ScanProfilesDelete,

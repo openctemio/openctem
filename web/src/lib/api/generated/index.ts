@@ -86,16 +86,11 @@ export type AssetGroupStatsResponse = Schemas['internal_infra_http_handler.Asset
 export type GroupAssetResponse = Schemas['internal_infra_http_handler.GroupAssetResponse']
 export type GroupFindingResponse = Schemas['internal_infra_http_handler.GroupFindingResponse']
 
-// Components (SBOM)
-export type ComponentResponse = Schemas['internal_infra_http_handler.ComponentResponse']
-export type ComponentStats =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats']
-export type EcosystemStats =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.EcosystemStats']
-export type LicenseStats =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.LicenseStats']
-export type VulnerableComponent =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.VulnerableComponent']
+// Components (RFC-070)
+export type ComponentPackage =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.Package']
+export type ComponentSummary =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.Summary']
 
 // CTEM cycles — the close-time verdict on each charter success criterion.
 export type CtemCycleResponse = Schemas['internal_infra_http_handler.CTEMCycleResponse']

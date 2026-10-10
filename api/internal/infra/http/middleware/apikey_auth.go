@@ -13,6 +13,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -100,7 +101,7 @@ func (m *APIKeyAuthMiddleware) Handler(next http.Handler) http.Handler {
 			apierror.Unauthorized("Invalid credentials").WriteJSON(w)
 			return
 		}
-		ctx, ok := m.authenticate(w, r, raw)
+		ctx, ok := m.authenticate(w, r, raw, scangov.OriginMCP)
 		if !ok {
 			return
 		}
@@ -143,7 +144,7 @@ func (m *APIKeyAuthMiddleware) OrJWT(jwtAuth func(http.Handler) http.Handler) fu
 				apierror.Forbidden("API keys cannot be used on this endpoint").WriteJSON(w)
 				return
 			}
-			ctx, ok := m.authenticate(w, r, raw)
+			ctx, ok := m.authenticate(w, r, raw, scangov.OriginAPIKey)
 			if !ok {
 				return
 			}
@@ -157,9 +158,10 @@ func (m *APIKeyAuthMiddleware) OrJWT(jwtAuth func(http.Handler) http.Handler) fu
 }
 
 // authenticate validates raw, applies the key's rate limit and returns the
-// request context carrying the key's identity. On failure it writes the
-// response and returns false.
-func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, raw string) (context.Context, bool) {
+// request context carrying the key's identity and origin (the MCP
+// endpoint or the REST API). On failure it writes the response and returns
+// false.
+func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, raw string, origin scangov.Origin) (context.Context, bool) {
 	key, perms, err := m.auth.AuthenticateWithPermissions(r.Context(), raw, getClientIP(r))
 	if err != nil {
 		m.log.Debug("api key auth failed", "reason", err.Error())
@@ -185,6 +187,7 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 	ctx = context.WithValue(ctx, APIKeyIDKey, key.ID().String())
 	ctx = context.WithValue(ctx, APIKeyPrefixKey, key.KeyPrefix())
 	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderAPIKey)
+	ctx = scangov.WithOrigin(ctx, origin)
 	if uid := key.UserID(); uid != nil {
 		ctx = context.WithValue(ctx, UserIDKey, uid.String())
 	}

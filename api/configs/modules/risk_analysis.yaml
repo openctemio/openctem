@@ -1,0 +1,13 @@
+- id: risk_analysis
+  const: ModuleRiskAnalysis
+  slug: "risk-analysis"
+  name: Risk Analysis
+  description: Aggregate risk dashboards across assets + findings
+  icon: BarChart
+  category: prioritization
+  order: 25
+  user_facing: true
+  permission: "findings:read"
+  depends:
+    - {id: findings, kind: hard, reason: "risk scoring reads finding severity + exposure"}
+    - {id: assets, kind: hard, reason: "per-asset risk requires the asset inventory"}

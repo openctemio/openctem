@@ -34,6 +34,20 @@ type ScanHandler struct {
 	coverageStats scancoverage.CoverageStatsReader
 	validator     *validator.Validator
 	logger        *logger.Logger
+	// approvals: scan approval (RFC-073); nil when not wired.
+	approvals *ScanApprovalHandler
+}
+
+// SetApprovals wires scan approval: the list badge and the approval routes
+// under /scans.
+func (h *ScanHandler) SetApprovals(a *ScanApprovalHandler) { h.approvals = a }
+
+// Approvals returns the scan approval handler (nil when not wired).
+func (h *ScanHandler) Approvals() *ScanApprovalHandler {
+	if h == nil {
+		return nil
+	}
+	return h.approvals
 }
 
 // auditCtx is the request context carrying the caller as the actor of the
@@ -210,13 +224,17 @@ type AssetCompatibilityPreviewResponse struct {
 
 // ScanResponse represents the response for a scan.
 type ScanDetailResponse struct {
-	ID            string   `json:"id"`
-	TenantID      string   `json:"tenant_id"`
-	Name          string   `json:"name"`
-	Description   string   `json:"description,omitempty"`
-	AssetGroupID  string   `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
-	AssetGroupIDs []string `json:"asset_group_ids,omitempty"` // Multiple asset groups
-	Targets       []string `json:"targets,omitempty"`         // Direct targets
+	// ApprovalStatus: the newest approval request of the scan (pending,
+	// approved, rejected, expired, superseded, canceled); empty when none
+	// (RFC-073). On lists only.
+	ApprovalStatus string   `json:"approval_status,omitempty"`
+	ID             string   `json:"id"`
+	TenantID       string   `json:"tenant_id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description,omitempty"`
+	AssetGroupID   string   `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
+	AssetGroupIDs  []string `json:"asset_group_ids,omitempty"` // Multiple asset groups
+	Targets        []string `json:"targets,omitempty"`         // Direct targets
 	// TargetOptions: how each run resolves the dynamic selectors among
 	// Targets from the inventory (RFC-068).
 	TargetOptions  scan.TargetOptions `json:"target_options"`
@@ -1232,7 +1250,9 @@ func (h *ScanHandler) enrichScanResponses(ctx context.Context, tenantID string, 
 	}
 	lastRuns := h.service.LastRuns(ctx, tid, scans)
 	names := h.service.ScanWorkflowNames(ctx, tid, scans)
+	approvals := h.approvals.latestStatuses(ctx, tid, scans)
 	for i, s := range scans {
+		items[i].ApprovalStatus = approvals[s.ID]
 		if lr, ok := lastRuns[s.ID]; ok {
 			items[i].LastRun = toScanLastRunResponse(lr)
 		}

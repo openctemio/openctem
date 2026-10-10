@@ -1,0 +1,20 @@
+- id: components
+  const: ModuleComponents
+  slug: components
+  name: Components
+  description: "Software Components (SBOM), Ecosystems, Licenses, and vulnerability tracking"
+  icon: Package
+  category: discovery
+  order: 11
+  user_facing: true
+  permission: "assets:components:read"
+  depends:
+    - {id: assets, kind: hard, reason: "components belong to assets (repos, images, runtimes)"}
+  routes:
+    - /api/v1/components
+    - "/api/v1/assets/{}/components"
+    - "/api/v1/assets/{}/dependency-paths"
+    - "/api/v1/assets/{}/dependency-graph"
+    - /api/v1/vex-statements
+  jobs:
+    - VEXStatementExpiryController
