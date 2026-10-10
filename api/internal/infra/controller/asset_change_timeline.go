@@ -2,8 +2,8 @@ package controller
 
 // Asset change timeline upkeep (RFC-069 §11,
 // docs/architecture/asset-attribute-reconciliation.md):
-//   - creates the monthly partitions ahead of time;
-//   - drops events past retention (whole months);
+//   - deletes events past retention (in batches; the server runs no DDL, so
+//     the monthly partitions are created by migrations);
 //   - once a day re-resolves the reconciled attributes of every asset with a
 //     recorded source, so a value whose deciding source went past its TTL
 //     moves to the next fresh source (and the timeline says why) without
@@ -70,26 +70,20 @@ func (c *AssetChangeTimelineController) Name() string { return "asset-change-tim
 // Interval returns the reconciliation interval.
 func (c *AssetChangeTimelineController) Interval() time.Duration { return time.Hour }
 
-// Exclusive: one replica at a time (partition DDL and the sweep).
+// Exclusive: one replica at a time (retention and the sweep).
 func (c *AssetChangeTimelineController) Exclusive() bool { return true }
 
-// Reconcile creates partitions, applies retention and, once a day,
-// re-resolves attributes whose deciding source may have gone stale.
+// Reconcile applies retention and, once a day, re-resolves attributes whose
+// deciding source may have gone stale.
 func (c *AssetChangeTimelineController) Reconcile(ctx context.Context) (int, error) {
 	now := c.now()
 	processed := 0
-	if n, err := c.store.EnsurePartitions(ctx, now, 3); err != nil {
-		c.logger.Error("asset change partitions not created", "error", err)
-	} else {
-		processed += n
-	}
 	cutoff := now.AddDate(0, 0, -c.retentionDays)
-	if parts, rows, err := c.store.DropBefore(ctx, cutoff); err != nil {
+	if rows, err := c.store.DeleteBefore(ctx, cutoff); err != nil {
 		c.logger.Error("asset change retention failed", "error", err)
-	} else if parts > 0 || rows > 0 {
-		c.logger.Info("asset change retention", "partitions_dropped", parts, "rows_deleted", rows,
-			"retention_days", c.retentionDays)
-		processed += parts
+	} else if rows > 0 {
+		c.logger.Info("asset change retention", "rows_deleted", rows, "retention_days", c.retentionDays)
+		processed += int(rows)
 	}
 	if c.resolver == nil || (!c.lastSweep.IsZero() && now.Sub(c.lastSweep) < c.sweepEvery) {
 		return processed, nil

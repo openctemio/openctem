@@ -129,12 +129,9 @@ type ChangeEventRepository interface {
 	ListChanges(ctx context.Context, tenantID shared.ID, q ChangeQuery) ([]ChangeEvent, bool, error)
 }
 
-// ChangeTimelineMaintainer keeps the timeline's partitions and retention.
+// ChangeTimelineMaintainer applies the timeline's retention.
 type ChangeTimelineMaintainer interface {
-	// EnsurePartitions creates the monthly partitions from the month of from
-	// for months months and returns how many it created.
-	EnsurePartitions(ctx context.Context, from time.Time, months int) (int, error)
-	// DropBefore removes events older than cutoff (whole monthly partitions
-	// where possible) and returns how many partitions and rows went.
-	DropBefore(ctx context.Context, cutoff time.Time) (partitions int, rows int64, err error)
+	// DeleteBefore removes events older than cutoff, in bounded batches, and
+	// returns how many rows went.
+	DeleteBefore(ctx context.Context, cutoff time.Time) (int64, error)
 }
