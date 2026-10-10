@@ -480,7 +480,9 @@ type stubGate struct {
 	blockedTyped map[string]attribution.State
 	// ceiling is the max_tier of the entry covering a target (absent: at
 	// least every tier).
-	ceiling    map[string]scopedom.Tier
+	ceiling map[string]scopedom.Tier
+	// uncovered are the targets no scope authority covers (passive check).
+	uncovered  map[string]bool
 	err        error
 	asked      []string
 	askedTyped []string
@@ -632,4 +634,17 @@ func allowAllChecks(s *Service) *Service {
 		s.actScope = &stubActScope{}
 	}
 	return s
+}
+
+func (g *stubGate) UncoveredTargets(_ context.Context, _ shared.ID, targets []string) ([]string, error) {
+	if g.err != nil {
+		return nil, g.err
+	}
+	var out []string
+	for _, t := range targets {
+		if g.uncovered[t] {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
