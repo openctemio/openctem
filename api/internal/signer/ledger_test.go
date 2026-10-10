@@ -135,12 +135,18 @@ func TestLedger_WideningNeedsThePolicyApprovals(t *testing.T) {
 	}
 }
 
-func TestLedger_IntrusiveEntryNeedsOneApprovalAndTheOperatorFloor(t *testing.T) {
+func TestLedger_IntrusiveEntryFollowsThePolicyAndTheOperatorFloors(t *testing.T) {
 	exp := tNow.Add(7 * 24 * time.Hour)
-	s := newService(t, t.TempDir(), newKey(t), enforcing)
-	// The policy says 0, but an intrusive entry never widens without one.
+	// The organization's policy says 0 (scan approval Off or On, RFC-073
+	// §7): an intrusive entry widens without approval unless the operator
+	// set a floor for intrusive entries.
+	open := newService(t, t.TempDir(), newKey(t), enforcing)
+	mustApply(t, open, change(0, nil, putEntry(entry(tEntry, "domain", "app.example.com", 2, &exp))))
+	s := newService(t, t.TempDir(), newKey(t), func(c *Config) { enforcing(c); c.LedgerT2MinApprovals = 1 })
 	_, ref := s.Ledger().Apply(change(0, nil, putEntry(entry(tEntry, "domain", "app.example.com", 2, &exp))), tNow)
 	wantReason(t, ref, ReasonNotApproved)
+	// The intrusive floor does not apply to t1 entries.
+	mustApply(t, s, change(0, nil, putEntry(entry(tEntry2, "domain", "*.example.org", 1, nil))))
 	// A t2 entry without an expiry is malformed.
 	_, ref = s.Ledger().Apply(change(1, []string{tAdminB}, putEntry(entry(tEntry, "domain", "app.example.com", 2, nil))), tNow)
 	wantReason(t, ref, ReasonLedgerMalformed)

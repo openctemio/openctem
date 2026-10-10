@@ -145,11 +145,11 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['registration', 'self-service', 'policy'],
       },
       {
-        title: 'Scope approvals',
-        i18nKey: 'admin.nav.scopeApprovals',
-        url: '/admin/system/scope-approvals',
+        title: 'Scan approval',
+        i18nKey: 'admin.nav.scanApproval',
+        url: '/admin/system/scan-approval',
         icon: ShieldCheck,
-        keywords: ['scope', 'approval', 'widening', 'second approver', 'policy'],
+        keywords: ['scan', 'approval', 'governance', 'second approver', 'policy', 'scope'],
       },
       {
         title: 'Admin sign-in',
