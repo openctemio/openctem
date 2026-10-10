@@ -121,11 +121,14 @@ export function approvalsForNew(opts: {
   canApprove: boolean
   effective: number
   tier: ScopeTier
-  /** The platform approval policy (RFC-054 §12.6); default required. */
-  policy?: string
+  /**
+   * Scope entries need approval (Strict scan approval, RFC-073 §6); unknown
+   * counts as yes. Off and On: an approver's widening takes effect at once.
+   */
+  entriesNeedApproval?: boolean
 }): number {
   const base = opts.canApprove ? opts.effective : Math.max(1, opts.effective)
-  const t2Floor = (opts.policy ?? 'required') === 'required'
+  const t2Floor = opts.entriesNeedApproval ?? true
   return opts.tier === 't2' && t2Floor ? Math.max(1, base) : base
 }
 
@@ -211,7 +214,7 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     canApprove,
     effective: settings?.effective_widening_approvals ?? 0,
     tier,
-    policy: settings?.approval_policy?.mode,
+    entriesNeedApproval: settings?.approval_policy?.entries_need_approval,
   })
 
   const expiresOn = expiring ? formatDay(expiryDateFor(expiryDays), locale) : ''
