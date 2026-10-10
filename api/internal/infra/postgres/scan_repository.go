@@ -304,7 +304,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		s.AdHoc, // $29
 		s.ScheduleRRule,
 		s.ScheduleRunAt, // $31
-		targetOptions, // $32
+		targetOptions,   // $32
 	)
 
 	if err != nil {
