@@ -1018,6 +1018,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The public program catalog and the feed importer (RFC-065 §16).
 	catalogRepo := postgres.NewPublicProgramRepository(&postgres.DB{DB: deps.DB})
 	s.BountyProgram.SetCatalog(catalogRepo)
+	// A followed program's exact targets become assets (RFC-065 §16.5).
+	s.BountyProgram.SetTargetCreator(bountyprogramapp.AssetTargets{Repo: repos.Asset})
 	if cfg.Scope.ProgramFeedDir != "" && cfg.Scope.ProgramFeedRootKeyID != "" {
 		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
 			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log)
