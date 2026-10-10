@@ -586,6 +586,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.BountyProgram != nil {
 			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
 		}
+		// The public program feed (RFC-065 §16), when a bundle directory and
+		// the root key id are configured.
+		if svc.ProgramFeed != nil {
+			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed", svc.ProgramFeed))
+		}
+		// The operator's local bundle (owner option A): imported only while
+		// a platform administrator has the source enabled.
+		if svc.ProgramFeedLocal != nil {
+			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed-local", svc.ProgramFeedLocal))
+		}
 		// Program data scope: assets a program covers stay assigned to its
 		// group (RFC-065 §7), also those that arrived by discovery.
 		if svc.ProgramAssigner != nil {

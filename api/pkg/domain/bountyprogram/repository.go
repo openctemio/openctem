@@ -53,6 +53,10 @@ type ScopeWrite struct {
 	CreateEntries  []*scope.Target
 	DeleteEntryIDs []shared.ID
 	Exclusions     []Exclusion
+	// DeactivateEntries takes every remaining entry of the program out of
+	// effect in the same transaction (a subscribed program whose terms
+	// changed waits for a new acceptance).
+	DeactivateEntries bool
 }
 
 // Repository persists programs. Every method is tenant-scoped.

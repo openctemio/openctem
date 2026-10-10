@@ -210,10 +210,13 @@ type Service struct {
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
 	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
-	zones               ZoneDirectory        // optional; nil = zone routing off (RFC-023)
-	zoneResolver        scanzone.Resolver    // resolves hostname targets for zone routing
-	freezeWindows       FreezeWindows        // optional; nil = no trigger-time freeze check (freeze.go)
-	actScope            ActScopeChecker      // optional; nil = act scope not enforced (research/15 L-06)
+	scopeWaits          ScopeWaitStore       // start_when_scope_approved (nil = refused like any other out-of-scope target)
+	pendingScope        PendingScope
+	scopeWaitTrigger    func(context.Context, TriggerScanExecInput) (*scanrun.Run, error) // tests only; nil = TriggerScan
+	zones               ZoneDirectory                                                     // optional; nil = zone routing off (RFC-023)
+	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
+	freezeWindows       FreezeWindows                                                     // optional; nil = no trigger-time freeze check (freeze.go)
+	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
 	// activeProof is the operator's SCOPE_ACTIVE_PROOF (active_proof.go).
 	activeProof      string
 	connectorScans   ConnectorScans            // optional; nil = a connector cannot be a scanner (RFC-047)
