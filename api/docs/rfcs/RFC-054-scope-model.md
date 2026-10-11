@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add and R3 implemented, R4, R5 and R8 decided); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add, R3 and R5 implemented, R4 and R8 decided); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -1085,7 +1085,7 @@ turns scope off.
 | R2 | Add from anywhere | one asset's ownership section, the review queue, a scan refusal | inventory selection → "Add to scope" (exact entries), the scan wizard's "add the missing targets" and finding actions use R1 | inventory: implemented; others follow |
 | R3 | A person confirms an asset | confirmation records ownership only (§4.2) | the tenant setting `confirm_adds_to_scope` (default on; Off and On only) adds the exact entry when a person confirms; automated sources never do (§14.5) | implemented |
 | R4 | Addresses behind in-scope names | never inherit (S4) | decided: a one-click suggestion of the addresses in-scope names resolve to, excluding addresses that look shared (provider edge ranges, an address several registrable domains of the inventory resolve to); never automatic | decided, follows |
-| R5 | Private targets on the organization's own sensor | refused without a scan zone (`zone_none`) | decided: allowed when the scan runs on a tenant sensor whose reported local policy `targets.allow` contains the target; platform sensors never; zones stay for routing | decided, follows |
+| R5 | Private targets on the organization's own sensor | refused without a scan zone (`zone_none`) | decided: allowed when the scan runs on a tenant sensor whose reported local policy `targets.allow` contains the target; platform sensors never; zones stay for routing | implemented for organizations without zones (§14.6) |
 | R8 | Connector inventory | blocked until added by hand | decided: a per-connector switch, default on, adds the exact entries of the assets a connector syncs (exclusions and the deny list still win) | decided, follows |
 | R6 | Approvals, tiers, requests | Strict only (RFC-073) | unchanged | — |
 | R7 | Exclusions, deny list, public suffixes, CIDR caps, audit, signer ledger, sensor local policy | always on | unchanged, always on; a bulk add runs every item through them | — |
@@ -1165,10 +1165,33 @@ asset ids are the ones the decision saved (already limited to the caller's
 data scope); the asset read is tenant-scoped, so another tenant's id adds
 nothing.
 
+### 14.6 Private targets on the organization's own sensors (R5)
+
+Owner decision 2026-10-11. An organization without scan zones used to have
+every private target refused (`zone_none`). Now a private address or range
+(RFC 1918, CGNAT, unique local; never loopback, link-local, metadata or the
+deny list) is admitted for the organization's own sensors:
+
+- at scan creation, the trigger, the dispatch gate and the dry run, when
+  every dispatchable own sensor (active, healthy, a usable key) reports an
+  enforced local policy that allows private ranges, with the kill switch
+  off, and there is at least one; a scan bound to platform sensors
+  (`sensor_preference: platform`) never gets them this way;
+- at the claim (the re-check of every hand-out), when the claiming sensor
+  itself qualifies; a platform sensor never does, so a job admitted at
+  dispatch is refused at hand-out to anyone else.
+
+The authority is the host operator's own policy: the platform learns only
+its shape (`allow_private`), never the ranges, and the sensor's allow list
+decides each address on every signed job. A legacy sensor without a local
+policy keeps the zone rule for the whole organization (it could take the
+job). Organizations with zones keep zone routing unchanged: add the range
+to a zone. Threat model: §14.3, R5.
+
 ### 14.4 Plan
 
 | Phase | Items |
 |---|---|
 | P0 | R1 bulk add (API); inventory "Add to scope"; pasting a list on the Scope page |
-| P1 | R3 (implemented), R4, R5, R8; "Add host to scope" on findings |
+| P1 | R3 and R5 (implemented), R4, R8; "Add host to scope" on findings |
 | P2 | the scan preflight explains a sensor's local-policy refusals from its reported policy |

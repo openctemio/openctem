@@ -549,15 +549,21 @@ func planWorkflowZone(sc *scan.Scan, routing *scanzone.Plan) (*zonePlan, []strin
 // tenant covers from result.Invalid to the returned list (RFC-023 D6). Every
 // other rejection stays: loopback, link-local, the deny list, private space
 // no zone covers, and anything invalid for another reason. Without zones it
-// admits nothing.
-func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr string, result *validator.TargetValidationResult) ([]string, error) {
+// admits only what the organization's own sensors may take.
+// ownSensors lets an organization without zones have them admitted for its
+// own sensors (own_sensor_private.go; sensorID, when known, must qualify
+// itself); false for a scan bound to platform sensors.
+func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr string, result *validator.TargetValidationResult, ownSensors bool, sensorID *shared.ID) ([]string, error) {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return nil, nil //nolint:nilerr // no tenant, no zones: the strict result stands
 	}
 	zones, err := s.loadZones(ctx, tenantID)
-	if err != nil || len(zones) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	if len(zones) == 0 {
+		return s.admitOwnSensorPrivateTargets(ctx, tenantID, result, ownSensors, sensorID)
 	}
 	lenient := validator.NewTargetValidator(
 		validator.WithAllowInternalIPs(true),

@@ -1,0 +1,3 @@
+### Changed: private targets without a scan zone run on your own sensors
+
+- An organization without scan zones can scan private addresses and ranges (RFC 1918, CGNAT, unique local) when every one of its own sensors reports an enforced local policy that allows private ranges: at scan creation, the trigger and the dispatch gate, and at hand-out only to such a sensor (never a platform sensor). The sensor's own allow list still decides each address. Loopback, link-local, metadata and deny-listed addresses stay refused; a scan bound to platform sensors gets no private target; organizations with zones keep zone routing. RFC-054 §14.6.

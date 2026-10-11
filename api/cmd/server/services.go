@@ -1997,6 +1997,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	// Private targets outside every zone go to the organization's own sensors
+	// when their local policy allows private ranges (RFC-054 §14, R5).
+	s.Scan.SetPrivateTargetSensors(repos.Sensor)
 	// Wildcard domains and inventory-mode CIDRs are expanded from the
 	// inventory at each run start (RFC-068).
 	s.Scan.SetSelectorAssets(repos.ScanSelector)
