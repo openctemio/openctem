@@ -339,15 +339,14 @@ export function ScopeEntriesTable({
       <ConfirmDialog
         open={!!deleteEntry}
         onOpenChange={(open) => !open && setDeleteEntry(null)}
-        title="Remove from scope?"
-        desc={
-          <>
-            Scans stop reaching what only &quot;{deleteEntry?.pattern}&quot; covers. Assets under it
-            and their findings and history stay, flagged as out of scope. Adding it back needs
-            approval.
-          </>
-        }
-        confirmText="Remove"
+        title={t('confirm.scopeEntry.removeTitle', 'Remove {pattern} from scope?', {
+          pattern: deleteEntry?.pattern ?? '',
+        })}
+        desc={t(
+          'confirm.scopeEntry.removeDesc',
+          'Scans stop reaching what only this entry covers. Assets under it and their findings and history stay, flagged as out of scope. Adding it back needs approval.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         isLoading={removing}
         handleConfirm={async () => {

@@ -78,6 +78,7 @@ import { groupMemberHref } from '@/features/asset-groups/lib/member-link'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { IssuesChip } from '@/features/assets/components/service-cells'
 import { SEVERITY_LEVELS, normalizeSeverity, type SeverityLevel } from '@/lib/severity'
+import { useTranslation } from '@/context/i18n-provider'
 
 const criticalityColors: Record<string, string> = CRITICALITY_BADGE_SOFT
 
@@ -130,6 +131,7 @@ export default function AssetGroupDetailPage({ params }: PageProps) {
 }
 
 function AssetGroupDetailContent({ params }: PageProps) {
+  const { t } = useTranslation()
   const { id } = use(params)
   const router = useRouter()
 
@@ -928,14 +930,16 @@ function AssetGroupDetailContent({ params }: PageProps) {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Asset Group"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{group.name}&quot;? This action cannot be undone.
-            All {group.assetCount} assets will be unassigned.
-          </>
+        title={t('confirm.assetGroup.deleteTitle', 'Delete the asset group "{name}"?', {
+          name: group.name,
+        })}
+        desc={t(
+          'confirm.assetGroup.deleteDesc',
+          'The group is deleted and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
         }
-        confirmText={isDeleting ? 'Deleting...' : 'Delete'}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDelete}
@@ -945,14 +949,24 @@ function AssetGroupDetailContent({ params }: PageProps) {
       <ConfirmDialog
         open={removeAssetsDialogOpen}
         onOpenChange={setRemoveAssetsDialogOpen}
-        title="Remove Assets from Group"
-        desc={
-          <>
-            Are you sure you want to remove {selectedAssets.length} assets from this group? They
-            will become ungrouped assets.
-          </>
+        title={
+          selectedAssets.length === 1
+            ? t('confirm.assetGroup.removeAssetsTitleOne', 'Remove 1 asset from {group}?', {
+                group: group.name,
+              })
+            : t('confirm.assetGroup.removeAssetsTitle', 'Remove {count} assets from {group}?', {
+                count: selectedAssets.length,
+                group: group.name,
+              })
         }
-        confirmText={isRemovingAssets ? 'Removing...' : 'Remove Assets'}
+        desc={t(
+          'confirm.assetGroup.removeAssetsDesc',
+          'The selected assets leave the group, so scans and rules that target the group no longer cover them. The assets themselves are not deleted.'
+        )}
+        confirmText={
+          isRemovingAssets ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
+        }
+        destructive
         isLoading={isRemovingAssets}
         handleConfirm={handleRemoveAssets}
       />

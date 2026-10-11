@@ -58,7 +58,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { bulkTypeToConfirm, ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
@@ -88,6 +88,7 @@ import {
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
 // CONSTANTS
@@ -256,6 +257,7 @@ function AddAssetsDialog({
 // ============================================
 
 export default function AssetGroupsPage() {
+  const { t } = useTranslation()
   const router = useRouter()
 
   // Data hooks
@@ -916,14 +918,14 @@ export default function AssetGroupsPage() {
       <ConfirmDialog
         open={!!deleteGroup}
         onOpenChange={() => setDeleteGroup(null)}
-        title="Delete asset group"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{deleteGroup?.name}&quot;? This action cannot be
-            undone. All assets in this group will be unassigned.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.assetGroup.deleteTitle', 'Delete the asset group "{name}"?', {
+          name: deleteGroup?.name ?? '',
+        })}
+        desc={t(
+          'confirm.assetGroup.deleteDesc',
+          'The group is deleted and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />
@@ -932,15 +934,20 @@ export default function AssetGroupsPage() {
       <ConfirmDialog
         open={bulkDeleteConfirm}
         onOpenChange={setBulkDeleteConfirm}
-        title={`Delete ${selectedIds.length} asset groups`}
-        desc={
-          <>
-            Are you sure you want to delete {selectedIds.length} group(s)? This action cannot be
-            undone. All assets in these groups will be unassigned.
-          </>
+        title={
+          selectedIds.length === 1
+            ? t('confirm.assetGroup.bulkDeleteTitleOne', 'Delete 1 asset group?')
+            : t('confirm.assetGroup.bulkDeleteTitle', 'Delete {count} asset groups?', {
+                count: selectedIds.length,
+              })
         }
-        confirmText={`Delete ${selectedIds.length} groups`}
+        desc={t(
+          'confirm.assetGroup.bulkDeleteDesc',
+          'The groups are deleted and their assets leave them; scans and rules that target these groups no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
+        typeToConfirm={bulkTypeToConfirm(selectedIds.length)}
         handleConfirm={handleBulkDelete}
       />
 
