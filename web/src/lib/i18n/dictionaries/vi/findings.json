@@ -15,5 +15,6 @@
   "findings.status.in_review": "Đang rà soát",
   "findings.statusCategory.open": "Mở",
   "findings.statusCategory.in_progress": "Đang xử lý",
-  "findings.statusCategory.closed": "Đã đóng"
+  "findings.statusCategory.closed": "Đã đóng",
+  "findings.remediation.none": "Trình quét không đưa ra hướng khắc phục."
 }
