@@ -175,7 +175,7 @@ func TestScopeModes_ExclusionsWithoutReview(t *testing.T) {
 			if _, err := svc.DeactivateExclusion(ctx, e.ID().String(), tid.String(), creator); err != nil {
 				t.Fatalf("creator deactivating: %v", err)
 			}
-			if _, err := svc.ActivateExclusion(ctx, e.ID().String(), tid.String()); err != nil {
+			if _, err := svc.ActivateExclusion(ctx, e.ID().String(), tid.String(), ""); err != nil {
 				t.Fatalf("activating again: %v", err)
 			}
 			if err := svc.DeleteExclusion(ctx, e.ID().String(), tid.String(), creator); err != nil {
