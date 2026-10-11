@@ -78,6 +78,8 @@ import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } fr
 
 const NO_WRITE = 'Only owners and administrators can change CI trust and the gate'
 
+type TFn = ReturnType<typeof useTranslation>['t']
+
 /**
  * Trust, gate policy and break-glass. `embedded` drops the page header (the
  * CI/CD integration page shows these as its Trust and gate tab).
@@ -101,9 +103,11 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
       <CIRequireOIDC canWrite={canWrite} />
       <Tabs defaultValue="trust">
         <TabsList>
-          <TabsTrigger value="trust">Trust</TabsTrigger>
-          <TabsTrigger value="gate">Gate policy</TabsTrigger>
-          <TabsTrigger value="break-glass">Break-glass</TabsTrigger>
+          <TabsTrigger value="trust">{t('scans.ci.trust.tab', 'Trust')}</TabsTrigger>
+          <TabsTrigger value="gate">{t('scans.ci.gatePolicy.tab', 'Gate policy')}</TabsTrigger>
+          <TabsTrigger value="break-glass">
+            {t('scans.ci.breakGlass.tab', 'Break-glass')}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="trust" className="mt-4">
           <TrustConfigsSection canWrite={canWrite} />
@@ -121,14 +125,17 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
 
 // ─────────────────────────────────────────────────────────── trust ───
 
-function rulesSummary(c: CITrustConfig): string {
+function rulesSummary(c: CITrustConfig, t: TFn): string {
   const r = c.rules ?? {}
   const parts: string[] = []
-  if (r.owners?.length) parts.push(`owners ${joinList(r.owners)}`)
-  if (r.repositories?.length) parts.push(`repositories ${joinList(r.repositories)}`)
-  if (r.refs?.length) parts.push(`refs ${joinList(r.refs)}`)
-  if (r.environments?.length) parts.push(`environments ${joinList(r.environments)}`)
-  if (r.events?.length) parts.push(`events ${joinList(r.events)}`)
+  const add = (key: string, fallback: string, list?: string[]) => {
+    if (list?.length) parts.push(t(key, fallback, { list: joinList(list) }))
+  }
+  add('scans.ci.trust.sumOwners', 'owners {list}', r.owners)
+  add('scans.ci.trust.sumRepositories', 'repositories {list}', r.repositories)
+  add('scans.ci.trust.sumRefs', 'refs {list}', r.refs)
+  add('scans.ci.trust.sumEnvironments', 'environments {list}', r.environments)
+  add('scans.ci.trust.sumEvents', 'events {list}', r.events)
   return parts.join(' · ')
 }
 
@@ -142,17 +149,23 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
   const configs = data?.data ?? []
 
   if (error)
-    return <ErrorState title="CI trust configurations" error={error} onRetry={() => mutate()} />
+    return (
+      <ErrorState
+        title={t('scans.ci.trust.configs', 'CI trust configurations')}
+        error={error}
+        onRetry={() => mutate()}
+      />
+    )
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
         <GatedButton
           allowed={canWrite}
-          reason={NO_WRITE}
+          reason={t('scans.ci.noWrite', NO_WRITE)}
           size="sm"
           onClick={() => setEditing('new')}
         >
-          <Plus className="size-4" aria-hidden /> Add trust
+          <Plus className="size-4" aria-hidden /> {t('scans.ci.trust.add', 'Add trust')}
         </GatedButton>
       </div>
       {isLoading ? (
@@ -174,32 +187,38 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
                 <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                   {c.name}
                   <Badge variant="outline">{PROVIDER_LABEL[c.provider ?? ''] ?? c.provider}</Badge>
-                  {!c.enabled && <Badge variant="secondary">Disabled</Badge>}
+                  {!c.enabled && (
+                    <Badge variant="secondary">{t('scans.ci.disabled', 'Disabled')}</Badge>
+                  )}
                   {c.rules?.allow_fork_pull_requests && (
-                    <Badge variant="destructive">Fork pull requests</Badge>
+                    <Badge variant="destructive">
+                      {t('scans.ci.trust.forkBadge', 'Fork pull requests')}
+                    </Badge>
                   )}
                 </CardTitle>
-                <CardDescription className="break-all">{rulesSummary(c)}</CardDescription>
+                <CardDescription className="break-all">{rulesSummary(c, t)}</CardDescription>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => setSnippetOf(c)}>
-                  Pipeline snippet
+                  {t('scans.ci.trust.snippet', 'Pipeline snippet')}
                 </Button>
                 <GatedButton
                   allowed={canWrite}
-                  reason={NO_WRITE}
+                  reason={t('scans.ci.noWrite', NO_WRITE)}
                   variant="outline"
                   size="sm"
                   onClick={() => setEditing(c)}
                 >
-                  Edit
+                  {t('scans.ci.edit', 'Edit')}
                 </GatedButton>
                 <GatedButton
                   allowed={canWrite}
-                  reason={NO_WRITE}
+                  reason={t('scans.ci.noWrite', NO_WRITE)}
                   variant="ghost"
                   size="sm"
-                  aria-label={`Delete ${c.name}`}
+                  aria-label={t('scans.ci.trust.deleteLabel', 'Delete {name}', {
+                    name: c.name ?? '',
+                  })}
                   onClick={() => setDeleting(c)}
                 >
                   <Trash2 className="size-4" aria-hidden />
@@ -207,11 +226,25 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
               </div>
             </CardHeader>
             <CardContent className="grid gap-1 text-sm text-muted-foreground sm:grid-cols-2">
-              <span className="break-all">Issuer: {c.issuer}</span>
-              <span className="break-all">Audience: {c.audience}</span>
-              <span>Default branch: {c.default_branch}</span>
+              <span className="break-all">
+                {t('scans.ci.trust.issuerValue', 'Issuer: {value}', { value: c.issuer ?? '' })}
+              </span>
+              <span className="break-all">
+                {t('scans.ci.trust.audienceValue', 'Audience: {value}', {
+                  value: c.audience ?? '',
+                })}
+              </span>
               <span>
-                Last used: {c.last_used_at ? new Date(c.last_used_at).toLocaleString() : 'never'}
+                {t('scans.ci.trust.defaultBranchValue', 'Default branch: {value}', {
+                  value: c.default_branch ?? '',
+                })}
+              </span>
+              <span>
+                {t('scans.ci.trust.lastUsedValue', 'Last used: {value}', {
+                  value: c.last_used_at
+                    ? new Date(c.last_used_at).toLocaleString()
+                    : t('scans.ci.trust.never', 'never'),
+                })}
               </span>
             </CardContent>
           </Card>
@@ -247,7 +280,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
           if (!target?.id) return
           remove(target.id)
             .then(() => {
-              toast.success('CI trust deleted')
+              toast.success(t('scans.ci.trust.deleted', 'CI trust deleted'))
               void mutate()
             })
             .catch((e: unknown) => toast.error(getErrorMessage(e)))
@@ -266,6 +299,7 @@ function TrustConfigDialog({
   onClose: () => void
   onSaved: (c: CITrustConfig) => void
 }) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const { trigger: save, isMutating } = useSaveTrustConfig()
   const initialProvider = (config?.provider as CIProvider) ?? 'github'
@@ -322,11 +356,16 @@ function TrustConfigDialog({
   const needsIssuer =
     traits.issuerInput !== 'fixed' && provider !== 'gitlab' && !organization.trim()
   const submit = async () => {
-    if (!name.trim()) return toast.error('Name is required')
-    if (noScope) return toast.error('Name at least one owner or repository')
+    if (!name.trim()) return toast.error(t('scans.ci.trust.nameRequired', 'Name is required'))
+    if (noScope)
+      return toast.error(t('scans.ci.trust.scopeRequired', 'Name at least one owner or repository'))
     try {
       const saved = await save({ id: config?.id, body: body() })
-      toast.success(config ? 'CI trust updated' : 'CI trust added')
+      toast.success(
+        config
+          ? t('scans.ci.trust.updated', 'CI trust updated')
+          : t('scans.ci.trust.added', 'CI trust added')
+      )
       onSaved(saved)
     } catch (e) {
       toast.error(getErrorMessage(e))
@@ -338,18 +377,24 @@ function TrustConfigDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{config ? 'Edit CI trust' : 'Add CI trust'}</DialogTitle>
+          <DialogTitle>
+            {config
+              ? t('scans.ci.trust.editTitle', 'Edit CI trust')
+              : t('scans.ci.trust.addTitle', 'Add CI trust')}
+          </DialogTitle>
           <DialogDescription>
-            A pipeline is admitted when every rule you fill in matches its token. Lists are comma
-            separated; patterns use * for one path segment and ** for any depth.
+            {t(
+              'scans.ci.trust.dialogDescription',
+              'A pipeline is admitted when every rule you fill in matches its token. Lists are comma separated; patterns use * for one path segment and ** for any depth.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="space-y-3">
-            <Field label="Name" id="ci-name">
+            <Field label={t('scans.ci.trust.name', 'Name')} id="ci-name">
               <Input id="ci-name" value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Provider" id="ci-provider">
+            <Field label={t('scans.ci.col.provider', 'Provider')} id="ci-provider">
               <Select
                 value={provider}
                 onValueChange={(v) => chooseProvider(v as CIProvider)}
@@ -368,7 +413,11 @@ function TrustConfigDialog({
               </Select>
             </Field>
             {provider === 'gitlab' && (
-              <Field label="GitLab URL (issuer)" id="ci-issuer" hint="Leave empty for gitlab.com.">
+              <Field
+                label={t('scans.ci.trust.gitlabIssuer', 'GitLab URL (issuer)')}
+                id="ci-issuer"
+                hint={t('scans.ci.trust.gitlabIssuerHint', 'Leave empty for gitlab.com.')}
+              >
                 <Input
                   id="ci-issuer"
                   placeholder="https://gitlab.com"
@@ -379,9 +428,12 @@ function TrustConfigDialog({
             )}
             {provider === 'jenkins' && (
               <Field
-                label="Issuer"
+                label={t('scans.ci.trust.issuer', 'Issuer')}
                 id="ci-issuer"
-                hint="The OpenID Connect Provider plugin's issuer: <Jenkins URL>/oidc, a folder's issuer, or the credential's issuer URI when the platform cannot reach the controller."
+                hint={t(
+                  'scans.ci.trust.jenkinsIssuerHint',
+                  "The OpenID Connect Provider plugin's issuer: <Jenkins URL>/oidc, a folder's issuer, or the credential's issuer URI when the platform cannot reach the controller."
+                )}
               >
                 <Input
                   id="ci-issuer"
@@ -393,12 +445,18 @@ function TrustConfigDialog({
             )}
             {traits.issuerInput === 'organization_id' && (
               <Field
-                label="Organization id"
+                label={t('scans.ci.trust.orgId', 'Organization id')}
                 id="ci-org"
                 hint={
                   provider === 'azure_devops'
-                    ? 'The Azure DevOps organization id (a UUID), the org_id of its tokens.'
-                    : 'The CircleCI organization id (Organization settings > Overview).'
+                    ? t(
+                        'scans.ci.trust.azureOrgHint',
+                        'The Azure DevOps organization id (a UUID), the org_id of its tokens.'
+                      )
+                    : t(
+                        'scans.ci.trust.circleciOrgHint',
+                        'The CircleCI organization id (Organization settings > Overview).'
+                      )
                 }
               >
                 <Input
@@ -411,7 +469,11 @@ function TrustConfigDialog({
             )}
             {provider === 'bitbucket' && (
               <>
-                <Field label="Workspace" id="ci-org" hint="As in bitbucket.org/<workspace>.">
+                <Field
+                  label={t('scans.ci.trust.workspace', 'Workspace')}
+                  id="ci-org"
+                  hint={t('scans.ci.trust.workspaceHint', 'As in bitbucket.org/<workspace>.')}
+                >
                   <Input
                     id="ci-org"
                     placeholder="acme"
@@ -420,9 +482,12 @@ function TrustConfigDialog({
                   />
                 </Field>
                 <Field
-                  label="Workspace UUID"
+                  label={t('scans.ci.trust.workspaceUuid', 'Workspace UUID')}
                   id="ci-ws-uuid"
-                  hint="Required: a renamed workspace gives up its name, never its UUID."
+                  hint={t(
+                    'scans.ci.trust.workspaceUuidHint',
+                    'Required: a renamed workspace gives up its name, never its UUID.'
+                  )}
                 >
                   <Input
                     id="ci-ws-uuid"
@@ -434,14 +499,17 @@ function TrustConfigDialog({
               </>
             )}
             <Field
-              label="Owners"
+              label={t('scans.ci.trust.owners', 'Owners')}
               id="ci-owners"
               hint={
                 provider === 'gitlab'
-                  ? 'Top-level groups.'
+                  ? t('scans.ci.trust.ownersGitlab', 'Top-level groups.')
                   : provider === 'bitbucket'
-                    ? 'The workspace.'
-                    : 'Organizations or users that own the repositories.'
+                    ? t('scans.ci.trust.ownersBitbucket', 'The workspace.')
+                    : t(
+                        'scans.ci.trust.ownersHint',
+                        'Organizations or users that own the repositories.'
+                      )
               }
             >
               <Input
@@ -452,25 +520,35 @@ function TrustConfigDialog({
               />
             </Field>
             <Field
-              label="Repositories"
+              label={t('scans.ci.trust.repositories', 'Repositories')}
               id="ci-repos"
               hint={
                 traits.repositoriesById
-                  ? 'Repository UUIDs: the token signs the id, never the name.'
-                  : 'owner/name, owner/* or owner/**.'
+                  ? t(
+                      'scans.ci.trust.repositoriesById',
+                      'Repository UUIDs: the token signs the id, never the name.'
+                    )
+                  : t('scans.ci.trust.repositoriesHint', 'owner/name, owner/* or owner/**.')
               }
             >
               <Input
                 id="ci-repos"
-                placeholder={traits.repositoriesById ? '{repository uuid}' : 'acme/api, acme/web'}
+                placeholder={
+                  traits.repositoriesById
+                    ? t('scans.ci.trust.repositoryUuidPlaceholder', '{repository uuid}')
+                    : 'acme/api, acme/web'
+                }
                 value={repositories}
                 onChange={(e) => setRepositories(e.target.value)}
               />
             </Field>
             <Field
-              label="Branches and tags"
+              label={t('scans.ci.trust.refs', 'Branches and tags')}
               id="ci-refs"
-              hint="Empty admits every ref. For a pull request, its source branch."
+              hint={t(
+                'scans.ci.trust.refsHint',
+                'Empty admits every ref. For a pull request, its source branch.'
+              )}
             >
               <Input
                 id="ci-refs"
@@ -481,12 +559,18 @@ function TrustConfigDialog({
             </Field>
             {traits.environments && (
               <Field
-                label="Environments"
+                label={t('scans.ci.trust.environments', 'Environments')}
                 id="ci-envs"
                 hint={
                   provider === 'bitbucket'
-                    ? 'Optional: deployment environment UUIDs.'
-                    : 'Optional: require a deployment environment.'
+                    ? t(
+                        'scans.ci.trust.environmentsBitbucket',
+                        'Optional: deployment environment UUIDs.'
+                      )
+                    : t(
+                        'scans.ci.trust.environmentsHint',
+                        'Optional: require a deployment environment.'
+                      )
                 }
               >
                 <Input
@@ -498,17 +582,23 @@ function TrustConfigDialog({
             )}
             {traits.events && (
               <Field
-                label="Events"
+                label={t('scans.ci.trust.events', 'Events')}
                 id="ci-events"
-                hint="Optional: push, pull_request, merge_request_event, schedule..."
+                hint={t(
+                  'scans.ci.trust.eventsHint',
+                  'Optional: push, pull_request, merge_request_event, schedule...'
+                )}
               >
                 <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
               </Field>
             )}
             <Field
-              label="Default branch"
+              label={t('scans.ci.col.defaultBranch', 'Default branch')}
               id="ci-default"
-              hint="The baseline when the platform does not know the repository's default branch yet."
+              hint={t(
+                'scans.ci.trust.defaultBranchHint',
+                "The baseline when the platform does not know the repository's default branch yet."
+              )}
             >
               <Input
                 id="ci-default"
@@ -518,17 +608,26 @@ function TrustConfigDialog({
             </Field>
             {traits.fixedAudience ? (
               <p className="text-xs text-muted-foreground" data-testid="ci-fixed-audience">
-                Audience: {traits.fixedAudience}, the only one Azure Pipelines issues. Tokens are
-                pinned to this organization id and accepted once.
+                {t(
+                  'scans.ci.trust.fixedAudience',
+                  'Audience: {audience}, the only one Azure Pipelines issues. Tokens are pinned to this organization id and accepted once.',
+                  { audience: traits.fixedAudience }
+                )}
               </p>
             ) : (
               <Field
-                label="Audience"
+                label={t('scans.ci.trust.audience', 'Audience')}
                 id="ci-aud"
                 hint={
                   traits.tenantAudience
-                    ? `Default: ${tenantAudience}. Must contain your organization id.`
-                    : `Default: ${tenantAudience}`
+                    ? t(
+                        'scans.ci.trust.audienceTenantHint',
+                        'Default: {audience}. Must contain your organization id.',
+                        { audience: tenantAudience }
+                      )
+                    : t('scans.ci.trust.audienceHint', 'Default: {audience}', {
+                        audience: tenantAudience,
+                      })
                 }
               >
                 <Input id="ci-aud" value={audience} onChange={(e) => setAudience(e.target.value)} />
@@ -537,55 +636,76 @@ function TrustConfigDialog({
             {traits.protectedRef !== 'none' && (
               <SwitchRow
                 id="ci-protected"
-                label="Protected branches and tags only"
+                label={t('scans.ci.trust.protectedOnly', 'Protected branches and tags only')}
                 checked={protectedRef}
                 onChange={setProtectedRef}
               />
             )}
             {protectedRef && traits.protectedRef === 'environment' && (
               <p className="text-muted-foreground text-xs">
-                {PROVIDER_LABEL[provider]} tokens do not say whether a ref is protected. List the
-                deployment environments above whose deployment branch rules admit only protected
-                branches and tags; only jobs running in one of them are admitted.
+                {t(
+                  'scans.ci.trust.protectedByEnvironment',
+                  '{provider} tokens do not say whether a ref is protected. List the deployment environments above whose deployment branch rules admit only protected branches and tags; only jobs running in one of them are admitted.',
+                  { provider: PROVIDER_LABEL[provider] }
+                )}
               </p>
             )}
             <SwitchRow
               id="ci-forks"
               label={
                 traits.pullRequestsAsForks
-                  ? 'Admit pull request builds'
-                  : 'Admit fork pull requests'
+                  ? t('scans.ci.trust.admitPullRequests', 'Admit pull request builds')
+                  : t('scans.ci.trust.admitForks', 'Admit fork pull requests')
               }
               checked={allowForks}
               onChange={setAllowForks}
             />
             {traits.pullRequestsAsForks && !allowForks && (
               <p className="text-muted-foreground text-xs">
-                {PROVIDER_LABEL[provider]} tokens cannot tell a fork&apos;s pull request from your
-                own, so pull request builds are refused.
+                {t(
+                  'scans.ci.trust.forksIndistinguishable',
+                  "{provider} tokens cannot tell a fork's pull request from your own, so pull request builds are refused.",
+                  { provider: PROVIDER_LABEL[provider] }
+                )}
               </p>
             )}
             {allowForks && (
               <Alert variant="destructive">
                 <ShieldAlert />
-                <AlertTitle>Fork code would act with this repository&apos;s identity</AlertTitle>
+                <AlertTitle>
+                  {t(
+                    'scans.ci.trust.forkWarningTitle',
+                    "Fork code would act with this repository's identity"
+                  )}
+                </AlertTitle>
                 <AlertDescription>
                   {traits.pullRequestsAsForks
-                    ? 'Every pull request build is admitted, including builds of fork code. Turn this on only if the pipeline never builds fork pull requests.'
-                    : 'Events such as pull_request_target run code from a fork. Leave this off unless the workflow never checks out fork code.'}
+                    ? t(
+                        'scans.ci.trust.forkWarningAll',
+                        'Every pull request build is admitted, including builds of fork code. Turn this on only if the pipeline never builds fork pull requests.'
+                      )
+                    : t(
+                        'scans.ci.trust.forkWarningEvents',
+                        'Events such as pull_request_target run code from a fork. Leave this off unless the workflow never checks out fork code.'
+                      )}
                 </AlertDescription>
               </Alert>
             )}
-            <SwitchRow id="ci-enabled" label="Enabled" checked={enabled} onChange={setEnabled} />
+            <SwitchRow
+              id="ci-enabled"
+              label={t('scans.ci.enabled', 'Enabled')}
+              checked={enabled}
+              onChange={setEnabled}
+            />
             {!needsIssuer && <CITrustPreview provider={provider} draft={body} />}
           </div>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={submit} disabled={isMutating || noScope || needsIssuer || !name.trim()}>
-            {config ? 'Save' : 'Add'}
+            {config ? t('common.save', 'Save') : t('scans.ci.add', 'Add')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -594,6 +714,7 @@ function TrustConfigDialog({
 }
 
 function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: () => void }) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const [copied, setCopied] = useState(false)
   const snippet = useMemo(
@@ -610,10 +731,12 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Pipeline snippet</DialogTitle>
+          <DialogTitle>{t('scans.ci.trust.snippet', 'Pipeline snippet')}</DialogTitle>
           <DialogDescription>
-            The job asks its CI provider for an OIDC token and exchanges it for a run token. Nothing
-            secret goes into CI; the token is never printed. The job fails when the gate does.
+            {t(
+              'scans.ci.trust.snippetDescription',
+              'The job asks its CI provider for an OIDC token and exchanges it for a run token. Nothing secret goes into CI; the token is never printed. The job fails when the gate does.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -637,7 +760,7 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
             ) : (
               <Copy className="size-4" aria-hidden />
             )}
-            Copy
+            {copied ? t('scans.ci.copied', 'Copied') : t('scans.ci.copy', 'Copy')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -647,10 +770,11 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
 
 // ──────────────────────────────────────────────────────────── gate ───
 
-function policyScope(p: CIGatePolicy): string {
-  if (p.scope_type === 'tenant') return 'Organization'
-  if (p.scope_type === 'business_unit') return `Business unit ${p.scope_id ?? ''}`
-  return `Repository ${p.scope_id ?? ''}`
+function policyScope(p: CIGatePolicy, t: TFn): string {
+  if (p.scope_type === 'tenant') return t('scans.ci.gatePolicy.scopeOrg', 'Organization')
+  if (p.scope_type === 'business_unit')
+    return t('scans.ci.gatePolicy.scopeUnit', 'Business unit {id}', { id: p.scope_id ?? '' })
+  return t('scans.ci.gatePolicy.scopeRepo', 'Repository {id}', { id: p.scope_id ?? '' })
 }
 
 function GatePolicySection({ canWrite }: { canWrite: boolean }) {
@@ -664,74 +788,100 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
   const tenantPolicy = policies.find((p) => p.scope_type === 'tenant')
   const others = policies.filter((p) => p.scope_type !== 'tenant')
 
-  if (error) return <ErrorState title="gate policies" error={error} onRetry={() => mutate()} />
+  if (error)
+    return (
+      <ErrorState
+        title={t('scans.ci.gatePolicy.list', 'gate policies')}
+        error={error}
+        onRetry={() => mutate()}
+      />
+    )
   if (isLoading) return <Skeleton className="h-40 w-full" />
   const shown = tenantPolicy ?? data?.default
   return (
     <div className="space-y-4">
       <Alert>
         <ShieldAlert />
-        <AlertTitle>Always on</AlertTitle>
+        <AlertTitle>{t('scans.ci.gatePolicy.alwaysOn', 'Always on')}</AlertTitle>
         <AlertDescription>
-          A committed secret always fails the pipeline. Accepted risk, false positives and
-          suppressions are always honored. A scanner that fails to run fails the pipeline.
+          {t(
+            'scans.ci.gatePolicy.alwaysOnBody',
+            'A committed secret always fails the pipeline. Accepted risk, false positives and suppressions are always honored while they apply. A scanner that fails to run fails the pipeline.'
+          )}
         </AlertDescription>
       </Alert>
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
           <div>
-            <CardTitle className="text-base">Organization policy</CardTitle>
+            <CardTitle className="text-base">
+              {t('scans.ci.gatePolicy.orgPolicy', 'Organization policy')}
+            </CardTitle>
             <CardDescription>
               {tenantPolicy
-                ? 'Applies to every repository without its own policy.'
-                : 'Built-in default: no organization policy is set.'}
+                ? t(
+                    'scans.ci.gatePolicy.orgApplies',
+                    'Applies to every repository without its own policy.'
+                  )
+                : t(
+                    'scans.ci.gatePolicy.builtIn',
+                    'Built-in default: no organization policy is set.'
+                  )}
             </CardDescription>
           </div>
           <GatedButton
             allowed={canWrite}
-            reason={NO_WRITE}
+            reason={t('scans.ci.noWrite', NO_WRITE)}
             size="sm"
             variant="outline"
             onClick={() => setEditing(tenantPolicy ?? { scope_type: 'tenant' })}
           >
-            {tenantPolicy ? 'Edit' : 'Set policy'}
+            {tenantPolicy ? t('scans.ci.edit', 'Edit') : t('scans.ci.gatePolicy.set', 'Set policy')}
           </GatedButton>
         </CardHeader>
         <CardContent className="text-sm">{shown ? <PolicySummary p={shown} /> : null}</CardContent>
       </Card>
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Business unit and repository policies</h2>
-        <GatedButton allowed={canWrite} reason={NO_WRITE} size="sm" onClick={() => setAdding(true)}>
-          <Plus className="size-4" aria-hidden /> Add policy
+        <h2 className="text-sm font-medium">
+          {t('scans.ci.gatePolicy.scoped', 'Business unit and repository policies')}
+        </h2>
+        <GatedButton
+          allowed={canWrite}
+          reason={t('scans.ci.noWrite', NO_WRITE)}
+          size="sm"
+          onClick={() => setAdding(true)}
+        >
+          <Plus className="size-4" aria-hidden /> {t('scans.ci.gatePolicy.add', 'Add policy')}
         </GatedButton>
       </div>
       {others.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          None. A repository uses its own policy, else the strictest of its business units&apos;,
-          else the organization&apos;s.
+          {t(
+            'scans.ci.gatePolicy.none',
+            "None. A repository uses its own policy, else the strictest of its business units', else the organization's."
+          )}
         </p>
       ) : (
         others.map((p) => (
           <Card key={p.id}>
             <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
-              <CardTitle className="break-all text-sm">{policyScope(p)}</CardTitle>
+              <CardTitle className="break-all text-sm">{policyScope(p, t)}</CardTitle>
               <div className="flex gap-2">
                 <GatedButton
                   allowed={canWrite}
-                  reason={NO_WRITE}
+                  reason={t('scans.ci.noWrite', NO_WRITE)}
                   variant="outline"
                   size="sm"
                   onClick={() => setEditing(p)}
                 >
-                  Edit
+                  {t('scans.ci.edit', 'Edit')}
                 </GatedButton>
                 <GatedButton
                   allowed={canWrite}
-                  reason={NO_WRITE}
+                  reason={t('scans.ci.noWrite', NO_WRITE)}
                   variant="ghost"
                   size="sm"
                   aria-label={t('confirm.gatePolicy.deleteLabel', 'Delete the policy for {scope}', {
-                    scope: policyScope(p),
+                    scope: policyScope(p, t),
                   })}
                   onClick={() => setPendingDelete(p)}
                 >
@@ -764,7 +914,7 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
         onOpenChange={(o) => !o && setPendingDelete(null)}
         destructive
         title={t('confirm.gatePolicy.deleteTitle', 'Delete the gate policy for {scope}?', {
-          scope: pendingDelete ? policyScope(pendingDelete) : '',
+          scope: pendingDelete ? policyScope(pendingDelete, t) : '',
         })}
         desc={t(
           'confirm.gatePolicy.deleteDesc',
@@ -787,23 +937,39 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
 }
 
 function PolicySummary({ p }: { p: CIGatePolicy }) {
+  const { t } = useTranslation()
   return (
     <ul className="grid gap-1 text-muted-foreground sm:grid-cols-2">
-      <li>Mode: {p.mode === 'warn' ? 'warn (report, never fail)' : 'enforce'}</li>
       <li>
-        Fails on:{' '}
-        {p.fail_on_severity === 'none' ? 'no severity' : `${p.fail_on_severity} and above`}
+        {p.mode === 'warn'
+          ? t('scans.ci.gatePolicy.modeWarn', 'Mode: warn (report, never fail)')
+          : t('scans.ci.gatePolicy.modeEnforce', 'Mode: enforce')}
+      </li>
+      <li>
+        {p.fail_on_severity === 'none'
+          ? t('scans.ci.gatePolicy.failsOnNone', 'Fails on: no severity')
+          : t('scans.ci.gatePolicy.failsOn', 'Fails on: {severity} and above', {
+              severity: p.fail_on_severity ?? '',
+            })}
       </li>
       <li>
         {p.new_findings_only
-          ? 'New findings only (compared with the default branch)'
-          : 'Every finding'}
+          ? t('scans.ci.gatePolicy.newOnly', 'New findings only (compared with the default branch)')
+          : t('scans.ci.gatePolicy.every', 'Every finding')}
       </li>
-      <li>Known exploited (KEV): {p.fail_on_kev ? 'fails' : 'does not fail'}</li>
+      <li>
+        {p.fail_on_kev
+          ? t('scans.ci.gatePolicy.kevFails', 'Known exploited (KEV): fails')
+          : t('scans.ci.gatePolicy.kevNoFail', 'Known exploited (KEV): does not fail')}
+      </li>
       {p.epss_threshold !== undefined && p.epss_threshold !== null && (
-        <li>EPSS at least {p.epss_threshold}</li>
+        <li>
+          {t('scans.ci.gatePolicy.epssAtLeast', 'EPSS at least {value}', {
+            value: p.epss_threshold,
+          })}
+        </li>
       )}
-      {p.enabled === false && <li>Disabled</li>}
+      {p.enabled === false && <li>{t('scans.ci.disabled', 'Disabled')}</li>}
     </ul>
   )
 }
@@ -817,6 +983,7 @@ function PolicyDialog({
   onClose: () => void
   onSaved: () => void
 }) {
+  const { t } = useTranslation()
   const { trigger: save, isMutating } = useSaveGatePolicy()
   const isNew = !policy?.id
   const [scopeType, setScopeType] = useState(policy?.scope_type ?? 'repository')
@@ -835,7 +1002,8 @@ function PolicyDialog({
     epssValue !== undefined && (Number.isNaN(epssValue) || epssValue < 0 || epssValue > 1)
 
   const submit = async () => {
-    if (epssInvalid) return toast.error('EPSS must be between 0 and 1')
+    if (epssInvalid)
+      return toast.error(t('scans.ci.gatePolicy.epssInvalid', 'EPSS must be between 0 and 1'))
     try {
       await save({
         id: policy?.id,
@@ -849,7 +1017,7 @@ function PolicyDialog({
           epss_threshold: epssValue,
         },
       })
-      toast.success('Gate policy saved')
+      toast.success(t('scans.ci.gatePolicy.saved', 'Gate policy saved'))
       onSaved()
     } catch (e) {
       toast.error(getErrorMessage(e))
@@ -860,26 +1028,40 @@ function PolicyDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>{isNew ? 'Add gate policy' : 'Edit gate policy'}</DialogTitle>
-          <DialogDescription>What fails a pipeline at this scope.</DialogDescription>
+          <DialogTitle>
+            {isNew
+              ? t('scans.ci.gatePolicy.addTitle', 'Add gate policy')
+              : t('scans.ci.gatePolicy.editTitle', 'Edit gate policy')}
+          </DialogTitle>
+          <DialogDescription>
+            {t('scans.ci.gatePolicy.dialogDescription', 'What fails a pipeline at this scope.')}
+          </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="space-y-3">
             {isNew && scopeType !== 'tenant' && (
               <>
-                <Field label="Scope" id="gp-scope">
+                <Field label={t('scans.ci.gatePolicy.scope', 'Scope')} id="gp-scope">
                   <Select value={scopeType} onValueChange={setScopeType}>
                     <SelectTrigger id="gp-scope">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="repository">Repository</SelectItem>
-                      <SelectItem value="business_unit">Business unit</SelectItem>
+                      <SelectItem value="repository">
+                        {t('scans.ci.col.repository', 'Repository')}
+                      </SelectItem>
+                      <SelectItem value="business_unit">
+                        {t('scans.ci.gatePolicy.businessUnit', 'Business unit')}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
                 <Field
-                  label={scopeType === 'repository' ? 'Repository asset ID' : 'Business unit ID'}
+                  label={
+                    scopeType === 'repository'
+                      ? t('scans.ci.repositoryAssetId', 'Repository asset ID')
+                      : t('scans.ci.gatePolicy.businessUnitId', 'Business unit ID')
+                  }
                   id="gp-scope-id"
                 >
                   <Input
@@ -890,18 +1072,22 @@ function PolicyDialog({
                 </Field>
               </>
             )}
-            <Field label="Mode" id="gp-mode">
+            <Field label={t('scans.ci.gatePolicy.mode', 'Mode')} id="gp-mode">
               <Select value={mode} onValueChange={setMode}>
                 <SelectTrigger id="gp-mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="enforce">Enforce</SelectItem>
-                  <SelectItem value="warn">Warn (report what would fail)</SelectItem>
+                  <SelectItem value="enforce">
+                    {t('scans.ci.gatePolicy.enforce', 'Enforce')}
+                  </SelectItem>
+                  <SelectItem value="warn">
+                    {t('scans.ci.gatePolicy.warn', 'Warn (report what would fail)')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Fail on severity" id="gp-sev">
+            <Field label={t('scans.ci.gatePolicy.failOnSeverity', 'Fail on severity')} id="gp-sev">
               <Select value={severity} onValueChange={setSeverity}>
                 <SelectTrigger id="gp-sev">
                   <SelectValue />
@@ -909,13 +1095,20 @@ function PolicyDialog({
                 <SelectContent>
                   {SEVERITY_OPTIONS.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {s === 'none' ? 'None' : `${s} and above`}
+                      {s === 'none'
+                        ? t('scans.ci.gatePolicy.severityNone', 'None')
+                        : t('scans.ci.gatePolicy.severityAndAbove', '{severity} and above', {
+                            severity: s,
+                          })}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="EPSS threshold (0 to 1, optional)" id="gp-epss">
+            <Field
+              label={t('scans.ci.gatePolicy.epss', 'EPSS threshold (0 to 1, optional)')}
+              id="gp-epss"
+            >
               <Input
                 id="gp-epss"
                 inputMode="decimal"
@@ -926,13 +1119,16 @@ function PolicyDialog({
             </Field>
             <SwitchRow
               id="gp-new"
-              label="New findings only (compared with the default branch)"
+              label={t(
+                'scans.ci.gatePolicy.newOnly',
+                'New findings only (compared with the default branch)'
+              )}
               checked={newOnly}
               onChange={setNewOnly}
             />
             <SwitchRow
               id="gp-kev"
-              label="Known exploited (KEV) fails"
+              label={t('scans.ci.gatePolicy.kevSwitch', 'Known exploited (KEV) fails')}
               checked={kev}
               onChange={setKev}
             />
@@ -940,7 +1136,7 @@ function PolicyDialog({
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button
             onClick={submit}
@@ -948,7 +1144,7 @@ function PolicyDialog({
               isMutating || epssInvalid || (isNew && scopeType !== 'tenant' && !scopeId.trim())
             }
           >
-            Save
+            {t('common.save', 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -978,27 +1174,40 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
     !(hoursValue >= 1 && hoursValue <= 168)
 
   if (error)
-    return <ErrorState title="break-glass overrides" error={error} onRetry={() => mutate()} />
+    return (
+      <ErrorState
+        title={t('scans.ci.breakGlass.list', 'break-glass overrides')}
+        error={error}
+        onRetry={() => mutate()}
+      />
+    )
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Let one commit of one repository pass the gate for a limited time. Every override and
-          every run it lets through is recorded in the audit log.
+          {t(
+            'scans.ci.breakGlass.description',
+            'Let one commit of one repository pass the gate for a limited time. Every override and every run it lets through is recorded in the audit log.'
+          )}
         </p>
         <GatedButton
           allowed={canOverride}
-          reason="Only owners and administrators can override the gate"
+          reason={t(
+            'scans.ci.breakGlass.noPermission',
+            'Only owners and administrators can override the gate'
+          )}
           size="sm"
           onClick={() => setOpen(true)}
         >
-          <Plus className="size-4" aria-hidden /> Break-glass
+          <Plus className="size-4" aria-hidden /> {t('scans.ci.breakGlass.tab', 'Break-glass')}
         </GatedButton>
       </div>
       {isLoading ? (
         <Skeleton className="h-16 w-full" />
       ) : overrides.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No overrides.</p>
+        <p className="text-sm text-muted-foreground">
+          {t('scans.ci.breakGlass.empty', 'No overrides.')}
+        </p>
       ) : (
         overrides.map((o) => (
           <Card key={o.id}>
@@ -1007,24 +1216,35 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono">{shortSHA(o.commit_sha)}</span>
                   {o.active ? (
-                    <Badge variant="destructive">Active</Badge>
+                    <Badge variant="destructive">{t('scans.ci.breakGlass.active', 'Active')}</Badge>
                   ) : (
-                    <Badge variant="secondary">{o.revoked_at ? 'Revoked' : 'Expired'}</Badge>
+                    <Badge variant="secondary">
+                      {o.revoked_at
+                        ? t('scans.ci.breakGlass.revoked', 'Revoked')
+                        : t('scans.ci.breakGlass.expired', 'Expired')}
+                    </Badge>
                   )}
                   <span className="text-muted-foreground">
-                    by {o.created_by || 'an administrator'}
+                    {t('scans.ci.breakGlass.by', 'by {name}', {
+                      name: o.created_by || t('scans.ci.breakGlass.anAdmin', 'an administrator'),
+                    })}
                   </span>
                 </div>
                 <p className="break-words">{o.reason}</p>
                 <p className="text-xs text-muted-foreground">
-                  Until {o.expires_at ? new Date(o.expires_at).toLocaleString() : ''} · repository{' '}
-                  {o.repository_asset_id}
+                  {t('scans.ci.breakGlass.until', 'Until {time} · repository {id}', {
+                    time: o.expires_at ? new Date(o.expires_at).toLocaleString() : '',
+                    id: o.repository_asset_id ?? '',
+                  })}
                 </p>
               </div>
               {o.active && (
                 <GatedButton
                   allowed={canOverride}
-                  reason="Only owners and administrators can revoke an override"
+                  reason={t(
+                    'scans.ci.breakGlass.noRevokePermission',
+                    'Only owners and administrators can revoke an override'
+                  )}
                   variant="outline"
                   size="sm"
                   onClick={() => setPendingRevoke({ id: o.id ?? '', sha: shortSHA(o.commit_sha) })}
@@ -1039,17 +1259,27 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>Break-glass</DialogTitle>
+            <DialogTitle>{t('scans.ci.breakGlass.tab', 'Break-glass')}</DialogTitle>
             <DialogDescription>
-              The commit passes the gate until the override expires or is revoked.
+              {t(
+                'scans.ci.breakGlass.dialogDescription',
+                'The commit passes the gate until the override expires or is revoked.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-3">
-              <Field label="Repository asset ID" id="ov-asset">
+              <Field label={t('scans.ci.repositoryAssetId', 'Repository asset ID')} id="ov-asset">
                 <Input id="ov-asset" value={assetId} onChange={(e) => setAssetId(e.target.value)} />
               </Field>
-              <Field label="Commit" id="ov-sha" hint="Full or abbreviated (at least 7 characters).">
+              <Field
+                label={t('scans.ci.breakGlass.commit', 'Commit')}
+                id="ov-sha"
+                hint={t(
+                  'scans.ci.breakGlass.commitHint',
+                  'Full or abbreviated (at least 7 characters).'
+                )}
+              >
                 <Input
                   id="ov-sha"
                   className="font-mono"
@@ -1058,9 +1288,12 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                 />
               </Field>
               <Field
-                label="Reason"
+                label={t('scans.ci.breakGlass.reason', 'Reason')}
                 id="ov-reason"
-                hint="At least 10 characters; recorded in the audit log."
+                hint={t(
+                  'scans.ci.breakGlass.reasonHint',
+                  'At least 10 characters; recorded in the audit log.'
+                )}
               >
                 <Textarea
                   id="ov-reason"
@@ -1068,7 +1301,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                   onChange={(e) => setReason(e.target.value)}
                 />
               </Field>
-              <Field label="Hours (1 to 168)" id="ov-hours">
+              <Field label={t('scans.ci.breakGlass.hours', 'Hours (1 to 168)')} id="ov-hours">
                 <Input
                   id="ov-hours"
                   inputMode="numeric"
@@ -1080,7 +1313,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -1093,7 +1326,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                     reason: reason.trim(),
                     expires_in_hours: hoursValue,
                   })
-                  toast.success('Override created')
+                  toast.success(t('scans.ci.breakGlass.created', 'Override created'))
                   setOpen(false)
                   setAssetId('')
                   setSha('')
@@ -1104,7 +1337,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                 }
               }}
             >
-              Override the gate
+              {t('scans.ci.breakGlass.submit', 'Override the gate')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1125,7 +1358,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
           if (!pendingRevoke) return
           try {
             await revoke(pendingRevoke.id)
-            toast.success('Override revoked')
+            toast.success(t('scans.ci.breakGlass.revokedToast', 'Override revoked'))
             setPendingRevoke(null)
             void mutate()
           } catch (e) {
