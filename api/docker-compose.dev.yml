@@ -113,11 +113,10 @@ services:
       - go-mod-cache:/go/pkg/mod
       # Preserve build cache
       - go-build-cache:/root/.cache/go-build
-      # No SDK mount and no go.work: the API does not depend on sdk-go (the
-      # sensor does), and both paths these lines used to mount (../sdk,
-      # ./go.work.docker) do not exist in the monorepo, so Docker created
-      # empty root-owned directories for them in the checkout. The image
-      # builds with GOWORK unset and no go.work file, exactly like CI.
+      # No SDK mount and no go.work: the API requires only the
+      # github.com/openctemio/sdk-go/pkg/transfer module, resolved from its
+      # go.mod pin, and dev-entrypoint.sh builds with GOWORK=off, exactly
+      # like CI and the release image.
     depends_on:
       postgres:
         condition: service_healthy

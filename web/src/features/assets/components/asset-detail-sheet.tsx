@@ -31,6 +31,7 @@ import { AssetMergeHistory } from './asset-merge-history'
 import { AssetIdentitySections } from './asset-identity-sections'
 import { AssetAttributionSection } from './asset-attribution-section'
 import { AssetAttributeSourcesSection } from './asset-attribute-sources-section'
+import { AssetFreshnessSection } from './asset-freshness-section'
 import { AssetTimeline } from './asset-timeline'
 import { useTranslation } from '@/context/i18n-provider'
 import { RelationshipPreview } from './relationships'
@@ -458,6 +459,7 @@ export function AssetDetailSheet<T extends Asset>({
               assetType={asset.type}
             />
             <AssetAttributeSourcesSection assetId={asset.id} />
+            <AssetFreshnessSection assetId={asset.id} />
             <TimelineSection
               firstSeen={asset.firstSeen}
               lastSeen={asset.lastSeen}

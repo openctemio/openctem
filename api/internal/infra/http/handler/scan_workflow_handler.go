@@ -324,9 +324,23 @@ type RunTaskResponse struct {
 	// show as plain text). SkippedTargetsTotal counts all of them.
 	SkippedTargets      []RunTaskSkippedTarget `json:"skipped_targets,omitempty"`
 	SkippedTargetsTotal int                    `json:"skipped_targets_total,omitempty"`
+	// CoverageGaps are the hosts the sensor could not fully cover in a task
+	// that completed (at most 20; sensor-supplied text, show as plain
+	// text). CoverageGapsTotal counts all of them.
+	CoverageGaps      []RunTaskCoverageGap `json:"coverage_gaps,omitempty"`
+	CoverageGapsTotal int                  `json:"coverage_gaps_total,omitempty"`
 	// WindowHold: a queued task waits for a scan window (why, until when,
 	// or never).
 	WindowHold *scanwindow.Hold `json:"window_hold,omitempty"`
+}
+
+// RunTaskCoverageGap is one host a sensor could not fully cover, and why:
+// reason is breaker_open (the host stopped answering), rate_floor (it kept
+// pushing back at the lowest rate) or blocked (it blocked the scan).
+type RunTaskCoverageGap struct {
+	Host   string `json:"host"`
+	Reason string `json:"reason"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // RunTaskSkippedTarget is one target a sensor skipped, and why: reason is
@@ -356,10 +370,14 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			ID: t.ID.String(), StepKey: t.StepKey, Tool: t.Tool, Status: string(t.Status),
 			SensorName: t.SensorName, Platform: t.Platform, Targets: t.Targets, Attempts: t.Attempts,
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
-			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold,
+			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))
+		}
+		for _, g := range t.CoverageGaps {
+			r.CoverageGaps = append(r.CoverageGaps, RunTaskCoverageGap{Host: g.Host, Reason: g.Reason,
+				Detail: platformText(t.Platform, g.Detail)})
 		}
 		if t.StepRunID != nil {
 			v := t.StepRunID.String()

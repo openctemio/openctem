@@ -135,6 +135,11 @@ type Server struct {
 	// opens rate-limits each sensor's control-stream opens.
 	opens  *openLimiter
 	issuer CertificateIssuer
+	// adv is what Hello says about the gRPC binding (SetAdvertiser); nil:
+	// cfg.GRPCEndpoint.
+	adv *Advertiser
+	// prober re-checks the advertised endpoint (SetProber).
+	prober *Prober
 	// mtls is the gRPC binding's server (EnableMTLS); nil when not served.
 	mtls *http.Server
 	// mtlsProxies are the CIDRs whose PROXY header the listener believes.

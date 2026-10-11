@@ -431,7 +431,7 @@ func TestGrant_DoorbellActions_DB(t *testing.T) {
 	sid := f.sensor(tid, nil, nil)
 	cfg := sensorapp.DefaultDoorbellConfig()
 	cfg.KeyRenewBefore = time.Hour
-	bell := sensorapp.NewDoorbell(nil, cfg.Normalized(5*time.Minute), logger.NewNop())
+	bell := sensorapp.NewDoorbell(nil, cfg.Normalized(5*time.Minute, 0), logger.NewNop())
 	bell.SetGrants(f.grants)
 	exp := time.Now().Add(time.Minute)
 	req := sensorapp.DoorbellRequest{Identity: sensorapp.SensorIdentity{Sensor: &sensordom.Sensor{ID: sid, TenantID: &tid}, KeyExpiresAt: &exp}}

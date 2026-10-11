@@ -3,7 +3,13 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 
-import { RunTasksTable, taskSensorLabel, taskSkippedNote, taskStatusNote } from '../run-tasks-table'
+import {
+  RunTasksTable,
+  taskCoverageGapNote,
+  taskSensorLabel,
+  taskSkippedNote,
+  taskStatusNote,
+} from '../run-tasks-table'
 import { runOutcomeCallout } from '../run-detail-sheet'
 
 const getMock = vi.fn()
@@ -205,6 +211,57 @@ describe('taskSkippedNote', () => {
     )
     expect(
       screen.getByText('Completed with 1 target skipped: api.example.com (does not resolve)')
+    ).toBeInTheDocument()
+  })
+})
+
+describe('taskCoverageGapNote', () => {
+  it('says how many hosts were not fully covered and why', () => {
+    expect(
+      taskCoverageGapNote({
+        coverage_gaps: [{ host: 'api.example.com', reason: 'breaker_open' }],
+        coverage_gaps_total: 1,
+      })
+    ).toBe('Completed with 1 host not fully covered: api.example.com (stopped answering)')
+    expect(
+      taskCoverageGapNote({
+        coverage_gaps: [
+          { host: 'a', reason: 'rate_floor' },
+          { host: 'b', reason: 'blocked' },
+          { host: 'c', reason: 'something new' },
+        ],
+        coverage_gaps_total: 5,
+      })
+    ).toBe(
+      'Completed with 5 hosts not fully covered: a (kept rate-limiting the scan), b (blocked the scan), c (not fully covered), and 2 more'
+    )
+    expect(taskCoverageGapNote({ coverage_gaps_total: 2 })).toBe(
+      'Completed with 2 hosts not fully covered'
+    )
+    expect(taskCoverageGapNote({})).toBeNull()
+  })
+
+  it('shows the coverage gaps on the row', () => {
+    fresh(
+      <RunTasksTable
+        runId="r1"
+        total={1}
+        tasks={[
+          {
+            id: 't1',
+            status: 'completed',
+            tool: 'nuclei',
+            targets: 2,
+            coverage_gaps: [{ host: 'api.example.com', reason: 'blocked' }],
+            coverage_gaps_total: 1,
+          },
+        ]}
+      />
+    )
+    expect(
+      screen.getByText(
+        'Completed with 1 host not fully covered: api.example.com (blocked the scan)'
+      )
     ).toBeInTheDocument()
   })
 })

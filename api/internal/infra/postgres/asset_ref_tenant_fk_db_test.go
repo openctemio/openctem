@@ -46,10 +46,12 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// change timeline (RFC-069; its monthly partitions inherit it and are
 	// not counted), 1 from per-source set elements (RFC-069), 1 from program
 	// asset links (001792, RFC-065), 1 from program target assets
-	// (program_target_assets, RFC-065 16.8) and 1 from VEX statements
-	// (RFC-070).
-	if n != 42 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 42 validated", n, allValid.Bool)
+	// (program_target_assets, RFC-065 16.8), 1 from VEX statements
+	// (RFC-070), 1 from attribute class freshness (asset_freshness,
+	// RFC-075) and 1 from enrichment requests (asset_enrichment_requests,
+	// RFC-075).
+	if n != 44 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 44 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing
