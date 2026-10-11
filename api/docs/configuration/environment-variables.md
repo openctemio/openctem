@@ -201,16 +201,6 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `SMTP_BASE_URL` | string | `APP_URL, else http://localhost:3000` |  |  | Base URL of links in e-mails. Set it only when the console is not at `APP_URL`. |
-| `SMTP_ENABLED` | bool | `false` |  |  | Send system email (invitations, verification, password reset, set-password links). |
-| `SMTP_FROM` | string | empty |  |  | Sender address. Email is sent only when `SMTP_ENABLED`, `SMTP_HOST`, `SMTP_PORT` and `SMTP_FROM` are all set. |
-| `SMTP_FROM_NAME` | string | `OpenCTEM` |  |  | Sender display name. |
-| `SMTP_HOST` | string | empty |  |  | SMTP server. |
-| `SMTP_PASSWORD` | string | empty |  | yes | SMTP password. |
-| `SMTP_PORT` | int | `587` |  |  | SMTP port. |
-| `SMTP_SKIP_VERIFY` | bool | `false` |  |  | Skip verification of the SMTP server's certificate. |
-| `SMTP_TIMEOUT` | duration | `30s` |  |  | Timeout of an SMTP delivery. |
-| `SMTP_TLS` | bool | `true` |  |  | Use TLS. |
-| `SMTP_USER` | string | empty |  |  | SMTP user name. |
 
 ### Attachment storage
 
@@ -383,6 +373,13 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
+| `BOOTSTRAP_SMTP_HOST` | string | empty |  |  | `bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (System > E-mail). |
+| `BOOTSTRAP_SMTP_PORT` | string | empty |  |  | `bootstrap-admin`: SMTP port (default 587). |
+| `BOOTSTRAP_SMTP_USER` | string | empty |  |  | `bootstrap-admin`: SMTP user name. |
+| `BOOTSTRAP_SMTP_PASSWORD` | string | empty |  | yes | `bootstrap-admin`: SMTP password, stored encrypted with `APP_ENCRYPTION_KEY`. |
+| `BOOTSTRAP_SMTP_FROM` | string | empty |  |  | `bootstrap-admin`: sender address. |
+| `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default OpenCTEM). |
+| `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
 | `ADMIN_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the first platform administrator (or `-email`). |
@@ -533,4 +530,14 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
 | `AI_MAX_CONCURRENT_JOBS` | unset it; it limited nothing, AI triage jobs run on the background job queue |
 | `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > System > Sign-up) |
+| `SMTP_ENABLED` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_HOST` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_PORT` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_USER` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_PASSWORD` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_FROM` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_FROM_NAME` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_TLS` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_SKIP_VERIFY` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
+| `SMTP_TIMEOUT` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `APP_ALLOW_PLAINTEXT_CREDENTIALS` | unset it; credentials are always encrypted (development uses the key in api/.env.example) |
