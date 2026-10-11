@@ -96,7 +96,7 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 		Override: override, Now: now, FindingURL: s.findingURL,
 	})
 	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, Links: VerdictLinks{
-		Run:      s.webURL("/ci-runners/" + run.ID.String()),
+		Run:      s.webURL(RunPath(run.ID)),
 		Findings: s.webURL(gateFindingsPath(run)),
 	}}
 	detail, err := json.Marshal(v)
@@ -113,6 +113,10 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	s.auditVerdict(ctx, run, in, v)
 	return v, nil
 }
+
+// RunPath is the console page of a CI run: the runs view of the CI/CD page
+// with the run open.
+func RunPath(id shared.ID) string { return "/ci-cd?view=runs&run=" + id.String() }
 
 // gateFindingsPath is the findings list the verdict links to: the
 // repository's findings, and for a run on a branch that does not count as
@@ -213,7 +217,7 @@ func (s *Service) auditVerdict(ctx context.Context, run *cirun.Run, in EvaluateI
 			Title: "CI break-glass used: " + run.Repository,
 			Body: fmt.Sprintf("Break-glass let %s at %s pass the CI gate with %d blocking finding(s).",
 				run.Repository, shortSHA(run.CommitSHA), v.Summary.Blocking),
-			URL: "/ci-runners/" + run.ID.String(), Aggregate: "ci_gate_override", AggregateID: oid,
+			URL: RunPath(run.ID), Aggregate: "ci_gate_override", AggregateID: oid,
 			Metadata: map[string]any{"action": "used", "repository": run.Repository, "commit_sha": run.CommitSHA,
 				"run_id": run.ID.String(), "blocking": v.Summary.Blocking},
 		}))

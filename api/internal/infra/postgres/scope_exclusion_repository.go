@@ -428,3 +428,12 @@ func (r *ScopeExclusionRepository) ExpireOld(ctx context.Context) error {
 	}
 	return nil
 }
+
+// FindByPattern returns the tenant's exclusion with this type and pattern
+// (an active exclusion past its expiry reads as expired), or nil.
+func (r *ScopeExclusionRepository) FindByPattern(ctx context.Context, tenantID shared.ID, exclusionType scope.ExclusionType, pattern string) (*scope.Existing, error) {
+	query := `SELECT id, CASE WHEN status = 'active' AND expires_at IS NOT NULL AND expires_at <= NOW() THEN 'expired' ELSE status END
+		FROM scope_exclusions
+		WHERE tenant_id = $1 AND exclusion_type = $2 AND pattern = $3`
+	return findExisting(r.db.QueryRowContext(ctx, query, tenantID.String(), exclusionType.String(), pattern))
+}
