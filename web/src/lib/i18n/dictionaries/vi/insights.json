@@ -1,0 +1,15 @@
+{
+  "insights.backToDashboard": "Về bảng điều khiển",
+  "insights.maturity.title": "Mức trưởng thành CTEM",
+  "insights.maturity.description": "Điểm có trọng số qua các chu kỳ CTEM đã đóng.",
+  "insights.maturity.moduleOffTitle": "Mô-đun chưa bật",
+  "insights.maturity.moduleOff": "Mức trưởng thành chương trình cần mô-đun chu kỳ CTEM. Hãy nhờ quản trị viên bật mô-đun này.",
+  "insights.maturity.loadFailed": "Không tải được mức trưởng thành",
+  "insights.maturity.loadFailedHint": "Hãy thử lại sau ít phút.",
+  "insights.maturity.emptyTitle": "Chưa có dữ liệu mức trưởng thành",
+  "insights.maturity.empty": "Mức trưởng thành được đo từ các chu kỳ CTEM đã đóng. Đóng một chu kỳ để xem tại đây.",
+  "insights.dataQuality.title": "Chất lượng dữ liệu",
+  "insights.dataQuality.description": "Kho tài sản đã có chủ sở hữu, bằng chứng và đủ mới để ưu tiên hay chưa.",
+  "insights.programHealth.title": "Sức khỏe chương trình",
+  "insights.programHealth.description": "Rủi ro có đang được loại bỏ không: xử lý việc khẩn cấp đúng hạn, tài sản có chủ, mức phơi nhiễm giảm."
+}
