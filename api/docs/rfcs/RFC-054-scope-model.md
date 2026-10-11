@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented, R3–R5 awaiting owner decision); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add and R3 implemented, R4, R5 and R8 decided); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -1083,9 +1083,10 @@ turns scope off.
 |---|---|---|---|---|
 | R1 | Add many entries | one pattern per request; one notice to every administrator per entry | `POST /scope/targets/bulk` (≤ 200 items): step-up once before any write, each item an ordinary create, a result per item, one notice for the batch | implemented |
 | R2 | Add from anywhere | one asset's ownership section, the review queue, a scan refusal | inventory selection → "Add to scope" (exact entries), the scan wizard's "add the missing targets" and finding actions use R1 | inventory: implemented; others follow |
-| R3 | A person confirms an asset | confirmation records ownership only (§4.2) | proposed: a tenant setting `confirm_adds_to_scope` (Off and On only) creates the exact entry when a person confirms; automated sources never do | owner decision pending |
-| R4 | Addresses behind in-scope names | never inherit (S4) | proposed: a one-click suggestion of the addresses in-scope names resolve to, excluding addresses that look shared (provider edge ranges, an address several registrable domains of the inventory resolve to); never automatic | owner decision pending |
-| R5 | Private targets on the organization's own sensor | refused without a scan zone (`zone_none`) | proposed: allowed when the scan runs on a tenant sensor whose reported local policy `targets.allow` contains the target; platform sensors never; zones stay for routing | owner decision pending |
+| R3 | A person confirms an asset | confirmation records ownership only (§4.2) | the tenant setting `confirm_adds_to_scope` (default on; Off and On only) adds the exact entry when a person confirms; automated sources never do (§14.5) | implemented |
+| R4 | Addresses behind in-scope names | never inherit (S4) | decided: a one-click suggestion of the addresses in-scope names resolve to, excluding addresses that look shared (provider edge ranges, an address several registrable domains of the inventory resolve to); never automatic | decided, follows |
+| R5 | Private targets on the organization's own sensor | refused without a scan zone (`zone_none`) | decided: allowed when the scan runs on a tenant sensor whose reported local policy `targets.allow` contains the target; platform sensors never; zones stay for routing | decided, follows |
+| R8 | Connector inventory | blocked until added by hand | decided: a per-connector switch, default on, adds the exact entries of the assets a connector syncs (exclusions and the deny list still win) | decided, follows |
 | R6 | Approvals, tiers, requests | Strict only (RFC-073) | unchanged | — |
 | R7 | Exclusions, deny list, public suffixes, CIDR caps, audit, signer ledger, sensor local policy | always on | unchanged, always on; a bulk add runs every item through them | — |
 
@@ -1135,10 +1136,39 @@ Response `200`:
 | R4 | dangling DNS or shared hosting points an in-scope name at a third party | suggestion only, shared addresses left out, exact addresses, a person accepts seeing the name each came from; the sensor pins resolution | a released cloud address still in DNS until the record is fixed |
 | R5 | a compromised platform orders a tenant sensor to scan an internal range | the authority is the host operator's own local policy, which the sensor enforces on every signed job; platform sensors and sensors without a local policy are not eligible | an operator who allows a wide internal range chose it |
 
+### 14.5 Confirming an asset adds it to scope (R3)
+
+Owner decision 2026-10-11. After a person sets assets to `confirmed`
+(`POST /easm/candidates/decisions`, `PUT /assets/{id}/attribution`), the
+scope service (`scope.Service.CoverConfirmedAssets`) adds the exact entry
+of each confirmed asset that no entry in effect covers:
+
+- only names, addresses, networks and the services and applications on
+  them (`scopedom.ExactEntryFor`: the name, the host of a URL or service,
+  the address, the network); never a wildcard; never a host, repository,
+  cloud resource or identity, and never a private address or internal name
+  (scan zones gate those);
+- only in the Off and On scan approval modes and while
+  `confirm_adds_to_scope` is on (`GET/PUT /scope/settings`, default on);
+  Strict, an unreadable mode, a system actor: nothing;
+- through `CreateTargets` with origin `manual` and the reason "Confirmed as
+  the organization's asset": guardrails, the signer ledger, an audit event
+  per entry and one notice to the administrators;
+- confirming needs no step-up, widening does: without a recent
+  re-authentication nothing is added, and the decision answers
+  `scope: {step_up_required: true, pending: [...]}` so the client adds them
+  with `POST /scope/targets/bulk` after the step-up.
+
+Both decision responses carry `scope: {added, covered, refused,
+refused_reason, step_up_required, pending}` when the rule applied. The
+asset ids are the ones the decision saved (already limited to the caller's
+data scope); the asset read is tenant-scoped, so another tenant's id adds
+nothing.
+
 ### 14.4 Plan
 
 | Phase | Items |
 |---|---|
 | P0 | R1 bulk add (API); inventory "Add to scope"; pasting a list on the Scope page |
-| P1 | R3, R4, R5 after the owner's decision; "Add host to scope" on findings |
-| P2 | connector assets as scope (a per-connector switch, default off); the scan preflight explains a sensor's local-policy refusals from its reported policy |
+| P1 | R3 (implemented), R4, R5, R8; "Add host to scope" on findings |
+| P2 | the scan preflight explains a sensor's local-policy refusals from its reported policy |

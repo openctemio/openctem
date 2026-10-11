@@ -1130,6 +1130,9 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	}
 	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
 	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	if svc.Scope != nil {
+		h.SetScopeCover(svc.Scope) // a confirmation adds the exact scope entry (RFC-054 §14)
+	}
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
 	}
@@ -1194,6 +1197,9 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 		h.SetAuditService(svc.Audit)
 	}
 	h.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	if svc.Scope != nil {
+		h.SetScopeCover(svc.Scope) // a confirmation adds the exact scope entry (RFC-054 §14)
+	}
 	return h
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -48,8 +49,13 @@ type AssetAttributionHandler struct {
 	activeGate  ActiveScanGate
 	scope       AssetScopeReader
 	effects     *easmapp.DecisionEffects
+	cover       ScopeConfirmCoverer
 	logger      *logger.Logger
 }
+
+// SetScopeCover adds the exact scope entry of an asset a person confirms
+// (RFC-054 §14).
+func (h *AssetAttributionHandler) SetScopeCover(c ScopeConfirmCoverer) { h.cover = c }
 
 // SetDecisionEffects runs reclassification and rejection hygiene after a
 // decision (research/22 P0-9).
@@ -82,6 +88,9 @@ func NewAssetAttributionHandler(attr AttributionReader, assets ScopedAssetGetter
 
 // AssetAttributionResponse is an asset's attribution.
 type AssetAttributionResponse struct {
+	// Scope is what a confirmation did to scope (RFC-054 §14); absent on
+	// reads and when the rule does not apply.
+	Scope *scope.ConfirmCoverage `json:"scope,omitempty"`
 	// State: confirmed, needs_review, candidate, dependency, monitor_only,
 	// rejected. An asset with no record is a legacy asset and reports
 	// confirmed with recorded=false.
@@ -290,6 +299,7 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
 		}, event)
 	}
+	cover := coverConfirmed(r, h.cover, h.logger, tenant, state, []string{assetID})
 	view, found, err := h.attribution.Get(ctx, tenantID, assetID)
 	if err != nil {
 		apierror.InternalServerError("failed to load attribution").WriteJSON(w)
@@ -298,6 +308,7 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	resp := toAssetAttributionResponse(view, found)
 	h.applyActiveGate(ctx, tenantID, assetID, &resp)
+	resp.Scope = cover
 	_ = json.NewEncoder(w).Encode(resp)
 }
 

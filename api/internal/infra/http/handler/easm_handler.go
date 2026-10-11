@@ -9,6 +9,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
@@ -29,7 +30,19 @@ type EASMHandler struct {
 	review EASMReviewer
 	rules  EASMRuleService
 	audit  AttributionAuditor
+	cover  ScopeConfirmCoverer
 	logger *logger.Logger
+}
+
+// SetScopeCover adds the exact scope entry of the assets a decision
+// confirms (RFC-054 §14).
+func (h *EASMHandler) SetScopeCover(c ScopeConfirmCoverer) { h.cover = c }
+
+// EASMDecisionResponse is a decision's result and, for a confirmation, what
+// it did to scope (absent when the rule does not apply).
+type EASMDecisionResponse struct {
+	*easmapp.DecisionResult
+	Scope *scope.ConfirmCoverage `json:"scope,omitempty"`
 }
 
 // NewEASMHandler creates the handler.
@@ -157,13 +170,13 @@ const maxDecisionNote = 500
 
 // Decide handles POST /api/v1/easm/candidates/decisions
 // @Summary      Decide EASM attribution in bulk
-// @Description  Record whether each asset is the organization's: confirmed lets scans reach it; rejected, dependency and monitor_only keep it passive. At most 200 assets per call. Assets that are not the organization's, are deleted or are outside the caller's data scope are listed in not_found. Each decision is audited.
+// @Description  Record whether each asset is the organization's: confirmed lets scans reach it (outside Strict scan approval, and unless the organization turned confirm_adds_to_scope off, it also adds each confirmed name or address to scope; `scope` says what was added, or step_up_required with the pending entries); rejected, dependency and monitor_only keep it passive. At most 200 assets per call. Assets that are not the organization's, are deleted or are outside the caller's data scope are listed in not_found. Each decision is audited.
 // @Tags         Attack Surface
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        body body EASMDecisionRequest true "Decision"
-// @Success      200  {object}  easmapp.DecisionResult
+// @Success      200  {object}  EASMDecisionResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
@@ -215,8 +228,14 @@ func (h *EASMHandler) Decide(w http.ResponseWriter, r *http.Request) {
 			_ = h.audit.LogEvent(ctx, actx, event)
 		}
 	}
+	decided := make([]string, 0, len(res.Decided))
+	for _, d := range res.Decided {
+		decided = append(decided, d.AssetID)
+	}
+	out := EASMDecisionResponse{DecisionResult: res,
+		Scope: coverConfirmed(r, h.cover, h.logger, tenant, attribution.State(req.State), decided)}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(res)
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // easmValidationMessage strips the sentinel prefix from a validation error.
