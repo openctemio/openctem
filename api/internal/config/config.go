@@ -2172,37 +2172,49 @@ func defaultCookieSecure(appEnv string) bool {
 // DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.
 const DefaultSensorConfigTemplatesDir = "configs/sensor-templates"
 
-// retiredEnv lists environment variables the API no longer reads. Startup
-// refuses to run while one is set, with a hint: silently ignoring, say,
-// AGENT_KEY_TTL would turn short-lived sensor keys back into non-expiring
-// ones without the operator noticing, and a knob that does nothing misleads
-// whoever reads the deployment file.
-var retiredEnv = []struct{ Old, Hint string }{
-	{"AGENT_CONFIG_TEMPLATES_DIR", "rename it to SENSOR_CONFIG_TEMPLATES_DIR"},
-	{"AGENT_PUBLIC_API_URL", "rename it to SENSOR_PUBLIC_API_URL"},
-	{"AGENT_KEY_TTL", "rename it to SENSOR_KEY_TTL"},
-	{"AGENT_LB_JOB_WEIGHT", "rename it to SENSOR_LB_JOB_WEIGHT"},
-	{"AGENT_LB_CPU_WEIGHT", "rename it to SENSOR_LB_CPU_WEIGHT"},
-	{"AGENT_LB_MEMORY_WEIGHT", "rename it to SENSOR_LB_MEMORY_WEIGHT"},
-	{"AGENT_LB_DISK_IO_WEIGHT", "rename it to SENSOR_LB_DISK_IO_WEIGHT"},
-	{"AGENT_LB_NETWORK_WEIGHT", "rename it to SENSOR_LB_NETWORK_WEIGHT"},
-	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "rename it to SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS"},
-	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "rename it to SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS"},
+// retiredEnv lists the pre-sensor environment variable names. They are no
+// longer read. Startup refuses to run while one is set: silently ignoring,
+// say, AGENT_KEY_TTL would turn short-lived sensor keys back into
+// non-expiring ones without the operator noticing.
+var retiredEnv = []struct{ Old, New string }{
+	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR"},
+	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL"},
+	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL"},
+	{"AGENT_LB_JOB_WEIGHT", "SENSOR_LB_JOB_WEIGHT"},
+	{"AGENT_LB_CPU_WEIGHT", "SENSOR_LB_CPU_WEIGHT"},
+	{"AGENT_LB_MEMORY_WEIGHT", "SENSOR_LB_MEMORY_WEIGHT"},
+	{"AGENT_LB_DISK_IO_WEIGHT", "SENSOR_LB_DISK_IO_WEIGHT"},
+	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT"},
+	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS"},
+	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS"},
 	// Sensor protocol v3 picks its bindings itself; off is the only switch.
-	{"SENSOR_TRANSPORT_V3_ENABLED", "rename it to SENSOR_TRANSPORT_V3=auto|off"},
-	{"APP_DEBUG", "remove it: it switched nothing on (use LOG_LEVEL=debug outside production)"},
-	{"GRPC_PORT", "remove it: nothing listened on it; sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
-	{"LOG_SKIP_HEALTH", "remove it: health, readiness and metrics requests are never written to the request log"},
-	{"AI_MAX_CONCURRENT_JOBS", "remove it: it limited nothing; AI triage jobs run on the background job queue"},
-	{"AUTH_ALLOW_REGISTRATION", "remove it: who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off"},
 }
 
-// rejectRetiredEnv fails when any retired name is set, with what to do instead.
+// removedEnv lists settings that were removed without a replacement
+// variable. Startup refuses to run while one is set, saying what to do
+// instead, so an operator never believes a removed setting still applies.
+var removedEnv = []struct{ Name, Instead string }{
+	// Knobs that were read but switched nothing.
+	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
+	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
+	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
+	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
+	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+}
+
+// rejectRetiredEnv fails when any retired or removed name is set, naming
+// its replacement or what to do instead.
 func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 	var bad []string
 	for _, r := range retiredEnv {
 		if _, ok := lookup(r.Old); ok {
-			bad = append(bad, fmt.Sprintf("%s (%s)", r.Old, r.Hint))
+			bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
+		}
+	}
+	for _, r := range removedEnv {
+		if _, ok := lookup(r.Name); ok {
+			bad = append(bad, fmt.Sprintf("%s (removed: %s)", r.Name, r.Instead))
 		}
 	}
 	if len(bad) > 0 {

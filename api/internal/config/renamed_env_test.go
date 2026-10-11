@@ -51,8 +51,8 @@ func TestRejectRetiredEnv_DeadKnobsSayRemove(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s set: want a refusal", name)
 		}
-		if !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "remove it") {
-			t.Errorf("%s: error %q does not name it and say to remove it", name, err)
+		if !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), name+" (removed: unset it") {
+			t.Errorf("%s: error %q does not name it and say to unset it", name, err)
 		}
 	}
 }
