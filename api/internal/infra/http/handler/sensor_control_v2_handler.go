@@ -937,7 +937,11 @@ func (h *SensorControlV2Handler) BindKey(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeV2JSON(w, http.StatusCreated, protov2.KeyBindResponse{SensorID: res.SensorID.String(), TenantID: res.TenantID.String(),
+	status := http.StatusCreated
+	if res.Confirmed {
+		status = http.StatusOK
+	}
+	writeV2JSON(w, status, protov2.KeyBindResponse{SensorID: res.SensorID.String(), TenantID: res.TenantID.String(),
 		Name: res.Name, KeyID: res.KeyID})
 }
 
