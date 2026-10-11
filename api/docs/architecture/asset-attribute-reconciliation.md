@@ -167,6 +167,10 @@ untrusted for.
   `limit` (≤ 200) and `cursor` (keyset on `at`, `id`).
 - `GET /api/v1/assets/changes` (`assets:read`): the organization feed, only
   assets in the caller's data scope; adds the `tag` filter.
+
+Web: the asset sheet's Timeline tab and the asset page's Timeline card
+(`AssetTimeline`), and Discovery › Assets › Timeline (`/assets/timeline`,
+`RecentAssetChanges`), in `web/src/features/assets/components/asset-timeline.tsx`.
 - `GET/PUT /api/v1/organization/settings/asset-reconciliation` (owner/admin):
   `{"default": [{"source": "integration", "ttl_days": 30, "trusted": true}, …],
   "classes": {"ownership": […]}}` (see Precedence); `GET` adds the effective
