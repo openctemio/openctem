@@ -93,11 +93,17 @@ beforeEach(() => {
   perms.approve = true
 })
 
-function routeGets(entries: unknown[], exclusions: unknown[]) {
+function routeGets(entries: unknown[], exclusions: unknown[], entriesNeedApproval?: boolean) {
   api.get.mockImplementation((url: string) =>
     Promise.resolve(
       url.includes('/scope/settings')
-        ? { effective_widening_approvals: 1, one_off_max_days: 7 }
+        ? {
+            effective_widening_approvals: entriesNeedApproval === false ? 0 : 1,
+            one_off_max_days: 7,
+            ...(entriesNeedApproval === undefined
+              ? {}
+              : { approval_policy: { entries_need_approval: entriesNeedApproval } }),
+          }
         : url.includes('/scope/exclusions')
           ? { total: exclusions.length, data: exclusions }
           : { total: entries.length, data: entries }
@@ -321,5 +327,39 @@ describe('Put out of scope', () => {
     )
     expect(api.post.mock.calls[0][1].expires_at).toBeTruthy()
     expect(daysFromNow(1, Date.parse('2026-10-07T00:00:00Z'))).toBe('2026-10-08T00:00:00.000Z')
+  })
+})
+
+describe('Scan approval Off: no approval wording for scope changes', () => {
+  it('an exclusion is added, not requested, and applies at once', async () => {
+    routeGets([], [], false)
+    api.post.mockResolvedValue({ pattern: 'pay.acme.io', status: 'active' })
+    const user = userEvent.setup()
+    wrap(<ScopeExclusionDialog open onOpenChange={() => {}} />)
+    expect(await screen.findByRole('button', { name: 'Add exclusion' })).toBeInTheDocument()
+    expect(screen.getByText(/It applies at once/)).toBeInTheDocument()
+    expect(screen.queryByText(/Another approver must approve it/)).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('What'), 'pay.acme.io')
+    await user.type(screen.getByLabelText('Reason'), 'PCI')
+    await user.click(screen.getByRole('button', { name: 'Add exclusion' }))
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('pay.acme.io is out of scope', undefined)
+    )
+  })
+
+  it('Strict keeps the request wording', async () => {
+    routeGets([], [], true)
+    wrap(<ScopeExclusionDialog open onOpenChange={() => {}} />)
+    expect(await screen.findByText(/Another approver must approve it/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Request exclusion' })).toBeInTheDocument()
+  })
+
+  it('left-over pending changes stay approvable and say why they still wait', async () => {
+    routeGets([pendingEntry], [pendingExclusion], false)
+    wrap(<ScopeApprovals />)
+    expect(await screen.findByTestId('approvals-left-over')).toHaveTextContent(
+      /need no approval while scan approval is not Strict/
+    )
+    expect(await screen.findAllByRole('listitem')).toHaveLength(2)
   })
 })
