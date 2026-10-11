@@ -32,6 +32,7 @@ import type { Integration } from '@/features/integrations/types/integration.type
 import { StatusBadge, getConfigString } from './shared'
 import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** POST /findings/import requires all three (api routes/finding_import.go). */
 const IMPORT_PERMISSIONS = [
@@ -51,6 +52,7 @@ export function PausedScannerCard({
   integration: Integration
   onChanged: () => void
 }) {
+  const { t } = useTranslation()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const { trigger: deleteIntegration, isMutating: deleting } = useDeleteIntegrationApi(
     integration.id
@@ -119,9 +121,14 @@ export function PausedScannerCard({
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={`Remove ${integration.name}?`}
-        desc="This removes the scanner integration from OpenCTEM. Findings already ingested are kept."
-        confirmText={deleting ? 'Removing...' : 'Remove'}
+        title={t('confirm.scannerIntegration.removeTitle', 'Remove the integration {name}?', {
+          name: integration.name,
+        })}
+        desc={t(
+          'confirm.scannerIntegration.removeDesc',
+          'Its imports stop and its settings are deleted. Findings already ingested are kept. This cannot be undone.'
+        )}
+        confirmText={deleting ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')}
         destructive
         isLoading={deleting}
         handleConfirm={() => void handleDelete()}

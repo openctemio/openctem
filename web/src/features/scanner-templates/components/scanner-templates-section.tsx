@@ -25,15 +25,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -83,6 +74,7 @@ import {
   formatStorageSize,
 } from '@/lib/api/scanner-template-types'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
   const IconMap: Record<TemplateStatus, React.ElementType> = {
@@ -156,6 +148,7 @@ function quotaMetric(
 }
 
 export function ScannerTemplatesSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -565,38 +558,43 @@ export function ScannerTemplatesSection() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete scanner template"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedTemplate?.name}</strong>? This action
-            cannot be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.scannerTemplate.deleteTitle', 'Delete the scanner template {name}?', {
+          name: selectedTemplate?.name ?? '',
+        })}
+        desc={t(
+          'confirm.scannerTemplate.deleteDesc',
+          'It can no longer be chosen for scans. To only stop new scans from using it, deprecate it instead. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}
       />
 
       {/* Deprecate Confirmation */}
-      <AlertDialog open={deprecateDialogOpen} onOpenChange={setDeprecateDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Deprecate scanner template</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to deprecate <strong>{selectedTemplate?.name}</strong>?
-              Deprecated templates cannot be used in new scans.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeprecating}>Cancel</AlertDialogCancel>
-            <Button variant="secondary" onClick={handleDeprecateConfirm} disabled={isDeprecating}>
-              {isDeprecating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Deprecate
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={deprecateDialogOpen}
+        onOpenChange={setDeprecateDialogOpen}
+        title={t(
+          'confirm.scannerTemplate.deprecateTitle',
+          'Deprecate the scanner template {name}?',
+          {
+            name: selectedTemplate?.name ?? '',
+          }
+        )}
+        desc={t(
+          'confirm.scannerTemplate.deprecateDesc',
+          'Deprecated templates cannot be used in new scans.'
+        )}
+        confirmText={
+          <>
+            {isDeprecating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+            {t('confirm.scannerTemplate.deprecate', 'Deprecate')}
+          </>
+        }
+        isLoading={isDeprecating}
+        handleConfirm={handleDeprecateConfirm}
+      />
     </>
   )
 }
