@@ -56,6 +56,7 @@ var permRemoveMigrations = []string{
 	"001184_drop_vulnerability_write_permissions.up.sql",
 	"001286_drop_scan_workflow_execute_permission.up.sql",
 	"drop_components_delete_permission",
+	"drop_sensor_commands_delete_permission",
 }
 
 // migrationFile resolves a list entry to its file under migrations/: a full
