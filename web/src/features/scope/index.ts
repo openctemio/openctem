@@ -30,6 +30,8 @@ export {
   type ScopeRefusal,
 } from './components/scope-check-results'
 export { ScopeCheckBadge } from './components/scope-check-badge'
+export { AddMissingToScopeButton } from './components/add-missing-to-scope-button'
+export { AddToScopeAction } from './components/add-to-scope-action'
 export {
   ScopeChangePreview,
   consequenceText,

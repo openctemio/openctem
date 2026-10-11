@@ -32,6 +32,7 @@ import type {
   BulkDeleteTargetsInput,
   BulkCreateScopeTargetsInput,
   ApiBulkScopeTargetsResponse,
+  ApiAddressSuggestions,
   BulkDeleteExclusionsInput,
   BulkUpdateTargetsInput,
   BulkOperationResponse,
@@ -567,6 +568,19 @@ export function useScopeSettingsApi(enabled = true, config?: SWRConfiguration) {
     // A member without scope:read gets 403; the caller hides what needs it.
     onError: () => undefined,
     ...config,
+  })
+}
+
+/**
+ * GET /scope/suggestions/addresses (scope:write): the public addresses
+ * in-scope names resolve to, for one click into scope (RFC-054 §14.7).
+ */
+export function useScopeAddressSuggestions(enabled = true) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && enabled ? `${BASE_URL}/suggestions/addresses` : null
+  return useSWR<ApiAddressSuggestions>(key, (url: string) => get<ApiAddressSuggestions>(url), {
+    ...defaultConfig,
+    onError: () => undefined,
   })
 }
 

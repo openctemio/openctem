@@ -13,7 +13,7 @@
 
 import { useEffect, useEffectEvent, useState } from 'react'
 import Link from '@/components/link'
-import { Plus, Settings2, ShieldOff } from 'lucide-react'
+import { ListPlus, Plus, Settings2, ShieldOff } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -37,6 +37,9 @@ import { ScopeExclusionsTable } from '@/features/scope/components/scope-exclusio
 import { ScopeExclusionDialog } from '@/features/scope/components/scope-exclusion-dialog'
 import { ScopeApprovals, usePendingScopeChanges } from '@/features/scope/components/scope-approvals'
 import { ScopeOnboarding } from '@/features/scope/components/scope-onboarding'
+import { ScopeBulkAddDialog } from '@/features/scope/components/scope-bulk-add-dialog'
+import { ScopeAddressSuggestions } from '@/features/scope/components/scope-address-suggestions'
+import { useTranslation } from '@/context/i18n-provider'
 import { EASMDomainProofPanel } from '@/features/attack-surface/components/easm-domain-proof'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 
@@ -50,6 +53,10 @@ export default function ScopePage() {
   const membersMayRequest = settings?.one_off_targets === 'admins_and_requests'
   // Unknown (still loading) counts as Strict.
   const entriesNeedApproval = settings?.approval_policy?.entries_need_approval ?? true
+  // A pasted list adds entries directly: approvers, or anyone with
+  // scope:write when entries need no approval (RFC-054 §14).
+  const directAdd = canApprove || !entriesNeedApproval
+  const { t } = useTranslation()
 
   const [tabParam, setTabParam] = useUrlFilter('tab', 'in')
   const { moduleIds } = useTenantModules()
@@ -77,6 +84,7 @@ export default function ScopePage() {
   }, [debounced])
 
   const [addOpen, setAddOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
   const [excludeOpen, setExcludeOpen] = useState(false)
 
   const selectTab = (next: string) => {
@@ -163,10 +171,18 @@ export default function ScopePage() {
         ? null
         : canWrite &&
           (canApprove || membersMayRequest) && (
-            <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {addLabel}
-            </Button>
+            <>
+              {directAdd && (
+                <Button size="sm" variant="outline" onClick={() => setListOpen(true)}>
+                  <ListPlus className="h-4 w-4" />
+                  {t('scope.list.action', 'Add a list')}
+                </Button>
+              )}
+              <Button size="sm" onClick={() => setAddOpen(true)}>
+                <Plus className="h-4 w-4" />
+                {addLabel}
+              </Button>
+            </>
           )
 
   const query = { search: q, kind, status, page, perPage }
@@ -188,6 +204,7 @@ export default function ScopePage() {
       <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" className="mt-4 mb-0" />
 
       <MetricStrip className="mt-5" items={metrics} />
+      {tab === 'in' && <ScopeAddressSuggestions />}
 
       <Tabs value={tab} onValueChange={selectTab} className="mt-5">
         <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -253,6 +270,7 @@ export default function ScopePage() {
       </Tabs>
 
       <ScopeEntryDialog open={addOpen} onOpenChange={setAddOpen} onShowExisting={showExisting} />
+      <ScopeBulkAddDialog open={listOpen} onOpenChange={setListOpen} />
       <ScopeExclusionDialog
         open={excludeOpen}
         onOpenChange={setExcludeOpen}

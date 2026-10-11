@@ -24,6 +24,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   Select,
   SelectContent,
@@ -76,6 +77,7 @@ export function TenableConnectorDialog({
 }: TenableConnectorDialogProps) {
   const editing = Boolean(integration)
   const [name, setName] = useState('')
+  const { t } = useTranslation()
   const [settings, setSettings] = useState<ConnectorSettings>(DEFAULT_CONNECTOR_SETTINGS)
   const { data: sensorsData, isLoading: sensorsLoading } = useAllSensors(undefined, open)
   const options = useMemo(() => connectorSensorOptions(sensorsData?.items), [sensorsData?.items])
@@ -222,6 +224,24 @@ export function TenableConnectorDialog({
             </div>
 
             <div className="space-y-3 rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label htmlFor="tsc-inventory-scope">
+                    {t('scope.connector.inventory', "Put this connector's inventory in scope")}
+                  </Label>
+                  <p className="text-muted-foreground text-xs">
+                    {t(
+                      'scope.connector.inventoryHint',
+                      'The names, addresses and hosts it syncs become scope entries, so scans can reach them. Exclusions and the platform deny list still win.'
+                    )}
+                  </p>
+                </div>
+                <Switch
+                  id="tsc-inventory-scope"
+                  checked={settings.inventoryInScope}
+                  onCheckedChange={(v) => set({ inventoryInScope: v })}
+                />
+              </div>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <Label htmlFor="tsc-coverage">Rolling coverage</Label>
