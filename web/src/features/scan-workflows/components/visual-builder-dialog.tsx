@@ -22,6 +22,7 @@ import { getErrorMessage } from '@/lib/api'
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { generateTempStepId } from '@/lib/utils'
 import { stepKeyBase, uniqueStepKey } from '../lib/step-keys'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface SaveData {
   steps: ScanWorkflowStep[]
@@ -42,6 +43,7 @@ export function VisualBuilderDialog({
   onOpenChange,
   onSave,
 }: VisualBuilderDialogProps) {
+  const { t } = useTranslation()
   // Local state for steps (modified version)
   const [localSteps, setLocalSteps] = useState<ScanWorkflowStep[]>([])
   const [hasChanges, setHasChanges] = useState(false)
@@ -320,11 +322,14 @@ export function VisualBuilderDialog({
         title={
           <span className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            Delete Step
+            {t('confirm.workflowStep.deleteTitle', 'Delete this step?')}
           </span>
         }
-        desc="Are you sure you want to delete this step? This action cannot be undone. Any dependencies on this step will be removed."
-        confirmText="Delete"
+        desc={t(
+          'confirm.workflowStep.builderDeleteDesc',
+          'The step leaves the workflow you are editing, and steps that depended on it lose that dependency. Nothing changes until you save.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleConfirmDelete}
       />
@@ -333,10 +338,14 @@ export function VisualBuilderDialog({
       <ConfirmDialog
         open={showUnsavedDialog}
         onOpenChange={setShowUnsavedDialog}
-        title="Unsaved Changes"
-        desc="You have unsaved changes. Are you sure you want to close without saving?"
-        cancelBtnText="Continue Editing"
-        confirmText="Discard Changes"
+        title={t('confirm.discardTitle', 'Discard your changes?')}
+        desc={t(
+          'confirm.discardCloseDesc',
+          'You have changes that are not saved. Closing now discards them.'
+        )}
+        cancelBtnText={t('confirm.keepEditing', 'Keep editing')}
+        confirmText={t('confirm.discard', 'Discard')}
+        destructive
         handleConfirm={handleDiscardChanges}
       />
     </>

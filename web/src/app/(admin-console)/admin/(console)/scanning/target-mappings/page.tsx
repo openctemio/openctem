@@ -45,6 +45,7 @@ import {
   targetTypeLabel,
 } from '@/features/admin-console/lib/target-mappings'
 import { adminCan, type TargetMapping } from '@/features/admin-console/types'
+import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
 const PAGE_SIZES = [20, 50, 100]
@@ -72,6 +73,7 @@ const pairLabel = (m: TargetMapping) =>
   `${targetTypeLabel(m.target_type)} → ${getAssetTypeLabel(m.asset_type)}`
 
 export default function TargetMappingsPage() {
+  const { t } = useTranslation()
   const me = useAdmin()
   // The API is the authority (ops_admin+ writes, super_admin deletes); these
   // only decide which controls to show.
@@ -403,24 +405,41 @@ export default function TargetMappingsPage() {
         onOpenChange={(open) => !open && setPending(null)}
         title={
           pending?.kind === 'delete'
-            ? 'Delete target mapping?'
+            ? t('confirm.targetMapping.deleteTitle', 'Delete the target mapping {pair}?', {
+                pair: pairLabel(pending.mapping),
+              })
             : pending?.mapping.is_active
-              ? 'Deactivate target mapping?'
-              : 'Activate target mapping?'
+              ? t(
+                  'confirm.targetMapping.deactivateTitle',
+                  'Deactivate the target mapping {pair}?',
+                  {
+                    pair: pairLabel(pending.mapping),
+                  }
+                )
+              : t('confirm.targetMapping.activateTitle', 'Activate the target mapping {pair}?', {
+                  pair: pending ? pairLabel(pending.mapping) : '',
+                })
         }
         desc={
           pending?.kind === 'delete'
-            ? `${pairLabel(pending.mapping)} is removed. Scanners that only reach ${getAssetTypeLabel(pending.mapping.asset_type)} assets through it will skip them. To pause it instead, deactivate it.`
+            ? t(
+                'confirm.targetMapping.deleteDesc',
+                'Scanners that only reach {type} assets through it will skip them. To pause it instead, deactivate it.',
+                { type: getAssetTypeLabel(pending.mapping.asset_type) }
+              )
             : pending?.mapping.is_active
-              ? `${pending ? pairLabel(pending.mapping) : ''} is kept but ignored: scanners that only reach these assets through it will skip them.`
-              : `${pending ? pairLabel(pending.mapping) : ''} is used again when scans are filtered.`
+              ? t(
+                  'confirm.targetMapping.deactivateDesc',
+                  'It is kept but ignored: scanners that only reach these assets through it will skip them.'
+                )
+              : t('confirm.targetMapping.activateDesc', 'It is used again when scans are filtered.')
         }
         confirmText={
           pending?.kind === 'delete'
-            ? 'Delete'
+            ? t('confirm.delete', 'Delete')
             : pending?.mapping.is_active
-              ? 'Deactivate'
-              : 'Activate'
+              ? t('confirm.targetMapping.deactivate', 'Deactivate')
+              : t('confirm.targetMapping.activate', 'Activate')
         }
         destructive={pending?.kind === 'delete' || !!pending?.mapping.is_active}
         isLoading={busy}
