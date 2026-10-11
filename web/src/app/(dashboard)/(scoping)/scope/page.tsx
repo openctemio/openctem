@@ -38,12 +38,15 @@ import { ScopeExclusionDialog } from '@/features/scope/components/scope-exclusio
 import { ScopeApprovals, usePendingScopeChanges } from '@/features/scope/components/scope-approvals'
 import { ScopeOnboarding } from '@/features/scope/components/scope-onboarding'
 import { EASMDomainProofPanel } from '@/features/attack-surface/components/easm-domain-proof'
+import { EASMNetworkSeedsPanel } from '@/features/attack-surface/components/easm-network-seeds'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
+import { useTranslation } from '@/context/i18n-provider'
 
-const TABS = ['in', 'out', 'approvals', 'proof'] as const
+const TABS = ['in', 'out', 'approvals', 'proof', 'networks'] as const
 type ScopeTab = (typeof TABS)[number]
 
 export default function ScopePage() {
+  const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.ScopeWrite)
   const canApprove = useHasPermission(Permission.ScopeApprove)
   const { data: settings } = useScopeSettingsApi()
@@ -56,7 +59,7 @@ export default function ScopePage() {
   const proofVisible = moduleIds.includes('attack_surface')
   const tabVisible = (name: string) =>
     (TABS as readonly string[]).includes(name) &&
-    (name !== 'proof' || proofVisible) &&
+    ((name !== 'proof' && name !== 'networks') || proofVisible) &&
     (name !== 'approvals' || showApprovals)
 
   const [q, setQ] = useUrlFilter('q', '')
@@ -159,7 +162,7 @@ export default function ScopePage() {
             Put out of scope
           </Button>
         )
-      : tab === 'proof'
+      : tab === 'proof' || tab === 'networks'
         ? null
         : canWrite &&
           (canApprove || membersMayRequest) && (
@@ -204,6 +207,9 @@ export default function ScopePage() {
               </TabsTrigger>
             )}
             {proofVisible && <TabsTrigger value="proof">Domain proof</TabsTrigger>}
+            {proofVisible && (
+              <TabsTrigger value="networks">{t('networkSeeds.tab', 'Networks')}</TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -248,6 +254,11 @@ export default function ScopePage() {
         {proofVisible && (
           <TabsContent value="proof" className="mt-5">
             <EASMDomainProofPanel />
+          </TabsContent>
+        )}
+        {proofVisible && (
+          <TabsContent value="networks" className="mt-5">
+            <EASMNetworkSeedsPanel />
           </TabsContent>
         )}
       </Tabs>

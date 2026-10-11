@@ -680,6 +680,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Network seeds (RFC-082): re-expanded weekly from public routing data.
+	if svc.EASMNetworkSeeds != nil {
+		w.ControllerManager.Register(controller.NewEASMNetworkSeedController(svc.EASMNetworkSeeds, svc.Module, 0))
+	}
+
 	// Owner resolution — make the member whose email is owner_ref a primary owner (asset_owners)
 	w.ControllerManager.Register(controller.NewOwnerResolutionController(
 		deps.DB,
