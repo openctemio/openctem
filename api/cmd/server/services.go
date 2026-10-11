@@ -1930,7 +1930,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
-		WithPlatformPolicy(s.ScopeGuardrails, cfg.Scope.ActiveProof == config.ScopeProofAll)
+		WithPlatformPolicy(s.ScopeGuardrails)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -1973,9 +1973,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope)),
 		scan.WithScopeSnapshots(scope.NewSnapshotRecorder(s.Scope, s.ScopeSnapshots)),
-		// Platform sensors and intrusive scans need a verified domain
-		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
-		scan.WithActiveProof(cfg.Scope.ActiveProof),
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),

@@ -138,8 +138,8 @@ func (s *Service) DryRunTargets(ctx context.Context, in DryRunInput) ([]DryRunRe
 
 	// 4. Proof: platform sensors under the operator's requirement, and
 	// intrusive probes always.
-	needProof := in.Tier >= int(scopedom.TierIntrusive) ||
-		(in.SensorPreference == "platform" && s.platformNeedsProof())
+	needProof := s.platformNeedsProof(ctx) &&
+		(in.Tier >= int(scopedom.TierIntrusive) || in.SensorPreference == "platform")
 	allowed := res.Allowed
 	if needProof && len(allowed) > 0 {
 		missing, err := s.unverified(ctx, in.TenantID, allowed)
