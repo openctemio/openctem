@@ -297,7 +297,7 @@ type rejectedTarget struct {
 // must not let a member resolve arbitrary names through the platform's
 // resolver.
 func (s *Service) previewValidateTargets(ctx context.Context, tenantID string, targets []string) ([]string, []rejectedTarget, error) {
-	accepted, rejected, err := s.validateTargetsEach(ctx, tenantID, targets, maxPreviewDirectTargets)
+	accepted, rejected, err := s.validateTargetsEach(ctx, tenantID, targets, maxPreviewDirectTargets, nil)
 	if err != nil || len(accepted) == 0 {
 		return accepted, rejected, err
 	}
@@ -330,7 +330,9 @@ func (s *Service) previewValidateTargets(ctx context.Context, tenantID string, t
 // it returns the accepted targets (private ones only when a scan zone covers
 // them) and the rejected ones with the reason, instead of failing on the
 // first rejection.
-func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targets []string, maxTargets int) ([]string, []rejectedTarget, error) {
+// sensorID is the sensor the work is pinned to or claimed by (nil: not
+// known yet); it decides the own-sensor rule for private targets.
+func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targets []string, maxTargets int, sensorID *shared.ID) ([]string, []rejectedTarget, error) {
 	if len(targets) == 0 {
 		return nil, nil, nil
 	}
@@ -343,7 +345,7 @@ func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targ
 	var admitted []string
 	if result.HasErrors && len(result.BlockedIPs) > 0 {
 		var err error
-		if admitted, err = s.admitZonedPrivateTargets(ctx, tenantID, result); err != nil {
+		if admitted, err = s.admitZonedPrivateTargets(ctx, tenantID, result, true, sensorID); err != nil {
 			return nil, nil, err
 		}
 	}

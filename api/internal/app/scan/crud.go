@@ -314,7 +314,9 @@ func (s *Service) validateScanTargets(ctx context.Context, input CreateScanInput
 	var admitted []string
 	if result.HasErrors && len(result.BlockedIPs) > 0 {
 		var err error
-		if admitted, err = s.admitZonedPrivateTargets(ctx, input.TenantID, result); err != nil {
+		// A scan bound to platform sensors never gets private targets
+		// through the own-sensor rule.
+		if admitted, err = s.admitZonedPrivateTargets(ctx, input.TenantID, result, input.SensorPreference != string(scan.SensorPreferencePlatform), nil); err != nil {
 			return nil, err
 		}
 	}

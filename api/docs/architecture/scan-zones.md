@@ -164,8 +164,18 @@ run during a blackout waits instead of being refused.
 
 Private targets are refused at creation unless a zone of the tenant covers
 them; then they are accepted and later scanned only through that zone. Loopback,
-link-local and every other deny-list address stay refused. Tenants without
-zones keep refusing all private targets.
+link-local and every other deny-list address stay refused.
+
+A tenant without zones has private addresses (RFC 1918, CGNAT, ULA; never
+loopback, link-local or the deny list) admitted for its **own sensors**
+(RFC-054 §14.6): at creation, the trigger and the dispatch gate when every
+dispatchable own sensor reports an enforced local policy that allows private
+ranges and has its kill switch off (`SensorRepository.PrivateTargetAdmission`);
+at the claim, when the claiming sensor itself does (a platform sensor never
+does, so the job is refused at hand-out to anyone else). The sensor's allow
+list then decides each address. A scan bound to platform sensors gets no
+private target this way. A tenant whose own sensors do not all qualify keeps
+the old rule (`zone_none`).
 
 ## Results
 
