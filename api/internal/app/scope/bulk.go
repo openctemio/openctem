@@ -17,6 +17,7 @@ import (
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // MaxBulkTargets is the most entries one bulk request may add (the dry run's
@@ -109,7 +110,9 @@ func (s *Service) CreateTargets(ctx context.Context, in BulkTargetsInput) ([]Bul
 			added = append(added, o.Target)
 		}
 		if o.Err != nil && !isItemRefusal(o.Err) {
-			s.logger.Warn("bulk scope entry failed", "type", logSafe(item.TargetType), "pattern", logSafe(item.Pattern), "error", o.Err)
+			// The pattern is the caller's text: not logged (the error is
+			// sanitized); the item's result carries it back to the caller.
+			s.logger.Warn("bulk scope entry failed", "error", logger.SanitizeError(o.Err))
 		}
 		out = append(out, o)
 	}
