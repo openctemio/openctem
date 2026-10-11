@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, Package, Search, Upload } from 'lucide-react'
+import { Download, FileCheck2, Package, Search, Upload } from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
@@ -57,6 +57,7 @@ import {
 import { ComponentFacetsPanel } from './component-facets'
 import { SbomExportDialog } from './sbom-export-dialog'
 import { SbomImportDialog } from './sbom-import-dialog'
+import { VexImportDialog } from './vex-import-dialog'
 
 const FILTERS_OPEN_KEY = 'components.filters.open'
 
@@ -109,6 +110,7 @@ export function ComponentsListView() {
   const [filtersOpen, setFiltersOpen] = useFiltersOpen()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [vexOpen, setVexOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
 
   const activeCount = activeFilterCount(list.filters)
@@ -339,6 +341,12 @@ export function ComponentsListView() {
           <Download className="me-2 h-4 w-4" aria-hidden />
           {t('components.export', 'Export SBOM')}
         </Button>
+        <Can permission={Permission.FindingsApprove}>
+          <Button variant="outline" onClick={() => setVexOpen(true)}>
+            <FileCheck2 className="me-2 h-4 w-4" aria-hidden />
+            {t('components.importVex', 'Import VEX')}
+          </Button>
+        </Can>
         <Can permission={Permission.ComponentsWrite}>
           <Button onClick={() => setImportOpen(true)}>
             <Upload className="me-2 h-4 w-4" aria-hidden />
@@ -445,6 +453,7 @@ export function ComponentsListView() {
         onImported={() => mutate()}
       />
       <SbomExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+      <VexImportDialog open={vexOpen} onOpenChange={setVexOpen} onImported={() => mutate()} />
     </Main>
   )
 }

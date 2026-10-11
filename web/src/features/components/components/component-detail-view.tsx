@@ -62,15 +62,16 @@ import {
   useScopeLabel,
 } from './component-cells'
 import { DependencyGraphView } from './dependency-graph'
+import { VexStatementsPanel } from './vex-statements-panel'
 
-type Tab = 'versions' | 'assets' | 'vulnerabilities'
+type Tab = 'versions' | 'assets' | 'vulnerabilities' | 'vex'
 
 export function ComponentDetailView({ id }: { id: string }) {
   const { t } = useTranslation()
   const { data: pkg, error, isLoading } = useComponent(id)
   const [tabParam, setTabParam] = useUrlFilter('tab', 'versions')
   const tab = (
-    ['versions', 'assets', 'vulnerabilities'].includes(tabParam) ? tabParam : 'versions'
+    ['versions', 'assets', 'vulnerabilities', 'vex'].includes(tabParam) ? tabParam : 'versions'
   ) as Tab
   const [versionFilter, setVersionFilter] = useState<ComponentVersion | null>(null)
 
@@ -225,6 +226,7 @@ export function ComponentDetailView({ id }: { id: string }) {
           <TabsTrigger value="vulnerabilities">
             {t('components.tab.vulnerabilities', 'Vulnerabilities')}
           </TabsTrigger>
+          <TabsTrigger value="vex">{t('components.tab.vex', 'VEX')}</TabsTrigger>
         </TabsList>
         <TabsContent value="versions" className="mt-4">
           <VersionsTable
@@ -244,6 +246,9 @@ export function ComponentDetailView({ id }: { id: string }) {
         </TabsContent>
         <TabsContent value="vulnerabilities" className="mt-4">
           <VulnerabilitiesTable id={id} />
+        </TabsContent>
+        <TabsContent value="vex" className="mt-4">
+          <VexStatementsPanel productId={id} />
         </TabsContent>
       </Tabs>
     </Main>

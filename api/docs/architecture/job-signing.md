@@ -187,7 +187,7 @@ with the envelope, or a refusal:
 
 | Status | Reasons |
 |---|---|
-| 400 | `malformed` (not JSON, unknown or mistyped field, trailing data), `bad_kind`, `invalid_id`, `missing_command_type`, `missing_tool`, `bad_payload_digest`, `bad_targets`, `bad_templates`, `bad_lease_epoch`, `clock_skew`, `bad_expiry`, `server_field_set` |
+| 400 | `malformed` (not JSON, unknown or mistyped field, trailing data), `bad_kind`, `invalid_id`, `missing_command_type`, `missing_tool`, `bad_payload_digest`, `bad_targets`, `bad_templates`, `bad_limits`, `bad_lease_epoch`, `clock_skew`, `bad_expiry`, `server_field_set` |
 | 403 | `out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`, `template_not_in_ledger` (the [scope ledger](#scope-ledger) does not authorize the job) |
 | 413 | `body_too_large` |
 | 429 | `tenant_rate_limited`, `sensor_rate_limited` |
@@ -243,6 +243,7 @@ payload bytes it received and never re-serializes them.
 | `payload_sha256` | string | `sha256:` + hex SHA-256 of the command's `payload` JSON value, exactly as the claim response carries it |
 | `targets` | string[] | payload `targets` and `target`, trimmed, de-duplicated, in order |
 | `templates` | string[] | only when the payload carries custom templates: `sha256:` + hex SHA-256 of each `custom_templates[].content`, base64-decoded after trimming, in payload order, duplicates kept ([Custom templates](#custom-templates)) |
+| `limits` | object[] | only for a sensor that enforces scope limits, when a target is covered only by port- or path-limited entries: `{host, ports, protocol, path_prefix}` per covering entry ([Scope limits](#scope-limits)) |
 | `lease_epoch` | int | the claim's lease epoch (the command's `lease_epoch`) |
 | `issued_at` | RFC 3339 UTC | when the API asked |
 | `expires_at` | RFC 3339 UTC | `issued_at` + 1 h, or the command's own expiry if sooner |
@@ -319,9 +320,46 @@ Before it parses anything else of the command:
 10. it runs `tool` against `targets`, and its local policy agrees;
 11. `templates` lists exactly the digests of the payload's custom
     templates; it then trusts those template bytes through the job
-    ([Custom templates](#custom-templates)).
+    ([Custom templates](#custom-templates));
+12. every `limits` entry names the host of one of `targets` and is well
+    formed; the sensor then enforces them ([Scope limits](#scope-limits)).
+    A sensor that predates the field refuses the statement (unknown field).
 
 Any failure: refuse the command (fail it with a refusal), never run it.
+
+## Scope limits
+
+A target that only port- or path-limited scope entries cover
+(`api.x.com:8443/tcp`, `https://x.com/api/`) may be scanned only within the
+limit (RFC-065 §16.8). Tools that stay on their target (`naabu` with a port
+list inside the limit, `httpx`) run there on any sensor. A crawler, a
+template scanner or a top-ports scan runs there only on a sensor that
+enforces the limits:
+
+- the sensor reports `scope.limits@1` in its manifest (sdk-go
+  `scopelimit.Capability`). It does so only when its tools run out of
+  process in a sandbox that confines their network to the task's egress
+  forwarder;
+- jobs are signed (the claim re-check treats the capability as absent
+  without a job signer);
+- at claim the command service computes the limits of the job's targets
+  from the tenant's scope (`ActiveGate.StatementLimits`: one limit per
+  covering entry, on the target's host; a host an unlimited entry covers has
+  none) and puts them in the statement. The signer checks each against its
+  ledger (point 5 above).
+
+On the sensor, the limits come from the verified statement only, never from
+the payload. The task's forwarder refuses a connection to a limited host on
+any other port. On a port whose limits name a path prefix it reads every HTTP
+request, terminating TLS with a per-task authority, and refuses with `403`
+(recorded in the task's egress records) a request whose Host is not the
+destination or whose decoded, dot-segment-free path is not under a prefix.
+Tool flags (naabu's port list, katana's crawl scope) are set as well, but
+nothing relies on them.
+
+A sensor that does not report the capability never gets such a job: the
+claim re-check withholds it (it stays pending for an enforcing sensor)
+rather than narrowing or failing it.
 
 ## Failure behaviour
 
@@ -402,9 +440,16 @@ and `NeedsAuthority` the API's authority check uses):
    whose port is allowed), a URL entry with a path only URLs under it;
 4. a target covered only by port- or path-limited entries is signed only for
    a tool that stays on the target it is given
-   (`scope.ConstrainedToolAllowed`; otherwise `out_of_ledger`). The job's
-   port list is checked by the API at claim (the signer does not see the
-   payload).
+   (`scope.ConstrainedToolAllowed`), or for any tool when the statement
+   carries `limits` for the target's host; otherwise `out_of_ledger`. The
+   job's port list is checked by the API at claim (the signer does not see
+   the payload);
+5. each statement limit must lie within an entry in effect at the tool's
+   tier that covers one of the statement's targets on that host
+   (`scope.LimitWithin`: ports a subset, the same protocol, a path prefix at
+   or under the entry's path, segment by segment): `out_of_ledger`
+   otherwise. A malformed limit, or one for a host the statement does not
+   target, is `bad_limits` (400).
 
 The port limit is part of an entry like its pattern: dropping or relaxing
 it is a widening (approvals as for a new entry), and a sync from the

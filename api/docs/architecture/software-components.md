@@ -186,6 +186,13 @@ Module: `components`.
   version, direct or transitive, scope, manifest, open findings; the paths
   that bring the package in; the asset's dependency graph) and
   Vulnerabilities (links to the findings of each CVE).
+- `/components/{id}?tab=vex`: the VEX statements about the package (status,
+  justification, versions or range, every asset or one, review date, imported
+  or written); New, Edit and Delete with `findings:approve`. `/components`
+  has Import VEX (file, optional asset, preview, import).
+- `/settings/license-policy` (Scanning group): enable, default and unknown
+  verdicts, review findings, ordered rules with scopes; saving shows what the
+  re-evaluation flagged, opened and resolved.
 - The dependency graph is laid out left to right from the direct packages,
   highlights packages with open vulnerabilities and every path to them, is
   searchable and keyboard operable, and has a tree list view (the default on
