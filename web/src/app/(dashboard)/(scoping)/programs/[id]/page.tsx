@@ -10,6 +10,7 @@
 import { use, useState } from 'react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -86,6 +87,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
   const [reimport, setReimport] = useState(false)
   const [reattest, setReattest] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState<'suspend' | 'end' | null>(null)
 
   if (error) {
     return (
@@ -113,6 +115,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
       await fn()
       toast.success(done)
       setReattest(false)
+      setPending(null)
       await Promise.all([mutate(), invalidatePrograms()])
     } catch (err) {
       toast.error(
@@ -147,21 +150,11 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
               {t('programs.reimport', 'Re-import scope')}
             </Button>
             {p.status === 'active' && (
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  act(() => suspendProgram(p.id), t('programs.suspended', 'Program suspended'))
-                }
-              >
+              <Button variant="outline" disabled={busy} onClick={() => setPending('suspend')}>
                 {t('programs.suspend', 'Suspend')}
               </Button>
             )}
-            <Button
-              variant="destructive"
-              disabled={busy}
-              onClick={() => act(() => endProgram(p.id), t('programs.ended', 'Program ended'))}
-            >
+            <Button variant="destructive" disabled={busy} onClick={() => setPending('end')}>
               {t('programs.end', 'End')}
             </Button>
           </>
@@ -333,6 +326,40 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
           <ProgramExclusionsTable exclusions={p.exclusions} />
         </section>
       </div>
+      <ConfirmDialog
+        open={pending !== null}
+        onOpenChange={(open) => !open && setPending(null)}
+        destructive
+        title={
+          pending === 'end'
+            ? t('confirm.program.endTitle', 'End the program "{name}"?', { name: p.name })
+            : t('confirm.program.suspendTitle', 'Suspend the program "{name}"?', { name: p.name })
+        }
+        desc={
+          pending === 'end'
+            ? t(
+                'confirm.program.endDesc',
+                'Its scope entries stop authorizing scans at once and the program can no longer be changed or reactivated. Findings and history stay.'
+              )
+            : t(
+                'confirm.program.suspendDesc',
+                'Its scope entries stop authorizing scans until someone reactivates it and accepts the program terms again.'
+              )
+        }
+        confirmText={
+          pending === 'end'
+            ? t('confirm.program.end', 'End program')
+            : t('confirm.program.suspend', 'Suspend')
+        }
+        isLoading={busy}
+        handleConfirm={() =>
+          pending === 'end'
+            ? act(() => endProgram(p.id), t('programs.ended', 'Program ended'))
+            : pending === 'suspend'
+              ? act(() => suspendProgram(p.id), t('programs.suspended', 'Program suspended'))
+              : undefined
+        }
+      />
     </Main>
   )
 }
