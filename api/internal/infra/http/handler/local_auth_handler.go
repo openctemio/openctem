@@ -969,6 +969,8 @@ func (h *LocalAuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request)
 	if err := h.authService.ResetPassword(r.Context(), auth.ResetPasswordInput{
 		Token:       req.Token,
 		NewPassword: req.NewPassword,
+		IPAddress:   getClientIP(r),
+		UserAgent:   r.UserAgent(),
 	}); err != nil {
 		h.handleAuthError(w, err)
 		return
