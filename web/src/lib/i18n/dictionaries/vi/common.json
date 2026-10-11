@@ -1,10 +1,11 @@
 {
-  "common.loading": "Đang tải…",
-  "common.search": "Tìm kiếm",
-  "common.export": "Xuất",
-  "common.save": "Lưu",
   "common.cancel": "Hủy",
+  "common.confirm": "Xác nhận",
+  "common.export": "Xuất",
+  "common.language": "Ngôn ngữ",
+  "common.loading": "Đang tải…",
   "common.noData": "Không có dữ liệu",
   "common.rowsExported": "Đã xuất {count} dòng",
-  "common.language": "Ngôn ngữ"
+  "common.save": "Lưu",
+  "common.search": "Tìm kiếm"
 }

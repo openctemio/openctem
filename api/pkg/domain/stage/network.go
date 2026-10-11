@@ -45,6 +45,8 @@ func (n Network) TouchesTargets() bool {
 var stageNetworks = map[Key]Network{
 	DiscoverSubdomains: NetworkEgressProxy,
 	ResolveDNS:         NetworkResolver,
+	LookupRDAP:         NetworkEgressProxy,
+	LookupASN:          NetworkEgressProxy,
 	SecretsCode:        NetworkVendor,
 	SASTCode:           NetworkVendor,
 	SCADeps:            NetworkVendor,

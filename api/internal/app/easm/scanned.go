@@ -157,7 +157,7 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 	var fresh []string
 	for _, id := range found {
 		a := byID[id]
-		if _, has := records[id]; !has && a.Created && internetFacing(a.Type.Type, a.Type.SubType) {
+		if _, has := records[id]; !has && a.Created && heldForReviewOnCreate(a.Type.Type, a.Type.SubType) {
 			fresh = append(fresh, id)
 		}
 	}
@@ -216,7 +216,7 @@ func toEvaluate(all []string, records map[string]attribution.Record, byID map[st
 func (s *ScanStamper) holdUnsolicited(ctx context.Context, tenantID shared.ID, assets []ingest.ScannedAsset) error {
 	var ids []string
 	for _, a := range assets {
-		if a.Created && internetFacing(a.Type.Type, a.Type.SubType) {
+		if a.Created && heldForReviewOnCreate(a.Type.Type, a.Type.SubType) {
 			ids = append(ids, a.ID.String())
 		}
 	}
