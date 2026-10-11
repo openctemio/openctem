@@ -990,18 +990,19 @@ func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handl
 }
 
 // heartbeatDoorbellConfig maps the SENSOR_HEARTBEAT_* settings onto the
-// doorbell, bounded so no advised interval reaches half of the time after
-// which a sensor is marked offline: the health controller's
-// sensorStaleTimeout (90 s), or WORKER_HEARTBEAT_TIMEOUT when shorter. The
-// bound used to be WORKER_HEARTBEAT_TIMEOUT alone (5 min), so the "loaded"
-// advice (120 s) outlasted the controller's 90 s and every sensor that
-// followed it was marked offline once per cycle (RFC-035 B1, decision D2).
+// doorbell. The maximum advised interval is derived, not configured:
+// min(offlineMark/2, lease/3) (sensor.MaxIntervalBound), where the offline
+// mark is the health controller's sensorStaleTimeout (90 s), or
+// WORKER_HEARTBEAT_TIMEOUT when shorter, and the lease is
+// SENSOR_COMMAND_LEASE after the same clamp the command repository applies.
+// SENSOR_HEARTBEAT_MAX_INTERVAL can only lower it. Raising the lease or the
+// offline mark therefore never lets an interval outlast a command lease
+// (RFC-074).
 func heartbeatDoorbellConfig(cfg *config.Config) sensor.DoorbellConfig {
 	sc := cfg.SensorConfig
 	c := sensor.DefaultDoorbellConfig()
 	c.IdleInterval = sc.HeartbeatInterval
 	c.BusyInterval = sc.HeartbeatBusyInterval
-	c.LoadedInterval = sc.HeartbeatLoadedInterval
 	c.MinInterval = sc.HeartbeatMinInterval
 	c.MaxInterval = sc.HeartbeatMaxInterval
 	c.SlowQuery = sc.HeartbeatSlowQuery
@@ -1012,7 +1013,7 @@ func heartbeatDoorbellConfig(cfg *config.Config) sensor.DoorbellConfig {
 		// Renew at half-life.
 		c.KeyRenewBefore = sc.KeyTTL / 2
 	}
-	return c.Normalized(offlineMark(cfg.Worker.HeartbeatTimeout))
+	return c.Normalized(offlineMark(cfg.Worker.HeartbeatTimeout), command.ClampLeaseDuration(sc.CommandLease))
 }
 
 // offlineMark is how long after its last heartbeat a sensor is marked
