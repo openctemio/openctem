@@ -498,6 +498,35 @@ targets. `rule` names the caller's own rule that refused: `{"kind":
 "exclusion"|"scope_target"|"tombstone"|"asset", "id", "pattern"}`; for
 platform policy it is `{"kind": "platform_policy"}` with no detail.
 
+**Where the scan would run** (`routing`, 2026-10-11). The response also
+says where a scan of these targets would run, decided as the trigger decides:
+`{"preference": "auto"|"tenant"|"platform", "runs_on": "tenant"|"platform"|"waits",
+"reason", "sensor": {"id", "name"}}`. Reasons: `platform_needs_proof` (auto,
+proof required by the platform setting of §8.1, and some targets unproven:
+the job runs on the organization's own sensor), `tenant_first`, `tenant_busy`,
+`internal_targets`, `no_tenant_sensor`, `platform_sensors`. `sensor` names
+only the organization's own sensor; a platform sensor is never named. With
+the proof setting on, auto refuses an unproven target (`proof_required`) only
+when no own sensor can take the job; intrusive probes need proof on any
+sensor, and their `proof_required` refusal does not offer "use your own
+sensor".
+
+**Resolved address** (`resolved`). A `zone_none` refusal of a hostname that
+resolves to a private address lists those addresses (at most 8), so the
+Review can say "resolves to 10.x.x.x, an internal address". It is shown only
+when the answer cannot come from the platform's own internal DNS: zone
+routing resolves through a public resolver (`SCAN_ZONE_RESOLVER`), or
+organizations are not self-service.
+
+**Skip the refused targets** (`skip_refused_targets` on `POST /scans`). The
+creator may save a scan with only the targets this check allows now: the
+create runs the same dry run, leaves the refused targets out and records
+them with their codes in `scans.skipped_targets` (shown on the scan) and in
+every run's context (`skipped_targets`, never sent to a sensor). The kept
+targets then pass every normal create check, so nothing the gate refuses is
+saved or scanned; with no target left the create is refused
+(`NO_ALLOWED_TARGETS`).
+
 ### 6.5 Refusal codes
 
 | Code | Meaning | Fixes offered |

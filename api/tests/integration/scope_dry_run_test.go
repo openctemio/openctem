@@ -41,11 +41,15 @@ func TestScopeDryRun(t *testing.T) {
 	gate := ownershipGate(db).WithPlatformPolicy(scopedom.DefaultGuardrails())
 	svc := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
 		scansvc.WithAttributionGate(gate), scansvc.WithActScope(actScopeChecker(db, admin)),
+		scansvc.WithProofPolicy(scansvc.StaticProofPolicy(false)))
+	// The same with the platform's proof setting on.
+	svcOn := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
+		scansvc.WithAttributionGate(gate), scansvc.WithActScope(actScopeChecker(db, admin)),
 		scansvc.WithProofPolicy(scansvc.StaticProofPolicy(true)))
 	asAdmin := asCaller(ctx, datascope.Caller{UserID: admin.String(), IsAdmin: true})
 	asMember := asCaller(ctx, datascope.Caller{UserID: member.String()})
 
-	run := func(ctx context.Context, pref string, targets ...string) map[string]scansvc.DryRunResult {
+	runWith := func(svc *scansvc.Service, ctx context.Context, pref string, targets ...string) map[string]scansvc.DryRunResult {
 		t.Helper()
 		res, err := svc.DryRunTargets(ctx, scansvc.DryRunInput{TenantID: tenantA, Targets: targets, SensorPreference: pref, Tier: 1})
 		if err != nil {
@@ -56,6 +60,10 @@ func TestScopeDryRun(t *testing.T) {
 			out[r.Target] = r
 		}
 		return out
+	}
+	run := func(ctx context.Context, pref string, targets ...string) map[string]scansvc.DryRunResult {
+		t.Helper()
+		return runWith(svc, ctx, pref, targets...)
 	}
 
 	got := run(asAdmin, "auto", "app.dry.example", "dry.example", "excl.dry.example", "pend.example", "x.old.example",
@@ -83,10 +91,22 @@ func TestScopeDryRun(t *testing.T) {
 		}
 	}
 
-	// Platform sensors need proof under platform_sensors.
-	got = run(asAdmin, "platform", "app.dry.example", "www.proven.dry.example")
+	// Setting off: platform sensors need no proof.
+	if got = run(asAdmin, "platform", "app.dry.example"); !got["app.dry.example"].Allowed {
+		t.Errorf("proof off, platform: %+v", got)
+	}
+	// Setting on: platform sensors need proof, and so does auto when no
+	// own sensor can take the job (none here).
+	got = runWith(svcOn, asAdmin, "platform", "app.dry.example", "www.proven.dry.example")
 	if got["app.dry.example"].Code != scopedom.RefusalProofRequired || !got["www.proven.dry.example"].Allowed {
 		t.Errorf("platform proof: %+v", got)
+	}
+	got = runWith(svcOn, asAdmin, "auto", "app.dry.example", "www.proven.dry.example")
+	if got["app.dry.example"].Code != scopedom.RefusalProofRequired || !got["www.proven.dry.example"].Allowed {
+		t.Errorf("auto proof without an own sensor: %+v", got)
+	}
+	if got = runWith(svcOn, asAdmin, "tenant", "app.dry.example"); !got["app.dry.example"].Allowed {
+		t.Errorf("own sensors, safe active, need no proof: %+v", got)
 	}
 
 	// A restricted member learns nothing about targets outside their data
