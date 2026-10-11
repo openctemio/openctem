@@ -42,9 +42,16 @@ const ACCESS_TOKEN_COOKIE = env.auth.cookieName
 const REFRESH_TOKEN_COOKIE = env.auth.refreshCookieName
 const TENANT_COOKIE = env.cookies.tenant
 
-// Simple in-memory lock to prevent concurrent refresh attempts
-// Key: tenantId, Value: Promise that resolves when refresh completes
+// One refresh at a time per session: parallel requests of one browser share
+// it. The key is the caller's own refresh token (with the tenant), never the
+// tenant alone: the result is set as the caller's cookies, and the tenant
+// cookie is chosen by the client, so a tenant-keyed lock handed one person's
+// refreshed tokens to anyone whose request arrived during that refresh.
 const refreshLocks = new Map<string, Promise<RefreshResult | null>>()
+
+function refreshLockKey(refreshToken: string, tenantId: string): string {
+  return `${tenantId}\u0000${refreshToken}`
+}
 
 // Switch cooldown is managed by @/lib/api/switch-cooldown
 // imported above as isInSwitchCooldown()
@@ -74,7 +81,7 @@ async function getTenantId(): Promise<string | undefined> {
 
 /**
  * Attempt to refresh the access token using refresh token
- * Uses locking to prevent concurrent refresh attempts for the same tenant
+ * Uses locking to prevent concurrent refresh attempts for the same session
  * Returns the new access token if successful, null otherwise
  */
 async function tryRefreshAccessToken(
@@ -86,10 +93,11 @@ async function tryRefreshAccessToken(
     return null
   }
 
-  // Check if there's already a refresh in progress for this tenant
-  const existingPromise = refreshLocks.get(tenantId)
+  // Check if this session already has a refresh in progress
+  const lockKey = refreshLockKey(refreshToken, tenantId)
+  const existingPromise = refreshLocks.get(lockKey)
   if (existingPromise) {
-    devLog.log('[Proxy] Refresh already in progress for tenant, waiting...')
+    devLog.log('[Proxy] Refresh already in progress for this session, waiting...')
     return existingPromise
   }
 
@@ -128,12 +136,12 @@ async function tryRefreshAccessToken(
       return null
     } finally {
       // Remove lock after completion
-      refreshLocks.delete(tenantId)
+      refreshLocks.delete(lockKey)
     }
   })()
 
   // Store the promise so concurrent requests can wait on it
-  refreshLocks.set(tenantId, refreshPromise)
+  refreshLocks.set(lockKey, refreshPromise)
 
   return refreshPromise
 }

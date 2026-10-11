@@ -86,3 +86,25 @@ func (r *ScopeTargetRepository) DowngradeUnattested(ctx context.Context, tenantI
 	n, err := res.RowsAffected()
 	return n == 1, err
 }
+
+// TenantsWithPending lists the tenants that have a scope entry or a scope
+// exclusion waiting for approval.
+func (r *ScopeTargetRepository) TenantsWithPending(ctx context.Context) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT tenant_id FROM scope_targets WHERE status = 'pending'
+		UNION
+		SELECT tenant_id FROM scope_exclusions WHERE status = 'pending'`)
+	if err != nil {
+		return nil, fmt.Errorf("list tenants with pending scope rows: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
