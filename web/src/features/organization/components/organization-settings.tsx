@@ -50,6 +50,7 @@ import {
   toolUserAgentError,
 } from '@/features/sensors/components/tool-http-policy-fields'
 import { SensorIdentityPolicySwitch } from '@/features/sensors/components/sensor-identity-policy-switch'
+import { SensorKeyBindPolicySwitch } from '@/features/sensors/components/sensor-key-bind-policy-switch'
 import { safeImageSrc } from '@/lib/safe-href'
 
 const STORAGE_FORM_ID = 'storage-config-form'
@@ -769,6 +770,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
 
                 {/* Saved on its own route at once (RFC-052 D-4), not with this form. */}
                 <SensorIdentityPolicySwitch />
+
+                <SensorKeyBindPolicySwitch />
 
                 <Separator />
 

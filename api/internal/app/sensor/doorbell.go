@@ -37,13 +37,12 @@ type DoorbellConfig struct {
 	// BusyInterval is the advised interval while work is waiting, so the
 	// sensor hears about the next job soon after claiming the current ones.
 	BusyInterval time.Duration
-	// LoadedInterval is advised when the doorbell query itself was slow
-	// (SlowQuery or more): the platform is under load, back off.
-	LoadedInterval time.Duration
-	// MinInterval and MaxInterval clamp every advised interval.
+	// MinInterval and MaxInterval clamp every advised interval. Normalized
+	// caps MaxInterval at the derived bound (MaxIntervalBound).
 	MinInterval time.Duration
 	MaxInterval time.Duration
-	// SlowQuery is the doorbell query latency that counts as "under load".
+	// SlowQuery is the doorbell query latency that counts as "under load":
+	// the doorbell then advises MaxInterval, the longest safe interval.
 	SlowQuery time.Duration
 	// QueryTimeout caps the doorbell query; on timeout the heartbeat
 	// succeeds without hints.
@@ -61,7 +60,6 @@ func DefaultDoorbellConfig() DoorbellConfig {
 	return DoorbellConfig{
 		IdleInterval:   30 * time.Second,
 		BusyInterval:   5 * time.Second,
-		LoadedInterval: 120 * time.Second,
 		MinInterval:    5 * time.Second,
 		MaxInterval:    300 * time.Second,
 		SlowQuery:      250 * time.Millisecond,
@@ -71,11 +69,33 @@ func DefaultDoorbellConfig() DoorbellConfig {
 	}
 }
 
-// Normalized returns c with every value inside safe bounds. offlineAfter is
-// the health checker's heartbeat timeout: no advised interval may reach half
-// of it, or a sensor that follows the advice would be marked offline between
-// two heartbeats. Zero offlineAfter skips that bound.
-func (c DoorbellConfig) Normalized(offlineAfter time.Duration) DoorbellConfig {
+// MaxIntervalBound is the longest interval the doorbell may ever advise,
+// derived rather than configured: min(offlineAfter/2, lease/3).
+//
+//   - offlineAfter is the health checker's offline mark: an interval of half
+//     of it or more would get a sensor that follows the advice marked offline
+//     between two heartbeats.
+//   - lease is the command lease, renewed by each heartbeat: at lease/3 a
+//     sensor holding a command renews it at least twice before it runs out,
+//     so one lost or late heartbeat never re-queues a running command (which
+//     would run it twice).
+//
+// A zero argument skips its bound; with both zero there is no bound (0).
+func MaxIntervalBound(offlineAfter, lease time.Duration) time.Duration {
+	var bound time.Duration
+	if offlineAfter > 0 {
+		bound = offlineAfter / 2
+	}
+	if lease > 0 && (bound == 0 || lease/3 < bound) {
+		bound = lease / 3
+	}
+	return bound
+}
+
+// Normalized returns c with every value inside safe bounds. No advised
+// interval, MinInterval included, exceeds MaxIntervalBound(offlineAfter,
+// lease), whatever the configured values.
+func (c DoorbellConfig) Normalized(offlineAfter, lease time.Duration) DoorbellConfig {
 	d := DefaultDoorbellConfig()
 	if c.MinInterval < time.Second {
 		c.MinInterval = d.MinInterval
@@ -83,8 +103,9 @@ func (c DoorbellConfig) Normalized(offlineAfter time.Duration) DoorbellConfig {
 	if c.MaxInterval <= 0 {
 		c.MaxInterval = d.MaxInterval
 	}
-	if offlineAfter > 0 && c.MaxInterval > offlineAfter/2 {
-		c.MaxInterval = offlineAfter / 2
+	if bound := MaxIntervalBound(offlineAfter, lease); bound > 0 {
+		c.MaxInterval = min(c.MaxInterval, bound)
+		c.MinInterval = min(c.MinInterval, bound)
 	}
 	if c.MaxInterval < c.MinInterval {
 		c.MaxInterval = c.MinInterval
@@ -95,9 +116,6 @@ func (c DoorbellConfig) Normalized(offlineAfter time.Duration) DoorbellConfig {
 	}
 	if c.BusyInterval <= 0 {
 		c.BusyInterval = d.BusyInterval
-	}
-	if c.LoadedInterval <= 0 {
-		c.LoadedInterval = d.LoadedInterval
 	}
 	if c.SlowQuery <= 0 {
 		c.SlowQuery = d.SlowQuery
@@ -214,7 +232,8 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 			// still be running it: ring again soon.
 			interval = d.seconds(d.cfg.BusyInterval)
 		case elapsed >= d.cfg.SlowQuery:
-			interval = d.seconds(d.cfg.LoadedInterval)
+			// The platform is under load: back off as far as is safe.
+			interval = d.seconds(d.cfg.MaxInterval)
 		}
 	}
 	// Platform sensors (no tenant) do not use the tenant command poll, so
@@ -241,7 +260,13 @@ func (d *Doorbell) seconds(v time.Duration) int {
 	if v > d.cfg.MaxInterval {
 		v = d.cfg.MaxInterval
 	}
-	return int(math.Round(v.Seconds()))
+	n := int(math.Round(v.Seconds()))
+	if time.Duration(n)*time.Second > d.cfg.MaxInterval {
+		// Rounding up must not cross the maximum (a lease/3 that is not a
+		// whole number of seconds): round down instead.
+		n = int(d.cfg.MaxInterval / time.Second)
+	}
+	return n
 }
 
 // ConfigVersion is an opaque, stable digest of what the platform governs

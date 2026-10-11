@@ -103,6 +103,38 @@ export function taskSkippedNote(
   return text
 }
 
+/** Coverage-gap reasons that have a translated label. */
+const GAP_REASONS = new Set(['breaker_open', 'rate_floor', 'blocked'])
+
+/**
+ * The note of a task that completed with hosts its sensor could not fully
+ * cover (the host stopped answering, kept rate-limiting the scan, or blocked
+ * it): "Completed with 2 hosts not fully covered: api.example.com (stopped
+ * answering), …". Null without gaps. A host with a gap is not "no findings".
+ * The hosts are sensor-supplied text; TruncatedText shows them as plain text.
+ */
+export function taskCoverageGapNote(
+  task: Pick<RunTask, 'coverage_gaps' | 'coverage_gaps_total'>,
+  t: Translate = enTranslate
+): string | null {
+  const list = task.coverage_gaps ?? []
+  const total = Math.max(task.coverage_gaps_total ?? 0, list.length)
+  if (total <= 0) return null
+  const named = list
+    .slice(0, SKIPPED_NAMED)
+    .map(
+      (g) =>
+        `${g.host ?? '?'} (${t(GAP_REASONS.has(g.reason ?? '') ? `scans.tasks.gap.${g.reason}` : 'scans.tasks.gap.other')})`
+    )
+  const more = total - named.length
+  let text = t(total === 1 ? 'scans.tasks.gapsOne' : 'scans.tasks.gapsMany', undefined, {
+    count: total,
+  })
+  if (named.length > 0) text += `: ${named.join(', ')}`
+  if (named.length > 0 && more > 0) text += t('scans.tasks.gapsAndMore', undefined, { count: more })
+  return text
+}
+
 /** Tasks per "Load more" page. */
 export const TASK_PAGE_SIZE = 100
 
@@ -179,6 +211,7 @@ export function RunTasksTable({
               const ms = elapsedMs(task)
               const note = taskStatusNote(task, t)
               const skipped = taskSkippedNote(task, t)
+              const gaps = taskCoverageGapNote(task, t)
               return (
                 <tr key={task.id ?? i} className="border-t align-top">
                   <td className="px-3 py-2">
@@ -200,6 +233,12 @@ export function RunTasksTable({
                       <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
                         <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                         <TruncatedText value={skipped} label={t('scans.tasks.skippedTargets')} />
+                      </div>
+                    )}
+                    {gaps && (
+                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                        <TruncatedText value={gaps} label={t('scans.tasks.coverageGaps')} />
                       </div>
                     )}
                   </td>
