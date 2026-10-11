@@ -179,23 +179,25 @@ func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
 
 // CIGatePolicyResponse is a gate policy.
 type CIGatePolicyResponse struct {
-	ID              string    `json:"id"`
-	ScopeType       string    `json:"scope_type"`
-	ScopeID         string    `json:"scope_id,omitempty"`
-	Enabled         bool      `json:"enabled"`
-	Mode            string    `json:"mode"`
-	FailOnSeverity  string    `json:"fail_on_severity"`
-	NewFindingsOnly bool      `json:"new_findings_only"`
-	FailOnKEV       bool      `json:"fail_on_kev"`
-	EPSSThreshold   *float64  `json:"epss_threshold,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              string   `json:"id"`
+	ScopeType       string   `json:"scope_type"`
+	ScopeID         string   `json:"scope_id,omitempty"`
+	Enabled         bool     `json:"enabled"`
+	Mode            string   `json:"mode"`
+	FailOnSeverity  string   `json:"fail_on_severity"`
+	NewFindingsOnly bool     `json:"new_findings_only"`
+	FailOnKEV       bool     `json:"fail_on_kev"`
+	EPSSThreshold   *float64 `json:"epss_threshold,omitempty"`
+	// Modes: block, comment or monitor per capability and per rule id.
+	Modes     cirun.PolicyModes `json:"modes"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 func toCIPolicyResponse(p *cirun.GatePolicy) CIGatePolicyResponse {
 	out := CIGatePolicyResponse{ID: p.ID.String(), ScopeType: p.ScopeType, Enabled: p.Enabled, Mode: p.Mode,
 		FailOnSeverity: p.FailOnSeverity, NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV,
-		EPSSThreshold: p.EPSSThreshold, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
 	if p.ScopeID != nil {
 		out.ScopeID = p.ScopeID.String()
 	}
@@ -219,6 +221,10 @@ type CIGatePolicyRequest struct {
 	NewFindingsOnly *bool    `json:"new_findings_only,omitempty"`
 	FailOnKEV       *bool    `json:"fail_on_kev,omitempty"`
 	EPSSThreshold   *float64 `json:"epss_threshold,omitempty"`
+	// Modes, when present, replaces the policy's modes: {"capabilities":
+	// {"sast": "comment"}, "rules": {"<rule id>": "monitor"}}. A new secret
+	// always blocks whatever the modes say.
+	Modes *cirun.PolicyModes `json:"modes,omitempty"`
 }
 
 // CIGateOverrideResponse is a break-glass override.
@@ -598,7 +604,7 @@ func (h *CIAdminHandler) ListGatePolicies(w http.ResponseWriter, r *http.Request
 func (req CIGatePolicyRequest) input() (cirunapp.GatePolicyInput, error) {
 	in := cirunapp.GatePolicyInput{ScopeType: req.ScopeType, Enabled: req.Enabled, Mode: req.Mode,
 		FailOnSeverity: req.FailOnSeverity, NewFindingsOnly: req.NewFindingsOnly, FailOnKEV: req.FailOnKEV,
-		EPSSThreshold: req.EPSSThreshold}
+		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes}
 	if req.ScopeID != "" {
 		id, err := shared.IDFromString(req.ScopeID)
 		if err != nil {

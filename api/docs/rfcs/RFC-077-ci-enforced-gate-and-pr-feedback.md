@@ -62,7 +62,11 @@ CI job ── openctem-ci scan ──▶ POST /ci/runs/{id}/results ─┐
   observed and never resolves (already true for the `ci_run` binding).
 - **G-7** Policy modes per capability and per rule: `block` (fails the
   gate), `comment` (shown on the pull request, never fails), `monitor`
-  (recorded only). Secrets default to `block`.
+  (recorded only). A rule's mode wins over its capability's; anything unset
+  blocks. A new secret always blocks, whatever the modes. Stored on the
+  policy (`ci_gate_policies.modes`); the strictest of several business-unit
+  policies keeps, per key, the stronger mode and drops a key one of them
+  leaves unset (block).
 - **G-8** A repository file `.openctem.yml` may only **tighten** the
   effective policy and may **request** exceptions (fingerprint or rule and
   path, reason, expiry). A requested exception becomes a pending suppression

@@ -143,13 +143,15 @@ type RunFilter struct {
 
 // RunFinding is one finding a run reported, as the gate reads it.
 type RunFinding struct {
-	ID                  shared.ID
-	Fingerprint         string
-	Title               string
-	RuleID              string
-	Severity            string
-	Status              string
-	FindingType         string
+	ID          shared.ID
+	Fingerprint string
+	Title       string
+	RuleID      string
+	Severity    string
+	Status      string
+	FindingType string
+	// Source is the finding's technique (sast, sca, secret, iac, container).
+	Source              string
 	FilePath            string
 	StartLine           int
 	IsInKEV             bool
