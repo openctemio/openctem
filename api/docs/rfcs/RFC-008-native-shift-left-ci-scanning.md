@@ -1,6 +1,10 @@
 # RFC-008: Native Shift-Left CI/CD Code Scanning (agent-first)
 
-- **Status**: Phases 1–5 + 7 shipped; Phase 6 (export) partial
+> Historical. The CI runner, identity, gate and pull request feedback are now
+> designed in [RFC-051](RFC-051-ci-runner-identity-and-gate.md) and
+> [RFC-077](RFC-077-ci-enforced-gate-and-pr-feedback.md).
+
+- **Status**: Superseded by RFC-051 and RFC-077 (the sensor's CI mode was removed in sensor v0.11.0; CI scanning is `openctem-ci`). Branch-aware findings (Phases 2, 5) remain in use
 - **Created**: 2026-06-06
 - **Owner**: Platform / Agent
 - **Problem**: We want first-class, **self-contained** shift-left code security in CI/CD — SAST/SCA/secret scanning that runs in the pipeline, decorates PRs/MRs, and gates merges — using **our own agent + platform**, with no dependency on or bridge to a separate CI security server. It builds on OpenCTEM's multi-tenancy and risk prioritization.
