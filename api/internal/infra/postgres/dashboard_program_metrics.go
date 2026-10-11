@@ -239,16 +239,10 @@ func (r *DashboardRepository) ownerAcceptance(ctx context.Context, tenantID shar
 	return out, nil
 }
 
-// programTimedHours turns the (started_at, stopped_at) rows of a "stopped"
-// CTE into hours: NULL when there is no stop yet (GREATEST alone would turn a
-// NULL into 0 and count an untimed row), 0 when the stop came first.
-const programTimedHours = `SELECT CASE WHEN stopped_at IS NULL THEN NULL
-			ELSE GREATEST(EXTRACT(EPOCH FROM (stopped_at - started_at)), 0) / 3600.0
-			END AS hours
-		FROM stopped`
-
 // mttv: first_detected_at → first conclusive validation, for P0/P1 findings
-// first detected in the window.
+// first detected in the window. "timed" yields NULL when there is no stop
+// yet (GREATEST alone would turn a NULL into 0 and count an untimed row) and
+// 0 when the stop came first; the time-to-owner query does the same.
 //
 // Plan: the driving set comes from the tenant's findings in the window; the
 // stop signal is a per-finding MIN over idx_validation_evidence_finding
@@ -273,7 +267,10 @@ var mttvQuery = `
 		FROM prio p
 	),
 	timed AS (
-		` + programTimedHours + `
+		SELECT CASE WHEN stopped_at IS NULL THEN NULL
+			ELSE GREATEST(EXTRACT(EPOCH FROM (stopped_at - started_at)), 0) / 3600.0
+			END AS hours
+		FROM stopped
 	)
 	SELECT
 		AVG(hours)::float8,
@@ -307,7 +304,10 @@ var timeToOwnerInternetFacingQuery = `
 		FROM fresh f
 	),
 	timed AS (
-		` + programTimedHours + `
+		SELECT CASE WHEN stopped_at IS NULL THEN NULL
+			ELSE GREATEST(EXTRACT(EPOCH FROM (stopped_at - started_at)), 0) / 3600.0
+			END AS hours
+		FROM stopped
 	)
 	SELECT
 		AVG(hours)::float8,
