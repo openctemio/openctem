@@ -1872,7 +1872,6 @@ type SecuritySettingsResponse struct {
 	SSOEnforced           bool     `json:"sso_enforced"`
 	MFARequired           bool     `json:"mfa_required"`
 	MFARequiredForAdmins  bool     `json:"mfa_required_for_admins"`
-	SessionTimeoutMin     int      `json:"session_timeout_min"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode string   `json:"email_verification_mode"`
@@ -1922,7 +1921,6 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
 			MFARequiredForAdmins:  s.Security.MFARequiredForAdmins,
-			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
 			EmailVerificationMode: string(s.Security.EmailVerificationMode),
@@ -2044,7 +2042,6 @@ type UpdateSecuritySettingsRequest struct {
 	SSOEnforced           *bool    `json:"sso_enforced"`
 	MFARequired           *bool    `json:"mfa_required"`
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
-	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
@@ -2096,7 +2093,6 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	input := tenantapp.UpdateSecuritySettingsInput{
 		MFARequired:           req.MFARequired,
 		MFARequiredForAdmins:  req.MFARequiredForAdmins,
-		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,
 		AllowedDomains:        req.AllowedDomains,
 		EmailVerificationMode: req.EmailVerificationMode,
