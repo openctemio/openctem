@@ -758,22 +758,29 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SignupPolicy = svc.Signup
 	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
+	if handlers.Sensor != nil {
+		handlers.Sensor.SetTransportStatus(sensorTransportStatus(handlers.SensorV3))
+	}
 	handlers.Bootstrap.WithSession(bootstrapSession(cfg, svc, handlers))
 	return handlers
 }
 
-// newSensorV3Server builds the sensor protocol v3 server (RFC-059) when
-// SENSOR_TRANSPORT_V3_ENABLED is on and protocol v2 is served (v3 runs every
-// call through the v2 routes). Command writes wake its control streams.
+// newSensorV3Server builds the sensor protocol v3 server (RFC-059) unless
+// SENSOR_TRANSPORT_V3=off, when protocol v2 is served (v3 runs every call
+// through the v2 routes). The HTTPS binding is always served; the gRPC
+// binding listens once the sensor CA loads and a public host is known, and
+// hello advertises it only while its self-probe passes. Command writes wake
+// its control streams.
 func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, redisClient *redis.Client,
 	v2 *handler.SensorResultsV2Handler, log *logger.Logger,
 ) *sensortransport.Server {
 	tc := cfg.SensorConfig.TransportV3
-	if !tc.Enabled {
+	if tc.Mode == config.TransportV3Off {
+		log.Warn("sensor protocol v3 is off (SENSOR_TRANSPORT_V3=off): every sensor uses protocol v2")
 		return nil
 	}
 	if v2 == nil {
-		log.Warn("SENSOR_TRANSPORT_V3_ENABLED is set but protocol v2 results are off; protocol v3 is not served")
+		log.Warn("protocol v2 results are off; sensor protocol v3 is not served")
 		return nil
 	}
 	srv := sensortransport.NewServer(sensortransport.Config{MaxContentBytes: v2.Limits().MaxContentBytes}, nil, log)
@@ -789,28 +796,72 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, r
 		svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
 	}
 
+	adv := setupSensorGRPC(cfg, srv, svc, log)
+	srv.SetAdvertiser(adv)
+	v2.SetTransportV3Func(func() *protov2.TransportV3 {
+		return &protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix, GRPCEndpoint: adv.Endpoint()}
+	})
+	st := adv.Status()
+	log.Info("sensor protocol v3 enabled", "https_path", sensortransport.PathPrefix,
+		"grpc_state", st.State, "grpc_endpoint", st.Endpoint, "grpc_reason", st.Reason)
+	return srv
+}
+
+// sensorTransportStatus reports srv's bindings (nil: v3 off).
+func sensorTransportStatus(srv *sensortransport.Server) func() handler.SensorTransportStatus {
+	return func() handler.SensorTransportStatus {
+		if srv == nil {
+			return handler.SensorTransportStatus{Mode: config.TransportV3Off,
+				GRPC: handler.SensorTransportGRPC{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonTransportOff}}
+		}
+		st := srv.GRPCStatus()
+		out := handler.SensorTransportStatus{Mode: config.TransportV3Auto, HTTPSPath: sensortransport.PathPrefix,
+			GRPC: handler.SensorTransportGRPC{State: st.State, Endpoint: st.Endpoint, Reason: st.Reason}}
+		if !st.CheckedAt.IsZero() {
+			at := st.CheckedAt
+			out.GRPC.CheckedAt = &at
+		}
+		return out
+	}
+}
+
+// setupSensorGRPC prepares the gRPC binding (sensor CA, certificate issuer,
+// mTLS listener, self-probe) and returns what hello says about it. Without
+// the CA or a public host only the HTTPS binding is served, and the reason
+// is the advertiser's.
+func setupSensorGRPC(cfg *config.Config, srv *sensortransport.Server, svc *Services, log *logger.Logger) *sensortransport.Advertiser {
+	tc := cfg.SensorConfig.TransportV3
+	host := cfg.SensorPublicHost()
 	// The sensor CA: certificates for the gRPC binding. Without it the
 	// HTTPS binding still serves (IssueCertificate answers Unimplemented).
-	grpcEndpoint := ""
 	ca, err := sensortransport.LoadCA(tc.CACertFile, tc.CAKeyFile, tc.CADir)
 	if err != nil {
 		log.Error("sensor CA not loaded: protocol v3 serves the HTTPS binding only", "error", err)
-	} else {
-		srv.SetCertificateIssuer(sensortransport.NewIssuer(ca, svc.Sensor, svc.Sensor, tc.CertTTL, tc.PublicHost, log))
-		if tc.PublicHost != "" {
-			mcfg := sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: tc.PublicHost, TrustedProxies: tc.MTLSTrustedProxies}
-			if err := srv.EnableMTLS(mcfg, ca, svc.Sensor); err != nil {
-				log.Error("sensor protocol v3 gRPC binding not served", "error", err)
-			} else {
-				grpcEndpoint = tc.PublicHost
-			}
-		}
-		log.Info("sensor CA loaded", "fingerprint", ca.Fingerprint())
+		return sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonNoCA})
 	}
-	srv.SetGRPCEndpoint(grpcEndpoint)
-	v2.SetTransportV3(&protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix, GRPCEndpoint: grpcEndpoint})
-	log.Info("sensor protocol v3 enabled", "https_path", sensortransport.PathPrefix, "grpc_endpoint", grpcEndpoint)
-	return srv
+	log.Info("sensor CA loaded", "fingerprint", ca.Fingerprint())
+	srv.SetCertificateIssuer(sensortransport.NewIssuer(ca, svc.Sensor, svc.Sensor, tc.CertTTL, host, log))
+	if host == "" {
+		log.Info("sensor protocol v3 gRPC binding not served: no SENSOR_PUBLIC_HOST and none derived from the platform URL (an IP address cannot be routed by name)")
+		return sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonNoPublicHost})
+	}
+	mcfg := sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: host, TrustedProxies: tc.MTLSTrustedProxies}
+	if err := srv.EnableMTLS(mcfg, ca, svc.Sensor); err != nil {
+		log.Error("sensor protocol v3 gRPC binding not served", "error", err)
+		return sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonListenerFailed})
+	}
+	adv := sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCPending, Endpoint: host, Reason: sensortransport.ReasonProbeNotFinished})
+	srv.SetProber(sensortransport.NewProber(adv, host, sensortransport.TLSProbe(ca.Pool()), sensortransport.ProberConfig{
+		OnChange: func(st sensortransport.GRPCStatus) {
+			if st.State == sensortransport.GRPCAdvertised {
+				log.Info("sensor protocol v3 gRPC binding reachable: advertised to sensors", "endpoint", st.Endpoint)
+				return
+			}
+			log.Warn("sensor protocol v3 gRPC binding not reachable through its public host: sensors use the HTTPS binding",
+				"endpoint", host, "reason", st.Reason)
+		},
+	}))
+	return adv
 }
 
 // frontendOrigin extracts scheme://host from the configured frontend callback

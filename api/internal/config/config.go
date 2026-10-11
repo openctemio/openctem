@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -806,15 +807,55 @@ type RateLimitConfig struct {
 	ReadRequestsPerMin int
 }
 
+// SensorPublicHost is the host:port sensors dial for the protocol v3 gRPC
+// binding: SENSOR_PUBLIC_HOST when set, else "sensors.<host>:<port>" of the
+// platform's public URL (SENSOR_PUBLIC_API_URL, else APP_URL) when that host
+// is a DNS name. An IP address gives nothing: the gateway routes the sensor
+// host by its TLS server name, which a client never sends for an address,
+// so such a platform needs SENSOR_PUBLIC_HOST (a name, or an address and a
+// port of its own). The derived name is a guess the self-probe confirms:
+// it is advertised only once the probe reaches the mTLS listener through it.
+func (c *Config) SensorPublicHost() string {
+	if h := strings.TrimSpace(c.SensorConfig.TransportV3.PublicHost); h != "" {
+		return h
+	}
+	raw := c.SensorConfig.PublicAPIURL
+	if raw == "" {
+		raw = c.App.URL
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(u.Scheme, "HTTPS") || u.Hostname() == "" {
+		return ""
+	}
+	host := u.Hostname()
+	if net.ParseIP(host) != nil || !strings.Contains(host, ".") {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+	return net.JoinHostPort("sensors."+host, port)
+}
+
+// Sensor protocol v3 modes (SENSOR_TRANSPORT_V3).
+const (
+	TransportV3Auto = "auto"
+	TransportV3Off  = "off"
+)
+
 // SensorTransportV3Config configures sensor protocol v3 (RFC-059).
 type SensorTransportV3Config struct {
-	// Enabled mounts v3: the HTTPS binding under /api/v3/sensor (and, with a
-	// sensor CA, the gRPC binding). SENSOR_TRANSPORT_V3_ENABLED, default
-	// false: nothing changes for sensors until an operator turns it on.
-	Enabled bool
+	// Mode is SENSOR_TRANSPORT_V3: "auto" (default) serves v3 and picks
+	// the bindings by themselves: the HTTPS binding always, the gRPC binding
+	// once the sensor CA loads and its self-probe reaches the endpoint
+	// through the gateway; "off" serves no v3 at all (every sensor back to
+	// v2 at its next call), the emergency switch.
+	Mode string
 	// PublicHost is host[:port] sensors dial for the gRPC binding
-	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443). Empty: the
-	// platform serves only the HTTPS binding (no mTLS listener).
+	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443). Empty: derived
+	// from the platform's public URL (SensorPublicHost); advertised only
+	// while the self-probe passes either way.
 	PublicHost string
 	// MTLSListenAddr is the gRPC binding's TLS 1.3 listener
 	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes the
@@ -1164,7 +1205,7 @@ func Load() (*Config, error) {
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
-				Enabled:        getEnvBool("SENSOR_TRANSPORT_V3_ENABLED", false),
+				Mode:           strings.ToLower(strings.TrimSpace(getEnv("SENSOR_TRANSPORT_V3", TransportV3Auto))),
 				PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
 				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":8443"),
 				CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
@@ -1583,6 +1624,13 @@ func (c *Config) validateBasic() error {
 	}
 	if err := c.Scope.validate(); err != nil {
 		return err
+	}
+	switch c.SensorConfig.TransportV3.Mode {
+	case "":
+		c.SensorConfig.TransportV3.Mode = TransportV3Auto
+	case TransportV3Auto, TransportV3Off:
+	default:
+		return fmt.Errorf("SENSOR_TRANSPORT_V3=%q is not one of: auto, off", c.SensorConfig.TransportV3.Mode)
 	}
 	// The SSRF guard ignores a refused private-egress setting; refusing to
 	// start makes the operator notice instead of debugging blocked calls.
@@ -2129,6 +2177,8 @@ var retiredEnv = []struct{ Old, New string }{
 	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT"},
 	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS"},
 	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS"},
+	// Sensor protocol v3 picks its bindings itself; off is the only switch.
+	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off"},
 }
 
 // rejectRetiredEnv fails when any retired name is set, naming its replacement.

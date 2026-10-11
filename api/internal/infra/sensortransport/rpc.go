@@ -41,7 +41,7 @@ func (s *Server) Hello(ctx context.Context, _ *connect.Request[sensorv3.HelloReq
 	return connect.NewResponse(&sensorv3.HelloResponse{
 		Protocol:     ProtocolVersion,
 		HelloJson:    a.body,
-		GrpcEndpoint: s.cfg.GRPCEndpoint,
+		GrpcEndpoint: s.grpcEndpoint(),
 		Binding:      BindingFrom(ctx),
 	}), nil
 }
