@@ -155,6 +155,15 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Message:              registerMessage(result.RequiresVerification),
 	}
 
+	// Registering again with an address whose account never verified emails
+	// a set-password link instead of a new verification link: following it
+	// verifies the address AND replaces the password, so an account someone
+	// else registered first with this address cannot be kept by them. This is
+	// the way back for a user whose verification email was lost or expired.
+	if result.EmailExisted && result.ExistingUnverified {
+		h.sendResetLinkAsync(r, req.Email)
+	}
+
 	if !result.EmailExisted && result.User != nil && result.RequiresVerification &&
 		result.VerificationToken != "" && h.emailService != nil {
 		u := result.User
@@ -900,8 +909,20 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 	// not the email has an account, and so is its latency: the whole lookup,
 	// the token write and the email run after the response, detached from
 	// the request.
+	h.sendResetLinkAsync(r, req.Email)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "If the email exists, a password reset link has been sent",
+	})
+}
+
+// sendResetLinkAsync issues a password reset token for email (when it has a
+// local account) and emails the link, after the response and detached from
+// the request, so neither the lookup nor the email shows in the latency.
+func (h *LocalAuthHandler) sendResetLinkAsync(r *http.Request, email string) {
 	ipAddress := getClientIP(r)
-	email := req.Email
 	resetDuration := h.authConfig.PasswordResetDuration
 	go func() {
 		// Detach from the request context (which is canceled once we
@@ -916,26 +937,13 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 		if result == nil || result.Token == "" || h.emailService == nil {
 			return
 		}
-		if err := h.emailService.SendPasswordResetEmail(
-			ctx,
-			email,
-			"", // empty name for privacy
-			result.Token,
-			resetDuration,
-			ipAddress,
-		); err != nil {
+		if err := h.emailService.SendPasswordResetEmail(ctx, email, "", result.Token, resetDuration, ipAddress); err != nil {
 			h.logger.Error("failed to send password reset email",
 				"email", logger.SanitizeValue(email),
 				"error", logger.SanitizeError(err),
 			)
 		}
 	}()
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "If the email exists, a password reset link has been sent",
-	})
 }
 
 // ResetPasswordRequest is the request body for password reset.

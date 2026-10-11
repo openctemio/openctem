@@ -409,6 +409,12 @@ type RegisterResult struct {
 	VerificationToken    string // Only returned if email verification is required
 	RequiresVerification bool
 	EmailExisted         bool // Set to true if email already exists (for anti-enumeration)
+	// ExistingUnverified: the email belongs to a password account that never
+	// verified its address. The caller emails that address a set-password
+	// link (forgot-password), which verifies the address and replaces any
+	// password chosen before, so whoever registered first cannot keep the
+	// account (pre-hijacking). Never set for a new email.
+	ExistingUnverified bool
 }
 
 // Register creates a new local user account.
@@ -459,6 +465,8 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 			VerificationToken:    "",
 			RequiresVerification: requireVerification,
 			EmailExisted:         true, // New field to indicate this case
+			ExistingUnverified: existingUser.AuthProvider() == userdom.AuthProviderLocal &&
+				existingUser.PasswordHash() != nil && !existingUser.EmailVerified(),
 		}, nil
 	}
 	if err != nil && !shared.IsNotFound(err) {
