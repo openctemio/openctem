@@ -125,8 +125,11 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
     body = (
       <EmptyState
         icon={Network}
-        title="No scan zones"
-        description="Zones are optional. Add one to scan private ranges through your own sensors; without zones, scans dispatch as before."
+        title={t('scans.zones.emptyTitle', 'No scan zones')}
+        description={t(
+          'scans.zones.empty',
+          'Zones are optional. Add one to scan private ranges through your own sensors.'
+        )}
         action={
           <Can permission={Permission.ScanZonesWrite}>
             <Button size="sm" onClick={() => onCreateOpenChange(true)}>

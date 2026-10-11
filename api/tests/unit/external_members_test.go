@@ -119,3 +119,55 @@ func TestAddMember_ExternalRefused(t *testing.T) {
 		t.Fatalf("want ErrExternalNeedsInvitation, got %v", err)
 	}
 }
+
+// An organization that has verified no domain treats every work address as
+// its own for invitations. It still may not add an existing account without
+// that person's consent: knowing someone's account id must not be enough to
+// pull them into an organization.
+func TestAddMember_NoVerifiedDomain_Refused(t *testing.T) {
+	svc, repo := newTestTenantService()
+	host := seedTenant(repo, "Free", "free")
+	svc.SetAddressClassifier(tenantapp.NewAddressClassifier(extOwners{},
+		func(context.Context, shared.ID) (bool, error) { return false, nil }))
+	userRepo := newMockUserRepo()
+	svc.SetUserService(newTestUserService(userRepo))
+	u := createUserForTest(t, userRepo, "bob@b-corp.test", "Bob")
+	_, err := svc.AddMember(context.Background(), host.ID().String(),
+		tenantapp.AddMemberInput{UserID: u.ID(), Role: "viewer"}, shared.NewID(), audit.AuditContext{TenantID: host.ID().String()})
+	if !errors.Is(err, tenantapp.ErrDirectAddNeedsVerifiedDomain) {
+		t.Fatalf("want ErrDirectAddNeedsVerifiedDomain, got %v", err)
+	}
+	if repo.createMembershipCalls != 0 {
+		t.Fatal("no membership may be created")
+	}
+}
+
+// A personal address is never added directly, even by an organization that
+// verified its own domain.
+func TestAddMember_PersonalAddressRefused(t *testing.T) {
+	svc, _, host, _ := newExternalTenantService(t)
+	userRepo := newMockUserRepo()
+	svc.SetUserService(newTestUserService(userRepo))
+	u := createUserForTest(t, userRepo, "j.doe@gmail.com", "J")
+	_, err := svc.AddMember(context.Background(), host.ID().String(),
+		tenantapp.AddMemberInput{UserID: u.ID(), Role: "viewer"}, shared.NewID(), audit.AuditContext{TenantID: host.ID().String()})
+	if err == nil {
+		t.Fatal("a personal address must not be added directly")
+	}
+}
+
+// The organization's own people, on its verified domain, are still added
+// directly.
+func TestAddMember_VerifiedDomainAllowed(t *testing.T) {
+	svc, repo, host, _ := newExternalTenantService(t)
+	userRepo := newMockUserRepo()
+	svc.SetUserService(newTestUserService(userRepo))
+	u := createUserForTest(t, userRepo, "an@example.com", "An")
+	if _, err := svc.AddMember(context.Background(), host.ID().String(),
+		tenantapp.AddMemberInput{UserID: u.ID(), Role: "viewer"}, shared.NewID(), audit.AuditContext{TenantID: host.ID().String()}); err != nil {
+		t.Fatalf("AddMember on the verified domain: %v", err)
+	}
+	if repo.createMembershipCalls != 1 {
+		t.Fatalf("membership must be created once, got %d", repo.createMembershipCalls)
+	}
+}
