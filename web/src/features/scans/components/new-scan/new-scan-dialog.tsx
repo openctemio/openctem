@@ -148,6 +148,12 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     [formData.workflowId, formData.scanZoneId, previewRequest]
   )
   const review = useScanReview(formData, workflowRequest, open && currentStep === 'review')
+  // Scope changes elsewhere (an entry approved, a domain verified, a sensor
+  // online): the Review answers from a fresh check each time it opens.
+  const recheckScope = review.scope.recheck
+  useEffect(() => {
+    if (open && currentStep === 'review') void recheckScope()
+  }, [open, currentStep, recheckScope])
 
   // Scan approval (RFC-073): what the organization's rules ask of this scan,
   // shown on the review step; the scan is then saved and submitted.
@@ -182,6 +188,10 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   // Saving to start when the scope is approved: the scope refusal is not a
   // blocker then, every other one still is.
   const waitBlocked = review.blockers.length > (review.refused.length > 0 ? 1 : 0)
+  // "Scan the N allowed targets, skip the rest": only refused targets block,
+  // and some are allowed. The server re-checks and records the skipped ones.
+  const canSkipRefused =
+    review.refused.length > 0 && review.allowedCount > 0 && review.otherBlockers.length === 0
 
   const currentStepIndex = STEPS.indexOf(currentStep)
   const isFirstStep = currentStepIndex === 0
@@ -251,9 +261,9 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       ? t('scans.new.saveScan')
       : t('scans.new.scheduleScan')
 
-  const handleSubmit = async (opts: { waitForScope?: boolean } = {}) => {
+  const handleSubmit = async (opts: { waitForScope?: boolean; skipRefused?: boolean } = {}) => {
     if (!validateCurrentStep()) return
-    if (opts.waitForScope ? waitBlocked : blocked) {
+    if (opts.skipRefused ? !canSkipRefused : opts.waitForScope ? waitBlocked : blocked) {
       toast.error(review.blockers[0])
       return
     }
@@ -274,6 +284,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       // Map form data to API request format
       const request = formDataToCreateRequest(formData)
       if (opts.waitForScope) request.start_when_scope_approved = true
+      if (opts.skipRefused) request.skip_refused_targets = true
 
       // Create the scan configuration
       const scanConfig = await createScanConfig(request)
@@ -540,6 +551,20 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               {t('common.cancel')}
             </Button>
 
+            {isLastStep && !awaitingApproval && blocked && canSkipRefused && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleSubmit({ skipRefused: true })}
+                disabled={isLoading || !!approvalLack}
+                className="order-1 h-auto w-full whitespace-normal py-2 sm:order-2 sm:w-auto"
+                data-testid="skip-refused"
+              >
+                {t('scans.review.skipRefused', 'Scan the {count} allowed targets, skip the rest', {
+                  count: review.allowedCount,
+                })}
+              </Button>
+            )}
             {isLastStep && awaitingApproval ? (
               <Button
                 type="button"

@@ -6,12 +6,13 @@
  * routing, schedule preview); Start stays disabled while one says no.
  */
 
-import { AlertTriangle, CheckCircle2, Pencil, ShieldAlert, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Pencil, RefreshCw, ShieldAlert, XCircle } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScopeCheckList } from '@/features/scope'
+import { cn } from '@/lib/utils'
+import type { ApiScopeCheckRouting } from '@/features/scope'
 import { ScanRoutingSection } from '@/features/scan-zones'
 import type { ScanZone, ScanZonePreviewRequest } from '@/lib/api/scan-zone-types'
 import type { NewScanFormData } from '../../types'
@@ -25,6 +26,7 @@ import { SchedulePreview } from '../schedule-preview'
 import type { ScanReview } from '../../hooks/use-scan-review'
 import type { ScanWizardStep } from './scan-stepper'
 import { WorkflowPreviewBody } from './workflow-preview'
+import { RefusalGroups } from './refusal-groups'
 
 interface ReviewStepProps {
   data: NewScanFormData
@@ -108,6 +110,51 @@ export function scheduleSummary(data: NewScanFormData, t: Translate = enTranslat
   }
 }
 
+/** Where the scan would run and why, from the scope check. */
+export function RoutingNote({ routing }: { routing?: ApiScopeCheckRouting }) {
+  const { t } = useTranslation()
+  if (!routing?.runs_on) return null
+  const name = routing.sensor?.name ?? ''
+  let text: string
+  switch (routing.reason) {
+    case 'platform_needs_proof':
+      text = t(
+        'scans.routing.ownBecauseProof',
+        'runs on your sensor {name}, because platform sensors need a verified domain',
+        { name }
+      )
+      break
+    case 'tenant_first':
+      text = name
+        ? t('scans.routing.own', 'runs on your sensor {name}', { name })
+        : t('scans.routing.ownAny', 'runs on your own sensors')
+      break
+    case 'tenant_busy':
+      text = t('scans.routing.busy', 'waits for one of your sensors (all are busy)')
+      break
+    case 'platform_sensors':
+      text = t('scans.routing.platform', "runs on the platform's sensors")
+      break
+    case 'internal_targets':
+      text = t(
+        'scans.routing.internal',
+        'waits for one of your sensors: private targets never go to platform sensors'
+      )
+      break
+    default:
+      text = t('scans.routing.waits', 'waits: none of your sensors that run this scan is online')
+  }
+  const waits = routing.runs_on === 'waits'
+  return (
+    <span
+      className={cn('block text-xs', waits ? 'text-warning' : 'text-muted-foreground')}
+      data-testid="routing-note"
+    >
+      → {text}
+    </span>
+  )
+}
+
 export function ReviewStep({
   data,
   onChange,
@@ -127,8 +174,8 @@ export function ReviewStep({
   const allowed = results.filter((r) => r.allowed).length
   const refused = review.refused
 
-  const removeRefused = () => {
-    const bad = new Set(refused.map((r) => r.toLowerCase()))
+  const removeTargets = (list: string[]) => {
+    const bad = new Set(list.map((r) => r.toLowerCase()))
     const keepIds = tgt.assetIds.filter((id) => !bad.has((tgt.assetNames[id] ?? '').toLowerCase()))
     const names = Object.fromEntries(keepIds.map((id) => [id, tgt.assetNames[id]]))
     onChange({
@@ -223,6 +270,7 @@ export function ReviewStep({
           {t(
             `scans.sensorPref.${data.sensorPreference in SENSOR_PREFERENCE_CONFIG ? data.sensorPreference : 'auto'}.label`
           )}
+          <RoutingNote routing={review.scope.routing} />
           {data.scanZoneId && (
             <span className="text-muted-foreground">
               {' '}
@@ -244,10 +292,7 @@ export function ReviewStep({
       </dl>
 
       {refused.length > 0 && (
-        <section
-          aria-label={t('scans.review.refusedLabel')}
-          className="space-y-2 rounded-lg border border-warning/50 p-3"
-        >
+        <section aria-label={t('scans.review.refusedLabel')} className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">
               {t(
@@ -256,14 +301,37 @@ export function ReviewStep({
                 { count: refused.length }
               )}
             </p>
-            <Button type="button" variant="outline" size="sm" onClick={removeRefused}>
-              {refused.length === 1 ? t('scans.review.removeIt') : t('scans.review.removeThem')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void review.scope.recheck()}
+                disabled={review.scope.isLoading}
+              >
+                <RefreshCw
+                  className={cn('me-1 h-3.5 w-3.5', review.scope.isLoading && 'animate-spin')}
+                  aria-hidden
+                />
+                {t('scans.review.recheck', 'Re-check')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => removeTargets(refused)}
+              >
+                {refused.length === 1 ? t('scans.review.removeIt') : t('scans.review.removeThem')}
+              </Button>
+            </div>
           </div>
-          <ScopeCheckList
+          <RefusalGroups
             results={results}
-            onApplied={() => void review.scope.recheck()}
-            limit={20}
+            probeTier={review.scope.tier}
+            sensorPreference={data.sensorPreference}
+            onRemove={removeTargets}
+            onUseOwnSensors={() => onChange({ sensorPreference: 'tenant' })}
+            onRecheck={() => void review.scope.recheck()}
           />
         </section>
       )}
