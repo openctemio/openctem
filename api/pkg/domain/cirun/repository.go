@@ -130,6 +130,9 @@ type PipelineRepository interface {
 	// on the repository asset of that name: a name the token does not sign
 	// stays with the first repository id that used it.
 	RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider Provider, issuer, repositoryName, externalRepoID string) (bool, error)
+	// MarkDecorationPending queues an evaluated run's verdict for posting to
+	// the code host (RFC-077).
+	MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error
 	// UpsertPipeline finds the pipeline with p's key (adopting a backfilled
 	// legacy row of the same repository asset and workflow path) or creates
 	// it within the caps (ErrPipelineCap). An existing pipeline takes p's

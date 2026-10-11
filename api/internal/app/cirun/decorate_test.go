@@ -1,0 +1,161 @@
+package cirun
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+)
+
+type fakePoster struct {
+	pr       githubapp.PullRequest
+	prErr    error
+	checkErr error
+	checks   []githubapp.CheckRun
+	comments []string
+	markers  []string
+}
+
+func (f *fakePoster) CreateCheckRun(_ context.Context, _ int64, owner, repo string, c githubapp.CheckRun) error {
+	if f.checkErr != nil {
+		return f.checkErr
+	}
+	f.checks = append(f.checks, c)
+	return nil
+}
+func (f *fakePoster) GetPullRequest(context.Context, int64, string, string, int) (*githubapp.PullRequest, error) {
+	if f.prErr != nil {
+		return nil, f.prErr
+	}
+	pr := f.pr
+	return &pr, nil
+}
+func (f *fakePoster) UpsertIssueComment(_ context.Context, _ int64, _, _ string, _ int, marker, body string) error {
+	f.markers = append(f.markers, marker)
+	f.comments = append(f.comments, body)
+	return nil
+}
+
+type fakeInstalls struct{ tenant shared.ID }
+
+func (f fakeInstalls) ActiveForAccount(_ context.Context, tid shared.ID, _, login string) (*scmapp.Installation, error) {
+	if tid != f.tenant || login != "acme" {
+		return nil, scmapp.ErrNotFound
+	}
+	return &scmapp.Installation{InstallationID: 77, Status: scmapp.StatusActive}, nil
+}
+
+func failingVerdict(t *testing.T) json.RawMessage {
+	t.Helper()
+	v := Verdict{GateVerdict: cirun.GateVerdict{Verdict: cirun.VerdictFail,
+		Summary:  cirun.GateSummary{Evaluated: 2, New: 1, Blocking: 1},
+		Policy:   cirun.GatePolicyView{Mode: "enforce", Source: "default"},
+		Baseline: cirun.GateBaselineView{Branch: "main", Known: true},
+		Reasons: []cirun.GateReason{{Code: cirun.ReasonSeverity, Severity: "high", Title: "SQLi [click](javascript:alert(1)) <img>",
+			Message: "severity high", File: "db.go", Line: 42}}}}
+	b, _ := json.Marshal(v)
+	return b
+}
+
+func TestDecorateGitHub(t *testing.T) {
+	tenant := shared.NewID()
+	pid := shared.NewID()
+	base := cirun.Run{ID: shared.NewID(), TenantID: tenant, Repository: "github.com/acme/api", PullRequest: "7",
+		CommitSHA: "merge1", CommitVerified: true, PipelineID: &pid, VerdictDetail: failingVerdict(t)}
+	newJob := func(p *fakePoster) *DecorationJob {
+		return NewDecorationJob(nil, fakeInstalls{tenant: tenant}, p, "https://console.example", nil)
+	}
+	ctx := context.Background()
+
+	// A pull request run: the check goes on the pull request's head (read
+	// from GitHub), with an annotation, and one marked comment.
+	p := &fakePoster{}
+	p.pr.MergeCommitSHA, p.pr.Head.SHA = "merge1", "head1"
+	run := base
+	if st, detail := newJob(p).decorate(ctx, &run); st != cirun.DecorationPosted {
+		t.Fatalf("posted: %s %s", st, detail)
+	}
+	c := p.checks[0]
+	if c.Name != CheckName || c.HeadSHA != "head1" || c.Conclusion != "failure" || len(c.Annotations) != 1 ||
+		c.Annotations[0].Path != "db.go" || !strings.HasPrefix(c.DetailsURL, "https://console.example/ci-cd?view=runs&run=") {
+		t.Fatalf("check = %+v", c)
+	}
+	if len(p.comments) != 1 || !strings.Contains(p.comments[0], p.markers[0]) || !strings.Contains(p.markers[0], pid.String()) {
+		t.Fatalf("comment = %v %v", p.markers, p.comments)
+	}
+	// Scanner text cannot inject links or HTML.
+	if strings.Contains(p.comments[0], "](javascript:") || strings.Contains(p.comments[0], "<img>") {
+		t.Fatalf("unescaped text in comment: %s", p.comments[0])
+	}
+
+	// The pull request moved on: nothing is posted (the head is GitHub's, so
+	// a run cannot put its verdict on another commit).
+	p = &fakePoster{}
+	p.pr.MergeCommitSHA, p.pr.Head.SHA = "merge2", "head2"
+	run = base
+	if st, _ := newJob(p).decorate(ctx, &run); st != cirun.DecorationSkipped || len(p.checks) != 0 {
+		t.Fatalf("stale pull request: %s %d", st, len(p.checks))
+	}
+	// No installation for the owner, or another tenant's: skipped.
+	run = base
+	run.Repository = "github.com/other/api"
+	if st, _ := newJob(&fakePoster{}).decorate(ctx, &run); st != cirun.DecorationSkipped {
+		t.Fatalf("no installation: %s", st)
+	}
+	run = base
+	run.TenantID = shared.NewID()
+	if st, _ := newJob(&fakePoster{}).decorate(ctx, &run); st != cirun.DecorationSkipped {
+		t.Fatalf("other tenant: %s", st)
+	}
+	// A push run with an unverified commit gets no check.
+	run = base
+	run.PullRequest, run.CommitVerified = "", false
+	if st, _ := newJob(&fakePoster{}).decorate(ctx, &run); st != cirun.DecorationSkipped {
+		t.Fatalf("unverified commit: %s", st)
+	}
+	// A push run: the check on its commit, no comment.
+	p = &fakePoster{}
+	run = base
+	run.PullRequest = ""
+	if st, _ := newJob(p).decorate(ctx, &run); st != cirun.DecorationPosted || p.checks[0].HeadSHA != "merge1" || len(p.comments) != 0 {
+		t.Fatalf("push run: %s %+v", st, p.checks)
+	}
+	// GitHub refusing access is final; a server error is retried.
+	run = base
+	run.PullRequest = ""
+	if st, _ := newJob(&fakePoster{checkErr: &githubapp.StatusError{Status: 403}}).decorate(ctx, &run); st != cirun.DecorationFailed {
+		t.Fatalf("403: %s", st)
+	}
+	if st, _ := newJob(&fakePoster{checkErr: &githubapp.StatusError{Status: 502}}).decorate(ctx, &run); st != cirun.DecorationRetry {
+		t.Fatalf("502: %s", st)
+	}
+	// Not a github.com repository.
+	run = base
+	run.Repository = "gitlab.com/acme/api"
+	if st, _ := newJob(&fakePoster{}).decorate(ctx, &run); st != cirun.DecorationSkipped {
+		t.Fatalf("gitlab repository: %s", st)
+	}
+}
+
+func TestGitHubRepository(t *testing.T) {
+	if o, r, ok := GitHubRepository("github.com/Acme/API"); !ok || o != "acme" || r != "api" {
+		t.Fatalf("%q %q %v", o, r, ok)
+	}
+	for _, bad := range []string{"github.com/acme", "github.com//x", "github.com/a/b/c", "gitlab.com/a/b"} {
+		if _, _, ok := GitHubRepository(bad); ok {
+			t.Fatalf("%q accepted", bad)
+		}
+	}
+}
+
+func TestWarnModeIsNeutral(t *testing.T) {
+	v := &Verdict{GateVerdict: cirun.GateVerdict{Verdict: cirun.VerdictPass, WouldFail: true}}
+	if conclusion(v) != "neutral" {
+		t.Fatal(conclusion(v))
+	}
+}
