@@ -145,8 +145,6 @@ jobs:
           # VERSION/COMMIT/BUILD_TIME: the API's GET /api/v1/version.
           # NEXT_PUBLIC_APP_VERSION/COMMIT: web Help > About.
           build-args: |
-            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://app.openctem.io' }}
-            NEXT_PUBLIC_AUTH_PROVIDER=${{ vars.NEXT_PUBLIC_AUTH_PROVIDER || 'local' }}
             NEXT_PUBLIC_APP_VERSION=${{ needs.prepare.outputs.version }}
             NEXT_PUBLIC_APP_COMMIT=${{ github.sha }}
             VERSION=${{ needs.prepare.outputs.version }}
@@ -176,8 +174,6 @@ jobs:
           # VERSION/COMMIT/BUILD_TIME: the API's GET /api/v1/version.
           # NEXT_PUBLIC_APP_VERSION/COMMIT: web Help > About.
           build-args: |
-            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://app.openctem.io' }}
-            NEXT_PUBLIC_AUTH_PROVIDER=${{ vars.NEXT_PUBLIC_AUTH_PROVIDER || 'local' }}
             NEXT_PUBLIC_APP_VERSION=${{ needs.prepare.outputs.version }}
             NEXT_PUBLIC_APP_COMMIT=${{ github.sha }}
             VERSION=${{ needs.prepare.outputs.version }}
