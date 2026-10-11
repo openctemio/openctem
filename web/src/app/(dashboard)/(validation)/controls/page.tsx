@@ -393,9 +393,10 @@ export default function CompensatingControlsPage() {
                 </div>
               </div>
               <p className="text-muted-foreground text-xs">
-                A control caps the priority of findings on the assets you link to it — a protected
-                asset is held at P2 rather than P1. The percentage is recorded and shown as the
-                rationale; it does not currently scale the result further.
+                {t(
+                  'validation.controls.capHint',
+                  'Findings on the linked assets are held at P2 rather than P1. The percentage is shown as the rationale only.'
+                )}
               </p>
             </div>
           </DialogBody>

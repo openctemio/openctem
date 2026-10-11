@@ -169,8 +169,11 @@ export function DedupReviewPage() {
   return (
     <Main>
       <PageHeader
-        title="Duplicate Review"
-        description="Approve or reject asset merges the correlator flagged as likely duplicates."
+        title={t('assets.duplicates.title', 'Duplicate review')}
+        description={t(
+          'assets.duplicates.description',
+          'Approve or reject merges of assets that look like duplicates.'
+        )}
       />
 
       {isLoading ? (
