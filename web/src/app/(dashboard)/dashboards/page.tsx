@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Star, Trash2, Pencil, LayoutGrid, ExternalLink } from 'lucide-react'
 import { Main } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { PageHeader } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -77,6 +79,8 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
   const { data, isLoading } = useMyDashboards()
   const revalidate = useRevalidateDashboards()
   const [busy, setBusy] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
+  const { t } = useTranslation()
   const saved = data?.data ?? []
 
   const createFrom = async (name: string, layout: DashboardWidget[], columns = 2) => {
@@ -106,7 +110,8 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
     try {
       await deleteDashboard(id)
       await revalidate()
-      toast.success(`Deleted "${name}"`)
+      setPendingDelete(null)
+      toast.success(t('confirm.dashboard.deleted', 'Dashboard "{name}" deleted', { name }))
     } catch (e) {
       toast.error(getErrorMessage(e))
     }
@@ -222,8 +227,11 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                     <Button
                       size="icon"
                       variant="ghost"
-                      title="Delete"
-                      onClick={() => remove(d.id, d.name)}
+                      title={t('confirm.delete', 'Delete')}
+                      aria-label={t('confirm.dashboard.deleteLabel', 'Delete dashboard {name}', {
+                        name: d.name,
+                      })}
+                      onClick={() => setPendingDelete({ id: d.id, name: d.name })}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -234,6 +242,22 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
           </div>
         )}
       </section>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        destructive
+        title={t('confirm.dashboard.deleteTitle', 'Delete dashboard "{name}"?', {
+          name: pendingDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.dashboard.deleteDesc',
+          'The dashboard and its widget layout are deleted for everyone who can see it. Your data is not affected. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
+        handleConfirm={() =>
+          pendingDelete ? remove(pendingDelete.id, pendingDelete.name) : undefined
+        }
+      />
     </Main>
   )
 }
