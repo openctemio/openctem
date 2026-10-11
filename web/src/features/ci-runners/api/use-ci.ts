@@ -28,6 +28,11 @@ import type {
   FleetList,
   CICoverage,
   CISettings,
+  SCMAppInstallation,
+  SCMAppList,
+  SCMCompleteGitHubRequest,
+  SCMGitLabConnection,
+  SCMGitLabConnectRequest,
 } from '../types'
 import {
   fleetURL,
@@ -264,5 +269,60 @@ export function useRetirePipeline() {
         `${CI_BASE}/pipelines/${encodeURIComponent(arg.id)}/retire`,
         { reason: arg.reason }
       )
+  )
+}
+
+// ─────────────────────────── code-host apps (RFC-077) ───
+
+const SCM_APPS = `${CI_BASE}/scm-apps`
+
+/** The organization's GitHub App installations and GitLab connections. */
+export function useSCMApps() {
+  const { currentTenant } = useTenant()
+  return useSWR<SCMAppList>(currentTenant ? SCM_APPS : null, (url: string) => get<SCMAppList>(url))
+}
+
+/** Starts the GitHub App install: the link carries a state bound to the caller. */
+export function useGitHubInstallURL() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(currentTenant ? SCM_APPS : null, async () =>
+    post<{ url?: string }>(`${SCM_APPS}/github/install-url`, {})
+  )
+}
+
+/** Binds the installation GitHub's setup redirect names. */
+export function useCompleteGitHubInstall() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? SCM_APPS : null,
+    async (_url: string, { arg }: { arg: SCMCompleteGitHubRequest }) =>
+      post<SCMAppInstallation>(`${SCM_APPS}/github/installations`, arg)
+  )
+}
+
+export function useRemoveSCMInstallation() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? SCM_APPS : null,
+    async (_url: string, { arg }: { arg: string }) =>
+      del<void>(`${SCM_APPS}/installations/${encodeURIComponent(arg)}`)
+  )
+}
+
+export function useConnectGitLab() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? SCM_APPS : null,
+    async (_url: string, { arg }: { arg: SCMGitLabConnectRequest }) =>
+      post<SCMGitLabConnection>(`${SCM_APPS}/gitlab`, arg)
+  )
+}
+
+export function useRemoveGitLab() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? SCM_APPS : null,
+    async (_url: string, { arg }: { arg: string }) =>
+      del<void>(`${SCM_APPS}/gitlab/${encodeURIComponent(arg)}`)
   )
 }
