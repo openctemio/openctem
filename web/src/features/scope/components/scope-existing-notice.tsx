@@ -19,6 +19,7 @@
 
 import { useState } from 'react'
 import Link from '@/components/link'
+import { safeHref } from '@/lib/safe-href'
 import { Info, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -139,7 +140,7 @@ export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExist
       role="alert"
       data-testid="scope-existing"
       data-status={status}
-      className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+      className="space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
     >
       <p className="flex items-start gap-2">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
@@ -170,7 +171,7 @@ export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExist
             {t('scope.existing.show', 'Show it')}
           </Button>
         ) : (
-          <Link href={href} className="text-xs underline underline-offset-2">
+          <Link href={safeHref(href) ?? '/scope'} className="text-xs underline underline-offset-2">
             {t('scope.existing.show', 'Show it')}
           </Link>
         )}

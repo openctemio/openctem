@@ -67,7 +67,7 @@ Strict.
 
 Rows left pending from a time an organization was in Strict are put into
 effect by the `scope-pending-settle` controller once its mode is Off or On
-(`scope.Service.SettleLegacyPending`, hourly): each row goes through
+(`scope.Service.ActivateLeftoverPending`, hourly): each row goes through
 `commitEntry` / `commitExclusion`, so the signer accepts the widening before
 the database holds it, and each is audited with actor `system`. Strict
 organizations keep theirs.
