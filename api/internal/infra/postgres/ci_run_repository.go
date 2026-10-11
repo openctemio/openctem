@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -816,4 +818,33 @@ func (r *CIRunRepository) BusinessUnitExists(ctx context.Context, tenantID, id s
 	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM business_units WHERE tenant_id = $1 AND id = $2)`,
 		tenantID.String(), id.String()).Scan(&ok)
 	return ok, err
+}
+
+// AssetsWithImageDigest returns up to limit of the tenant's assets whose
+// properties mention the image digest (an image asset's own digest, a
+// workload's or host's list of running images), excluding one asset (the
+// repository). The digest is a full "sha256:<64 hex>" value, so a text
+// match on the properties cannot hit another image.
+func (r *CIRunRepository) AssetsWithImageDigest(ctx context.Context, tenantID shared.ID, digest string, exclude shared.ID, limit int) ([]cirunapp.DigestAsset, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, asset_type, COALESCE(sub_type, '') FROM assets
+		WHERE tenant_id = $1 AND id <> $2 AND properties IS NOT NULL
+		  AND position($3 in properties::text) > 0
+		ORDER BY id LIMIT $4`, tenantID.String(), exclude.String(), digest, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []cirunapp.DigestAsset{}
+	for rows.Next() {
+		var (
+			id string
+			a  cirunapp.DigestAsset
+		)
+		if err := rows.Scan(&id, &a.Type, &a.SubType); err != nil {
+			return nil, err
+		}
+		a.ID, _ = shared.IDFromString(id)
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
