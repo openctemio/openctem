@@ -43,6 +43,7 @@ import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-
 import { useDedupReviews } from '../../api/use-asset-dedup'
 import { useInventoryOverview } from '../../api/use-inventory-overview'
 import { buildOverview, type OverviewLens } from '../../lib/inventory-overview'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** Icons of the registry's lenses; an unknown lens gets the generic one. */
 const LENS_ICONS: Record<string, LucideIcon> = {
@@ -204,6 +205,7 @@ function LensCard({ lens }: { lens: OverviewLens }) {
 }
 
 export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode }) {
+  const { t } = useTranslation()
   const { registry, isLoading: registryLoading } = useAssetTypeRegistry()
   const { rows, isLoading, error, mutate } = useInventoryOverview()
   const { data: dedupData } = useDedupReviews()
@@ -221,8 +223,11 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
   return (
     <Main>
       <PageHeader
-        title="Assets"
-        description="Everything your organization owns that can be attacked, by area: open one to work with its assets."
+        title={t('assets.overview.title', 'Assets')}
+        description={t(
+          'assets.overview.description',
+          'Everything your organization owns that can be attacked, by area.'
+        )}
       >
         {viewSwitcher}
       </PageHeader>
@@ -236,8 +241,10 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
           </AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
             <span>
-              The correlator flagged assets that look like the same thing: approve the merges or
-              keep them separate.
+              {t(
+                'assets.overview.duplicatesHint',
+                'Some assets look like the same thing: approve the merges or keep them separate.'
+              )}
             </span>
             <Button variant="outline" size="sm" asChild>
               <Link href="/assets/duplicates">

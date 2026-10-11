@@ -23,7 +23,28 @@ func (s *Server) EnableMTLS(cfg MTLSConfig, ca *CA, keys KeyResolver) error {
 		}
 	}
 	s.mtls, s.mtlsProxies = srv, cfg.TrustedProxies
+	// The single-port mode (SplitTLS) hands sensor connections this config
+	// at their handshake; a copy taken before serving, since net/http
+	// adjusts the server's own copy when it starts.
+	s.mtlsTLS = srv.TLSConfig.Clone()
+	s.mtlsTLS.NextProtos = []string{alpnH2}
 	return nil
+}
+
+// proxyListener believes a PROXY protocol v2 header on ln only from the
+// trusted proxies (SENSOR_MTLS_TRUSTED_PROXIES); from any other peer a
+// header closes the connection. No trusted proxies: ln unchanged. On error
+// ln is closed.
+func (s *Server) proxyListener(ln net.Listener) (net.Listener, error) {
+	if len(s.mtlsProxies) == 0 {
+		return ln, nil
+	}
+	policy, err := proxyproto.PolicyFromRanges(s.mtlsProxies, proxyproto.USE, proxyproto.REJECT)
+	if err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	return &proxyproto.Listener{Listener: ln, ConnPolicy: policy, ReadHeaderTimeout: 5 * time.Second}, nil
 }
 
 // WakeBus delivers control-stream wakes across replicas (Redis, T12).
@@ -53,13 +74,8 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 		return err
 	}
-	if len(s.mtlsProxies) > 0 {
-		policy, err := proxyproto.PolicyFromRanges(s.mtlsProxies, proxyproto.USE, proxyproto.REJECT)
-		if err != nil {
-			_ = ln.Close()
-			return err
-		}
-		ln = &proxyproto.Listener{Listener: ln, ConnPolicy: policy, ReadHeaderTimeout: 5 * time.Second}
+	if ln, err = s.proxyListener(ln); err != nil {
+		return err
 	}
 	s.log.Info("sensor protocol v3 gRPC binding listening", "addr", ln.Addr().String())
 	go func() {

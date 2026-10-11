@@ -17,6 +17,7 @@ package sensortransport
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"sync"
@@ -144,6 +145,8 @@ type Server struct {
 	mtls *http.Server
 	// mtlsProxies are the CIDRs whose PROXY header the listener believes.
 	mtlsProxies []string
+	// mtlsTLS is the binding's TLS config for SplitTLS (nil: not enabled).
+	mtlsTLS *tls.Config
 	// wakeBus fans wakes out across replicas (SetWakeBus); nil: this
 	// replica only.
 	wakeBus WakeBus

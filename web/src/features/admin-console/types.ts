@@ -399,6 +399,8 @@ export interface AdminOperations {
     count: number
   }[]
   sdk_min_version?: string
+  /** How sensors reach this installation; absent when not wired. */
+  sensor_transport?: AdminSensorTransport
   controllers: {
     name: string
     running: boolean
@@ -406,6 +408,21 @@ export interface AdminOperations {
     errors_total: number
   }[]
   checked_at: string
+}
+
+/** The sensor protocol v3 bindings and the gRPC self-probe (api RFC-059). */
+export interface AdminSensorTransport {
+  /** auto: protocol v3 served; off: every sensor on protocol v2. */
+  mode: 'auto' | 'off'
+  https_path?: string
+  grpc: {
+    /** advertised: offered to sensors; pending: first probe; unavailable: see reason. */
+    state: 'advertised' | 'pending' | 'unavailable'
+    endpoint?: string
+    requires_alpn?: boolean
+    reason?: string
+    checked_at?: string
+  }
 }
 
 /** A platform announcement in the console (GET /admin/announcements). */
