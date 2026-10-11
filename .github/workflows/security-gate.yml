@@ -80,6 +80,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GATE_DIR: ${{ steps.src.outputs.dir }}
+          INTEGRATION_BRANCH: develop # release/v* PRs are judged on what they add to develop
         run: |
           SECURITY_PATHS="$GATE_DIR/.github/security-paths.yml" \
             python3 "$GATE_DIR/.github/scripts/security_gate.py" gate
