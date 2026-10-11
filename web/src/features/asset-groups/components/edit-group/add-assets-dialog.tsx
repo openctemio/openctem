@@ -19,6 +19,8 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -125,6 +127,10 @@ export function AddAssetsDialog({
   const [newAssetType, setNewAssetType] = React.useState<string>('domain')
   const [newAssetName, setNewAssetName] = React.useState('')
   const [removingAssetId, setRemovingAssetId] = React.useState<string | null>(null)
+  const [pendingRemove, setPendingRemove] = React.useState<{ id: string; name: string } | null>(
+    null
+  )
+  const { t } = useTranslation()
 
   // Search state
   const [searchInput, setSearchInput] = React.useState('')
@@ -296,6 +302,7 @@ export function AddAssetsDialog({
     setRemovingAssetId(assetId)
     try {
       await onRemove(assetId)
+      setPendingRemove(null)
     } finally {
       setRemovingAssetId(null)
     }
@@ -385,7 +392,10 @@ export function AddAssetsDialog({
               variant="ghost"
               size="icon"
               className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-              onClick={() => handleRemoveAsset(asset.id)}
+              aria-label={t('confirm.assetGroup.removeAssetLabel', 'Remove {name} from the group', {
+                name: asset.name,
+              })}
+              onClick={() => setPendingRemove({ id: asset.id, name: asset.name })}
               disabled={isBusy}
             >
               {isBeingRemoved ? (
@@ -745,6 +755,22 @@ export function AddAssetsDialog({
           </div>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        onOpenChange={(o) => !o && setPendingRemove(null)}
+        destructive
+        title={t('confirm.assetGroup.removeAssetTitle', 'Remove {name} from {group}?', {
+          name: pendingRemove?.name ?? '',
+          group: groupName,
+        })}
+        desc={t(
+          'confirm.assetGroup.removeAssetDesc',
+          'The asset leaves the group, so scans and rules that target the group no longer cover it. The asset itself is not deleted.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
+        isLoading={removingAssetId !== null}
+        handleConfirm={() => (pendingRemove ? handleRemoveAsset(pendingRemove.id) : undefined)}
+      />
     </Dialog>
   )
 }

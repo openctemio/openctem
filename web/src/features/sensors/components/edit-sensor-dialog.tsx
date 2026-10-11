@@ -6,6 +6,7 @@ import { formatDistanceToNowStrict } from 'date-fns'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -179,6 +180,7 @@ export function EditSensorDialog({
   const [draft, setDraft] = useState<Draft>(base)
   const [saving, setSaving] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
+  const { t } = useTranslation()
   const [revokeOpen, setRevokeOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -526,10 +528,10 @@ export function EditSensorDialog({
       <ConfirmDialog
         open={discardOpen}
         onOpenChange={setDiscardOpen}
-        title="Discard changes?"
-        desc="Your changes to this sensor have not been saved."
-        cancelBtnText="Keep editing"
-        confirmText="Discard"
+        title={t('confirm.discardTitle', 'Discard your changes?')}
+        desc={t('confirm.sensor.discardDesc', 'Your changes to this sensor have not been saved.')}
+        cancelBtnText={t('confirm.keepEditing', 'Keep editing')}
+        confirmText={t('confirm.discard', 'Discard')}
         destructive
         handleConfirm={() => {
           setDiscardOpen(false)
@@ -540,17 +542,19 @@ export function EditSensorDialog({
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
-        title="Revoke sensor access"
+        title={t('confirm.sensor.revokeTitle', 'Revoke the sensor {name}?', { name: sensor.name })}
         desc={
           <div className="space-y-2">
             <p>
-              <strong>{sensor.name}</strong> loses access at once. This can&apos;t be undone: to
-              bring it back you install a new sensor with a new key.
+              {t(
+                'confirm.sensor.revokeDesc',
+                'It loses access at once and for good: its key is revoked and it cannot be re-enabled. To use the machine again, enroll a new sensor. This cannot be undone.'
+              )}
             </p>
-            <p>To pause it instead, turn off Enabled.</p>
+            <p>{t('confirm.sensor.revokePauseHint', 'To pause it instead, turn off Enabled.')}</p>
           </div>
         }
-        confirmText="Revoke access"
+        confirmText={t('confirm.revoke', 'Revoke')}
         destructive
         isLoading={isRevoking}
         typeToConfirm={sensor.name}
@@ -560,14 +564,12 @@ export function EditSensorDialog({
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete sensor"
-        desc={
-          <p>
-            Delete <strong>{sensor.name}</strong>? This can&apos;t be undone and its key stops
-            working.
-          </p>
-        }
-        confirmText="Delete sensor"
+        title={t('confirm.sensor.deleteTitle', 'Delete the sensor {name}?', { name: sensor.name })}
+        desc={t(
+          'confirm.sensor.deleteDesc',
+          'Its API key stops working at once and it can no longer claim jobs or send results. Findings it reported stay. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         typeToConfirm={sensor.name}

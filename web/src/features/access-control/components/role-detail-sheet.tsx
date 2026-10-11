@@ -3,6 +3,8 @@
 import { useState, useMemo, useCallback } from 'react'
 import { csrfFetch } from '@/lib/api/client'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -143,6 +145,8 @@ export function RoleDetailSheet({
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set())
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false)
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
+  const [pendingRemove, setPendingRemove] = useState<RoleMember | null>(null)
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<RoleTab>('permissions')
 
   // Reset state when sheet closes
@@ -183,6 +187,7 @@ export function RoleDetailSheet({
         }
 
         toast.success(`${member.name || member.email} removed from role`)
+        setPendingRemove(null)
         mutateMembers()
       } catch (error) {
         toast.error(
@@ -605,7 +610,7 @@ export function RoleDetailSheet({
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
                             variant="destructive"
-                            onClick={() => handleRemoveMember(member)}
+                            onSelect={() => setPendingRemove(member)}
                             disabled={removingMemberId === member.id}
                           >
                             <UserMinus className="h-4 w-4" />
@@ -629,6 +634,23 @@ export function RoleDetailSheet({
         onOpenChange={setAddMemberDialogOpen}
         existingMembers={roleMembers}
         onSuccess={() => mutateMembers()}
+      />
+
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        onOpenChange={(open) => !open && setPendingRemove(null)}
+        destructive
+        title={t('confirm.role.removeMemberTitle', 'Remove {name} from the role {role}?', {
+          name: pendingRemove ? pendingRemove.name || pendingRemove.email || '' : '',
+          role: role.name,
+        })}
+        desc={t(
+          'confirm.role.removeMemberDesc',
+          'They lose the permissions this role grants at once, unless another role or group grants them too. You can add them back later.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
+        isLoading={removingMemberId !== null}
+        handleConfirm={() => (pendingRemove ? handleRemoveMember(pendingRemove) : undefined)}
       />
     </>
   )

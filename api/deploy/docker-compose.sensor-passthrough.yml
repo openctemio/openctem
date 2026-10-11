@@ -23,7 +23,6 @@ services:
     expose:
       - "8443"
     environment:
-      SENSOR_TRANSPORT_V3_ENABLED: "true"
       SENSOR_PUBLIC_HOST: ${SENSOR_PUBLIC_HOSTNAME}:${GATEWAY_HTTPS_PORT:-443}
       SENSOR_MTLS_LISTEN_ADDR: ":8443"
       # The gateway's PROXY protocol header carries the sensor's address;

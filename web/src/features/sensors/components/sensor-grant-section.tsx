@@ -15,6 +15,7 @@ import { AlertTriangle, Pencil, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DetailCallout, DetailSection } from '@/features/shared'
@@ -86,6 +87,7 @@ export function SensorGrantSection({ sensorId }: { sensorId: string }) {
 
   const [editOpen, setEditOpen] = useState(false)
   const [trustTarget, setTrustTarget] = useState<'trusted' | 'new' | null>(null)
+  const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
 
   if (!canRead) return null
@@ -194,15 +196,25 @@ export function SensorGrantSection({ sensorId }: { sensorId: string }) {
         onOpenChange={(o) => !o && setTrustTarget(null)}
         title={
           trustTarget === 'trusted'
-            ? 'Promote this sensor to Trusted?'
-            : 'Set this sensor back to New?'
+            ? t('confirm.sensor.promoteTitle', 'Promote this sensor to Trusted?')
+            : t('confirm.sensor.demoteTitle', 'Set this sensor back to New?')
         }
         desc={
           trustTarget === 'trusted'
-            ? 'A New sensor gets passive work only (T0), no credentials and no results without a job. Trusted lifts these caps up to its grant. Promote only a sensor you installed and whose pairing you verified. This is audited and every administrator is notified.'
-            : 'The sensor goes back to passive work only (T0), with no credentials and no results without a job, from its next request.'
+            ? t(
+                'confirm.sensor.promoteDesc',
+                'A New sensor gets passive work only (T0), no credentials and no results without a job. Trusted lifts these caps up to its grant. Promote only a sensor you installed and whose pairing you verified. This is audited and every administrator is notified.'
+              )
+            : t(
+                'confirm.sensor.demoteDesc',
+                'The sensor goes back to passive work only (T0), with no credentials and no results without a job, from its next request.'
+              )
         }
-        confirmText={trustTarget === 'trusted' ? 'Promote' : 'Set back to New'}
+        confirmText={
+          trustTarget === 'trusted'
+            ? t('confirm.sensor.promote', 'Promote')
+            : t('confirm.sensor.demote', 'Set back to New')
+        }
         destructive={trustTarget === 'new'}
         isLoading={saving}
         handleConfirm={() => trustTarget && void changeTrust(trustTarget)}
