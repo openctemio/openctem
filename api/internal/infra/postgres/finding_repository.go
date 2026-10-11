@@ -1946,6 +1946,22 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 	return n, nil
 }
 
+// BranchCountsAsExposure reports whether a branch of the tenant is a release
+// line in its own right: default, protected, or of type main or release. Unlike
+// branch_counts_as_exposure it does not count every branch of a repository
+// whose default branch is unknown, so a job's base-branch hint can never make
+// a feature branch the baseline.
+func (r *FindingRepository) BranchCountsAsExposure(ctx context.Context, tenantID, branchID shared.ID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `SELECT b.is_default OR b.is_protected OR b.branch_type IN ('main', 'release')
+		FROM repository_branches b JOIN assets a ON a.id = b.repository_id
+		WHERE b.id = $2 AND a.tenant_id = $1`, tenantID.String(), branchID.String()).Scan(&ok)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return ok, err
+}
+
 // FingerprintsOpenOnBranch returns the subset of fingerprints that currently
 // have an OPEN occurrence on the given branch (tenant-scoped). Used to compute
 // "new vs base branch" for PR/MR scans.
