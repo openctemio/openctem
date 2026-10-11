@@ -128,12 +128,12 @@ func (h *GitHubWebhookHandler) IncomingGitHubWebhook(w http.ResponseWriter, r *h
 		first, derr := h.deliveries.FirstDelivery(r.Context(), "github:"+tenantID.String()+":"+delivery, GitHubDeliveryWindow)
 		if derr != nil {
 			// Fail closed: without the store a replay cannot be told apart.
-			h.logger.Error("github webhook: delivery store unavailable", "tenant_id", tenantIDStr, "error", derr)
+			h.logger.Error("github webhook: delivery store unavailable", "tenant_id", tenantID.String(), "error", derr)
 			apierror.ServiceUnavailable("webhook temporarily unavailable").WriteJSON(w)
 			return
 		}
 		if !first {
-			h.logger.Warn("SECURITY: github webhook replay ignored", "tenant_id", tenantIDStr, "delivery", delivery)
+			h.logger.Warn("SECURITY: github webhook replay ignored", "tenant_id", tenantID.String(), "delivery", sanitizeLogField(delivery))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
