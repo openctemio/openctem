@@ -318,8 +318,9 @@ Routes (migration `001921`: `scans:approve` for owners and administrators,
 | `POST /api/v1/scan-approvals/{id}/remind`, `/cancel` | `scans:write`; reminders hourly at most; only the requester withdraws |
 
 The scan list carries `approval_status` (the newest request's status).
-The definition's intensity is the highest tier the scan's tool or workflow
-steps probe at; when RFC-071 lands it is the scan's declared intensity.
+The definition's intensity is the scan's declared intensity (RFC-071),
+never below the highest tier its tool or workflow steps probe at. Changing
+the declared intensity changes the digest: it needs a new approval.
 
 ## 9. Plan
 
