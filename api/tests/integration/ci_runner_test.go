@@ -386,7 +386,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatalf("summary = %v", sum)
 	}
 	links, _ := v["links"].(map[string]any)
-	if !strings.HasPrefix(links["run"].(string), "https://console.example/ci-runners/") {
+	if !strings.HasPrefix(links["run"].(string), "https://console.example/ci-cd?view=runs&run=") {
 		t.Fatalf("links = %v", links)
 	}
 

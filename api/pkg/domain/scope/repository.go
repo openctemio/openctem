@@ -34,8 +34,10 @@ type TargetRepository interface {
 	// Count returns the total number of scope targets matching the filter.
 	Count(ctx context.Context, filter TargetFilter) (int64, error)
 
-	// ExistsByPattern checks if a target with the given pattern exists.
-	ExistsByPattern(ctx context.Context, tenantID shared.ID, targetType TargetType, pattern string) (bool, error)
+	// FindByPattern returns the tenant's entry with this type and pattern
+	// and no port or protocol limit (its effective status: an active entry
+	// past its expiry is expired), or nil when there is none.
+	FindByPattern(ctx context.Context, tenantID shared.ID, targetType TargetType, pattern string) (*Existing, error)
 }
 
 // TargetFilter defines the filtering options for listing targets.
@@ -80,6 +82,10 @@ type ExclusionRepository interface {
 
 	// ExpireOld marks expired exclusions as expired.
 	ExpireOld(ctx context.Context) error
+
+	// FindByPattern returns the tenant's exclusion with this type and
+	// pattern (its effective status), or nil when there is none.
+	FindByPattern(ctx context.Context, tenantID shared.ID, exclusionType ExclusionType, pattern string) (*Existing, error)
 }
 
 // ExclusionFilter defines the filtering options for listing exclusions.
