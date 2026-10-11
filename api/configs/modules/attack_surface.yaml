@@ -19,5 +19,6 @@
     - AssetEnrichmentController
     - CertMonitorController
     - EASMDNSController
+    - EASMLookalikeController
     - GraphEnrichmentController
     - ScopeJoinController
