@@ -24,6 +24,7 @@ import {
 } from '../types'
 import { updateAssetLifecycleSettings } from '../api'
 import { DryRunDialog } from './dry-run-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** What the page header needs to render the form's Save action. */
 export interface LifecycleFormStatus {
@@ -104,6 +105,7 @@ export function LifecycleSettingsForm({
   dryRunOpen,
   onDryRunOpenChange,
 }: LifecycleSettingsFormProps) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const { mutate } = useSWRConfig()
   const [form, setForm] = React.useState<FormState>(() => toFormState(initial))
@@ -165,10 +167,11 @@ export function LifecycleSettingsForm({
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <CardTitle>Asset lifecycle worker</CardTitle>
+              <CardTitle>
+                {t('settings.assetLifecycle.staleDetection', 'Stale-asset detection')}
+              </CardTitle>
               <CardDescription>
-                Automatically flags assets as stale when no scanner or integration has re-observed
-                them within the configured threshold. Disabled by default.
+                {t('settings.assetLifecycle.offByDefault', 'Off by default.')}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
