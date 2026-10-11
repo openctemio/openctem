@@ -37,6 +37,9 @@ const (
 	ReasonScanFailure = "scan_failure"
 	ReasonOverride    = "override"
 	ReasonNoBaseline  = "no_baseline"
+	// ReasonSecretPreExisting notes a secret already open on the baseline
+	// branch: it blocks default-branch runs, not pull requests.
+	ReasonSecretPreExisting = "secret_pre_existing"
 )
 
 // Break-glass limits.
@@ -213,9 +216,12 @@ type GateInput struct {
 	NewFingerprints map[string]bool
 	BaselineBranch  string
 	BaselineKnown   bool
-	ScanFailures    int
-	Override        *GateOverride
-	Now             time.Time
+	// DefaultBranch: the run is on the repository's default branch, where
+	// every open secret blocks.
+	DefaultBranch bool
+	ScanFailures  int
+	Override      *GateOverride
+	Now           time.Time
 	// FindingURL builds a link to a finding ("" for none).
 	FindingURL func(id shared.ID) string
 }
@@ -313,6 +319,13 @@ func Evaluate(in GateInput) GateVerdict {
 			listed++
 		}
 	}
+	// note lists a reason that does not block.
+	note := func(r GateReason) {
+		if listed < maxReasons {
+			v.Reasons = append(v.Reasons, r)
+			listed++
+		}
+	}
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
@@ -337,9 +350,19 @@ func Evaluate(in GateInput) GateVerdict {
 		}
 		// A secret in the code fails whatever its age and severity.
 		if f.FindingType == "secret" {
-			r := base
-			r.Code, r.Message = ReasonSecret, "a secret is committed to the repository"
-			add(r)
+			// A new secret always blocks. One already open on the baseline
+			// branch blocks the default branch, and is a note on any other
+			// branch: a pull request did not add it and cannot remove it from
+			// history, so it must not block every pull request.
+			if isNew || in.DefaultBranch {
+				r := base
+				r.Code, r.Message = ReasonSecret, "a secret is committed to the repository"
+				add(r)
+			} else {
+				note(GateReason{Code: ReasonSecretPreExisting, FindingID: base.FindingID, Fingerprint: base.Fingerprint,
+					Title: base.Title, File: base.File, Line: base.Line, URL: base.URL,
+					Message: "a secret already committed on the default branch: rotate it; it fails default-branch runs"})
+			}
 			continue
 		}
 		if p.NewFindingsOnly && !isNew {
