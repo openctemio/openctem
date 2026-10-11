@@ -1765,20 +1765,14 @@ func (r *FindingRepository) CheckFingerprintsExist(ctx context.Context, tenantID
 		result[fp] = false
 	}
 
-	// Build query with placeholders
-	placeholders := make([]string, len(fingerprints))
-	args := make([]any, len(fingerprints)+1)
-	args[0] = tenantID.String()
-	for i, fp := range fingerprints {
-		placeholders[i] = fmt.Sprintf("$%d", i+2)
-		args[i+1] = fp
-	}
-
-	query := fmt.Sprintf(`
+	// One array parameter, not one placeholder per key: a report may carry
+	// up to 100k findings, past PostgreSQL's 65535 bind-parameter limit.
+	query := `
 		SELECT fingerprint
 		FROM findings
-		WHERE tenant_id = $1 AND fingerprint IN (%s)
-	`, strings.Join(placeholders, ", "))
+		WHERE tenant_id = $1 AND fingerprint = ANY($2::text[])
+	`
+	args := []any{tenantID.String(), pq.Array(fingerprints)}
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
