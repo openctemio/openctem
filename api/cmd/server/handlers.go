@@ -501,6 +501,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Pentest: func() *handler.PentestHandler {
 			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
 			h.SetImportService(finding.NewFindingImportService(repos.Finding, log))
+			h.SetAuditService(svc.Audit)
 			return h
 		}(),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,

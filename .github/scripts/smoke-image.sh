@@ -23,6 +23,7 @@ case "$comp" in
   seed)         bin=""; run=(sh -c 'true') ;;
   openctem-web) bin=$(docker run --rm --entrypoint sh "$img" -c 'command -v node'); run=(node -e 'process.exit(0)') ;;
   openctem)     bin=/opt/openctem/api/server; run=(migrate -version) ;;
+  openctem-gateway) bin=/usr/bin/caddy;   run=(caddy version) ;;
   *) echo "unknown component $comp" >&2; exit 2 ;;
 esac
 
@@ -46,5 +47,10 @@ esac
 if [ -n "$spec" ]; then
   docker run --rm --entrypoint sh "$img" -c "test -s '$spec' && grep -q '^paths:' '$spec'" \
     || { echo "smoke: $img has no OpenAPI spec at $spec" >&2; exit 1; }
+fi
+# The gateway image exists for the layer4 module (sensor ALPN routing).
+if [ "$comp" = openctem-gateway ]; then
+  docker run --rm --entrypoint caddy "$img" list-modules | grep -qx 'tls.handshake_match.alpn' \
+    || { echo "smoke: $img lacks the layer4 ALPN matcher" >&2; exit 1; }
 fi
 echo "smoke: $comp $img arch=$got elf=${m:-n/a} exec-rc=$rc OK"
