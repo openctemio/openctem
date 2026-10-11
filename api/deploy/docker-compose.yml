@@ -209,14 +209,10 @@ services:
       # (X-Real-IP / X-Forwarded-For). Anything else is recorded as its own
       # TCP peer, so a client cannot choose the IP in the audit log.
       SERVER_TRUSTED_PROXIES: ${OPENCTEM_NET_PREFIX:-172.30.80}.10,${OPENCTEM_NET_PREFIX:-172.30.80}.11
-      # One origin for the UI, the API and the WebSocket.
-      CORS_ALLOWED_ORIGINS: ${OPENCTEM_PUBLIC_URL:?OPENCTEM_PUBLIC_URL is required, e.g. https://ctem.example.com}
-      # Public origin: SAML SP URLs, links in e-mails.
-      APP_URL: ${OPENCTEM_PUBLIC_URL}
-      SMTP_BASE_URL: ${OPENCTEM_PUBLIC_URL}
-      # Where SSO (OAuth, OIDC, SAML) logins land in the web console. Unset it
-      # would point at http://localhost:3000.
-      OAUTH_FRONTEND_CALLBACK_URL: ${OPENCTEM_PUBLIC_URL}/auth/callback
+      # The one public origin of the UI, the API and the WebSocket. The API
+      # derives from it the CORS allow-list, links in e-mails, the SSO
+      # (OAuth, OIDC, SAML) callback and the sensor endpoint.
+      APP_URL: ${OPENCTEM_PUBLIC_URL:-https://${OPENCTEM_HOSTNAME}}
       # /metrics answers only with this bearer token; empty = metrics off. The
       # gateway never routes /metrics: scrape api:8080 from inside the network
       # (deploy/observability). openssl rand -hex 32
