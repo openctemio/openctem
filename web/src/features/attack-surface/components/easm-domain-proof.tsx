@@ -29,8 +29,10 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { removeVerifiedDomain, useEASMVerifiedDomains } from '../hooks/use-easm-verified-domains'
 import { VerifyDomainDialog } from './easm-verify-domain-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 export function EASMDomainProofPanel() {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.ScopeWrite)
   const canDelete = can(Permission.ScopeDelete)
@@ -160,9 +162,14 @@ export function EASMDomainProofPanel() {
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(open) => !open && setRemoving(null)}
-        title={`Remove ${removing?.domain ?? 'domain'}?`}
-        desc="Entries under it stop showing as verified. Platform sensors and intrusive checks then refuse names under it."
-        confirmText="Remove"
+        title={t('confirm.domainProof.removeTitle', 'Remove the domain {domain}?', {
+          domain: removing?.domain ?? '',
+        })}
+        desc={t(
+          'confirm.domainProof.removeDesc',
+          'Entries under it stop showing as verified. Platform sensors and intrusive checks then refuse names under it.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         handleConfirm={() => void remove()}
       />

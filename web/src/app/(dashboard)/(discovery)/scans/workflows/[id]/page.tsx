@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 
 import { NodePalette } from '@/features/scan-workflows/components/node-palette'
 import type { AddNodeData, AvailableTool } from '@/features/scan-workflows'
+import { useTranslation } from '@/context/i18n-provider'
 // Lazy-load the visual builder so @xyflow/react stays out of this route's
 // initial bundle until the builder renders.
 const WorkflowBuilder = dynamic(
@@ -66,6 +67,7 @@ interface PageProps {
 }
 
 export default function WorkflowBuilderPage({ params }: PageProps) {
+  const { t } = useTranslation()
   const { id } = use(params)
   const router = useRouter()
 
@@ -614,11 +616,14 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
         title={
           <span className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            Delete Step
+            {t('confirm.workflowStep.deleteTitle', 'Delete this step?')}
           </span>
         }
-        desc="Are you sure you want to delete this step? This action cannot be undone. Any dependencies on this step will be removed."
-        confirmText="Delete"
+        desc={t(
+          'confirm.workflowStep.deleteDesc',
+          'The step leaves the draft and steps that depended on it lose that dependency. The published workflow is not changed until you publish.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleConfirmDelete}
       />
@@ -627,10 +632,14 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
       <ConfirmDialog
         open={showUnsavedDialog}
         onOpenChange={setShowUnsavedDialog}
-        title="Unsaved Changes"
-        desc="You have unsaved changes. Are you sure you want to leave without saving?"
-        cancelBtnText="Continue Editing"
-        confirmText="Discard Changes"
+        title={t('confirm.discardTitle', 'Discard your changes?')}
+        desc={t(
+          'confirm.discardLeaveDesc',
+          'You have changes that are not saved. Leaving now discards them.'
+        )}
+        cancelBtnText={t('confirm.keepEditing', 'Keep editing')}
+        confirmText={t('confirm.discard', 'Discard')}
+        destructive
         handleConfirm={handleDiscardAndNavigate}
       />
     </>

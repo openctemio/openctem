@@ -41,6 +41,7 @@ import { Plus, Trash2, Lock, Target } from 'lucide-react'
 import { get, post, del } from '@/lib/api/client'
 import { Can, Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface AttackerProfile {
   id: string
@@ -90,6 +91,7 @@ const NETWORK_ACCESS_OPTIONS = ['external', 'internal', 'dmz'] as const
 const CREDENTIAL_LEVEL_OPTIONS = ['none', 'user', 'admin'] as const
 
 export default function AttackerProfilesPage() {
+  const { t } = useTranslation()
   const {
     data: response,
     isLoading,
@@ -440,14 +442,11 @@ export default function AttackerProfilesPage() {
       <ConfirmDialog
         open={!!deleteProfile}
         onOpenChange={(open) => !open && setDeleteProfile(null)}
-        title="Delete Attacker Profile?"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{deleteProfile?.name}&quot;? This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.attackerProfile.deleteTitle', 'Delete the attacker profile "{name}"?', {
+          name: deleteProfile?.name ?? '',
+        })}
+        desc={t('confirm.attackerProfile.deleteDesc', 'This cannot be undone.')}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />

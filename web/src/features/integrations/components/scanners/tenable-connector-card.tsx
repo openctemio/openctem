@@ -28,6 +28,7 @@ import { RelativeTime } from '@/features/shared'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Can, Permission } from '@/lib/permissions'
 import { StatusBadge } from './shared'
+import { useTranslation } from '@/context/i18n-provider'
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Request failed'
@@ -74,6 +75,7 @@ export function TenableConnectorCard({
   onEdit,
   onChanged,
 }: TenableConnectorCardProps) {
+  const { t } = useTranslation()
   const sync = readTenableSync(integration)
   const settings = readConnectorSettings(integration)
   const [confirmRemove, setConfirmRemove] = useState(false)
@@ -196,9 +198,14 @@ export function TenableConnectorCard({
       <ConfirmDialog
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
-        title={`Remove ${integration.name}?`}
-        desc="Syncs and coverage through this connector stop. Findings already pulled are kept."
-        confirmText={removing ? 'Removing...' : 'Remove'}
+        title={t('confirm.scannerIntegration.removeTitle', 'Remove the integration {name}?', {
+          name: integration.name,
+        })}
+        desc={t(
+          'confirm.scannerIntegration.removeConnectorDesc',
+          'Syncs and coverage through this connector stop. Findings already pulled are kept. This cannot be undone.'
+        )}
+        confirmText={removing ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')}
         destructive
         isLoading={removing}
         handleConfirm={() => void handleRemove()}
