@@ -44,6 +44,7 @@ import {
   type DetailMenuItem,
   type DetailTab,
 } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 import { useNow } from '@/hooks/use-now'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
 import {
@@ -499,13 +500,14 @@ function ToolsAndCapacity({
 }
 
 function ProtocolValue({ sensor }: { sensor: Sensor }) {
+  const { t } = useTranslation()
   const p = sensor.protocol
   if (!p) return null
   const v1 = p.deprecated || p.version < 2
   const badge = (
     <SensorTag tone={v1 ? 'warning' : 'muted'}>
       v{p.version}
-      {v1 ? ' · deprecated' : ''}
+      {v1 ? ` · ${t('sensors.protocol.deprecated', 'deprecated')}` : ''}
     </SensorTag>
   )
   return (
@@ -516,7 +518,10 @@ function ProtocolValue({ sensor }: { sensor: Sensor }) {
             <span
               tabIndex={0}
               className="w-fit rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={`Protocol v${p.version}, ${p.user_agent}`}
+              aria-label={t('sensors.protocol.label', 'Protocol v{version}, {client}', {
+                version: p.version,
+                client: p.user_agent,
+              })}
             >
               {badge}
             </span>
@@ -528,7 +533,10 @@ function ProtocolValue({ sensor }: { sensor: Sensor }) {
       )}
       {v1 && (
         <span className="text-xs text-warning">
-          Upgrade to {PROTOCOL_V2_SENSOR_VERSION} before {PROTOCOL_V1_SUNSET}
+          {t('sensors.protocol.upgrade', 'Upgrade to {version} before {date}', {
+            version: PROTOCOL_V2_SENSOR_VERSION,
+            date: PROTOCOL_V1_SUNSET,
+          })}
         </span>
       )}
       <TransportValue protocol={p} />
@@ -536,21 +544,60 @@ function ProtocolValue({ sensor }: { sensor: Sensor }) {
   )
 }
 
-const TRANSPORT_LABELS: Record<string, string> = {
-  grpc: 'gRPC, mutual TLS',
-  https: 'HTTPS (fallback)',
-  v2: 'Protocol v2',
-}
+/** Bindings a heartbeat reports (api RFC-059). */
+const TRANSPORT_BINDINGS = new Set(['grpc', 'https', 'v2'])
 
-/** The transport of the last heartbeat (api RFC-059) and why it is not gRPC. */
+/** Fallback reasons a sensor reports (sdk-go pkg/client transport_v3_manager.go). */
+const TRANSPORT_REASONS = new Set([
+  'forced_by_config',
+  'not_key_bound',
+  'platform_without_v3',
+  'platform_without_grpc',
+  'certificates_unavailable',
+  'grpc_unreachable',
+  'handshake_failed',
+  'http2_refused',
+  'stream_reset',
+  'grpc_unimplemented',
+  'grpc_failed',
+  'https_binding_unavailable',
+  'identity_refused',
+  'platform_certificate_refused',
+  'platform_unreachable',
+])
+
+/**
+ * The transport of the last heartbeat and, when it is not gRPC, why, in
+ * plain words; the reason code is in the tooltip.
+ */
 function TransportValue({ protocol }: { protocol: NonNullable<Sensor['protocol']> }) {
+  const { t } = useTranslation()
   if (!protocol.binding) return null
-  const label = TRANSPORT_LABELS[protocol.binding] ?? protocol.binding
+  const binding = TRANSPORT_BINDINGS.has(protocol.binding)
+    ? t(`sensors.transport.binding.${protocol.binding}`, protocol.binding)
+    : protocol.binding
+  const reason = protocol.fallback_reason
   return (
     <span className="text-xs text-muted-foreground" data-testid="sensor-transport">
-      Transport: {label}
-      {protocol.fallback_reason ? (
-        <span className="font-mono"> ({protocol.fallback_reason})</span>
+      {t('sensors.transport.label', 'Transport: {binding}', { binding })}
+      {reason ? (
+        <>
+          {' · '}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                className="rounded-sm underline decoration-dotted underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                data-testid="sensor-transport-reason"
+              >
+                {t(`sensors.transport.reason.${TRANSPORT_REASONS.has(reason) ? reason : 'other'}`)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="font-mono text-xs">
+              {t('sensors.transport.code', 'Reason code: {code}', { code: reason })}
+            </TooltipContent>
+          </Tooltip>
+        </>
       ) : null}
     </span>
   )
