@@ -6,7 +6,7 @@ package routes
 //   - /api/v1/ci/scm-apps...: the console session, the scans module and the
 //     scans:ci:* permissions (binding an installation is an administrator's
 //     act: scans:ci:write).
-//   - POST /api/v1/webhooks/incoming/github-app: public; the GitHub App's webhook
+//   - POST /api/v1/hooks/github-app: public; the GitHub App's webhook
 //     secret (HMAC-SHA256 over the raw body) is the credential, checked
 //     before anything is read. Per-IP limit before the check.
 
@@ -25,7 +25,7 @@ func registerSCMAppRoutes(router Router, h *handler.SCMAppHandler, authMiddlewar
 	}
 	webhookRL := middleware.NewTelemetryRateLimiter(5, 50, time.Hour, log).
 		MiddlewareKeyed(middleware.ClientIPKey, "Webhook rate limit exceeded")
-	router.POST("/api/v1/webhooks/incoming/github-app", h.GitHubWebhook, webhookRL)
+	router.POST("/api/v1/hooks/github-app", h.GitHubWebhook, webhookRL)
 
 	router.Group("/api/v1/ci/scm-apps", func(r Router) {
 		r.GET("", h.List, middleware.Require(permission.CIRead))
