@@ -148,6 +148,6 @@ export function useSensorTransportStatus(enabled = true) {
   return useSWR<SensorTransportStatus>(
     currentTenant && enabled ? SENSOR_TRANSPORT_PATH : null,
     (url: string) => get<SensorTransportStatus>(url),
-    { revalidateOnFocus: false, shouldRetryOnError: false, refreshInterval: 60_000 }
+    { revalidateOnFocus: false, shouldRetryOnError: false }
   )
 }
