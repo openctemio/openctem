@@ -29,7 +29,7 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 		"a0000002-0000-0000-0000-000000000003": 3, // Web app
 		"a0000002-0000-0000-0000-000000000004": 3, // Network
 		"a0000002-0000-0000-0000-000000000005": 4, // Code / CI
-		"a0000002-0000-0000-0000-000000000006": 2, // Passive discovery
+		"a0000002-0000-0000-0000-000000000006": 4, // Passive discovery (with the RDAP and ASN lookups)
 		"a0000002-0000-0000-0000-000000000007": 2, // Probe new assets
 	}
 	for idStr, steps := range want {
@@ -67,11 +67,26 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	caps := map[string]string{}
 	for _, st := range passive.Steps {
 		sg, err := stage.ForCapabilities(st.Capabilities)
 		if err != nil || !sg.Tier.Passive() {
 			t.Fatalf("Passive discovery/%s: stage %v (%v) is not passive", st.StepKey, sg.Key, err)
 		}
+		if sg.NetworkOf().TouchesTargets() {
+			t.Fatalf("Passive discovery/%s: stage %s reaches the targets", st.StepKey, sg.Key)
+		}
+		got, err := scanapp.ResolveStepTool(ctx, tools, shared.NewID(), st)
+		if err != nil || stage.ToolNetwork(got.Name).TouchesTargets() || stage.IntensityTier(got.Name, st.Capabilities, st.Config) != stage.TierPassive {
+			t.Fatalf("Passive discovery/%s: tool %q (%v) is not passive", st.StepKey, got.Name, err)
+		}
+		caps[st.StepKey] = st.Capabilities[0]
+		if st.StepKey == "asn" && (len(st.DependsOn) != 1 || st.DependsOn[0] != "dns") {
+			t.Fatalf("the ASN lookup runs on the resolved addresses, depends on %v", st.DependsOn)
+		}
+	}
+	if caps["rdap"] != string(stage.LookupRDAP) || caps["asn"] != string(stage.LookupASN) {
+		t.Fatalf("Passive discovery steps %v", caps)
 	}
 
 	// The presets they replace are kept, inactive.

@@ -5,7 +5,7 @@ import { Check, Info, Sparkles } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import type { ModulePreset } from '@/features/organization/api/use-tenant-modules'
-import { BUNDLE_ICONS } from '@/features/organization/components/bundle-subscription-card'
+import { PRESET_ICONS } from '@/features/organization/lib/preset-icons'
 
 interface OnboardingBundlePickerProps {
   /** The bundle catalog (product presets). Single source of truth. */
@@ -40,8 +40,8 @@ export function OnboardingBundlePicker({
   // instead; the authoritative resolved module set is computed server-side when
   // the subscription is saved. Per-card counts still hint at each product's size.
   const summaryLabel = useMemo(() => {
-    if (selectedCount === 0) return 'Full platform — every module available'
-    return `${selectedCount} product${selectedCount === 1 ? '' : 's'} selected`
+    if (selectedCount === 0) return 'Every module your plan includes'
+    return 'Starting set selected'
   }, [selectedCount])
 
   if (isLoading) {
@@ -59,11 +59,12 @@ export function OnboardingBundlePicker({
       <div className="flex items-baseline justify-between gap-2">
         <div>
           <p className="text-sm font-medium">
-            Products
+            Starting set
             <span className="text-muted-foreground ms-2 text-xs font-normal">Optional</span>
           </p>
           <p className="text-muted-foreground text-xs">
-            Pick the products this team runs. Leave empty to start with the full platform.
+            Pick what this team does first; you can switch modules on or off later in Settings &gt;
+            Modules. Leave empty to start with every module your plan includes.
           </p>
         </div>
         <span className="text-muted-foreground shrink-0 text-xs">{summaryLabel}</span>
@@ -71,7 +72,7 @@ export function OnboardingBundlePicker({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {bundles.map((b) => {
-          const Icon = BUNDLE_ICONS[b.icon] ?? Sparkles
+          const Icon = PRESET_ICONS[b.icon] ?? Sparkles
           const on = selected.has(b.id)
           return (
             <button
