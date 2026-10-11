@@ -11,10 +11,11 @@ name: Web E2E
 # from. The suite needs the API as well, but the API has its own tests; this
 # job is about the web app.
 #
-# When it runs. It is the slowest job (three image builds and a full stack), and
-# the merge queue tests every pull request again on top of the latest develop,
-# so running it on the pull request too spent a runner twice for one answer.
-#   merge queue   always (when the web changed)
+# When it runs. It is the slowest job (three image builds and a full stack) and
+# not a required check, so it stays out of the merge queue: there it ran once
+# per queued entry and starved the required checks of runners until queue
+# groups timed out (2026-10-11). It runs once per merge batch on develop instead.
+#   develop       on every push (when the web changed)
 #   pull request  only with the `run-e2e` label, or when the suite itself
 #                 (web/e2e/, this workflow) changed
 
@@ -23,8 +24,8 @@ on:
     branches: [main, develop]
     # labeled: adding `run-e2e` to a pull request starts the suite.
     types: [opened, synchronize, reopened, labeled]
-  merge_group:
-    types: [checks_requested]
+  push:
+    branches: [develop]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
