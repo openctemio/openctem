@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/app/outbox"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
@@ -15,6 +16,7 @@ import (
 )
 
 type fakePoster struct {
+	merged   []githubapp.PullRequest
 	pr       githubapp.PullRequest
 	prErr    error
 	checkErr error
@@ -41,6 +43,10 @@ func (f *fakePoster) UpsertIssueComment(_ context.Context, _ int64, _, _ string,
 	f.markers = append(f.markers, marker)
 	f.comments = append(f.comments, body)
 	return nil
+}
+
+func (f *fakePoster) PullRequestsForCommit(context.Context, int64, string, string, string) ([]githubapp.PullRequest, error) {
+	return f.merged, nil
 }
 
 type fakeInstalls struct{ tenant shared.ID }
@@ -229,5 +235,58 @@ func TestDecorateGitLab(t *testing.T) {
 	gh.Provider, gh.Repository = cirun.ProviderGitHub, "github.com/acme/api"
 	if st, _ := job.decorate(ctx, &gh); st != cirun.DecorationSkipped {
 		t.Fatalf("github without app: %s", st)
+	}
+}
+
+type fakeDecorationRepo struct{ passed map[string]bool }
+
+func (f fakeDecorationRepo) ClaimDecorations(context.Context, int) ([]cirun.Run, error) {
+	return nil, nil
+}
+func (f fakeDecorationRepo) FinishDecoration(context.Context, shared.ID, shared.ID, string, string) error {
+	return nil
+}
+func (f fakeDecorationRepo) PullRequestPassed(_ context.Context, _, _ shared.ID, pr string) (bool, error) {
+	return f.passed[pr], nil
+}
+
+type fakeNotifier struct{ titles []string }
+
+func (f *fakeNotifier) Enqueue(_ context.Context, p outbox.EnqueueParams) error {
+	f.titles = append(f.titles, p.EventType+"|"+p.Title)
+	return nil
+}
+
+// A default-branch commit from a merged pull request whose last verdict was
+// not a pass raises ci.ungated_merge; a passing one, an unmerged one or one
+// into another branch does not.
+func TestUngatedMergeAlert(t *testing.T) {
+	tenant := shared.NewID()
+	run := cirun.Run{ID: shared.NewID(), TenantID: tenant, Provider: cirun.ProviderGitHub, Repository: "github.com/acme/api",
+		Branch: "main", IsDefaultBranch: true, CommitSHA: "m1", CommitVerified: true, VerdictDetail: failingVerdict(t)}
+	merged := "2026-10-11T00:00:00Z"
+	pr := func(n int, base string, m *string) githubapp.PullRequest {
+		p := githubapp.PullRequest{Number: n, MergedAt: m}
+		p.Base.Ref = base
+		return p
+	}
+	p := &fakePoster{merged: []githubapp.PullRequest{pr(1, "main", &merged), pr(2, "main", &merged), pr(3, "main", nil), pr(4, "release", &merged)}}
+	n := &fakeNotifier{}
+	job := NewDecorationJob(fakeDecorationRepo{passed: map[string]bool{"2": true}}, fakeInstalls{tenant: tenant}, p, "https://c", nil)
+	job.SetNotifier(n)
+	if st, _ := job.decorate(context.Background(), &run); st != cirun.DecorationPosted {
+		t.Fatalf("decorate: %s", st)
+	}
+	if len(n.titles) != 1 || !strings.HasPrefix(n.titles[0], "ci.ungated_merge|") || !strings.Contains(n.titles[0], "#1") {
+		t.Fatalf("alerts = %v", n.titles)
+	}
+	// Pull request runs never check for ungated merges.
+	n.titles = nil
+	prRun := run
+	prRun.PullRequest, prRun.IsDefaultBranch = "9", false
+	p.pr.MergeCommitSHA, p.pr.Head.SHA = "m1", "h1"
+	_, _ = job.decorate(context.Background(), &prRun)
+	if len(n.titles) != 0 {
+		t.Fatalf("pull request run alerted: %v", n.titles)
 	}
 }
