@@ -312,6 +312,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	runContext["scan_id"] = sc.ID.String()
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
+	recordSkippedTargets(sc, runContext)
 	// The probe ceiling of every step (RFC-071), from the scan, never from
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
@@ -452,6 +453,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	runContext["scan_id"] = sc.ID.String()
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
+	recordSkippedTargets(sc, runContext)
 	runContext["scanner_name"] = sc.ScannerName
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext["scanner_config"] = sc.ScannerConfig
