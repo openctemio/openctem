@@ -168,6 +168,7 @@ function ConfigureTicketingDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation()
   const [syncEnabled, setSyncEnabled] = useState<boolean>(
     Boolean(getTicketingConfig(integration).sync_enabled)
   )
@@ -401,9 +402,10 @@ function ConfigureTicketingDialog({
             <div className="space-y-3 rounded-lg border p-3">
               <Label className="font-medium">Inbound status mapping</Label>
               <p className="text-muted-foreground text-xs">
-                Map your Jira workflow status names to OpenCTEM finding statuses so a Jira-side
-                status change updates the finding. Stock Jira names (To Do / In Progress / Done…)
-                already work — only add rows for custom workflow statuses.
+                {t(
+                  'settings.ticketing.inboundHint',
+                  'Only for custom Jira statuses: stock names (To Do, In Progress, Done) already map.'
+                )}
               </p>
               {statusInbound.length === 0 && (
                 <p className="text-muted-foreground text-xs italic">
@@ -737,6 +739,7 @@ interface ConnectJiraDialogProps {
 }
 
 function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogProps) {
+  const { t } = useTranslation()
   const [name, setName] = useState('Jira Cloud')
   const [baseUrl, setBaseUrl] = useState('')
   const [email, setEmail] = useState('')
@@ -852,8 +855,10 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
                 required
               />
               <p className="text-muted-foreground text-xs">
-                The email of the Atlassian account that owns the API token. Jira Cloud pairs it with
-                the token for authentication.
+                {t(
+                  'settings.ticketing.emailHint',
+                  'The email of the Atlassian account that owns the API token.'
+                )}
               </p>
             </div>
 

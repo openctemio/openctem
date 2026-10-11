@@ -391,6 +391,9 @@ func run() int {
 	// would cut its control stream; it carries its own guards.
 	if handlers.SensorV3 != nil {
 		server.MountPrefix(sensortransport.PathPrefix, handlers.SensorV3.HTTPSHandler(handlers.SensorResultsV2.AuthenticateV3))
+		// When the API terminates TLS itself, a ClientHello offering the
+		// sensor ALPN id is served by the gRPC binding on the same port.
+		server.SetTLSSplitter(handlers.SensorV3.SplitTLS)
 	}
 
 	// Handle --routes flag

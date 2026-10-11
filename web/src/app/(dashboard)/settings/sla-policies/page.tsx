@@ -166,8 +166,11 @@ export default function SlaPoliciesPage() {
   return (
     <Main>
       <PageHeader
-        title="SLA policies"
-        description="Remediation windows per CTEM priority class (P0–P3), with severity windows for findings that have no class yet. The default policy applies to every finding."
+        title={t('settings.slaPolicies.title', 'SLA policies')}
+        description={t(
+          'settings.slaPolicies.description',
+          'Remediation windows per priority class (P0–P3), and per severity for findings without a class.'
+        )}
       >
         {!isLoading && !error && !hasDefault && (
           <Can permission={Permission.SLAWrite}>

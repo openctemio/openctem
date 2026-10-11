@@ -262,3 +262,14 @@ func TestPlatformJobs_CommandsAndLogsRedacted_DB(t *testing.T) {
 		t.Errorf("a tenant job's logs were masked: %s", body)
 	}
 }
+
+// The sensor transport status is installation infrastructure: it is on
+// Console > Operations only, never on an organization's sensor routes.
+func TestSensorTransportStatus_NotOnTenantRoutes_DB(t *testing.T) {
+	h := newPlatformPlaneHarness(t)
+	owner := h.member(h.tenant(), "owner")
+	code, body := h.do(owner, http.MethodGet, "/api/v1/sensors/transport", "")
+	if code == http.StatusOK || strings.Contains(body, `"grpc"`) || strings.Contains(body, "https_path") {
+		t.Fatalf("tenant read the sensor transport status: %d %s", code, body)
+	}
+}

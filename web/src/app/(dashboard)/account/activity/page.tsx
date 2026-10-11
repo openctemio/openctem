@@ -27,6 +27,7 @@ import {
   formatAction,
   RESULT_DISPLAY,
 } from '@/features/organization/types/audit.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Icon per action category (action looks like "auth.login", "user.updated", …)
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
@@ -54,6 +55,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 const PER_PAGE = 10
 
 export default function ActivityPage() {
+  const { t } = useTranslation()
   const user = useDisplayUser()
   // The page lives in the URL (one list convention).
   const { page, setPage } = useListParams({ defaultPageSize: PER_PAGE })
@@ -173,11 +175,12 @@ export default function ActivityPage() {
               <Shield className="h-5 w-5 text-blue-500" />
             </div>
             <div>
-              <p className="font-medium">Security Tip</p>
+              <p className="font-medium">{t('settings.account.securityTip', 'Security tip')}</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Review your activity regularly. Sign-ins are not listed here yet; your active
-                sessions are under Security. If you see anything you do not recognise, change your
-                password and sign out your other sessions.
+                {t(
+                  'settings.account.securityTipBody',
+                  'Sign-ins and active sessions are under Security. If you see anything you do not recognise, change your password and sign out your other sessions.'
+                )}
               </p>
             </div>
           </div>

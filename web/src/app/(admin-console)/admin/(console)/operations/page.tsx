@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { Info } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,10 +12,12 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useAdminOperations } from '@/features/admin-console/api/use-admin-operations'
 import {
   schemaState,
+  sensorTransportView,
   summarizeSensors,
   type SchemaState,
 } from '@/features/admin-console/lib/operations'
 import type { AdminOperations } from '@/features/admin-console/types'
+import { DOCS } from '@/lib/docs-links'
 
 function HealthTile({
   title,
@@ -65,6 +68,7 @@ function Body({ o }: { o: AdminOperations }) {
   const { t } = useTranslation()
   const schema = schemaState(o)
   const fleet = summarizeSensors(o)
+  const transport = sensorTransportView(o.sensor_transport)
   const q = o.queues
 
   return (
@@ -190,7 +194,41 @@ function Body({ o }: { o: AdminOperations }) {
                 label={t('admin.ops.fleet.customer', 'Customer sensors (online / total)')}
                 value={`${fleet.customer.online} / ${fleet.customer.total}`}
               />
+              {transport && (
+                <Row
+                  label={t('admin.ops.transport', 'Sensor connection')}
+                  value={t(`admin.ops.transport.${transport.binding}`, transport.binding)}
+                />
+              )}
             </dl>
+            {transport?.noteKey && (
+              <div
+                className="flex gap-2 rounded-md border bg-muted/40 p-3 text-sm"
+                data-testid="sensor-transport-note"
+              >
+                <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <div className="space-y-1">
+                  <p>{t(transport.noteKey)}</p>
+                  <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <a
+                      href={DOCS.sensors.transportPlatform}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-2"
+                    >
+                      {t('admin.ops.transport.docs', 'How sensors connect')}
+                    </a>
+                    {transport.reason && (
+                      <span className="font-mono">
+                        {t('admin.ops.transport.code', 'Reason code: {code}', {
+                          code: transport.reason,
+                        })}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <h3 className="text-sm font-medium">
                 {t('admin.ops.fleet.versions', 'SDK versions in the field')}
