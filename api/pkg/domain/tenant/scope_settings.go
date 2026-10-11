@@ -45,6 +45,10 @@ type ScopeSettings struct {
 	// AutoJoinDisabled stops confirming discovered names a scope entry covers
 	// (they go to the review queue instead).
 	AutoJoinDisabled bool `json:"auto_join_disabled,omitempty"`
+	// ConfirmAddsDisabled stops a person's confirmation of an asset from
+	// adding its exact scope entry (on by default; Off and On scan approval
+	// modes only).
+	ConfirmAddsDisabled bool `json:"confirm_adds_disabled,omitempty"`
 	// OneOffTargets: admins, admins_and_requests (default) or disabled.
 	OneOffTargets string `json:"one_off_targets,omitempty"`
 	// OneOffMaxDays bounds an expiring entry, 1..30 (0: 7).
@@ -72,6 +76,10 @@ const (
 	MaxT2AttestationDays     = 180
 	DefaultT2AttestationDays = 90
 )
+
+// ConfirmAddsToScope reports whether a person's confirmation of an asset
+// adds its exact scope entry (the default).
+func (s ScopeSettings) ConfirmAddsToScope() bool { return !s.ConfirmAddsDisabled }
 
 // AttestationDays returns the attestation period with its default.
 func (s ScopeSettings) AttestationDays() int {

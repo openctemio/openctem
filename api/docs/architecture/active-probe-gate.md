@@ -79,6 +79,13 @@ controller then marks it `expired`.
   (with its status), `exists` (the organization's own row) or `refused`
   (code and message). Entries are recorded with origin `import`, or
   `refusal_fix` when they fix a refused scan.
+- **Confirming adds to scope** (RFC-054 §14.5). A person's confirmation
+  (`POST /easm/candidates/decisions`, `PUT /assets/{id}/attribution`) runs
+  `scope.Service.CoverConfirmedAssets`: the exact entry of each confirmed
+  name, address, network, service or application no entry covers, through
+  `CreateTargets` (origin `manual`), in the Off and On modes while
+  `confirm_adds_to_scope` is on. Without a recent step-up nothing is added
+  and the response lists the pending entries.
 - **One authority: scope entries** (RFC-054; migration
   `001262`). Root-domain seeds were folded into permanent `*.<domain>`
   entries and `/api/v1/easm/seeds` is gone; a verified domain, of any
