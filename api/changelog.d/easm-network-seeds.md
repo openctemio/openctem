@@ -10,3 +10,5 @@
   Cloud and CDN networks offer no prefixes. A seed never authorizes a scan.
 - The review queue offers the range around an address in a seeded network.
 - Seeds are refreshed weekly; a refresh can be requested once per 15 minutes.
+- The organization can turn the RIPEstat lookups off on the monitoring card
+  (`network_lookups_enabled` on `/api/v1/easm/settings`, on by default).

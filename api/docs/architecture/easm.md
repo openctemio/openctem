@@ -434,7 +434,9 @@ flow. An organization seed lists the AS numbers registered to the name
 (shared cloud/CDN ASes dropped). A seed never authorizes a probe. In the
 review queue an address in a seeded network gets the /24 or /48 around it
 offered (`network.seeded`). Seeds are refreshed weekly
-(`easm-network-seed-refresh`). A CIDR seed is a CIDR scope entry.
+(`easm-network-seed-refresh`). A CIDR seed is a CIDR scope entry. The
+organization can turn RIPEstat lookups off (`network_lookups_enabled` on
+`/api/v1/easm/settings`; fail closed when the setting cannot be read).
 
 ## 4f. Review queue reachable, honest counts (built, P0-12)
 

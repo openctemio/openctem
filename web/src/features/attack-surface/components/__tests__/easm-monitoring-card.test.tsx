@@ -50,6 +50,7 @@ const settings = {
   last_ct_sweep_at: '2026-10-05T01:00:00Z',
   enrichment_enabled: true,
   enrichment_available: true,
+  network_lookups_enabled: true,
 }
 
 beforeEach(() => {
@@ -63,6 +64,19 @@ beforeEach(() => {
 })
 
 describe('EASMMonitoringCard', () => {
+  it('turns network seed lookups off with only that field changed', async () => {
+    wrap(<EASMMonitoringCard />)
+    const sw = await screen.findByRole('switch', { name: 'Network seed lookups' })
+    await userEvent.click(sw)
+    expect(api.put).toHaveBeenCalledWith('/api/v1/easm/settings', {
+      ct_enabled: true,
+      dns_checks_enabled: true,
+      ct_interval_hours: 0,
+      dns_interval_hours: 12,
+      network_lookups_enabled: !settings.network_lookups_enabled,
+    })
+  })
+
   it('turns CT off keeping the other settings', async () => {
     wrap(<EASMMonitoringCard />)
     const ct = await screen.findByRole('switch', { name: 'Certificate Transparency discovery' })
