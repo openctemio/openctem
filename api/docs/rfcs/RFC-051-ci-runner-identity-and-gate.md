@@ -249,7 +249,7 @@ branch sees it. See `docs/architecture/branch-only-findings.md`.
   "baseline": {"branch": "main", "known": true},
   "summary": {"evaluated": 3, "new": 1, "pre_existing": 1, "accepted": 1, "blocking": 1},
   "reasons": [{"code": "severity", "message": "severity high is at or above high", "finding_id": "…", "title": "…", "file": "db.go", "line": 42, "url": "https://…/findings/…"}],
-  "links": {"run": "https://…/ci-runners/…", "findings": "https://…/findings?asset_id=…"} }
+  "links": {"run": "https://…/ci-cd?view=runs&run=…", "findings": "https://…/findings?asset_id=…"} }
 ```
 
 Policy resolution (`ci_gate_policies`): the repository's own policy, else the
