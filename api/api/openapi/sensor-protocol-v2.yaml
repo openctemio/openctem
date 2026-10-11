@@ -511,6 +511,53 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/identity/bind:
+    post:
+      summary: Bind this bearer-key sensor's own signing key (RFC-052 §4.8)
+      operationId: sensorV2BindKey
+      description: |
+        A sensor authenticated by its API key binds an Ed25519 key it
+        generated: proof = signature by that key of
+        "openctem-sensor-key-bind/v1\n<thumbprint>\n<issued_at>" (issued_at
+        within 5 minutes; bytes base64url without padding). In one
+        transaction the sensor becomes key-bound and every API key of the
+        sensor is retired (one way). Signed by the sensor's own active key,
+        the same request confirms an earlier bind (200, nothing changes).
+        Hello lists the feature key_bind. Per-sensor key renewal budget.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [public_key, issued_at, proof]
+              properties:
+                public_key: { type: string, description: "raw Ed25519 public key, base64url" }
+                issued_at: { type: string, format: date-time }
+                proof: { type: string, description: "Ed25519 signature, base64url" }
+      responses:
+        "201":
+          description: Bound. The identity the sensor signs as from now on; Cache-Control is no-store.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyBindResponse" }
+        "200":
+          description: The sensor already signs with this key (confirmation); nothing changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyBindResponse" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403":
+          description: key-bind-approval-required (the organization requires an administrator to re-pair the sensor).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: key-bind-refused (not an active bearer-key sensor, key already registered, or invalid proof).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/pairings:
     post:
       summary: Start an interactive pairing (RFC-052)
@@ -663,6 +710,14 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
   schemas:
+    KeyBindResponse:
+      type: object
+      required: [sensor_id, tenant_id, name, key_id]
+      properties:
+        sensor_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        key_id: { type: string, description: "RFC 7638 thumbprint, the keyid of every signature" }
     PairingStart:
       type: object
       required: [protocol, public_key, commitment, host]
