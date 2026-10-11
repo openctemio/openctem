@@ -15,5 +15,6 @@
   "findings.status.in_review": "In Review",
   "findings.statusCategory.open": "Open",
   "findings.statusCategory.in_progress": "In progress",
-  "findings.statusCategory.closed": "Closed"
+  "findings.statusCategory.closed": "Closed",
+  "findings.remediation.none": "The scanner gave no remediation advice."
 }
