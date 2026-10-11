@@ -332,9 +332,12 @@ pagination (`cursor`, `limit` ≤ 200).
 ### 11.4 Status (see §12 for precedence)
 
 Delivered: ordering, clock clamp, `source_run`, winner flag, equal-rank
-conflicts, timeline table, API, controller (#1688). Next: the web Timeline
-tab and the organization feed; per-source set attributes (§13); feed
-bundle sequence and expiry checks for programfeed sources.
+conflicts, timeline table, API, controller (#1688); web: the asset sheet's
+Timeline tab and a Timeline card on the asset page (by day, filters by
+attribute and source, diff, "why this value"), and Discovery › Assets ›
+Timeline, the organization feed (filters by attribute, source and tag).
+Next: per-source set attributes (§13); feed bundle sequence and
+expiry checks for programfeed sources.
 
 ## 12. Precedence per attribute class (owner requirements, 2026-10-10)
 

@@ -21,6 +21,7 @@ import {
   GitBranch,
   Globe,
   History,
+  ListTree,
   Link2,
   ListChecks,
   Radar,
@@ -197,6 +198,14 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     label: 'What changed',
     href: '/assets/changes',
     icon: History,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    // Changes of asset values and of the sources that decide them (RFC-069).
+    label: 'Timeline',
+    href: '/assets/timeline',
+    icon: ListTree,
     module: 'assets',
     permission: Permission.AssetsRead,
   },

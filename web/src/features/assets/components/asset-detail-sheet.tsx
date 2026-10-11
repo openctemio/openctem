@@ -31,6 +31,8 @@ import { AssetMergeHistory } from './asset-merge-history'
 import { AssetIdentitySections } from './asset-identity-sections'
 import { AssetAttributionSection } from './asset-attribution-section'
 import { AssetAttributeSourcesSection } from './asset-attribute-sources-section'
+import { AssetTimeline } from './asset-timeline'
+import { useTranslation } from '@/context/i18n-provider'
 import { RelationshipPreview } from './relationships'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
@@ -202,6 +204,7 @@ export function AssetDetailSheet<T extends Asset>({
   onUpdateTags,
   tagSuggestions,
 }: AssetDetailSheetProps<T>) {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = React.useState('overview')
 
   // Fetch relationships only for the overview-tab preview + the tab badge
@@ -241,6 +244,7 @@ export function AssetDetailSheet<T extends Asset>({
   const tabs: DetailTab[] = [
     { value: 'overview', label: 'Overview' },
     ...(showOwnersTab ? [{ value: 'owners', label: 'Owners' }] : []),
+    { value: 'timeline', label: t('assetTimeline.tab', 'Timeline') },
     ...(extraTabs ?? []).map((t) => ({ value: t.value, label: t.label })),
     ...(relationshipsOn
       ? [
@@ -417,6 +421,10 @@ export function AssetDetailSheet<T extends Asset>({
         )}
 
         {tab === 'owners' && <AssetOwnersTab assetId={asset.id} />}
+
+        {tab === 'timeline' && (
+          <AssetTimeline assetId={asset.id} onWhy={() => setActiveTab('details')} />
+        )}
 
         {extraTabs?.map((t) =>
           tab === t.value ? <React.Fragment key={t.value}>{t.content}</React.Fragment> : null
