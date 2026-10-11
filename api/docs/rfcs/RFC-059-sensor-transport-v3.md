@@ -138,10 +138,10 @@ ids) is the only identity check, at the handshake and on every call.
 
 | Setup | Gateway | Endpoint sensors get | Notes |
 |---|---|---|---|
-| IP address only, one port (e.g. `https://192.168.1.10`) | layer4 image, `OPENCTEM_SENSOR_GATEWAY=alpn` | `192.168.1.10:443` as `grpc_alpn_endpoint` | Server certificate minted with an IP SAN by the sensor CA; the API's probe must reach the address from inside its container (hairpin through the published port) |
+| IP address only, one port (e.g. `https://192.0.2.10`) | layer4 image, `OPENCTEM_SENSOR_GATEWAY=alpn` | `192.0.2.10:443` as `grpc_alpn_endpoint` | Server certificate minted with an IP SAN by the sensor CA; the API's probe must reach the address from inside its container (hairpin through the published port) |
 | One host name for everything (e.g. `ctem.example.com`) | layer4 image, `alpn` | `ctem.example.com:443` as `grpc_alpn_endpoint` | No extra DNS name or certificate; the public certificate for the web UI is unaffected |
 | Dedicated sensor host name (e.g. `sensors.example.com`) | layer4 image, `passthrough` + `SENSOR_PUBLIC_HOSTNAME`; API `SENSOR_PUBLIC_HOST=sensors.example.com:443` | as `grpc_endpoint` and `grpc_alpn_endpoint` | Routed by SNI and by ALPN; also reached by sensors that do not offer the ALPN id yet |
-| Separate port (explicit) | any; the operator publishes the API's `:8443` | `SENSOR_PUBLIC_HOST` (e.g. `192.168.1.10:8444`) as both fields | Only when configured; no PROXY protocol unless a proxy in front sends it |
+| Separate port (explicit) | any; the operator publishes the API's `:8443` | `SENSOR_PUBLIC_HOST` (e.g. `192.0.2.10:8444`) as both fields | Only when configured; no PROXY protocol unless a proxy in front sends it |
 | Stock gateway image (no layer4) | `caddy` image, `off` | none: HTTPS binding | The probe meets the gateway's certificate (`foreign_certificate`); nothing to configure |
 | L7 load balancer that terminates TLS and cannot pass TCP through | any behind it | none: HTTPS binding | The `Subscribe` stream and every RPC work over the Connect protocol on HTTP/1.1 or HTTP/2; keep response buffering off on the balancer |
 | L4 load balancer (TCP passthrough) in front of the gateway | layer4 image, `alpn` | platform host:443 | The balancer must pass TCP unchanged (no TLS termination); set `OPENCTEM_TRUSTED_PROXIES` for the HTTP side as usual |
