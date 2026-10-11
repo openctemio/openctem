@@ -169,7 +169,7 @@ Response (201):
 }
 ```
 
-The user opens `<UI>/set-password?token=<setup_token>` and chooses a password
+The user opens `<UI>/set-password#token=<setup_token>` and chooses a password
 (`POST /api/v1/auth/reset-password`). The link is single-use and expires after
 24 hours; an administrator can issue a new one while the account is unused.
 Errors: 409 when the email already has an account (invite instead), 400 when
@@ -290,7 +290,7 @@ UPDATE tenants
 |---------|---------|---------|
 | `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
-| `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password?token=`). |
+| `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password#token=`). |
 | `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). |
 
 ## Code map
