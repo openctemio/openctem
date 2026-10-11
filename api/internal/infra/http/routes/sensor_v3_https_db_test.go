@@ -102,7 +102,7 @@ func newV3HarnessWith(t *testing.T, opts []command.Option, recheck ...time.Durat
 	sensorSvc.SetCancelFinder(cmdRepo)
 
 	ih := handler.NewIngestHandler(ingestSvc, sensorSvc, log)
-	ih.SetDoorbell(sensor.NewDoorbell(cmdRepo, sensor.DefaultDoorbellConfig().Normalized(5*time.Minute), log))
+	ih.SetDoorbell(sensor.NewDoorbell(cmdRepo, sensor.DefaultDoorbellConfig().Normalized(5*time.Minute, 0), log))
 	ch := handler.NewCommandHandler(cmdSvc, validator.New(), log)
 	ch.SetCommandLogs(commandlog.NewService(postgres.NewCommandLogRepository(db)))
 	sh := handler.NewSuppressionHandler(suppression.NewService(postgres.NewSuppressionRepository(db), log), log)
