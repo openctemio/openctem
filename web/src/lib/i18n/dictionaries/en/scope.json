@@ -201,5 +201,20 @@
   "scope.settings.scanApprovalByOwner": "Set by your owner in Settings > Scan approval.",
   "scope.approvals.noneNeeded": "Scope entries need no approval while scan approval is not Strict: changes that widen scope take effect at once.",
   "scope.refusal.label.constrained": "Limited entry",
-  "scope.refusal.message.constrained": "The scope entries covering this target are limited to some ports or a path, and this job could reach others."
+  "scope.refusal.message.constrained": "The scope entries covering this target are limited to some ports or a path, and this job could reach others.",
+  "scope.exclusion.toastActive": "{label} is out of scope",
+  "scope.exclusion.toastPending": "{label} waits for another approver",
+  "scope.exclusion.toastPendingHint": "Scans keep reaching it until the exclusion is approved.",
+  "scope.exclusion.outcomeReview": "Another approver must approve it before scans start skipping it.",
+  "scope.exclusion.outcomeNow": "It applies at once: scans skip it. It is kept in the audit log, and anyone who manages scope can lift it later.",
+  "scope.exclusion.liftNeedsApprover": "Lifting an exclusion widens scope: it needs the exclusion approve permission.",
+  "scope.exclusion.liftNeedsWrite": "Lifting an exclusion needs the scope write permission.",
+  "scope.exclusion.removeNeedsApprover": "Removing an exclusion in effect widens scope: it needs the exclusion approve permission.",
+  "scope.approvals.emptyTitle": "No changes wait for approval",
+  "scope.approvals.requiredN": "Your organization requires {n} approvals for changes that widen scope (Scope policy).",
+  "scope.approvals.required1": "Your organization requires 1 approval for changes that widen scope (Scope policy).",
+  "scope.approvals.immediate": "Changes that widen scope take effect at once in your organization (Scope policy).",
+  "scope.approvals.leftOver": "Scope changes need no approval while scan approval is not Strict. These were submitted earlier and still wait: approve or reject them, or their requester can remove them and add them again.",
+  "scope.exclusion.submitRequest": "Request exclusion",
+  "scope.exclusion.submitAdd": "Add exclusion"
 }
