@@ -201,6 +201,9 @@ type AssetView struct {
 	Classes []ClassView `json:"classes"`
 	// NextDueAt is the earliest DueAt among the classes; nil when none was observed.
 	NextDueAt *time.Time `json:"next_due_at,omitempty"`
+	// Enrichment is the asset's pending or last automatic enrichment; nil
+	// when it never had one.
+	Enrichment *Request `json:"enrichment,omitempty"`
 }
 
 // View computes an asset's freshness from its observations: every observed
