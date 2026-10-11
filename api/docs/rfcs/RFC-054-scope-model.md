@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add, R3 and R5 implemented, R4 and R8 decided); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add and R3–R5, R8 implemented); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -1084,9 +1084,9 @@ turns scope off.
 | R1 | Add many entries | one pattern per request; one notice to every administrator per entry | `POST /scope/targets/bulk` (≤ 200 items): step-up once before any write, each item an ordinary create, a result per item, one notice for the batch | implemented |
 | R2 | Add from anywhere | one asset's ownership section, the review queue, a scan refusal | inventory selection → "Add to scope" (exact entries), the scan wizard's "add the missing targets" and finding actions use R1 | inventory: implemented; others follow |
 | R3 | A person confirms an asset | confirmation records ownership only (§4.2) | the tenant setting `confirm_adds_to_scope` (default on; Off and On only) adds the exact entry when a person confirms; automated sources never do (§14.5) | implemented |
-| R4 | Addresses behind in-scope names | never inherit (S4) | decided: a one-click suggestion of the addresses in-scope names resolve to, excluding addresses that look shared (provider edge ranges, an address several registrable domains of the inventory resolve to); never automatic | decided, follows |
+| R4 | Addresses behind in-scope names | never inherit (S4) | decided: a one-click suggestion of the addresses in-scope names resolve to, excluding addresses that look shared (provider edge ranges, an address several registrable domains of the inventory resolve to); never automatic | implemented (§14.7) |
 | R5 | Private targets on the organization's own sensor | refused without a scan zone (`zone_none`) | decided: allowed when the scan runs on a tenant sensor whose reported local policy `targets.allow` contains the target; platform sensors never; zones stay for routing | implemented for organizations without zones (§14.6) |
-| R8 | Connector inventory | blocked until added by hand | decided: a per-connector switch, default on, adds the exact entries of the assets a connector syncs (exclusions and the deny list still win) | decided, follows |
+| R8 | Connector inventory | blocked until added by hand | decided: a per-connector switch, default on, adds the exact entries of the assets a connector syncs (exclusions and the deny list still win) | implemented (§14.8) |
 | R6 | Approvals, tiers, requests | Strict only (RFC-073) | unchanged | — |
 | R7 | Exclusions, deny list, public suffixes, CIDR caps, audit, signer ledger, sensor local policy | always on | unchanged, always on; a bulk add runs every item through them | — |
 
@@ -1188,10 +1188,52 @@ policy keeps the zone rule for the whole organization (it could take the
 job). Organizations with zones keep zone routing unchanged: add the range
 to a zone. Threat model: §14.3, R5.
 
+### 14.7 Addresses behind in-scope names (R4)
+
+Owner decision 2026-10-11: a one-click suggestion, never inheritance.
+`GET /scope/suggestions/addresses` (`attack_surface:scope:write`) lists the
+public IP address assets that a name of the organization resolves to
+(`resolves_to` relationships), when an entry in effect covers at least one
+of those names and no entry covers the address, each with those names and
+the cloud provider that owns the address space when known
+(`easm.AddressSuggester`, the active gate's authority and deny list).
+Left out and counted as `skipped_shared`: an address an edge or CDN
+provider serves (the asset's `cdn` property or its network owner), and an
+address names of three or more registrable domains resolve to (shared
+hosting). Private addresses and deny-listed ones are never listed. The
+address and its names are narrowed to the caller's data scope (both must be
+visible). Nothing is added: the client adds the chosen addresses with
+`POST /scope/targets/bulk`. Reads are tenant-scoped on every table.
+
+### 14.8 Connector inventory in scope (R8)
+
+Owner decision 2026-10-11: connectors sync the organization's own
+inventory, so it is in scope by default; an administrator turns it off per
+connector. The integration config switch `inventory_in_scope` (absent:
+on) decides. After a report of a connector sync is ingested, the assets it
+created or updated are handed to `scope.Service.CoverConnectorAssets`:
+
+- which connector is decided on the server only: a report bound to a
+  `connector_sync` command (the integration id the platform wrote in the
+  command), or a trusted server-side ingest that names its integration
+  (the DefectDojo sync); a sensor never says which connector it is;
+- the integration is read for the report's tenant only; another tenant's
+  or an unknown id adds nothing;
+- names, addresses, networks, services, applications and hosts get their
+  exact entry (`scopedom.ExactEntryFor`); private addresses, internal names,
+  repositories and identifiers never;
+- at most 1000 new entries per sync (the next sync adds the rest), through
+  `CreateTargets` as a system decision (origin `import`, reason "Synced by
+  connector <name>"): guardrails and the signer ledger per entry; one notice
+  to the administrators per sync;
+- Off and On modes only; exclusions and the deny list still win at
+  dispatch; turning the switch off stops new entries (existing ones stay
+  until removed).
+
 ### 14.4 Plan
 
 | Phase | Items |
 |---|---|
 | P0 | R1 bulk add (API); inventory "Add to scope"; pasting a list on the Scope page |
-| P1 | R3 and R5 (implemented), R4, R8; "Add host to scope" on findings |
+| P1 | R3, R4, R5 and R8 (implemented); "Add host to scope" on findings |
 | P2 | the scan preflight explains a sensor's local-policy refusals from its reported policy |

@@ -2118,6 +2118,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// waiting for it is planned.
 	s.Ingest.SetStepOutputRecorder(scanHops)
 	s.Ingest.SetCommandIngestedHook(s.ScanRun.OnCommandIngested)
+	// A connector's synced inventory is in scope unless its switch is off
+	// (RFC-054 §14.8).
+	s.Scope.SetConnectorIntegrations(repos.Integration)
+	s.Ingest.SetConnectorInventoryHook(connectorInventoryHook(repos.Command, s.Scope, log))
 
 	// Wire up scan workflow deactivator to tool service for cascade deactivation
 	// When a tool is deactivated/deleted, all active scan workflows using it will be deactivated

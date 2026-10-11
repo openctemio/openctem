@@ -651,6 +651,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Scan != nil && svc.ActiveGate != nil {
 		handlers.Scope.SetDryRun(svc.Scan, svc.ActiveGate)
 	}
+	if svc.ActiveGate != nil {
+		// Addresses behind in-scope names, offered for one click (RFC-054 §14.7).
+		handlers.Scope.SetAddressSuggester(easmapp.NewAddressSuggester(
+			postgres.NewScopeAddressRepository(deps.DB), svc.ActiveGate, svc.DataScope))
+	}
 	handlers.Tool.SetAuditService(svc.Audit)
 	// Configuration changes audited with a before/after diff.
 	handlers.Integration.SetAuditService(svc.Audit)
