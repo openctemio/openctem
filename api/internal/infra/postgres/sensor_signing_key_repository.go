@@ -127,3 +127,45 @@ func (r *SensorSigningKeyRepository) RevokeAllForSensor(ctx context.Context, ten
 	}
 	return res.RowsAffected()
 }
+
+// BindToBearerSensor makes an active bearer-key sensor key-bound: the row
+// changes kind first (the compare-and-set that lets exactly one of two
+// concurrent binds win), the key is inserted active, and every API key of
+// the sensor is retired. All or nothing.
+func (r *SensorSigningKeyRepository) BindToBearerSensor(ctx context.Context, key *sensordom.SigningKey, at time.Time) (int64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin key bind: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE sensors
+		SET auth_kind = 'key_bound', api_key_hash = $3, api_key_prefix = '', key_expires_at = NULL, updated_at = $4
+		WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND NOT is_platform_sensor
+		  AND auth_kind IS DISTINCT FROM 'key_bound'`,
+		key.TenantID.String(), key.SensorID.String(), sensordom.KeyBoundHashPlaceholder(), at)
+	if err != nil {
+		return 0, fmt.Errorf("bind sensor: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return 0, sensordom.ErrKeyBindConflict
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sensor_keys
+		(id, tenant_id, sensor_id, thumbprint, public_key, status, created_at, activated_at)
+		VALUES ($1, $2, $3, $4, $5, 'active', $6, $6)`,
+		key.ID.String(), key.TenantID.String(), key.SensorID.String(), key.Thumbprint, key.PublicKey, at); err != nil {
+		if isUniqueViolation(err) {
+			return 0, sensordom.ErrKeyBindConflict
+		}
+		return 0, fmt.Errorf("register bound key: %w", err)
+	}
+	retired, err := execCount(ctx, tx, `UPDATE sensor_api_keys
+		SET is_active = FALSE, revoked_at = $2, revoked_reason = $3
+		WHERE sensor_id = $1 AND is_active`, key.SensorID.String(), at, sensordom.KeyRevokedBound)
+	if err != nil {
+		return 0, fmt.Errorf("retire API keys: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit key bind: %w", err)
+	}
+	return int64(retired), nil
+}

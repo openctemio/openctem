@@ -310,6 +310,7 @@ var optionalServiceSetters = map[string]string{
 	"UserDashboard.SetDefault":           "request operation, called by the dashboard handler",
 	"Vulnerability.SetFindingTags":       "request operation, called by the finding handler",
 	"Sensor.SetBearerKeysAllowed":        "request operation, called by the sensor identity-policy handler",
+	"Sensor.SetKeyBindRequiresApproval":  "request operation, called by the sensor identity-policy handler",
 	// Real seams left at their defaults on purpose.
 	"ScannerTemplate.SetQuota":            "default quota applies; the override exists for tests and future config",
 	"SensorPairing.SetClock":              "test hook; the service uses time.Now",

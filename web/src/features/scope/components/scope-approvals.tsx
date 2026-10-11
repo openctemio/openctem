@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ActorChip, EmptyState, RelativeTime, TonePill } from '@/features/shared'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -180,6 +181,8 @@ export function ScopeApprovals() {
   const [selfApprove, setSelfApprove] = useState<ApiScopeTarget | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  // A rejection answers someone's request, so it asks first.
+  const [pendingReject, setPendingReject] = useState<PendingChange | null>(null)
 
   const decide = async (list: PendingChange[], approve: boolean) => {
     setBusy(true)
@@ -198,6 +201,7 @@ export function ScopeApprovals() {
     }
     await invalidateScopeCache()
     setSelected(new Set())
+    setPendingReject(null)
     setBusy(false)
     if (done > 0)
       toast.success(
@@ -376,7 +380,7 @@ export function ScopeApprovals() {
                         size="sm"
                         variant="outline"
                         disabled={busy || e.created_by?.id === user?.id}
-                        onClick={() => void decide([c], false)}
+                        onClick={() => setPendingReject(c)}
                       >
                         <X className="h-4 w-4" />
                         Reject
@@ -408,6 +412,21 @@ export function ScopeApprovals() {
       {selfApprove && (
         <ScopeSelfApproveDialog entry={selfApprove} onOpenChange={() => setSelfApprove(null)} />
       )}
+      <ConfirmDialog
+        open={pendingReject !== null}
+        onOpenChange={(o) => !o && setPendingReject(null)}
+        destructive
+        title={t('confirm.scopeChange.rejectTitle', 'Reject the change to {pattern}?', {
+          pattern: pendingReject?.item.pattern ?? '',
+        })}
+        desc={t(
+          'confirm.scopeChange.rejectDesc',
+          'The requested change is not applied and leaves the approval queue. To make it later, it has to be requested again.'
+        )}
+        confirmText={t('confirm.reject', 'Reject')}
+        isLoading={busy}
+        handleConfirm={() => (pendingReject ? decide([pendingReject], false) : undefined)}
+      />
     </div>
   )
 }

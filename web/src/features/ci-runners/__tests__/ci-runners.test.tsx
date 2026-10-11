@@ -31,6 +31,10 @@ let runDetail: unknown
 let trust: unknown[] = []
 let perms: string[] = []
 let lastRunFilters: unknown
+let gatePolicies: unknown[] = []
+let overrides: unknown[] = []
+const mockDeletePolicy = vi.fn()
+const mockRevokeOverride = vi.fn()
 
 vi.mock('../api/use-ci', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/use-ci')>()),
@@ -47,7 +51,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   usePreviewTrustConfig: () => ({ trigger: mockPreview, isMutating: false }),
   useGatePolicies: () => ({
     data: {
-      data: [],
+      data: gatePolicies,
       default: {
         scope_type: 'default',
         mode: 'enforce',
@@ -60,10 +64,10 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
     mutate: vi.fn(),
   }),
   useSaveGatePolicy: () => ({ trigger: vi.fn(), isMutating: false }),
-  useDeleteGatePolicy: () => ({ trigger: vi.fn(), isMutating: false }),
-  useGateOverrides: () => ({ data: { data: [] }, isLoading: false, mutate: vi.fn() }),
+  useDeleteGatePolicy: () => ({ trigger: mockDeletePolicy, isMutating: false }),
+  useGateOverrides: () => ({ data: { data: overrides }, isLoading: false, mutate: vi.fn() }),
   useCreateGateOverride: () => ({ trigger: vi.fn(), isMutating: false }),
-  useRevokeGateOverride: () => ({ trigger: vi.fn(), isMutating: false }),
+  useRevokeGateOverride: () => ({ trigger: mockRevokeOverride, isMutating: false }),
 }))
 
 vi.mock('@/context/tenant-provider', () => ({
@@ -236,7 +240,50 @@ describe('CITrustSettings', () => {
   beforeEach(() => {
     trust = []
     perms = []
+    gatePolicies = []
+    overrides = []
     mockSaveTrust.mockReset()
+    mockDeletePolicy.mockReset()
+    mockRevokeOverride.mockReset()
+  })
+
+  it('deleting a repository gate policy asks first', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    gatePolicies = [{ id: 'gp1', scope_type: 'repository', scope_id: 'repo-9', mode: 'enforce' }]
+    mockDeletePolicy.mockResolvedValue(undefined)
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('tab', { name: /gate policy/i }))
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Delete the policy for Repository repo-9' })
+    )
+    expect(mockDeletePolicy).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete the gate policy for Repository repo-9?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    expect(mockDeletePolicy).toHaveBeenCalledWith('gp1')
+  })
+
+  it('revoking a break-glass override asks first', async () => {
+    perms = ['scans:ci:read', 'scans:ci:override']
+    overrides = [
+      {
+        id: 'ov1',
+        commit_sha: 'abcdef1234567890',
+        active: true,
+        reason: 'hotfix',
+        repository_asset_id: 'repo-9',
+        expires_at: '2026-12-01T00:00:00Z',
+      },
+    ]
+    mockRevokeOverride.mockResolvedValue(undefined)
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('tab', { name: /break-glass/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke' }))
+    expect(mockRevokeOverride).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent(/Revoke the override for commit abcdef1/)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Revoke' }))
+    expect(mockRevokeOverride).toHaveBeenCalledWith('ov1')
   })
 
   it('a member cannot add trust or break-glass', async () => {

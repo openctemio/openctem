@@ -2,17 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from '@/components/link'
-import {
-  Plus,
-  RadioTower,
-  Loader2,
-  Search,
-  Download,
-  Trash2,
-  Ban,
-  Layers,
-  Workflow,
-} from 'lucide-react'
+import { Plus, RadioTower, Loader2, Search, Download, Trash2, Layers, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ScanZonesPanel } from '@/features/scan-zones'
@@ -26,16 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useNow } from '@/hooks/use-now'
@@ -53,6 +35,7 @@ import { SensorDetailSheet } from './sensor-detail-sheet'
 import { FleetContentRefreshButton } from './sensor-content-cells'
 import { SensorTable } from './sensor-table'
 import { FleetHealthStrip } from './fleet-health-strip'
+import { SensorTransportStatusLine } from './sensor-transport-status'
 import { SensorFacetPanel } from './sensor-facet-panel'
 import { dispatchTools } from '../lib/capabilities'
 import {
@@ -205,6 +188,9 @@ export function SensorsSection({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false)
+  // The sensor waiting for a disable confirmation.
+  const [pendingDisable, setPendingDisable] = useState<Sensor | null>(null)
+  const { t } = useTranslation()
   const [detailSheetOpen, setDetailSheetOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -562,6 +548,7 @@ export function SensorsSection({
       try {
         const updatedSensor = await deactivateSensorTrigger(sensor.id)
         toast.success(`Sensor "${sensor.name}" disabled`)
+        setPendingDisable(null)
         await invalidateSensorsCache()
         await mutate()
         if (updatedSensor) setSelectedSensor(updatedSensor)
@@ -571,6 +558,11 @@ export function SensorsSection({
     },
     [deactivateSensorTrigger, mutate]
   )
+
+  const requestDeactivateSensor = useCallback((sensor: Sensor) => {
+    setDetailSheetOpen(false)
+    setPendingDisable(sensor)
+  }, [])
 
   const handleRevokeSensor = useCallback((sensor: Sensor) => {
     setSelectedSensor(sensor)
@@ -788,7 +780,7 @@ export function SensorsSection({
         onViewSensor={handleViewSensor}
         onEditSensor={handleEditSensor}
         onActivateSensor={handleActivateSensor}
-        onDeactivateSensor={handleDeactivateSensor}
+        onDeactivateSensor={requestDeactivateSensor}
         onDeleteSensor={handleDeleteClick}
         onRegenerateKey={handleRegenerateKey}
         onSelectionChange={(rows) => setSelectedIds(rows.map((a) => a.id))}
@@ -894,6 +886,7 @@ export function SensorsSection({
           {/* Where else scans can run: the platform's shared scanning, shown
               only when the organization may use it. */}
           <PlatformScanningCard className="mt-4" />
+          <SensorTransportStatusLine className="mt-3" />
           {!fleetEmpty && (
             <FleetHealthStrip
               className="mt-5"
@@ -1014,100 +1007,114 @@ export function SensorsSection({
             onRegenerateKey={handleRegenerateKey}
             onDelete={handleDeleteClick}
             onActivate={handleActivateSensor}
-            onDeactivate={handleDeactivateSensor}
+            onDeactivate={requestDeactivateSensor}
             onRevoke={handleRevokeSensor}
           />
         </>
       )}
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation: the sensor's key stops working, so type its name. */}
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete sensor"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedSensor?.name}</strong>? This action
-            cannot be undone and will invalidate the sensor&apos;s API key.
-          </>
+        title={t('confirm.sensor.deleteTitle', 'Delete the sensor {name}?', {
+          name: selectedSensor?.name ?? '',
+        })}
+        desc={t(
+          'confirm.sensor.deleteDesc',
+          'Its API key stops working at once and it can no longer claim jobs or send results. Findings it reported stay. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
         }
-        confirmText="Delete"
         destructive
         isLoading={isDeleting}
+        typeToConfirm={selectedSensor?.name}
         handleConfirm={handleDeleteConfirm}
       />
 
-      {/* Bulk Delete Confirmation */}
+      {/* Bulk Delete Confirmation: type the count. */}
       <ConfirmDialog
         open={bulkDeleteDialogOpen}
         onOpenChange={setBulkDeleteDialogOpen}
-        title="Delete sensors"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedIds.length}</strong> sensor(s)? This
-            action cannot be undone and will invalidate all their API keys.
-          </>
+        title={
+          selectedIds.length === 1
+            ? t('confirm.sensor.bulkDeleteTitleOne', 'Delete 1 sensor?')
+            : t('confirm.sensor.bulkDeleteTitle', 'Delete {count} sensors?', {
+                count: selectedIds.length,
+              })
         }
-        confirmText="Delete all"
+        desc={t(
+          'confirm.sensor.bulkDeleteDesc',
+          'Their API keys stop working at once and they can no longer claim jobs or send results. Findings they reported stay. This cannot be undone.'
+        )}
+        confirmText={
+          isBulkDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
         destructive
         isLoading={isBulkDeleting}
+        typeToConfirm={String(selectedIds.length)}
         handleConfirm={handleBulkDeleteConfirm}
       />
 
-      {/* Revoke Confirmation */}
-      <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
-              <Ban className="h-5 w-5" />
-              Revoke sensor access
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2">
-                <p>
-                  Permanently revoke access for <strong>{selectedSensor?.name}</strong>?
-                </p>
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-sm text-destructive">
-                  <p className="text-xs font-medium">This is permanent</p>
-                  <ul className="mt-1.5 space-y-0.5 text-xs">
-                    <li>- Sensor loses access immediately</li>
-                    <li>- Cannot be undone</li>
-                    <li>- Must create new sensor to restore</li>
-                  </ul>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Use <strong>Disable</strong> for temporary suspension.
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isRevoking}>Cancel</AlertDialogCancel>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setRevokeDialogOpen(false)
-                if (selectedSensor) {
-                  handleDeactivateSensor(selectedSensor)
-                }
-              }}
-              disabled={isRevoking}
-            >
-              Disable
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleRevokeConfirm}
-              disabled={isRevoking}
-            >
-              {isRevoking && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Revoke
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Disable: reversible, the sensor stops claiming jobs until enabled. */}
+      <ConfirmDialog
+        open={pendingDisable !== null}
+        onOpenChange={(open) => !open && setPendingDisable(null)}
+        destructive
+        title={t('confirm.sensor.disableTitle', 'Disable the sensor {name}?', {
+          name: pendingDisable?.name ?? '',
+        })}
+        desc={t(
+          'confirm.sensor.disableDesc',
+          'It stops claiming new jobs until you enable it again. Its key and history are kept.'
+        )}
+        confirmText={t('confirm.disable', 'Disable')}
+        handleConfirm={() => (pendingDisable ? handleDeactivateSensor(pendingDisable) : undefined)}
+      />
+
+      {/* Revoke Confirmation: permanent, so type the name. */}
+      <ConfirmDialog
+        open={revokeDialogOpen}
+        onOpenChange={setRevokeDialogOpen}
+        destructive
+        title={t('confirm.sensor.revokeTitle', 'Revoke the sensor {name}?', {
+          name: selectedSensor?.name ?? '',
+        })}
+        desc={t(
+          'confirm.sensor.revokeDesc',
+          'It loses access at once and for good: its key is revoked and it cannot be re-enabled. To use the machine again, enroll a new sensor. This cannot be undone.'
+        )}
+        confirmText={
+          isRevoking ? (
+            <>
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+              {t('confirm.revoking', 'Revoking…')}
+            </>
+          ) : (
+            t('confirm.revoke', 'Revoke')
+          )
+        }
+        isLoading={isRevoking}
+        typeToConfirm={selectedSensor?.name}
+        handleConfirm={handleRevokeConfirm}
+      >
+        <p className="text-sm text-muted-foreground">
+          {t('confirm.sensor.revokeDisableHint', 'For a temporary stop, disable it instead.')}{' '}
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            disabled={isRevoking}
+            onClick={() => {
+              setRevokeDialogOpen(false)
+              if (selectedSensor) setPendingDisable(selectedSensor)
+            }}
+          >
+            {t('confirm.sensor.disableInstead', 'Disable instead')}
+          </Button>
+        </p>
+      </ConfirmDialog>
     </>
   )
 }

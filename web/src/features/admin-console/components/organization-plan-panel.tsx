@@ -5,6 +5,8 @@ import { Loader2, Pencil, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -72,6 +74,8 @@ export function OrganizationPlanPanel({ tenantId, canManage }: OrganizationPlanP
   const { data, error, isLoading, mutate } = useTenantPlan(tenantId)
   const [busyPlan, setBusyPlan] = useState(false)
   const [editing, setEditing] = useState<PlanKey | null>(null)
+  const [pendingReset, setPendingReset] = useState<PlanKey | null>(null)
+  const { t } = useTranslation()
 
   if (error) {
     return <ErrorState title="the plan" error={error} onRetry={() => void mutate()} />
@@ -95,6 +99,7 @@ export function OrganizationPlanPanel({ tenantId, canManage }: OrganizationPlanP
   const removeOverride = async (key: PlanKey) => {
     try {
       await mutate(await deletePlanOverride(tenantId, key), { revalidate: false })
+      setPendingReset(null)
       toast.success(`${PLAN_KEY_LABEL[key]}: back to the plan limit`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not remove the limit')
@@ -157,7 +162,7 @@ export function OrganizationPlanPanel({ tenantId, canManage }: OrganizationPlanP
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => void removeOverride(row.key)}
+                        onClick={() => setPendingReset(row.key)}
                         aria-label={`Use the plan limit for ${PLAN_KEY_LABEL[row.key]}`}
                       >
                         <RotateCcw className="size-4" />
@@ -188,6 +193,24 @@ export function OrganizationPlanPanel({ tenantId, canManage }: OrganizationPlanP
           }}
         />
       )}
+      <ConfirmDialog
+        open={pendingReset !== null}
+        onOpenChange={(o) => !o && setPendingReset(null)}
+        destructive
+        title={t(
+          'confirm.planOverride.removeTitle',
+          'Remove the {limit} limit set for this organization?',
+          {
+            limit: pendingReset ? PLAN_KEY_LABEL[pendingReset] : '',
+          }
+        )}
+        desc={t(
+          'confirm.planOverride.removeDesc',
+          'The organization goes back to its plan limit at once. If that is lower, nothing is removed, but new additions over it are refused.'
+        )}
+        confirmText={t('confirm.planOverride.remove', 'Use the plan limit')}
+        handleConfirm={() => (pendingReset ? removeOverride(pendingReset) : undefined)}
+      />
     </Card>
   )
 }
