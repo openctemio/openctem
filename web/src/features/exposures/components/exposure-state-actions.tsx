@@ -11,6 +11,8 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { BulkActionBar, GatedButton } from '@/features/shared'
@@ -302,6 +304,8 @@ export function ExposureBulkActions({
 }: ExposureBulkActionsProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [bulkAction, setBulkAction] = useState<'accept' | 'false_positive' | null>(null)
+  const [resolveOpen, setResolveOpen] = useState(false)
+  const { t } = useTranslation()
   const [reason, setReason] = useState('')
   const canApprove = useCanApproveExposures()
 
@@ -314,6 +318,7 @@ export function ExposureBulkActions({
     try {
       await onBulkResolve(selectedIds)
       toast.success(`${count} exposure(s) resolved`)
+      setResolveOpen(false)
       onClearSelection()
     } catch (_error) {
       toast.error('Failed to resolve exposures')
@@ -350,7 +355,12 @@ export function ExposureBulkActions({
   return (
     <>
       <BulkActionBar count={count} onClear={onClearSelection} noun="exposures selected">
-        <Button size="sm" variant="ghost" onClick={handleBulkResolve} disabled={isProcessing}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setResolveOpen(true)}
+          disabled={isProcessing}
+        >
           {isProcessing ? (
             <Loader2 className="me-2 h-4 w-4 animate-spin" />
           ) : (
@@ -418,6 +428,23 @@ export function ExposureBulkActions({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={resolveOpen}
+        onOpenChange={(open) => !isProcessing && setResolveOpen(open)}
+        title={
+          count === 1
+            ? t('confirm.exposure.bulkResolveTitleOne', 'Resolve 1 exposure?')
+            : t('confirm.exposure.bulkResolveTitle', 'Resolve {count} exposures?', { count })
+        }
+        desc={t(
+          'confirm.exposure.bulkResolveDesc',
+          'The selected exposures are marked resolved and leave the active list. Reactivate one from its row if it is still present.'
+        )}
+        confirmText={t('confirm.exposure.resolve', 'Resolve')}
+        isLoading={isProcessing}
+        handleConfirm={handleBulkResolve}
+      />
     </>
   )
 }

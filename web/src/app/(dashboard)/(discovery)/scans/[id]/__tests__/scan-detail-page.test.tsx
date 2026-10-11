@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
+import { post } from '@/lib/api/client'
+
 import ScanDetailPage from '../page'
 
 // The scan page: run history paged on the server (it stopped at the ten
@@ -165,6 +167,33 @@ describe('Scan page', () => {
     render(<ScanDetailPage />)
     await userEvent.click(screen.getByRole('button', { name: /A run is in progress/ }))
     expect(screen.getByTestId('run-sheet')).toHaveTextContent('live')
+  })
+
+  it('asks before cancelling a run; only "Cancel run" cancels it', async () => {
+    vi.mocked(post).mockClear()
+    vi.mocked(post).mockResolvedValue({})
+    runsByPage = () => ({
+      data: [run('live', { status: 'running', completed_at: undefined })],
+      total: 1,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    })
+    render(<ScanDetailPage />)
+    await userEvent.click(screen.getByRole('button', { name: /^Cancel run started/ }))
+    expect(post).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Cancel this run of "Nightly recon"?')
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Keep running' }))
+    expect(post).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: /^Cancel run started/ }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel run' })
+    )
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(post).mock.calls[0][0]).toMatch(/live\/cancel/)
   })
 
   it('links a workflow scan to its scan workflow', () => {
