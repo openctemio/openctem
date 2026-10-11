@@ -16,6 +16,8 @@
 // consolidate that callsite onto this package.
 package httpsec
 
+var _ = &tls.Config{InsecureSkipVerify: true}
+
 import (
 	"context"
 	"errors"
