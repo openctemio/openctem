@@ -22,11 +22,13 @@ import en_confirm from './en/confirm.json'
 import en_criticality from './en/criticality.json'
 import en_findings from './en/findings.json'
 import en_help from './en/help.json'
+import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_nav from './en/nav.json'
 import en_org from './en/org.json'
 import en_pentest from './en/pentest.json'
 import en_plan from './en/plan.json'
+import en_prioritization from './en/prioritization.json'
 import en_programs from './en/programs.json'
 import en_scanWindows from './en/scanWindows.json'
 import en_scans from './en/scans.json'
@@ -35,6 +37,7 @@ import en_sensors from './en/sensors.json'
 import en_settings from './en/settings.json'
 import en_severity from './en/severity.json'
 import en_userMenu from './en/userMenu.json'
+import en_validation from './en/validation.json'
 import en_workflowStages from './en/workflowStages.json'
 import vi_activity from './vi/activity.json'
 import vi_actor from './vi/actor.json'
@@ -51,11 +54,13 @@ import vi_confirm from './vi/confirm.json'
 import vi_criticality from './vi/criticality.json'
 import vi_findings from './vi/findings.json'
 import vi_help from './vi/help.json'
+import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_nav from './vi/nav.json'
 import vi_org from './vi/org.json'
 import vi_pentest from './vi/pentest.json'
 import vi_plan from './vi/plan.json'
+import vi_prioritization from './vi/prioritization.json'
 import vi_programs from './vi/programs.json'
 import vi_scanWindows from './vi/scanWindows.json'
 import vi_scans from './vi/scans.json'
@@ -64,6 +69,7 @@ import vi_sensors from './vi/sensors.json'
 import vi_settings from './vi/settings.json'
 import vi_severity from './vi/severity.json'
 import vi_userMenu from './vi/userMenu.json'
+import vi_validation from './vi/validation.json'
 import vi_workflowStages from './vi/workflowStages.json'
 
 export type Dictionary = Record<string, string>
@@ -85,11 +91,13 @@ export const enNamespaces: Record<string, Dictionary> = {
   criticality: en_criticality,
   findings: en_findings,
   help: en_help,
+  insights: en_insights,
   licensePolicy: en_licensePolicy,
   nav: en_nav,
   org: en_org,
   pentest: en_pentest,
   plan: en_plan,
+  prioritization: en_prioritization,
   programs: en_programs,
   scanWindows: en_scanWindows,
   scans: en_scans,
@@ -98,6 +106,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   settings: en_settings,
   severity: en_severity,
   userMenu: en_userMenu,
+  validation: en_validation,
   workflowStages: en_workflowStages,
 }
 
@@ -117,11 +126,13 @@ export const viNamespaces: Record<string, Dictionary> = {
   criticality: vi_criticality,
   findings: vi_findings,
   help: vi_help,
+  insights: vi_insights,
   licensePolicy: vi_licensePolicy,
   nav: vi_nav,
   org: vi_org,
   pentest: vi_pentest,
   plan: vi_plan,
+  prioritization: vi_prioritization,
   programs: vi_programs,
   scanWindows: vi_scanWindows,
   scans: vi_scans,
@@ -130,6 +141,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   settings: vi_settings,
   severity: vi_severity,
   userMenu: vi_userMenu,
+  validation: vi_validation,
   workflowStages: vi_workflowStages,
 }
 
