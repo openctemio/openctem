@@ -156,6 +156,7 @@ function LoadingSkeleton() {
 }
 
 export function ScannerImportsView() {
+  const { t } = useTranslation()
   const [importOpen, setImportOpen] = useState(false)
   const {
     data,
@@ -191,10 +192,14 @@ export function ScannerImportsView() {
 
       <Alert className="mt-6">
         <PauseCircle className="h-4 w-4" />
-        <AlertTitle>The live Tenable connector is paused</AlertTitle>
+        <AlertTitle>
+          {t('settings.scanners.pausedTitle', 'The live Tenable connector is paused')}
+        </AlertTitle>
         <AlertDescription>
-          Connecting Nessus Pro or Tenable.sc for rolling scan coverage is unavailable until the
-          scanner runner is rebuilt on the sensor. Imports of .nessus exports work as before.
+          {t(
+            'settings.scanners.pausedBody',
+            'Connecting Nessus Pro or Tenable.sc is not available for now. Importing .nessus exports works.'
+          )}
         </AlertDescription>
       </Alert>
 

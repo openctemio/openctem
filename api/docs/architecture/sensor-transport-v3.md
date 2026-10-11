@@ -14,8 +14,9 @@ is built, where it lives and how to work on it.
 | Control stream `Subscribe`, push on command changes (one replica) | built | `sensortransport/subscribe.go`, `postgres/command_notify.go` |
 | Sensor CA, `IssueCertificate`, mTLS listener (gRPC binding), revocation | built | `sensortransport/ca.go`, `issuer.go`, `mtls.go`; `SensorService.SetStatusNotifier` |
 | Redis wake fan-out across replicas | built | `internal/infra/redis/sensor_wake.go` (`SensorWakeBus`, channel `sensor:v3:wake`) |
-| gRPC self-probe: endpoint advertised only while reachable; `GET /api/v1/sensors/transport`, metrics | built | `sensortransport/probe.go`, `handler/sensor_transport_status_handler.go`, `cmd/server/handlers.go` (`setupSensorGRPC`) |
+| gRPC self-probe: endpoint advertised only while reachable; Console > Operations, metrics | built | `sensortransport/probe.go`, `handler/sensor_transport_status_handler.go`, `cmd/server/handlers.go` (`setupSensorGRPC`) |
 | Gateway SNI passthrough (Compose), PROXY protocol | built | `deploy/gateway/Dockerfile`, `deploy/gateway/sensors/*.wrappers`, `deploy/docker-compose.sensor-passthrough.yml`; `SENSOR_MTLS_TRUSTED_PROXIES` |
+| One port without a gateway: the API terminates TLS and splits by ALPN (`SERVER_TLS_CERT_FILE`) | built | `sensortransport/native.go` (`SplitTLS`), `internal/infra/http/tls.go` |
 
 ## How a call is served
 
@@ -175,6 +176,116 @@ docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up
 - `deploy/gateway/smoke-test.sh` builds the layer4 image and checks the ALPN
   and SNI routing next to the normal routing.
 
+## Deploying without our gateway
+
+The deployment-mode matrix is RFC-059 §5.1. Without our gateway there are
+three ways to keep one port, and one automatic fallback.
+
+### The API terminates TLS itself (one port, no proxy)
+
+For an API exposed directly (the web console deployed on its own, or no web
+at all) or behind a TCP load balancer:
+
+```bash
+SERVER_TLS_CERT_FILE=/certs/api.crt     # PEM, full chain first
+SERVER_TLS_KEY_FILE=/certs/api.key
+SENSOR_PUBLIC_API_URL=https://api.example.com   # what sensors and the probe dial
+```
+
+- The API listener (`SERVER_PORT`) then speaks TLS (1.2 or later, h2 and
+  HTTP/1.1) with that certificate. In the handshake
+  (`tls.Config.GetConfigForClient`) a ClientHello that offers the ALPN id
+  `openctem-sensor/3` gets the mTLS listener's own TLS config instead and is
+  served by the mTLS listener's server: client certificate from the sensor
+  CA required and resolved through the key table at the handshake and again
+  on every call, `h2` only. A connection that offers the id without a valid
+  certificate is refused, exactly as on `:8443`.
+- The endpoint is derived from `SENSOR_PUBLIC_API_URL` (else `APP_URL`) and
+  advertised as `grpc_alpn_endpoint` once the self-probe passes; nothing else
+  to set. `:8443` still listens and need not be published.
+- The certificate files are checked every minute and re-read when they
+  change; a renewal that does not load keeps the previous certificate.
+- Everything that called the API over plain HTTP (the web server's API
+  origin, health checks) must use `https://` on that port.
+- A TCP load balancer in front that sends PROXY protocol v2: list its
+  addresses in `SENSOR_MTLS_TRUSTED_PROXIES`. The header comes before the
+  ClientHello, so it is then believed for API clients on that port too; from
+  any other peer a PROXY header closes the connection.
+- Unset (the default), the API serves plain HTTP behind whatever terminates
+  TLS, exactly as before.
+
+### An own TLS proxy that routes by ALPN at layer 4
+
+The proxy reads the ClientHello without terminating it and sends a
+connection that offers `openctem-sensor/3` to the API's mTLS listener
+(`:8443`), everything else to the service that terminates TLS for the web UI
+and the API. Both examples below were run against the mTLS listener
+(sensor with a certificate served, without one refused, browsers on h2 served
+by the HTTPS backend, the probe advertising `grpc_alpn_endpoint`); a sensor
+offers `h2` first, so match the id anywhere in the list.
+
+nginx (`stream` module with `ssl_preread`, in the official image;
+`$ssl_preread_alpn_protocols` is the comma-separated list the client
+offers):
+
+```nginx
+stream {
+    map $ssl_preread_alpn_protocols $openctem_backend {
+        ~(^|,)openctem-sensor/3(,|$)  api.internal:8443;
+        default                        web-tls.internal:443;
+    }
+    server {
+        listen 443;
+        ssl_preread on;
+        proxy_pass $openctem_backend;
+    }
+}
+```
+
+nginx's `proxy_protocol on` applies to every backend of the `server` block:
+either leave it off (the API then records the proxy's address for sensors)
+or make every backend accept PROXY v2 and list the proxy in
+`SENSOR_MTLS_TRUSTED_PROXIES`.
+
+HAProxy (`mode tcp`, `req.ssl_alpn` matches any offered id; PROXY v2 per
+backend):
+
+```haproxy
+frontend openctem
+    mode tcp
+    bind :443
+    tcp-request inspect-delay 5s
+    tcp-request content accept if { req.ssl_hello_type 1 }
+    use_backend openctem_sensor if { req.ssl_alpn openctem-sensor/3 }
+    default_backend openctem_https
+backend openctem_sensor
+    mode tcp
+    server api api.internal:8443 send-proxy-v2   # SENSOR_MTLS_TRUSTED_PROXIES = this proxy
+backend openctem_https
+    mode tcp
+    server web web-tls.internal:443
+```
+
+### SNI-only passthrough (a dedicated sensor host name)
+
+A router that reads only the server name (a Kubernetes ingress-nginx
+controller started with `--enable-ssl-passthrough` and the
+`nginx.ingress.kubernetes.io/ssl-passthrough: "true"` annotation, or the
+`req.ssl_sni` rule in HAProxy, tested) cannot route by ALPN and cannot
+route an IP address. Give sensors their own name that the router passes to
+the API's `:8443`, and set `SENSOR_PUBLIC_HOST=sensors.example.com:443`. The
+probe then passes with and without the id, so hello names the endpoint as
+`grpc_endpoint` and `grpc_alpn_endpoint`. The passthrough backend of
+ingress-nginx is the Service's cluster IP, so `SENSOR_MTLS_TRUSTED_PROXIES`
+stays empty there (no PROXY header).
+
+### L7-only load balancers
+
+A balancer that terminates TLS and cannot pass TCP through needs nothing:
+the probe meets its certificate (`foreign_certificate`), nothing is
+advertised, and sensors use the HTTPS binding (`/api/v3/sensor`) through it.
+Keep response buffering off for that path so the `Subscribe` stream flows.
+
 ## How the bindings are chosen
 
 No operator switch turns a binding on. `SENSOR_TRANSPORT_V3` is `auto` by
@@ -201,9 +312,12 @@ v2 at its next call).
   without ALPN or SNI routing, a closed port or a wrong name fail the probe
   (`foreign_certificate`, `unreachable`, `dns_failed`, `handshake_failed`,
   `http2_refused`), so a sensor is never sent to an endpoint that cannot work.
-- Status: `GET /api/v1/sensors/transport` (`sensors:read`; platform
-  configuration, no tenant data) answers the mode, the HTTPS path and the gRPC
-  state, endpoint, `requires_alpn`, reason and last check; metrics
+- Status: Console > Operations (`GET /api/v1/admin/operations`, field
+  `sensor_transport`; platform admins only, installation infrastructure that
+  organization users never see) answers the mode, the HTTPS path and the gRPC
+  state, endpoint, `requires_alpn`, reason and last check. The page shows a
+  plain-language note per reason, only when an operator can change
+  something; metrics
   `openctem_sensor_transport_grpc_advertised` (0/1) and
   `openctem_sensor_transport_grpc_probe_total{result}` (`ok`, `ok_alpn`, or
   the failure reason); the API logs each

@@ -2,7 +2,8 @@ package routes
 
 // GET /api/v1/admin/operations over the real route registration: every
 // console role reads it (database reachable, schema read, controllers
-// listed), an organization user's token cannot.
+// listed, the sensor transport status reported), an organization user's
+// token cannot.
 
 import (
 	"context"
@@ -22,6 +23,10 @@ func TestAdminOperationsRoute(t *testing.T) {
 		hs.AdminOperations = handler.NewAdminOperationsHandler(db.DB,
 			func(ctx context.Context) (postgres.OpsSnapshot, error) { return postgres.ReadOpsSnapshot(ctx, db.DB) },
 			nil, nil, 0, "", logger.NewNop())
+		hs.AdminOperations.SetSensorTransport(func() handler.SensorTransportStatus {
+			return handler.SensorTransportStatus{Mode: "auto", HTTPSPath: "/api/v3/sensor",
+				GRPC: handler.SensorTransportGRPC{State: "unavailable", Reason: "foreign_certificate"}}
+		})
 	})
 	org := h.organization(0)
 	tok := h.tenantToken(org, "owner")
@@ -48,5 +53,8 @@ func TestAdminOperationsRoute(t *testing.T) {
 	}
 	if !got.Database.OK || !got.Schema.Known || got.Schema.Applied == 0 || got.Redis.Configured {
 		t.Fatalf("operations = %+v", got)
+	}
+	if st := got.SensorTransport; st == nil || st.Mode != "auto" || st.GRPC.Reason != "foreign_certificate" {
+		t.Fatalf("sensor transport = %+v", got.SensorTransport)
 	}
 }

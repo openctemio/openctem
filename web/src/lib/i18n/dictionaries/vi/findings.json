@@ -16,5 +16,10 @@
   "findings.statusCategory.open": "Mở",
   "findings.statusCategory.in_progress": "Đang xử lý",
   "findings.statusCategory.closed": "Đã đóng",
+  "findings.typeOverview.breakdownUnavailable": "Không có bảng phân tích cho loại này tại đây. Danh sách phát hiện hiển thị đầy đủ.",
+  "findings.typeOverview.viewInFindings": "Xem trong phát hiện",
+  "findings.dataFlow.emptyTitle": "Không có luồng dữ liệu",
+  "findings.dataFlow.empty": "Trình quét không gửi dấu vết từ nguồn tới đích cho phát hiện này. Semgrep gửi dấu vết khi chạy với --dataflow-traces.",
+  "findings.dataFlow.hint": "Cách dữ liệu không tin cậy đi tới đoạn mã có lỗ hổng, từ nguồn tới đích.",
   "findings.remediation.none": "Trình quét không đưa ra hướng khắc phục."
 }
