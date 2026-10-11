@@ -54,11 +54,13 @@ import {
 } from '@/lib/api/capability-hooks'
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
 import { EmptyState, ErrorState, PageHeader } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 
 type ViewMode = 'grid' | 'table'
 type MainTab = 'platform' | 'custom'
 
 export function CapabilitiesSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -431,34 +433,34 @@ export function CapabilitiesSection() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               {selectedHasUsage && <AlertTriangle className="h-5 w-5 text-destructive" />}
-              Delete capability
+              {t('confirm.capability.deleteTitle', 'Delete the capability {name}?', {
+                name: selectedCapability?.display_name ?? '',
+              })}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3">
-                <p>
-                  Are you sure you want to delete{' '}
-                  <strong>{selectedCapability?.display_name}</strong>? This action cannot be undone.
-                </p>
+                <p>{t('confirm.capability.deleteDesc', 'This cannot be undone.')}</p>
 
                 {/* Usage Stats Warning */}
                 {isLoadingSelectedStats ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Checking usage...
+                    {t('confirm.capability.checkingUsage', 'Checking usage…')}
                   </div>
                 ) : selectedHasUsage ? (
                   <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
                     <div className="flex items-center gap-2 font-medium text-amber-600 dark:text-amber-400">
                       <AlertTriangle className="h-4 w-4" />
-                      This capability is in use
+                      {t('confirm.capability.inUse', 'This capability is in use')}
                     </div>
                     <div className="flex flex-wrap gap-3 text-sm">
                       {selectedUsageStats.tool_count > 0 && (
                         <div className="flex items-center gap-1.5">
                           <Wrench className="h-4 w-4" />
                           <span>
-                            {selectedUsageStats.tool_count} tool
-                            {selectedUsageStats.tool_count > 1 ? 's' : ''}
+                            {t('confirm.capability.toolCount', '{count} tool(s)', {
+                              count: selectedUsageStats.tool_count,
+                            })}
                           </span>
                         </div>
                       )}
@@ -466,8 +468,9 @@ export function CapabilitiesSection() {
                         <div className="flex items-center gap-1.5">
                           <Bot className="h-4 w-4" />
                           <span>
-                            {selectedUsageStats.sensor_count} sensor
-                            {selectedUsageStats.sensor_count > 1 ? 's' : ''}
+                            {t('confirm.capability.sensorCount', '{count} sensor(s)', {
+                              count: selectedUsageStats.sensor_count,
+                            })}
                           </span>
                         </div>
                       )}
@@ -479,19 +482,19 @@ export function CapabilitiesSection() {
                         {selectedUsageStats.tool_names &&
                           selectedUsageStats.tool_names.length > 0 && (
                             <p>
-                              <strong>Tools:</strong>{' '}
+                              <strong>{t('confirm.capability.tools', 'Tools:')}</strong>{' '}
                               {selectedUsageStats.tool_names.slice(0, 3).join(', ')}
                               {selectedUsageStats.tool_names.length > 3 &&
-                                ` (+${selectedUsageStats.tool_names.length - 3} more)`}
+                                ` ${t('confirm.capability.more', '(+{count} more)', { count: selectedUsageStats.tool_names.length - 3 })}`}
                             </p>
                           )}
                         {selectedUsageStats.sensor_names &&
                           selectedUsageStats.sensor_names.length > 0 && (
                             <p>
-                              <strong>Sensors:</strong>{' '}
+                              <strong>{t('confirm.capability.sensors', 'Sensors:')}</strong>{' '}
                               {selectedUsageStats.sensor_names.slice(0, 3).join(', ')}
                               {selectedUsageStats.sensor_names.length > 3 &&
-                                ` (+${selectedUsageStats.sensor_names.length - 3} more)`}
+                                ` ${t('confirm.capability.more', '(+{count} more)', { count: selectedUsageStats.sensor_names.length - 3 })}`}
                             </p>
                           )}
                       </div>
@@ -507,27 +510,37 @@ export function CapabilitiesSection() {
                         htmlFor="force-delete"
                         className="text-sm font-medium leading-none cursor-pointer"
                       >
-                        I understand and want to force delete
+                        {t(
+                          'confirm.capability.forceLabel',
+                          'I understand: the tools and sensors above lose this capability'
+                        )}
                       </label>
                     </div>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    This capability is not currently used by any tools or sensors.
+                    {t(
+                      'confirm.capability.unused',
+                      'This capability is not used by any tool or sensor.'
+                    )}
                   </p>
                 )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>
+              {t('confirm.cancel', 'Cancel')}
+            </AlertDialogCancel>
             <Button
               variant="destructive"
               onClick={handleDeleteConfirm}
               disabled={isDeleting || isLoadingSelectedStats || (selectedHasUsage && !forceDelete)}
             >
               {isDeleting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              {selectedHasUsage ? 'Force delete' : 'Delete'}
+              {selectedHasUsage
+                ? t('confirm.capability.forceDelete', 'Force delete')
+                : t('confirm.delete', 'Delete')}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

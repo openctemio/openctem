@@ -46,6 +46,7 @@ import {
   type ControlType,
   type TestResult,
 } from '@/features/controls/vocabulary'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface CompensatingControl {
   id: string
@@ -89,6 +90,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 export default function CompensatingControlsPage() {
+  const { t } = useTranslation()
   const {
     data: response,
     isLoading,
@@ -467,14 +469,11 @@ export default function CompensatingControlsPage() {
       <ConfirmDialog
         open={!!deleteControl}
         onOpenChange={(open) => !open && setDeleteControl(null)}
-        title="Delete control?"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{deleteControl?.name}&quot;? This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.control.deleteTitle', 'Delete the control "{name}"?', {
+          name: deleteControl?.name ?? '',
+        })}
+        desc={t('confirm.control.deleteDesc', 'This cannot be undone.')}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />
