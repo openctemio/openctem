@@ -152,6 +152,10 @@ export const SCOPE_ERROR_TEXT = {
     'This wildcard cannot be a scan target: write *.example.com for a domain your organization may scan (not a public suffix or a shared provider domain), in the targets rather than the scanner settings.',
   TARGET_SELECTOR_UNAVAILABLE:
     'The *.domain or address range targets could not be read from the inventory, so the run was not started. Try again.',
+  SCOPE_ENTRY_EXISTS:
+    'Your organization already has this scope entry. Find it in the scope list instead of adding it again.',
+  SCOPE_EXCLUSION_EXISTS:
+    'Your organization already has this exclusion. Find it in the Out of scope list instead of adding it again.',
 } as const satisfies Record<string, string>
 
 export type ScopeErrorCode = keyof typeof SCOPE_ERROR_TEXT
@@ -237,4 +241,55 @@ export function scopeErrorMessage(t: Translate, err: unknown, fallback: string):
   if (known) return known
   if (e && typeof e.message === 'string' && e.message) return e.message
   return fallback
+}
+
+/**
+ * The existing row a 409 SCOPE_ENTRY_EXISTS / SCOPE_EXCLUSION_EXISTS names
+ * (always the caller's own organization's), or null for any other error.
+ */
+export interface ScopeDuplicate {
+  kind: 'entry' | 'exclusion'
+  id: string
+  status: string
+}
+
+export function scopeDuplicateOf(err: unknown): ScopeDuplicate | null {
+  const e = err as { code?: unknown; details?: unknown } | null | undefined
+  const kind =
+    e?.code === 'SCOPE_ENTRY_EXISTS'
+      ? 'entry'
+      : e?.code === 'SCOPE_EXCLUSION_EXISTS'
+        ? 'exclusion'
+        : null
+  const d = e?.details as { id?: unknown; status?: unknown } | undefined
+  if (!kind || typeof d?.id !== 'string' || !d.id || typeof d.status !== 'string') return null
+  return { kind, id: d.id, status: d.status }
+}
+
+/** What an existing entry or exclusion is, by kind and status ({pattern}). */
+export const SCOPE_EXISTING_TEXT: Record<string, string> = {
+  'entry.pending':
+    '{pattern} is already in your scope list and is waiting for approval. It authorizes nothing until it is approved.',
+  'entry.pendingOpen':
+    '{pattern} was added earlier and still waits for an approval your organization no longer requires. Put it in effect to use it.',
+  'entry.active': '{pattern} is already in scope.',
+  'entry.inactive':
+    '{pattern} is already in your scope list but deactivated. Activate it instead of adding it again.',
+  'entry.expired':
+    '{pattern} is already in your scope list but expired. Renew it instead of adding it again.',
+  'entry.rejected':
+    '{pattern} was added before and rejected. Remove the rejected entry to add it again.',
+  'entry.unknown': '{pattern} is already in your scope list.',
+  'exclusion.pending':
+    '{pattern} is already out of scope and is waiting for approval. Scans still reach it until it is approved.',
+  'exclusion.pendingOpen':
+    '{pattern} was put out of scope earlier and still waits for an approval your organization no longer requires. Put it in effect to use it.',
+  'exclusion.active': '{pattern} is already out of scope.',
+  'exclusion.inactive':
+    '{pattern} is already in the Out of scope list but lifted. Activate it instead of adding it again.',
+  'exclusion.expired':
+    '{pattern} is already in the Out of scope list but its end date passed. Open it and set a new end date.',
+  'exclusion.rejected':
+    '{pattern} was put out of scope before and rejected. Remove the rejected exclusion to add it again.',
+  'exclusion.unknown': '{pattern} is already in the Out of scope list.',
 }

@@ -51,7 +51,7 @@ import {
   useEASMVerifiedDomains,
 } from '@/features/attack-surface/hooks/use-easm-verified-domains'
 import { useLetters } from '@/features/scope-letters'
-import { scopeErrorMessage } from '../lib/scope-codes'
+import { scopeDuplicateOf, scopeErrorMessage, type ScopeDuplicate } from '../lib/scope-codes'
 import {
   coversText,
   durationAllowed,
@@ -67,6 +67,7 @@ import {
   type DurationChoice,
 } from '../lib/scope-entry'
 import { ScopeDurationField } from './scope-duration-field'
+import { ScopeExistingNotice } from './scope-existing-notice'
 import {
   detectScopeKind,
   REQUESTABLE_TARGET_TYPES,
@@ -96,6 +97,8 @@ interface ScopeEntryDialogProps {
   /** Prefill, for example from a refusal's fix ("Allow for 7 days"). */
   draft?: ScopeEntryDraft
   onCreated?: (entry: ApiScopeTarget) => void
+  /** Opens an existing entry on this page (the duplicate notice's Show it). */
+  onShowExisting?: (href: string) => void
 }
 
 /** A single name or address: what a member may request. */
@@ -132,7 +135,13 @@ export function approvalsForNew(opts: {
   return opts.tier === 't2' && t2Floor ? Math.max(1, base) : base
 }
 
-export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: ScopeEntryDialogProps) {
+export function ScopeEntryDialog({
+  open,
+  onOpenChange,
+  draft,
+  onCreated,
+  onShowExisting,
+}: ScopeEntryDialogProps) {
   const { t, locale } = useTranslation()
   const formId = useId()
   const canApprove = useHasPermission(Permission.ScopeApprove)
@@ -162,6 +171,8 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     [letters]
   )
   const [error, setError] = useState<string | null>(null)
+  // The organization already has this pattern: which row, for the pattern sent.
+  const [dup, setDup] = useState<{ row: ScopeDuplicate; pattern: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
   // Reset on open, from the draft.
@@ -186,6 +197,7 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     setReason(draft?.reason ?? '')
     setDescription('')
     setError(null)
+    setDup(null)
   }, [open, draft])
 
   // The default tier follows the organization's setting once it loads.
@@ -320,6 +332,11 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
       if (entry) onCreated?.(entry)
       onOpenChange(false)
     } catch (err) {
+      const row = scopeDuplicateOf(err)
+      if (row) {
+        setDup({ row, pattern })
+        return
+      }
       setError(
         scopeErrorMessage(t, err, t('scope.entry.errSave', 'Could not save the scope entry.'))
       )
@@ -367,6 +384,21 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{error}</span>
                 </div>
+              )}
+              {dup && dup.pattern === pattern && (
+                <ScopeExistingNotice
+                  dup={dup.row}
+                  pattern={dup.pattern}
+                  onDone={() => onOpenChange(false)}
+                  onShow={
+                    onShowExisting
+                      ? (href) => {
+                          onOpenChange(false)
+                          onShowExisting(href)
+                        }
+                      : undefined
+                  }
+                />
               )}
 
               <div className="space-y-2">

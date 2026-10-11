@@ -103,8 +103,10 @@ import {
   type UpdateScanWorkflowRequest,
   SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
 } from '@/lib/api'
+import { useTranslation } from '@/context/i18n-provider'
 
 export default function ScanWorkflowsPage() {
+  const { t } = useTranslation()
   // The owner filter lives in the URL so a reload or shared link keeps it.
   const [owner, setOwner] = useUrlFilter('owner', 'all')
   const [selectedWorkflow, setSelectedWorkflow] = useState<ScanWorkflow | null>(null)
@@ -784,10 +786,12 @@ export default function ScanWorkflowsPage() {
               {cloningWorkflow?.is_system_template && (
                 <Alert>
                   <Cloud className="h-4 w-4" />
-                  <AlertTitle>System template</AlertTitle>
+                  <AlertTitle>{t('scans.workflows.systemTemplate', 'System template')}</AlertTitle>
                   <AlertDescription>
-                    This is a pre-built template. Your copy will be fully editable and independent
-                    from the original.
+                    {t(
+                      'scans.workflows.cloneHint',
+                      'Your copy is fully editable and does not change the template.'
+                    )}
                   </AlertDescription>
                 </Alert>
               )}
