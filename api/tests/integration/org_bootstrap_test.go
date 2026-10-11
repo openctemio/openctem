@@ -182,7 +182,7 @@ func TestBootstrapAdminEmailsOwnerLink(t *testing.T) {
 	if mailer.sentTo != o.OrgOwnerEmail || mailer.token == "" {
 		t.Fatalf("link not emailed: %+v", mailer)
 	}
-	if strings.Contains(out.String(), mailer.token) || strings.Contains(out.String(), "set-password?token=") {
+	if strings.Contains(out.String(), mailer.token) || strings.Contains(out.String(), "set-password#token=") {
 		t.Fatalf("an emailed link must not be printed:\n%s", out.String())
 	}
 }
