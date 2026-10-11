@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import type { PlanDefaultsResponse, PlanSummaryResponse } from '@/lib/api/generated'
@@ -188,6 +188,10 @@ describe('OrganizationPlanPanel', () => {
     vi.mocked(deletePlanOverride).mockResolvedValue(OVER)
     render(<OrganizationPlanPanel tenantId="t1" canManage />)
     await user.click(screen.getByRole('button', { name: /use the plan limit for assets/i }))
+    // One click only asks; the override stays until the admin confirms.
+    expect(deletePlanOverride).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Use the plan limit' }))
     await waitFor(() => expect(deletePlanOverride).toHaveBeenCalledWith('t1', 'assets'))
     expect(setTenantPlan).not.toHaveBeenCalled()
   })
