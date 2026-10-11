@@ -313,12 +313,17 @@ const (
 	// existing sensor's keys were replaced by a pairing (high). KeyRevoked:
 	// one key of a key-bound sensor was revoked. IdentityPolicyChanged: the
 	// organization allowed or stopped bearer-key sensors.
-	ActionSensorPairingExpected   Action = "sensor.pairing_expected"
-	ActionSensorPairingApproved   Action = "sensor.pairing_approved"
-	ActionSensorPairingDenied     Action = "sensor.pairing_denied"
-	ActionSensorPairingCompleted  Action = "sensor.pairing_completed"
-	ActionSensorRepaired          Action = "sensor.repaired"
-	ActionSensorKeyRevoked        Action = "sensor.key_revoked"
+	ActionSensorPairingExpected  Action = "sensor.pairing_expected"
+	ActionSensorPairingApproved  Action = "sensor.pairing_approved"
+	ActionSensorPairingDenied    Action = "sensor.pairing_denied"
+	ActionSensorPairingCompleted Action = "sensor.pairing_completed"
+	ActionSensorRepaired         Action = "sensor.repaired"
+	ActionSensorKeyRevoked       Action = "sensor.key_revoked"
+	// ActionSensorKeyBound: a bearer-key sensor bound its own signing key
+	// (its API keys retired, one way); ActionSensorKeyBindRefused: such a
+	// bind was refused (policy, proof, state).
+	ActionSensorKeyBound          Action = "sensor.key_bound"
+	ActionSensorKeyBindRefused    Action = "sensor.key_bind_refused"
 	ActionSensorIdentityPolicySet Action = "sensor.identity_policy_changed"
 
 	// Per-sensor grants (RFC-052 §5). GrantChanged: an administrator changed
@@ -663,7 +668,7 @@ func (a Action) IsValid() bool {
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
-		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet,
+		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
 		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
@@ -786,7 +791,7 @@ func (a Action) Category() string {
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
-		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet,
+		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,

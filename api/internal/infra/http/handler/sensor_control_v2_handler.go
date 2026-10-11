@@ -11,6 +11,7 @@ package handler
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -96,6 +97,9 @@ func (h *SensorControlV2Handler) Features() []string {
 	}
 	if h.commands != nil && h.commands.service.SignsJobs() {
 		out = append(out, protov2.FeatureSignedJobs)
+	}
+	if h.ingest != nil && h.ingest.sensorService.SupportsKeyBind() {
+		out = append(out, protov2.FeatureKeyBind)
 	}
 	return out
 }
@@ -895,6 +899,46 @@ func (h *SensorControlV2Handler) RenewKey(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeV2JSON(w, http.StatusCreated, protov2.KeyResponse{APIKey: key, ExpiresAt: utcPtr(expiresAt)})
+}
+
+// BindKey handles POST /identity/bind (RFC-052 §4.8): a bearer-key sensor
+// binds its own Ed25519 signing key and becomes key-bound; its API keys are
+// retired. The tenant and sensor are those of the API key that
+// authenticated the call, never of the body.
+func (h *SensorControlV2Handler) BindKey(w http.ResponseWriter, r *http.Request) {
+	s := sensorForV2(w, r)
+	if s == nil {
+		return
+	}
+	var req protov2.KeyBindRequest
+	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &req) {
+		return
+	}
+	pub, errPub := base64.RawURLEncoding.DecodeString(req.PublicKey)
+	proof, errProof := base64.RawURLEncoding.DecodeString(req.Proof)
+	if errPub != nil || errProof != nil {
+		protov2.NewProblem(protov2.ProblemKeyBindRefused).Write(w)
+		return
+	}
+	res, err := h.ingest.sensorService.BindSigningKey(r.Context(), sensorIdentityFromContext(r.Context()), sensorapp.KeyBindInput{
+		PublicKey: pub, Proof: proof, IssuedAt: req.IssuedAt, ClientIP: getClientIP(r),
+	})
+	switch {
+	case err == nil:
+	case errors.Is(err, sensor.ErrKeyBindNeedsApproval):
+		protov2.NewProblem(protov2.ProblemKeyBindApproval).Write(w)
+		return
+	case errors.Is(err, shared.ErrConflict), errors.Is(err, shared.ErrValidation):
+		h.logger.Debug("sensor key bind refused", "sensor_id", s.ID.String(), "error", err)
+		protov2.NewProblem(protov2.ProblemKeyBindRefused).Write(w)
+		return
+	default:
+		h.internal(w, "identity-bind", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeV2JSON(w, http.StatusCreated, protov2.KeyBindResponse{SensorID: res.SensorID.String(), TenantID: res.TenantID.String(),
+		Name: res.Name, KeyID: res.KeyID})
 }
 
 // sensorFailureCode is the step error code of a sensor's fail: the sensor's

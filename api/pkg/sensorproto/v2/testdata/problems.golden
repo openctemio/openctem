@@ -58,6 +58,14 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/sensor/invalid-transition","title":"Invalid transition","status":409,"detail":"The command's current state does not allow this transition; see state.","retryable":false}
+## key-bind-approval-required
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/key-bind-approval-required","title":"Approval required","status":403,"detail":"This organization requires an administrator to approve the sensor's key: re-pair it (pair -repair).","retryable":false}
+## key-bind-refused
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/key-bind-refused","title":"Key bind refused","status":409,"detail":"This sensor cannot bind a signing key: it is not an active bearer-key sensor, the key is already registered, or the proof of possession is invalid.","retryable":false}
 ## length-required
 Content-Type: application/problem+json
 Openctem-Protocol: 2
