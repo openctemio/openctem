@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { deleteDashboard } from '@/features/dashboards/api/use-dashboards-api'
 import Dashboard from '../page'
 
 // The two built-in views and the custom canvas are stubbed — this suite only
@@ -25,7 +27,7 @@ vi.mock('@/features/dashboards/api/use-dashboards-api', () => ({
   useMyDashboards: () => dashboardsMock(),
   useRevalidateDashboards: () => async () => {},
   setDefaultDashboard: vi.fn(),
-  deleteDashboard: vi.fn(),
+  deleteDashboard: vi.fn(() => Promise.resolve()),
 }))
 
 const STORAGE_KEY = 'openctem:dashboard-view'
@@ -75,5 +77,22 @@ describe('Dashboard view switcher', () => {
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
     expect(screen.getByText('Refresh')).toBeInTheDocument()
     expect(screen.getByText('Options')).toBeInTheDocument()
+  })
+
+  it('asks before deleting the open custom dashboard', async () => {
+    dashboardsMock.mockReturnValue({
+      data: { data: [{ id: 'd1', name: 'Mine', is_default: false, layout: [] }] },
+      isLoading: false,
+    })
+    window.localStorage.setItem(STORAGE_KEY, 'd1')
+    render(<Dashboard />)
+    await screen.findByText('CANVAS_VIEW')
+    await userEvent.click(screen.getByRole('button', { name: /Options/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Delete/ }))
+    expect(deleteDashboard).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete dashboard "Mine"?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(deleteDashboard).toHaveBeenCalledWith('d1'))
   })
 })

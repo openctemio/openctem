@@ -18,6 +18,12 @@ func (keyBoundOnly) BearerKeysAllowed(context.Context, shared.ID) (bool, error) 
 func (keyBoundOnly) SetBearerKeysAllowed(context.Context, shared.ID, bool) (bool, error) {
 	return false, nil
 }
+func (keyBoundOnly) KeyBindRequiresApproval(context.Context, shared.ID) (bool, error) {
+	return false, nil
+}
+func (keyBoundOnly) SetKeyBindRequiresApproval(context.Context, shared.ID, bool) (bool, error) {
+	return false, nil
+}
 
 // An organization that requires key-bound identity mints no bearer keys: an
 // administrator regenerating an existing bearer sensor key is refused like a
