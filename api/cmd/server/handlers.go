@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"context"
 	"database/sql"
 	"net/http"
@@ -8,6 +10,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
@@ -488,6 +493,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
+		SCMApps:      newSCMAppHandler(cfg, repos, svc, log),
 		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
@@ -1319,4 +1325,51 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		return mode
 	}
 	return s
+}
+
+// newSCMAppHandler builds the code-host app installation routes (RFC-077).
+// Without a GitHub App configured the routes still list installations and
+// answer that the deployment has no app.
+func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SCMAppHandler {
+	if repos.SCMApp == nil {
+		return nil
+	}
+	var gh scmappsvc.GitHubApp
+	if app := newGitHubApp(cfg, log); app != nil {
+		gh = app
+	}
+	var audit scmappsvc.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewSCMAppHandler(scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log), log)
+}
+
+// newGitHubApp builds the deployment's GitHub App client, or nil when it is
+// not configured (a partial configuration is logged and left off).
+func newGitHubApp(cfg *config.Config, log *logger.Logger) *githubapp.App {
+	c := cfg.GitHubApp
+	key := []byte(c.PrivateKey)
+	if c.PrivateKeyFile != "" {
+		b, err := os.ReadFile(c.PrivateKeyFile)
+		if err != nil {
+			log.Error("github app private key not readable; the GitHub App is off", "error", err)
+			return nil
+		}
+		key = b
+	}
+	gc := githubapp.Config{AppID: c.AppID, Slug: c.Slug, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
+		PrivateKeyPEM: key, WebhookSecret: c.WebhookSecret, APIURL: c.APIURL, WebURL: c.WebURL}
+	if !gc.Configured() {
+		if c.AppID != 0 || c.Slug != "" || len(key) > 0 {
+			log.Warn("the GitHub App is partly configured and stays off: set GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY_FILE and GITHUB_APP_WEBHOOK_SECRET")
+		}
+		return nil
+	}
+	app, err := githubapp.New(gc, nil)
+	if err != nil {
+		log.Error("github app not started", "error", logger.SanitizeError(err))
+		return nil
+	}
+	return app
 }

@@ -235,6 +235,7 @@ type Repositories struct {
 	VerifiedNames  *postgres.VerifiedDomainNameRepository
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
+	SCMApp      *postgres.SCMAppInstallationRepository
 	EASMSummary *postgres.EASMSummaryRepository
 
 	// KEV Escalation
@@ -498,6 +499,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
 		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
+		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 
 		// KEV Escalation

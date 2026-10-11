@@ -126,7 +126,7 @@ var Features = []Feature{
 		ID: "ci", Title: "CI pipelines",
 		Description: "CI runner identity, trust configurations, the central gate and its overrides.",
 		Stages:      []string{StageDiscovery, StageMobilization},
-		Registers:   []string{"registerCIRoutes"},
+		Registers:   []string{"registerCIRoutes", "registerSCMAppRoutes"},
 	},
 	{
 		ID: "pentest", Title: "Penetration testing",
