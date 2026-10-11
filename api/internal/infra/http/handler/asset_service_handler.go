@@ -31,19 +31,6 @@ func (h *AssetServiceHandler) SetDataScope(e DataScopeEnforcer) *AssetServiceHan
 	return h
 }
 
-// getInScope loads a service and hides it (ErrNotFound) when its asset is
-// outside the caller's data scope.
-func (h *AssetServiceHandler) getInScope(r *http.Request, tenantID, serviceID shared.ID) (*asset.AssetService, error) {
-	svc, err := h.repo.GetByID(r.Context(), tenantID, serviceID)
-	if err != nil {
-		return nil, err
-	}
-	if !assetInDataScope(r.Context(), h.dataScope, tenantID, svc.AssetID()) {
-		return nil, shared.ErrNotFound
-	}
-	return svc, nil
-}
-
 // NewAssetServiceHandler creates a new asset service handler.
 func NewAssetServiceHandler(repo asset.AssetServiceRepository, assetRepo asset.Repository, v *validator.Validator, log *logger.Logger) *AssetServiceHandler {
 	return &AssetServiceHandler{
