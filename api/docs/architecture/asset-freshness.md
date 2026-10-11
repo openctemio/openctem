@@ -8,7 +8,8 @@
 > [scan-windows.md](scan-windows.md), [scan-approval.md](scan-approval.md),
 > [easm.md](easm.md).
 
-Status: P0 in implementation (see the RFC phases).
+Status: P0 in implementation (#1753 freshness records, #1754 automatic
+enrichment, #1755 web).
 
 Every asset found by any source is enriched passively at once, and each of
 its enrichable attribute classes records when it was last observed, so the
@@ -61,8 +62,9 @@ An upsert of a pending row keeps it pending; a row dispatched within the
 6 h cooldown is not re-opened by `new_asset` (a re-created asset is not
 enriched twice in a row).
 
-The `asset-enrichment` controller (every 2 min) for each tenant with
-pending rows past the 60 s debounce:
+The `asset-enrichment` controller (every 2 min, one replica at a time,
+module `attack_surface`) for each tenant with pending rows past the 60 s
+debounce or with 200 pending:
 
 1. reads the tenant's switch (`easm.enrichment_disabled`); off: drains the
    rows without a run;
@@ -72,10 +74,16 @@ pending rows past the 60 s debounce:
 3. loads the assets (tenant-scoped), drops archived and types without a
    profile, groups them by profile;
 4. starts one passive run per profile through
-   `scan.Service.StartEnrichment`: targets validated one by one (an invalid
-   or out-of-act-scope name is dropped and counted, never fails the batch),
-   an ad-hoc scan named "Automatic enrichment" tagged `auto-enrichment`,
-   intensity passive, triggered by the system actor.
+   `scan.Service.StartEnrichment`: the names go through
+   `ResolveDispatchTargets` as a passive dispatch by the system (target
+   validator, scope exclusions, system act scope, the passive scope rule,
+   rejected names); a refused name is dropped and its request settled
+   `refused`, never failing the batch. The run is an ad-hoc scan named
+   "Automatic enrichment", tagged `auto-enrichment`, intensity passive.
+5. settles each request: `dispatched` (with the run), `refused`,
+   `no_profile` (archived, deleted, or a type without a profile), `failed`
+   (the run could not start), `disabled` (the tenant's switch is off). An
+   unreadable switch claims nothing (fail closed).
 
 Profiles (system workflows, migration `asset_enrichment_profiles`):
 
@@ -111,12 +119,14 @@ no scope authority covers is refused), rejected names never, scan windows
 Every statement carries `tenant_id`; both tables reference assets with
 `(tenant_id, asset_id)` composite keys and cascade with the asset and the
 tenant. The controller works tenant by tenant and starts runs in the asset's
-tenant. Tests: `TestFreshnessRepository_TenantIsolation`,
-`TestEnrichmentRequests_TenantIsolation`, the handler's other-tenant 404.
+tenant. Tests: `TestAssetFreshness_TenantAndScopeIsolation`,
+`TestEnrichmentRequests_IdempotentCooldownAndTenantIsolation`,
+`TestEnricher_StartsPassiveRunForInScopeNamesOnly`.
 
 ## Metrics
 
-`asset_enrichment_requests_total{reason}`,
-`asset_enrichment_dispatched_total{profile}`,
-`asset_enrichment_skipped_total{reason}`,
-`asset_freshness_record_errors_total`.
+`openctem_asset_freshness_observations_total{class}`,
+`openctem_asset_freshness_record_errors_total`,
+`openctem_asset_enrichment_requests_total{reason}`,
+`openctem_asset_enrichment_dispatched_total{profile}`,
+`openctem_asset_enrichment_skipped_total{reason}`.
