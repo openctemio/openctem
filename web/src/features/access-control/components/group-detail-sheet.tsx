@@ -7,18 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { TabsCount } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
-import { Hash, Loader2, Pencil, Save, ShieldCheck, Trash2, Users } from 'lucide-react'
+import { Hash, Loader2, Pencil, Save, ShieldCheck, Users } from 'lucide-react'
 import {
   useGroup,
   useGroupMembers,
@@ -66,6 +58,8 @@ import {
   type NewGroupMember,
 } from './group-detail-sheet/index'
 import { dateInputDaysFromNow } from '@/features/organization/lib/external-access'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 type GroupTab = 'overview' | 'members' | 'roles' | 'assets' | 'scope-rules'
 
@@ -79,6 +73,7 @@ interface GroupDetailSheetProps {
 }
 
 export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: GroupDetailSheetProps) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantSlug = currentTenant?.slug
 
@@ -577,60 +572,42 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
       />
 
       {/* Remove Member Confirmation */}
-      <Dialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Remove Member</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove &quot;{memberToRemove?.name}&quot; from this team?
-              They will lose access to assets owned by this team.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setMemberToRemove(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleRemoveMember} disabled={isRemovingMember}>
-              {isRemovingMember ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!memberToRemove}
+        onOpenChange={(open) => !open && setMemberToRemove(null)}
+        destructive
+        title={t('confirm.team.removeMemberTitle', 'Remove {name} from this team?', {
+          name: memberToRemove?.name ?? '',
+        })}
+        desc={t(
+          'confirm.team.removeMemberDesc',
+          'They lose the access this team gives them, including to assets the team owns. You can add them again later.'
+        )}
+        confirmText={
+          isRemovingMember ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
+        }
+        isLoading={isRemovingMember}
+        handleConfirm={handleRemoveMember}
+      />
 
       {/* Remove Asset Confirmation */}
-      <Dialog open={!!assetToRemove} onOpenChange={(open) => !open && setAssetToRemove(null)}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Remove Asset</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove the asset &quot;{assetToRemove?.name}&quot; from this
-              team? The team will lose access to this asset.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setAssetToRemove(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleUnassignAsset}
-              disabled={isUnassigningAsset}
-            >
-              {isUnassigningAsset ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!assetToRemove}
+        onOpenChange={(open) => !open && setAssetToRemove(null)}
+        destructive
+        title={t('confirm.team.removeAssetTitle', 'Remove the asset {name} from this team?', {
+          name: assetToRemove?.name ?? '',
+        })}
+        desc={t(
+          'confirm.team.removeAssetDesc',
+          'The team and its members lose access to this asset unless another grant covers it. The asset itself stays.'
+        )}
+        confirmText={
+          isUnassigningAsset ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
+        }
+        isLoading={isUnassigningAsset}
+        handleConfirm={handleUnassignAsset}
+      />
     </>
   )
 }

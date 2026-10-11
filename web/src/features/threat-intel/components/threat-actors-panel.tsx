@@ -76,6 +76,7 @@ import {
   type ActorType,
   type CreateThreatActorInput,
 } from '../api/use-threat-actors-api'
+import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
 
@@ -670,6 +671,7 @@ function DeleteThreatActorConfirm({
   onOpenChange: (open: boolean) => void
   onDeleted: () => void
 }) {
+  const { t } = useTranslation()
   const { trigger } = useDeleteThreatActor(actor?.id ?? '')
   const [deleting, setDeleting] = useState(false)
 
@@ -691,13 +693,14 @@ function DeleteThreatActorConfirm({
     <ConfirmDialog
       open={!!actor}
       onOpenChange={onOpenChange}
-      title="Delete threat actor?"
-      desc={
-        actor
-          ? `"${actor.name}" will be removed from this tenant's catalogue. This cannot be undone.`
-          : ''
-      }
-      confirmText={deleting ? 'Deleting...' : 'Delete'}
+      title={t('confirm.threatActor.deleteTitle', 'Delete the threat actor "{name}"?', {
+        name: actor?.name ?? '',
+      })}
+      desc={t(
+        'confirm.threatActor.deleteDesc',
+        'It is removed from this organization catalogue. This cannot be undone.'
+      )}
+      confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
       destructive
       handleConfirm={handleConfirm}
     />

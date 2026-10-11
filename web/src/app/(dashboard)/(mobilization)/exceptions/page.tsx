@@ -63,6 +63,7 @@ import {
   type SuppressionRule,
   type SuppressionStatus,
 } from '@/features/exceptions'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Approve action accent in the row menu. There is no success token, so the
 // palette-drift gate is told to allow it here.
@@ -93,6 +94,7 @@ function TableSkeleton() {
 const STATUS_VALUES: TabValue[] = ['all', 'pending', 'approved', 'rejected', 'expired']
 
 export default function ExceptionsPage() {
+  const { t } = useTranslation()
   // The status filter lives in the URL so a filtered view survives reload and
   // can be shared (e.g. a link straight to the pending-approval queue).
   const [statusParam, setStatusParam] = useUrlFilter('status', 'all')
@@ -472,20 +474,21 @@ export default function ExceptionsPage() {
       <ConfirmDialog
         open={approveOpen}
         onOpenChange={setApproveOpen}
-        title="Approve suppression rule"
-        desc={
-          selectedRule
-            ? `Approve "${selectedRule.name}"? Matching findings will be suppressed while this rule is active.`
-            : ''
-        }
+        title={t('confirm.suppression.approveTitle', 'Approve the suppression rule "{name}"?', {
+          name: selectedRule?.name ?? '',
+        })}
+        desc={t(
+          'confirm.suppression.approveDesc',
+          'Matching findings are suppressed while this rule is active.'
+        )}
         confirmText={
           isApproving ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Approving...
+              {t('confirm.suppression.approving', 'Approving…')}
             </>
           ) : (
-            'Approve'
+            t('confirm.suppression.approve', 'Approve')
           )
         }
         isLoading={isApproving}
@@ -547,18 +550,23 @@ export default function ExceptionsPage() {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete suppression rule"
-        desc={selectedRule ? `Delete "${selectedRule.name}"? This cannot be undone.` : ''}
+        title={t('confirm.suppression.deleteTitle', 'Delete the suppression rule "{name}"?', {
+          name: selectedRule?.name ?? '',
+        })}
+        desc={t(
+          'confirm.suppression.deleteDesc',
+          'Findings it suppressed are no longer suppressed by it. This cannot be undone.'
+        )}
         destructive
-        cancelBtnText="Keep rule"
+        cancelBtnText={t('confirm.suppression.keep', 'Keep rule')}
         confirmText={
           isDeleting ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Deleting...
+              {t('confirm.deleting', 'Deleting…')}
             </>
           ) : (
-            'Delete'
+            t('confirm.delete', 'Delete')
           )
         }
         isLoading={isDeleting}

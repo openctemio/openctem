@@ -46,6 +46,7 @@ import { FRESHNESS_LABEL, HEALTH_REASON_LABEL, cadenceLabel, workflowFile } from
 import type { CIPipelineDetail, CIRun } from '../types'
 import { FleetModeBadge, GateLabel, PipelineStatusBadge } from './ci-pipeline-cells'
 import { CIRunSheet, VerdictBadge } from './ci-runs-view'
+import { useTranslation } from '@/context/i18n-provider'
 
 type PipelineTab = 'overview' | 'runs' | 'branches'
 const TABS: { value: PipelineTab; label: string }[] = [
@@ -317,6 +318,7 @@ export function RetirePipelineDialog({
   onOpenChange: (open: boolean) => void
   onRetired?: () => void
 }) {
+  const { t } = useTranslation()
   const reasonId = useId()
   const [reason, setReason] = useState('')
   const { trigger, isMutating } = useRetirePipeline()
@@ -329,9 +331,12 @@ export function RetirePipelineDialog({
         onOpenChange(o)
       }}
       destructive
-      title="Retire this CI pipeline?"
-      desc={`${label}: findings that only this pipeline reported and nothing else has seen since close as "source retired". Findings another source still sees are not touched. Each closed finding can be reopened, and the next run of the pipeline brings it back.`}
-      confirmText="Retire pipeline"
+      title={t('confirm.ciPipeline.retireTitle', 'Retire the CI pipeline {name}?', { name: label })}
+      desc={t(
+        'confirm.ciPipeline.retireDesc',
+        'Findings that only this pipeline reported and nothing else has seen since close as "source retired". Findings another source still sees are not touched. Each closed finding can be reopened, and the next run of the pipeline brings it back.'
+      )}
+      confirmText={t('confirm.ciPipeline.retire', 'Retire pipeline')}
       disabled={!ok}
       isLoading={isMutating}
       handleConfirm={async () => {
