@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-11); P0 in implementation |
+| Status | Proposed (2026-10-11); P0 in implementation (#1753, #1754, #1755) |
 | Scope | api (`pkg/domain/assetfreshness`, `internal/app/assetfreshness`, ingest observation hook, enrichment controller, the EASM settings section, two migrations), web (asset detail freshness panel, inventory filter, switch on the attack-surface monitoring card) |
 | Architecture | [asset-freshness.md](../architecture/asset-freshness.md) |
 | Related | RFC-019 (certificate transparency), RFC-036 (EASM candidates, O4 auto-confirm), RFC-039 (continuous retest), RFC-046 (Scan → Run → Task, stage catalogue, hop router), RFC-054 (scope model), RFC-065 (bug bounty programs), RFC-067 (scan windows), RFC-068 (dynamic scan targets), RFC-069 (attribute reconciliation, change timeline), RFC-071 (scan intensity), RFC-073 (scan approval governance) |
@@ -145,6 +145,7 @@ asset_enrichment_requests
   reason                new_asset | stale | change | manual
   requested_at          last request (debounce key)
   dispatched_at         last dispatch, NULL = pending
+  outcome               claimed | dispatched | disabled | no_profile | refused | failed
   attempts, last_run_id
   PK (tenant_id, asset_id)
   partial index (tenant_id, requested_at) WHERE pending
@@ -282,12 +283,12 @@ Driven by RFC-069 timeline events and set-element changes, each producing a
 
 ## 10. Observability
 
-- Metrics: `asset_enrichment_requests_total{reason}`,
-  `asset_enrichment_dispatched_total{profile}`,
-  `asset_enrichment_skipped_total{reason}` (disabled, budget, no_profile,
-  cooldown), `asset_enrichment_runs_failed_total`,
-  `asset_freshness_record_errors_total`, gauge
-  `asset_enrichment_pending` per tick.
+- Metrics: `openctem_asset_freshness_observations_total{class}`,
+  `openctem_asset_freshness_record_errors_total`,
+  `openctem_asset_enrichment_requests_total{reason}`,
+  `openctem_asset_enrichment_dispatched_total{profile}`,
+  `openctem_asset_enrichment_skipped_total{reason}` (disabled, budget,
+  no_profile, refused, failed, request_error).
 - Per asset: `GET /api/v1/assets/{id}/freshness` (`assets:read`, data scope
   of the asset) returns each class with `observed_at`, `source`, `ttl`,
   `state`, plus the request (`requested_at`, `dispatched_at`,
@@ -313,14 +314,14 @@ Driven by RFC-069 timeline events and set-element changes, each producing a
 
 | Threat | Control | Test |
 |---|---|---|
-| A tenant adds a third party's names (CSV, manual) to make the platform scan them automatically | Passive only by default and passive refuses names no scope entry covers; active needs opt-in, scope, governance and, on platform sensors, domain proof | `TestEnrichment_OutOfScopeNamesAreNotDispatched` |
-| Cross-tenant leakage through requests, freshness rows or runs | Every query `WHERE tenant_id`; composite FKs to assets; runs created in the asset's tenant; freshness endpoint 404 for another tenant's asset | `TestFreshness_CrossTenantIsolation`, `TestAssetFreshnessHandler_OtherTenant404` |
-| A member reads freshness of an asset outside their data scope | Endpoint uses the asset read path with data scope | handler test |
-| Enrichment loop (DNS → address → network → …) or cost blow-up | Creation-only trigger, idempotent rows, cooldown, scope-bound chain, budget, per-run cap | `TestController_BudgetAndCooldown` |
-| Flood of assets from a hostile sensor report fills the queue | One row per asset (bounded by the inventory), budget per day, per-run cap | `TestController_BudgetAndCooldown` |
+| A tenant adds a third party's names (CSV, manual) to make the platform scan them automatically | Passive only by default and passive refuses names no scope entry covers; active needs opt-in, scope, governance and, on platform sensors, domain proof | `TestEnricher_StartsPassiveRunForInScopeNamesOnly` |
+| Cross-tenant leakage through requests, freshness rows or runs | Every query `WHERE tenant_id`; composite FKs to assets; runs created in the asset's tenant; freshness endpoint 404 for another tenant's asset | `TestAssetFreshness_TenantAndScopeIsolation`, `TestEnrichmentRequests_IdempotentCooldownAndTenantIsolation` |
+| A member reads freshness of an asset outside their data scope | Endpoint uses the asset read path with data scope (404) | `TestAssetFreshness_TenantAndScopeIsolation` |
+| Enrichment loop (DNS → address → network → …) or cost blow-up | Creation-only trigger, idempotent rows, cooldown, scope-bound chain, budget, per-run cap | `TestEnricher_BudgetCapsTheClaim`, `TestEnrichmentRequests_IdempotentCooldownAndTenantIsolation` |
+| Flood of assets from a hostile sensor report fills the queue | One row per asset (bounded by the inventory), budget per day, per-run cap | `TestEnricher_BudgetCapsTheClaim` |
 | A program's rules bypassed by automatic runs | Rules applied at command delivery for every path | RFC-065 tests, unchanged |
 | Privacy: registration data | `lookup.rdap` keeps no person names, e-mails, phones or addresses (unchanged); freshness rows hold only times and tool names | — |
-| A disabled tenant still enriched | The switch is read at claim time; pending rows are drained without a run | `TestController_DisabledTenantDrains` |
+| A disabled tenant still enriched | The switch is read at claim time; pending rows are drained without a run | `TestEnricher_DisabledTenantDrainsWithoutRun`, `TestEASMSettingsHandler_Enrichment` |
 
 ## 13. Rollout
 
