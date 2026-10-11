@@ -3,7 +3,8 @@
 review its diff for high-risk patterns, collect new code-scanning alerts, and
 decide whether it may merge.
 
-Design and operator guide: api/docs/development/ci-cd.md#security-gate.
+Design and operator guide: openctemio/openctem api/docs/development/ci-cd.md#security-gate
+(this file is shared verbatim by the openctemio repositories that use the gate).
 
 Threat model. The gate routes security-sensitive changes to a deliberate human
 acknowledgement; it is not a sandbox. It never runs code from the pull request:
@@ -32,6 +33,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
+GUIDE = "https://github.com/openctemio/openctem/blob/develop/api/docs/development/ci-cd.md#security-gate"
 SENSITIVE_LABEL = "security-sensitive"
 ACK_LABEL = "security-ack"
 COMMENT_MARKER = "<!-- security-gate -->"
@@ -461,7 +463,7 @@ def render(r: Result, repo: str, server: str) -> str:
     out += ["", "### Acknowledge", "",
             f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label. The gate re-runs on the label. "
             f"Status: {r.ack_note}.", "",
-            "<sub>Path list: `.github/security-paths.yml` · guide: `api/docs/development/ci-cd.md#security-gate`</sub>"]
+            f"<sub>Path list: `.github/security-paths.yml` · [how the gate works]({GUIDE})</sub>"]
     return "\n".join(out) + "\n"
 
 
