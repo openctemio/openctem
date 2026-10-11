@@ -510,12 +510,14 @@ RELEASE_HEAD = re.compile(r"^release/v\d")
 
 
 def release_files(gh: GitHub, pr: dict) -> list[ChangedFile] | None:
-    """A release PR (release/vX.Y.Z -> main) carries develop, whose commits
-    already passed this gate: only what the release branch adds on top of
-    develop is evaluated. None means "not a release PR, use the PR's files"."""
-    if pr["base"]["ref"] != "main" or not RELEASE_HEAD.match(pr["head"]["ref"]):
+    """In a repository with an integration branch (INTEGRATION_BRANCH, e.g.
+    develop), a release PR (release/vX.Y.Z -> main) carries that branch, whose
+    commits already passed this gate: only what the release branch adds on top
+    of it is evaluated. None means "use the PR's own files"."""
+    integration = os.environ.get("INTEGRATION_BRANCH", "")
+    if not integration or pr["base"]["ref"] != "main" or not RELEASE_HEAD.match(pr["head"]["ref"]):
         return None
-    cmp_ = gh.get(f"compare/develop...{pr['head']['sha']}")
+    cmp_ = gh.get(f"compare/{integration}...{pr['head']['sha']}")
     files = cmp_.get("files", [])
     if len(files) >= 300:
         return None  # the compare API truncates; fall back to the full diff

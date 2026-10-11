@@ -212,7 +212,7 @@ class GateTest(unittest.TestCase):
             ev.write_text(json.dumps(event))
             env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t", "GITHUB_EVENT_NAME": event_name,
                    "GITHUB_EVENT_PATH": str(ev), "SECURITY_PATHS": str(ROOT / ".github/security-paths.yml"),
-                   "GITHUB_STEP_SUMMARY": str(pathlib.Path(d, "summary.md"))}
+                   "GITHUB_STEP_SUMMARY": str(pathlib.Path(d, "summary.md")), "INTEGRATION_BRANCH": "develop"}
             with mock.patch.dict(os.environ, env, clear=False), \
                     mock.patch.object(sg.GitHub, "request", lambda self, *a, **k: fake.request(*a, **k)), \
                     mock.patch("builtins.print"):
@@ -311,6 +311,11 @@ class GateTest(unittest.TestCase):
         routes["compare/develop..." + "h" * 40] = {"files": self.SENSITIVE}
         code, _ = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
         self.assertEqual(code, 1)
+
+    def test_release_pr_without_integration_branch_uses_its_own_diff(self):
+        pr = self.pr(base="main", head_ref="release/v1.2.3")
+        with mock.patch.dict(os.environ, {"INTEGRATION_BRANCH": ""}):
+            self.assertIsNone(sg.release_files(None, pr))
 
     def test_api_error_fails_closed(self):
         routes = self.routes(self.pr(), self.SENSITIVE)
