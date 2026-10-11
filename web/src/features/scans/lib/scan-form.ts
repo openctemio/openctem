@@ -198,6 +198,7 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
 
   const request: CreateScanConfigRequest = {
     name: form.name.trim(),
+    intensity: form.intensity,
     scan_type: scanType,
     schedule_type: onDemand(schedule) ? 'manual' : frequencyToScheduleType(schedule.frequency),
     sensor_preference: toApiSensorPreference(form.sensorPreference),
@@ -259,6 +260,7 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
   return {
     ...DEFAULT_NEW_SCAN,
     name: config.name,
+    intensity: config.intensity ?? DEFAULT_NEW_SCAN.intensity,
     mode: config.scan_type === 'workflow' ? 'workflow' : 'single',
     scannerName: config.scanner_name ?? '',
     scannerConfig: config.scanner_config ? { ...config.scanner_config } : undefined,
@@ -298,6 +300,7 @@ export function formDataToUpdateRequest(
   const { schedule } = form
   const request: UpdateScanConfigRequest = {
     name: form.name.trim(),
+    intensity: form.intensity,
     description: config.description || undefined,
     scanner_config: { ...(config.scanner_config ?? {}) },
     targets_per_job: form.maxConcurrent || 10,

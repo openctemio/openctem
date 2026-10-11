@@ -88,7 +88,19 @@ export interface ScanTargetOptions {
   seen_within_days?: number
   /** Also take assets marked stale or inactive (archived ones never). */
   include_stale?: boolean
+  /**
+   * Only the assets that came into scope since the scan's previous
+   * successful run (continuous discovery, RFC-071).
+   */
+  new_since_last_run?: boolean
 }
+
+/**
+ * The probe ceiling of a scan (RFC-071): passive sends nothing to the
+ * targets, active probes without intrusive checks, intrusive allows them.
+ */
+export const SCAN_INTENSITIES = ['passive', 'active', 'intrusive'] as const
+export type ScanIntensity = (typeof SCAN_INTENSITIES)[number]
 
 /** What one selector added to a run when it started. */
 export interface RunTargetExpansion {
@@ -117,6 +129,8 @@ export interface ScanConfig {
   targets?: string[] // Direct targets (individual assets or custom)
   /** How the run resolves `*.x` and CIDR targets (RFC-068). */
   target_options?: ScanTargetOptions
+  /** The probe ceiling of every run (RFC-071). */
+  intensity?: ScanIntensity
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string
@@ -209,6 +223,8 @@ export interface CreateScanConfigRequest {
   asset_ids?: string[]
   /** How each run resolves `*.x` and CIDR targets (RFC-068). */
   target_options?: ScanTargetOptions
+  /** The probe ceiling; omitted = the tier the scanner or workflow probes at. */
+  intensity?: ScanIntensity
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string
@@ -251,6 +267,8 @@ export interface UpdateScanConfigRequest {
   description?: string
   /** Omitted = unchanged; `{}` resets every option to its default. */
   target_options?: ScanTargetOptions
+  /** Omitted = unchanged. */
+  intensity?: ScanIntensity
   scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>

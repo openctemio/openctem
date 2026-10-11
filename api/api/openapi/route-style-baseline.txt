@@ -232,7 +232,6 @@ R6 GET /api/v1/tenants/{tenant}/settings
 R6 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R6 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R6 GET /api/v1/tenants/{tenant}/settings/modules
-R6 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R6 GET /api/v1/tenants/{tenant}/settings/modules/graph
 R6 GET /api/v1/tenants/{tenant}/settings/modules/presets
 R6 GET /api/v1/tenants/{tenant}/settings/pentest
@@ -253,7 +252,6 @@ R6 POST /api/v1/tenants/{tenant}/members
 R6 POST /api/v1/tenants/{tenant}/members/{userId}/reactivate
 R6 POST /api/v1/tenants/{tenant}/members/{userId}/suspend
 R6 POST /api/v1/tenants/{tenant}/settings/asset-lifecycle/dry-run
-R6 POST /api/v1/tenants/{tenant}/settings/modules/bundles
 R6 POST /api/v1/tenants/{tenant}/settings/modules/presets/{presetId}/apply
 R6 POST /api/v1/tenants/{tenant}/settings/modules/presets/{presetId}/preview
 R6 POST /api/v1/tenants/{tenant}/settings/modules/reset
@@ -284,7 +282,6 @@ R9 GET /api/v1/tenants/{tenant}/settings
 R9 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R9 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R9 GET /api/v1/tenants/{tenant}/settings/modules
-R9 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R9 GET /api/v1/tenants/{tenant}/settings/modules/graph
 R9 GET /api/v1/tenants/{tenant}/settings/modules/presets
 R9 GET /api/v1/tenants/{tenant}/settings/pentest
@@ -310,7 +307,6 @@ R9 POST /api/v1/tenants/{tenant}/members
 R9 POST /api/v1/tenants/{tenant}/members/{userId}/reactivate
 R9 POST /api/v1/tenants/{tenant}/members/{userId}/suspend
 R9 POST /api/v1/tenants/{tenant}/settings/asset-lifecycle/dry-run
-R9 POST /api/v1/tenants/{tenant}/settings/modules/bundles
 R9 POST /api/v1/tenants/{tenant}/settings/modules/presets/{presetId}/apply
 R9 POST /api/v1/tenants/{tenant}/settings/modules/presets/{presetId}/preview
 R9 POST /api/v1/tenants/{tenant}/settings/modules/reset
@@ -344,8 +340,11 @@ R8 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
 R9 GET /api/v1/tenants/{tenant}/settings/sso/changes
 R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/approve
 R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
+R3 DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant
+R3 GET /api/v1/admin/tenants/{tenantId}/modules
 R3 DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
 R3 GET /api/v1/admin/tenants/{tenantId}/plan
+R3 PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant
 R3 PUT /api/v1/admin/tenants/{tenantId}/plan
 R3 PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
 R3 GET /api/v1/admin/tenants/{tenantId}/scan-approval-policy

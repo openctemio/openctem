@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 )
 
 // gateFixture is one tenant's data; any other tenant sees nothing.
@@ -646,6 +647,59 @@ func TestActiveGate_ConstraintRefused(t *testing.T) {
 	}
 	f.targets = append(f.targets, whole)
 	if got, _ := g.ConstraintRefused(ctx, f.tenant, targets[:1], scopedom.TierActive, scopedom.JobShape{Tool: "naabu", Ports: "1-65535"}); len(got) != 0 {
+		t.Fatalf("an unlimited entry covers the host: %v", got)
+	}
+}
+
+// SECURITY: a sensor that enforces scope limits may run any tool on a
+// limited target, and the signed job carries exactly the limits of the
+// entries that cover it; a host an unlimited entry covers gets none, and
+// another tenant's entries never give limits.
+func TestActiveGate_StatementLimits(t *testing.T) {
+	f := newGateFixture(t)
+	svc, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "api.limited.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetConstraint(scopedom.Constraint{Ports: "8443", Protocol: "tcp"}); err != nil {
+		t.Fatal(err)
+	}
+	path, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeURL, "https://shop.limited.example/api/*", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = append(f.targets, svc, path)
+	g := NewActiveGate(f, f, f, f)
+	ctx := context.Background()
+	targets := []string{"api.limited.example:8443", "https://shop.limited.example/api/v1", "app.scoped.com"}
+
+	crawl, err := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, scopedom.JobShape{Tool: "katana", TopPorts: true, LimitsEnforced: true})
+	if err != nil || len(crawl) != 0 {
+		t.Fatalf("enforcing sensor: %v %v", crawl, err)
+	}
+	got, err := g.StatementLimits(ctx, f.tenant, targets, scopedom.TierActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []jobsign.Limit{
+		{Host: "api.limited.example", Ports: "8443", Protocol: "tcp"},
+		{Host: "shop.limited.example", Ports: "443", Protocol: "tcp", PathPrefix: "/api"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("limits %+v, want %+v", got, want)
+	}
+	if err := jobsign.ValidateLimits(got, targets); err != nil {
+		t.Fatalf("limits a sensor would refuse: %v", err)
+	}
+	if other, err := g.StatementLimits(ctx, shared.NewID(), targets, scopedom.TierActive); err != nil || len(other) != 0 {
+		t.Fatalf("another tenant: %v %v", other, err)
+	}
+	whole, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "api.limited.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = append(f.targets, whole)
+	if got, _ := g.StatementLimits(ctx, f.tenant, targets[:1], scopedom.TierActive); len(got) != 0 {
 		t.Fatalf("an unlimited entry covers the host: %v", got)
 	}
 }

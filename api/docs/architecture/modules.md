@@ -3,14 +3,19 @@
 A module is a feature an organization can have on or off: pentest,
 compliance, EASM (`attack_surface`), automations (`workflows`), and so on.
 Design and roadmap: [RFC-064](../rfcs/RFC-064-modules-entitlements-preferences.md).
-Code: `configs/modules.yaml` (the registry: every module, its dependencies
+Code: `configs/modules/<id>.yaml` (the registry: every module, its dependencies
 and the routes, MCP tools and jobs it owns), `pkg/domain/module` (generated
 catalog, presets, toggle rules), `internal/app/module` (state, toggles,
 bundles), `internal/infra/http/middleware/module_gate.go` (gate).
 
 ## The registry
 
-`configs/modules.yaml` is the one declaration. `make generate-modules`
+`configs/modules/` is the one declaration: one file per top-level module,
+`configs/modules/<id>.yaml`, holding that module and its sub-modules
+(`<id>.<name>`), so changes to different modules never touch the same file.
+The generator merges them in a fixed order (top-level modules by `order`, then
+id; each followed by its sub-modules by `order`, then id). The field reference
+is in the `cmd/gen-modules` package comment. `make generate-modules`
 (`go run ./cmd/gen-modules`) writes:
 
 - `pkg/domain/module/registry_generated.go`: the `Module*` constants and
@@ -53,8 +58,11 @@ Coverage tests read the registry:
 ## State
 
 ```
-enabled(org, module) = core(module)
-                    || !(explicit_off(org, module) || outside_bundles(org, module))
+on(org, module) = core(module)
+               || (entitled(org, module) && !explicit_off(org, module))
+
+entitled(org, module) = !deny(org, module)
+                     && (plan_includes(plan(org), module) || grant(org, module))
 ```
 
 - **Core** (`CoreModuleIDs`, and `modules.is_core`, which a parity test keeps
@@ -64,15 +72,39 @@ enabled(org, module) = core(module)
 - **Explicit overrides:** `tenant_modules`, written by Settings > Modules
   (team admin with `settings:write`). Every change is audited as
   `tenant.modules_updated`.
-- **Bundles:** `tenants.settings.subscribed_bundles`. When set, every
-  non-core module outside the bundles is off unless an override turns it on.
-- **Presets** write overrides once and change nothing else.
-- **Failures fail open:** a lookup error, or bundles that are all unknown,
-  disables nothing.
+- **Entitlements** (`internal/app/entitlement`, RFC-064): the plan to module
+  map (`platform_settings['plan_modules']`, every module for every plan until
+  a super admin narrows it in Console > System > Plans) and the grants and
+  denies of one organization (`tenant_module_grants`, Console >
+  Organizations > Plan, ops admin and up, with a reason, a fresh
+  authenticator code and an optional expiry; removing one needs a reason and
+  a code too). Changes are in the admin audit log and refresh the organization's
+  module state at once (a plan mapping change refreshes every organization).
+  An organization cannot switch on a module it is not entitled to.
+- **Presets** write overrides once (Settings > Modules, or the starting set
+  picked at onboarding) and change nothing else. The organization-chosen
+  product bundles are retired: packaging is the plan's.
+- **Read-only grace** (`tenant_module_grace`): an organization that loses a
+  module keeps reading it for 30 days (`plan.GracePeriod`). Grace starts when
+  a deny, the removal of a grant, a change of the organization's plan or a
+  plan mapping change takes the module away, and ends when the module comes
+  back. An expired trial grant gives the same grace from its expiry, with no
+  row. During grace GET, HEAD and OPTIONS pass the gate; every other method
+  gets `403 read_only_grace`, so creating a report or a POST search is
+  refused too, while GET exports and downloads work. Jobs, MCP tools and
+  automations treat the module as off at once. The module stays in the
+  session's module list (pages render with a "Read-only until" banner) and in
+  `read_only_modules`; it cannot be switched on. After grace the reason is
+  `not_entitled`. Data is never deleted.
+- **Failures:** a preference read error fails open (nothing disabled); an
+  entitlement read error fails closed: every non-core module is
+  `unavailable` and the gate answers 503 until it can be read again.
 
-Plans do not gate modules today; they set numeric limits
-([plans-and-limits.md](plans-and-limits.md)). Entitlements per plan are
-RFC-064 M3.
+Each off module has a reason, returned in `MODULE_NOT_ENABLED` details:
+`not_entitled`, `disabled_by_admin`, `read_only_grace` (writes only; 403) or
+`unavailable` (503). The console
+says "Not in your plan" (with no way to turn it on) or "Turned off for your
+organization" (with Settings > Modules for an administrator).
 
 ## Where a module is enforced
 
@@ -93,7 +125,7 @@ Deliberately not gated:
 
 ## Adding a module
 
-1. Add it to `configs/modules.yaml` (id, const, presentation, read
+1. Add `configs/modules/<id>.yaml` (a sub-module goes in its parent's file) (id, const, presentation, read
    permission, dependencies with a reason), run `make generate-modules`, and
    add a migration whose body is `make modules-sql`.
 2. Gate every surface it owns and list it in the registry: the route groups

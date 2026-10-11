@@ -16,6 +16,8 @@ var capabilitySource = map[string]vulnerability.FindingSource{
 	"discover.subdomains":  vulnerability.FindingSourceEASM,
 	"intel.passive":        vulnerability.FindingSourceEASM,
 	"resolve.dns":          vulnerability.FindingSourceEASM,
+	"lookup.rdap":          vulnerability.FindingSourceEASM,
+	"lookup.asn":           vulnerability.FindingSourceEASM,
 	"scan.ports":           vulnerability.FindingSourceEASM,
 	"detect.services":      vulnerability.FindingSourceEASM,
 	"probe.http":           vulnerability.FindingSourceEASM,

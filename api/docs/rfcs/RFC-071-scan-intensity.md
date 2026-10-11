@@ -43,8 +43,7 @@ passive path closed (in-scope names only, non-target tools only); a passive
 discovery workflow and a continuous-discovery preset.
 
 Non-goals: approvals or scope-entry tier ceilings (scan approval is a separate
-design); WHOIS/RDAP/ASN tools (none ships; they join the passive workflow as
-`discover.*` capabilities when one does); sensor-side enforcement of the
+design); sensor-side enforcement of the
 egress proxy (declarative; the sensor enforces it).
 
 ## 4. Model
@@ -118,6 +117,14 @@ here; the dispatch gate and grants apply as before.
   them. The platform's certificate-transparency monitor keeps running beside it.
 - Starter workflow **Probe new assets**: `scan.ports` and `probe.http` (T1),
   no discovery step.
+- **Passive lookups** (T0, `egress-proxy`), part of Passive discovery:
+  `lookup.rdap` on the root domains (registrar, registrant organization,
+  name servers, dates, from the registry's RDAP service through the IANA
+  bootstrap) and `lookup.asn` on the resolved addresses (origin autonomous
+  system, holder, announced range, from the public-domain IPtoASN dataset).
+  Sensor tools `rdap` and `asn` never request a target host; results are
+  attributes of the domain and address. Announced ranges (opt-in
+  `include_announced`) arrive as networks held for review.
 - **Continuous discovery** preset (wizard): two scans saved together: Passive
   discovery of the root domains, daily, at Passive; and Probe new assets of
   `*.<root>` at Active, daily, with `target_options.new_since_last_run`: each
@@ -129,7 +136,7 @@ here; the dispatch gate and grants apply as before.
 
 ## 8. Migration
 
-`001951_scan_intensity`: the column with default `active` and CHECK; existing
+`001940_scan_intensity`: the column with default `active` and CHECK; existing
 scans are backfilled with the tier they already probe at (single scanner: its
 tool; workflow: the highest step, by tool or capability; unknown counts as
 active), so no scan changes behaviour. Down drops the column. The discovery

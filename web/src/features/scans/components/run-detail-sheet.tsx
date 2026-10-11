@@ -1,5 +1,6 @@
 'use client'
 
+import { IntensityBadge } from './intensity-badge'
 import dynamic from 'next/dynamic'
 import { useTranslation } from '@/context/i18n-provider'
 import { enTranslate, type Translate } from '../lib/translate'
@@ -130,7 +131,14 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               ? t('scans.runDetail.kindRun', undefined, { kind: runKindLabel(run.kind, t) })
               : t('scans.runDetail.scanRun')
           }
-          badges={run ? <RunStatusBadge status={run.status} /> : undefined}
+          badges={
+            run ? (
+              <>
+                <RunStatusBadge status={run.status} />
+                <IntensityBadge intensity={run.intensity} />
+              </>
+            ) : undefined
+          }
           meta={[
             run?.started_at
               ? t('scans.runDetail.started', undefined, { time: formatTime(run.started_at) })

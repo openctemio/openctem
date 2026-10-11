@@ -6,6 +6,7 @@
  * schedule and targets in their own tabs.
  */
 
+import { IntensityBadge } from './intensity-badge'
 import { useMemo, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Hash, Tag, Trash2 } from 'lucide-react'
@@ -187,6 +188,9 @@ function Configuration({ config }: { config: ScanConfig }) {
         <DetailFieldGrid>
           <DetailField label={t('scans.sheet.scanType')}>
             {scanTypeName(t, config.scan_type)}
+          </DetailField>
+          <DetailField label={t('scans.intensity.label')}>
+            <IntensityBadge intensity={config.intensity} />
           </DetailField>
           <DetailField label={t('scans.sheet.frequency')}>
             {scheduleTypeName(t, config.schedule_type)}

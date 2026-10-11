@@ -11,8 +11,7 @@ import { sidebarData } from '../sidebar-data'
 import { EXPOSURES_SECTION_TABS, REMEDIATION_SECTION_TABS } from '../section-tabs'
 import type { NavCollapsible, NavItem, NavLink } from '@/components/types'
 import { Permission } from '@/lib/permissions'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 
 const APP = join(process.cwd(), 'src', 'app')
 
