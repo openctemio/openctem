@@ -10,5 +10,5 @@ No caller in the web app, the e2e suites, sdk-go, the sensor, ctis, the MCP tool
 - `GET /api/v1/attachments/{id}/meta`: `GET /api/v1/attachments` lists the metadata.
 - `GET|DELETE /api/v1/commands/{id}` and `POST /api/v1/commands/{id}/cancel`: a scan run is canceled as a whole (`POST /api/v1/scan-runs/{id}/cancel`); `GET /api/v1/commands` and `GET /api/v1/commands/{id}/logs` stay.
 - `GET /api/v1/auth/oauth/providers`: use `GET /api/v1/auth/providers`.
-- The permission `sensors:commands:delete` gated only the removed delete and is removed by migration 002012 (role grants, API key scopes and licenses drop it; no role loses access to anything).
+- The permission `sensors:commands:delete` gated only the removed delete and is removed by migration 002015 (role grants, API key scopes and licenses drop it; no role loses access to anything).
 - **Upgrade note:** API clients that called these routes get 404/405; move to the successors above.
