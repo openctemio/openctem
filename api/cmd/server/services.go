@@ -55,6 +55,7 @@ import (
 	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
+	assetfreshnessapp "github.com/openctemio/openctem/api/internal/app/assetfreshness"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
@@ -941,6 +942,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetStateHistoryRepository(repos.AssetStateHistory)
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
+	s.Asset.SetFreshness(repos.AssetFreshness)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
 	// A precedence change re-resolves the organization's assets (RFC-069).
@@ -2458,6 +2460,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// An existing asset a re-scan turned internet-facing is newly exposed
 	// attack surface too: same throttled notification, no asset_discovered.
 	s.Ingest.SetAssetsExposedCallback(s.AssetDiscoveryNotifier.AssetsExposed)
+	// Every asset an ingest wrote moves the freshness clock of the attribute
+	// classes the report's tool observes (docs/architecture/asset-freshness.md).
+	s.Ingest.SetAssetsObservedCallback(assetfreshnessapp.NewRecorder(repos.AssetFreshness, log).AssetsObserved)
 
 	// A successful scan run fires the `scan_completed` workflow trigger.
 	s.ScanRun.SetRunCompletedCallback(s.WorkflowDispatcher.DispatchScanCompleted)

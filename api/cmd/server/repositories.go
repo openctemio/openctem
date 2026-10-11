@@ -28,6 +28,7 @@ type Repositories struct {
 	CVECorpus              *postgres.CVECorpusRepository              // CVE corpus for inventory matching (RFC-066)
 	SoftwareMatch          *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources  *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
+	AssetFreshness         *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
 	AssetChangeEvents      *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
 	APISpec                *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
@@ -316,6 +317,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CVECorpus:              postgres.NewCVECorpusRepository(db),
 		SoftwareMatch:          postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:  postgres.NewAssetAttributeSourceRepository(db),
+		AssetFreshness:         postgres.NewAssetFreshnessRepository(db),
 		AssetChangeEvents:      postgres.NewAssetChangeEventRepository(db),
 		APISpec:                postgres.NewAPISpecRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
