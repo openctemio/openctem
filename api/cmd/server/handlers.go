@@ -486,7 +486,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
 		Capability:   handler.NewCapabilityHandler(svc.Capability, v, log),
 		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
-		CI:           handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
 		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
