@@ -4,6 +4,8 @@ import { useState, useCallback, useMemo } from 'react'
 import { useNodesState, useEdgesState, type Edge } from '@xyflow/react'
 
 import { Main } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   DataTable,
@@ -180,7 +182,11 @@ export default function WorkflowsPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<AutomationNode>(starterGraph().nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null)
-  const [deleteWorkflowId, setDeleteWorkflowId] = useState<string | null>(null)
+  // The workflow waiting for delete confirmation. Its id keys the delete
+  // mutation, so the hook has the right URL by the time the user confirms.
+  const [pendingDelete, setPendingDelete] = useState<Workflow | null>(null)
+  const deleteWorkflowId = pendingDelete?.id ?? null
+  const { t } = useTranslation()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newWorkflowName, setNewWorkflowName] = useState('')
   const [newWorkflowDescription, setNewWorkflowDescription] = useState('')
@@ -360,15 +366,15 @@ export default function WorkflowsPage() {
   }
 
   const handleDeleteWorkflow = async (workflow: Workflow) => {
-    setDeleteWorkflowId(workflow.id)
     try {
       await deleteWorkflow()
-      toast.success(`Deleted workflow: ${workflow.name}`)
+      toast.success(
+        t('confirm.automation.deleted', 'Workflow "{name}" deleted', { name: workflow.name })
+      )
+      setPendingDelete(null)
       await invalidateWorkflowsCache()
     } catch (err) {
       toast.error(getErrorMessage(err, `Failed to delete workflow: ${workflow.name}`))
-    } finally {
-      setDeleteWorkflowId(null)
     }
   }
 
@@ -590,11 +596,11 @@ export default function WorkflowsPage() {
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
-                onClick={() => handleDeleteWorkflow(workflow)}
+                onSelect={() => setPendingDelete(workflow)}
                 disabled={isDeleting && deleteWorkflowId === workflow.id}
               >
                 <Trash2 className="me-2 h-4 w-4" />
-                {isDeleting && deleteWorkflowId === workflow.id ? 'Deleting...' : 'Delete'}
+                {t('confirm.delete', 'Delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -822,6 +828,23 @@ export default function WorkflowsPage() {
             </Card>
           </TabsContent>
         </Tabs>
+        <ConfirmDialog
+          open={pendingDelete !== null}
+          onOpenChange={(open) => !open && !isDeleting && setPendingDelete(null)}
+          destructive
+          title={t('confirm.automation.deleteTitle', 'Delete workflow "{name}"?', {
+            name: pendingDelete?.name ?? '',
+          })}
+          desc={t(
+            'confirm.automation.deleteDesc',
+            'The workflow and its steps are deleted and its triggers stop starting it. This cannot be undone.'
+          )}
+          confirmText={
+            isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+          }
+          isLoading={isDeleting}
+          handleConfirm={() => (pendingDelete ? handleDeleteWorkflow(pendingDelete) : undefined)}
+        />
       </Main>
 
       {/* Workflow Detail Sheet */}

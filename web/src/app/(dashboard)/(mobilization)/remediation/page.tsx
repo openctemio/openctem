@@ -92,6 +92,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
@@ -1456,6 +1457,8 @@ function TaskDetailSheet({
   const [dueOpen, setDueOpen] = useState(false)
   const [startOpen, setStartOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
+  const [pendingUnlink, setPendingUnlink] = useState<{ id: string; title: string } | null>(null)
+  const { t } = useTranslation()
   const canDelete = useHasPermission(Permission.RemediationWrite)
 
   if (!task) return null
@@ -1808,11 +1811,9 @@ function TaskDetailSheet({
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 text-muted-foreground"
-                          aria-label="Unlink finding"
+                          aria-label={t('confirm.remediation.unlinkFindingLabel', 'Unlink finding')}
                           onClick={() =>
-                            onPatch(task, {
-                              finding_filter: { finding_ids: linked.filter((x) => x !== id) },
-                            })
+                            setPendingUnlink({ id, title: f ? f.title || f.message || id : id })
                           }
                         >
                           <X className="h-3.5 w-3.5" />
@@ -1840,6 +1841,27 @@ function TaskDetailSheet({
           </DetailSections>
         </div>
       )}
+      <ConfirmDialog
+        open={pendingUnlink !== null}
+        onOpenChange={(open) => !open && setPendingUnlink(null)}
+        destructive
+        title={t('confirm.remediation.unlinkTaskTitle', 'Unlink "{name}" from this task?', {
+          name: pendingUnlink?.title ?? '',
+        })}
+        desc={t(
+          'confirm.remediation.unlinkTaskDesc',
+          'It is removed from the findings linked to "{task}". The finding itself is not changed, and you can link it again later.',
+          { task: task.title }
+        )}
+        confirmText={t('confirm.unlink', 'Unlink')}
+        handleConfirm={() => {
+          if (!pendingUnlink) return
+          onPatch(task, {
+            finding_filter: { finding_ids: linked.filter((x) => x !== pendingUnlink.id) },
+          })
+          setPendingUnlink(null)
+        }}
+      />
     </DetailSheet>
   )
 }
