@@ -356,8 +356,11 @@ export function CapabilitiesSection() {
   return (
     <>
       <PageHeader
-        title="Capabilities"
-        description="What tools can do. Platform capabilities are built in; add custom ones to extend the tool registry."
+        title={t('scans.capabilities.title', 'Capabilities')}
+        description={t(
+          'scans.capabilities.description',
+          'What tools can do. Add custom capabilities for your own tools.'
+        )}
       >
         <Can route="POST /api/v1/capabilities">
           <Tooltip>
