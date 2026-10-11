@@ -920,16 +920,18 @@ export async function localLogoutAction(redirectTo?: string): Promise<never> {
   try {
     const cookieStore = await cookies()
     const accessToken = cookieStore.get(env.auth.cookieName)?.value
+    const refreshToken = cookieStore.get(env.auth.refreshCookieName)?.value
 
-    // Call backend logout to invalidate session and clear backend-set cookies
-    // Backend will clear: refresh_token (path: /api/v1/auth), csrf_token
-    if (accessToken) {
+    // End the session on the API. The refresh token goes in the body: it
+    // outlives the 15-minute access token, so a user who idled past that
+    // still has their server session ended (with only the access token the
+    // call was skipped and the session stayed valid for days).
+    if (accessToken || refreshToken) {
       try {
         await backendFetch(authEndpoints.logout(), {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+          body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
         })
         devLog.log('[Logout] Backend logout successful')
       } catch (error) {
