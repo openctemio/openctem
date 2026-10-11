@@ -263,6 +263,8 @@ type Handlers struct {
 	IdleReadOnly middleware.IdleReadOnlyChecker
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
+	// AdminEmail: Console > System > E-mail (the platform SMTP server, RFC-079).
+	AdminEmail *handler.AdminEmailHandler
 	// AdminScanPolicy: the platform policy for scan approval
 	// (RFC-073), platform default and per organization.
 	AdminScanPolicy *handler.AdminScanPolicyHandler

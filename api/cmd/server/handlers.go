@@ -756,6 +756,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
+		if svc.PlatformEmail != nil {
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.App.Name, log)
+		}
 		handlers.SignupPolicy = svc.Signup
 	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)

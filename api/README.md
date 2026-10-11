@@ -184,7 +184,6 @@ explicitly for local development (`.env.example` does).
 | `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` (the default was `oidc` up to v0.8.0) |
 | `TENANT_CREATION_MODE` | `admin_only` | Seeds the sign-up policy on the first start: `admin_only` (only the platform administrator creates organizations; nobody else can create an account without an invitation or their organization's SSO) or `self_service` (anyone may sign up and create one). Afterwards change it in the console (System > Sign-up). |
 | `AI_PLATFORM_PROVIDER` | — | AI triage: `claude`, `openai`, `gemini` |
-| `SMTP_ENABLED` | `false` | Enable email notifications (required for invitations) |
 | `RATE_LIMIT_RPS` | `100` | Rate limit (requests/second) |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
@@ -194,8 +193,11 @@ Public registration and self-service organizations are off by default:
 
 ```env
 TENANT_CREATION_MODE=admin_only    # Seeds the sign-up policy: no public signup (the default)
-SMTP_ENABLED=true                  # Emails set-password links and invitations
 ```
+
+Platform e-mail (set-password links, invitations, verification) is set in the
+admin console, System > E-mail; headless installs pass `BOOTSTRAP_SMTP_*` to
+`bootstrap-admin`.
 
 **Flow**: the platform administrator creates the organization and its owner
 (`bootstrap-admin -org-*` at install, then the console) → the owner sets a
@@ -220,7 +222,7 @@ POST /api/v1/invitations/accept   {"token": "..."}
 ### Per-Tenant SMTP
 
 Each tenant can configure its own SMTP server for outgoing emails (invitations, notifications).
-If not configured, the system-wide SMTP (`SMTP_HOST`, etc.) is used as fallback.
+If not configured, the platform e-mail (admin console, System > E-mail) is used as fallback.
 
 **Setup via email integration:**
 ```bash
@@ -244,7 +246,7 @@ POST /api/v1/integrations
 
 **Resolution order:**
 1. Tenant has active email integration → use tenant SMTP
-2. No tenant integration → use system SMTP (`SMTP_HOST`, `SMTP_PORT`, etc.)
+2. No tenant integration → use the platform e-mail (admin console, System > E-mail)
 3. No system SMTP → emails skipped (logged as warning)
 
 Credentials are encrypted at rest using AES-256-GCM.
