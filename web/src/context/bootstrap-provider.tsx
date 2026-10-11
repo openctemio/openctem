@@ -370,6 +370,8 @@ export function useBootstrapPermissions() {
   }
 }
 
+const NO_READ_ONLY_MODULES: Record<string, string> = {}
+
 /**
  * Get modules from bootstrap
  */
@@ -389,6 +391,8 @@ export function useBootstrapModules() {
     // event-type catalog comes from `useTenantEventTypes()`.
     comingSoonModuleIds: data?.modules?.coming_soon_module_ids || [],
     betaModuleIds: data?.modules?.beta_module_ids || [],
+    notEntitledModuleIds: data?.modules?.not_entitled_module_ids || [],
+    readOnlyModules: data?.modules?.read_only_modules ?? NO_READ_ONLY_MODULES,
     hasModule,
     isLoading,
   }

@@ -178,10 +178,11 @@ func TestAdapters_TypeCheck(t *testing.T) {
 // routed: no lookup, tool or capability word reaches them.
 func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 	all := Taxonomy()
-	// 13 routed + 12 planned: the 22 of taxonomy v1 plus discover.cloud,
-	// sbom.generate and import.file (RFC-055).
-	if len(all) != 25 {
-		t.Fatalf("taxonomy v1: %d capabilities, want 25", len(all))
+	// 15 routed + 12 planned: the 22 of taxonomy v1 plus discover.cloud,
+	// sbom.generate and import.file (RFC-055), lookup.rdap and lookup.asn
+	// (RFC-071).
+	if len(all) != 27 {
+		t.Fatalf("taxonomy v1: %d capabilities, want 27", len(all))
 	}
 	ids := map[string]bool{}
 	for _, s := range all {

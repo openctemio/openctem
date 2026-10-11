@@ -143,6 +143,36 @@ func TestScanStamper_E7(t *testing.T) {
 	}
 }
 
+// SECURITY: a network a passive lookup reports (the ranges an autonomous
+// system announces) is never the tenant's on the sensor's word: a new one
+// waits for review, from an unsolicited report it is a candidate; an
+// existing network without a record is left alone.
+func TestScanStamper_NetworksFromALookupWaitForReview(t *testing.T) {
+	store := newFakeScanStore()
+	announced := scanned("198.51.100.0/24", asset.AssetTypeNetwork, false, true)
+	existing := scanned("192.0.2.0/24", asset.AssetTypeNetwork, false, false)
+	cmd := shared.NewID()
+	err := NewScanStamper(store, nil).StampScanned(context.Background(), shared.NewID(), []ingest.ScannedAsset{announced, existing},
+		ingest.ScanProvenance{SensorID: shared.NewID(), CommandID: &cmd, Tool: "asn", ReportID: "r1", ObservedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := store.saved[announced.ID.String()]; d.State != attribution.StateNeedsReview {
+		t.Fatalf("announced network = %+v, want needs_review", d)
+	}
+	if d, ok := store.saved[existing.ID.String()]; ok {
+		t.Fatalf("existing network got a record: %+v", d)
+	}
+	store = newFakeScanStore()
+	if err := NewScanStamper(store, nil).StampScanned(context.Background(), shared.NewID(), []ingest.ScannedAsset{announced},
+		ingest.ScanProvenance{SensorID: shared.NewID(), Unsolicited: true}); err != nil {
+		t.Fatal(err)
+	}
+	if d := store.saved[announced.ID.String()]; d.State != attribution.StateCandidate {
+		t.Fatalf("unsolicited network = %+v, want candidate", d)
+	}
+}
+
 // An unsolicited report gives a new internet-facing asset a candidate
 // record and no evidence; a synthetic sensor (server-side ingest) records
 // nothing.
