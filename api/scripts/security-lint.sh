@@ -176,6 +176,8 @@ check_dev_default_secrets() {
         # The development env template (APP_ENV=development); the API
         # refuses both values whenever APP_ENV is not development.
         'api/.env.example'
+        # The registry api/.env.example is generated from (its dev examples).
+        'api/internal/config/env_registry.yaml'
         # Expected: config validator explicitly lists these as the
         # forbidden values — it MUST hold the exact literal.
         'api/internal/config/config.go'
