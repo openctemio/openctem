@@ -627,9 +627,9 @@ replaces bearer keys.
   the warned values replaced by `********` (`scan.RedactConfigSecrets`,
   `pkg/domain/scan/config_redact.go`) in every user-facing response that
   carries the config: `GET /scans`, `GET /scans/{id}`,
-  `GET /scans/{id}/export`, and the `payload` of `GET /commands` and
-  `GET /commands/{id}` (which embeds the config as `scanner_config`,
-  `config` and `context.scanner_config`). The structure, the non-secret
+  `GET /scans/{id}/export`, and the `payload` of `GET /commands` (which
+  embeds the config as `scanner_config`, `config` and
+  `context.scanner_config`). The structure, the non-secret
   values and `scanner_config_warnings` stay. Owners, admins and members with
   `scans:write` see the real values, because they edit them. Sensors claim
   the stored command and are unaffected. As a guard, a `PUT /scans/{id}`
