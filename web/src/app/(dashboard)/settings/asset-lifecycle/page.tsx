@@ -76,7 +76,7 @@ export default function AssetLifecycleSettingsPage() {
             <AlertDescription>
               {t(
                 'settings.assetLifecycle.noPermission',
-                'Only owners and administrators view or change asset lifecycle settings.'
+                'You do not have permission to view or change asset lifecycle settings.'
               )}
             </AlertDescription>
           </Alert>

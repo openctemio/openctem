@@ -102,7 +102,7 @@
   "settings.loadFailed": "Failed to load settings",
   "settings.assetLifecycle.title": "Asset lifecycle",
   "settings.assetLifecycle.description": "Mark assets as stale when no scan or integration has seen them for a while.",
-  "settings.assetLifecycle.noPermission": "Only owners and administrators view or change asset lifecycle settings.",
+  "settings.assetLifecycle.noPermission": "You do not have permission to view or change asset lifecycle settings.",
   "settings.assetLifecycle.staleDetection": "Stale-asset detection",
   "settings.assetLifecycle.offByDefault": "Off by default.",
   "settings.slaPolicies.title": "SLA policies",
