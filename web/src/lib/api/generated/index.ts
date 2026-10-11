@@ -146,6 +146,8 @@ export type CheckScopeResponse = Schemas['internal_infra_http_handler.CheckScope
 export type ScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
 export type ScopeBulkOperationResponse =
   Schemas['internal_infra_http_handler.ScopeBulkOperationResponse']
+export type BulkCreateScopeTargetsResponse =
+  Schemas['internal_infra_http_handler.BulkCreateScopeTargetsResponse']
 
 // Inventory vulnerability matching (RFC-066): an asset's software, its
 // matched CVEs and the organization's policy
