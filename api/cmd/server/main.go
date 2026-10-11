@@ -88,7 +88,7 @@ func run() int {
 	// ==========================================================================
 	cfg, err := config.Load()
 	if *checkConfig {
-		return reportConfigCheck(os.Stdout, os.Stderr, cfg, err)
+		return reportConfigCheck(os.Stdout, os.Stderr, cfg, err, os.Environ())
 	}
 	if err != nil {
 		log := logger.NewDefault()
@@ -98,6 +98,9 @@ func run() int {
 
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
+	for _, w := range cfg.EnvWarnings {
+		log.Warn("environment: " + w)
+	}
 	if httpsec.AllowPrivate() {
 		log.Warn("outbound requests may reach every private network range (" + httpsec.EnvAllowPrivate + "=1, development only)")
 	}
