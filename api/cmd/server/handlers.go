@@ -43,6 +43,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -1275,6 +1276,9 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	if svc.DataScope != nil {
 		ds = svc.DataScope
 	}
+	if repos.RelationshipSuggestion != nil {
+		ciSvc.SetImageLinker(ciImageLinker{repos.CIRun, repos.RelationshipSuggestion})
+	}
 	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
@@ -1319,4 +1323,19 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		return mode
 	}
 	return s
+}
+
+// ciImageLinker finds digest-carrying assets (CI runs) and stores relationship
+// suggestions (RFC-077, code to cloud).
+type ciImageLinker struct {
+	runs        *postgres.CIRunRepository
+	suggestions *postgres.RelationshipSuggestionRepository
+}
+
+func (l ciImageLinker) AssetsWithImageDigest(ctx context.Context, tenantID shared.ID, digest string, exclude shared.ID, limit int) ([]cirunapp.DigestAsset, error) {
+	return l.runs.AssetsWithImageDigest(ctx, tenantID, digest, exclude, limit)
+}
+
+func (l ciImageLinker) CreateBatch(ctx context.Context, s []*relationshipdom.Suggestion) (int, error) {
+	return l.suggestions.CreateBatch(ctx, s)
 }
