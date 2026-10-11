@@ -106,16 +106,16 @@ func registerDashboardRoutes(
 
 	// Dashboard routes
 	router.Group("/api/v1/dashboard", func(r Router) {
-		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead))
-		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead))
-		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead))
-		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead))
-		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead))
-		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
 		r.GET("/executive-summary/export", h.ExportExecutiveSummary, middleware.Require(permission.DashboardRead))
-		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead))
-		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead))
-		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead))
+		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
 		r.GET("/overview", overview.Overview, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }

@@ -10,3 +10,7 @@
   connection. On a 525k-finding tenant, 50 concurrent loads used to time out
   (and, before the timeout fix, crash the API). Ten cold loads now finish in
   5.6 s and repeat loads in under 100 ms.
+- The tenant-wide aggregate endpoints (dashboard metrics, finding and asset
+  stats, finding groups, threat-intel stats, attack-surface stats, paths and
+  chains) run at most four at a time per organization. Extra requests wait,
+  and a request that gives up waiting gets 503 with `Retry-After`.
