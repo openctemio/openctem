@@ -648,7 +648,7 @@ func TestUpdateProfile_Success_AllFields(t *testing.T) {
 
 	newName := "Updated Name"
 	newPhone := "+1234567890"
-	newAvatar := "https://example.com/avatar.png"
+	newAvatar := "https://avatars.githubusercontent.com/u/1?v=4"
 
 	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name:      &newName,
@@ -664,8 +664,39 @@ func TestUpdateProfile_Success_AllFields(t *testing.T) {
 	if result.Phone() != "+1234567890" {
 		t.Errorf("Expected phone '+1234567890', got '%s'", result.Phone())
 	}
-	if result.AvatarURL() != "https://example.com/avatar.png" {
+	if result.AvatarURL() != newAvatar {
 		t.Errorf("Expected avatar URL, got '%s'", result.AvatarURL())
+	}
+}
+
+// A profile picture is shown to teammates: an arbitrary host (a tracking
+// pixel) is refused and the stored picture is left as it was.
+func TestUpdateProfile_RefusesAvatarOnUnknownHost(t *testing.T) {
+	repo := newMockUserRepo()
+	svc := newTestUserService(repo)
+	u := createUserForTest(t, repo, "avatar@test.com", "Avatar")
+
+	for _, bad := range []string{
+		"https://tracker.example/pixel.gif",
+		"http://avatars.githubusercontent.com/u/1",
+		"https://user:pw@avatars.githubusercontent.com/u/1",
+		"https://avatars.githubusercontent.com:8443/u/1",
+		"https://googleusercontent.com.evil.example/a.png",
+		"javascript:alert(1)",
+	} {
+		_, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{AvatarURL: &bad})
+		if err == nil || !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("avatar %q: err = %v, want a validation error", bad, err)
+		}
+	}
+	got, _ := repo.GetByID(context.Background(), u.ID())
+	if got != nil && got.AvatarURL() != u.AvatarURL() {
+		t.Errorf("a refused avatar changed the stored one to %q", got.AvatarURL())
+	}
+	// Clearing the picture is always allowed.
+	empty := ""
+	if _, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{AvatarURL: &empty}); err != nil {
+		t.Errorf("clearing the avatar: %v", err)
 	}
 }
 
