@@ -627,7 +627,6 @@ These routes require the tenant ID in the URL path and use database-based member
 | `GET /api/v1/tenants/{tenant}/members` | Team viewer+; **emails, last sign-in and second-factor status only for owner/admin** (others get ids, names, avatars, roles; `search` matches names only) |
 | `GET /api/v1/tenants/{tenant}/invitations` | Team viewer+ |
 | `PATCH /api/v1/tenants/{tenant}` | Team admin+ (a new `slug`: owner only + **step-up**) |
-| `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
 | `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
 | `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |
 | `GET /api/v1/tenants/{tenant}/members/{id}/access-report` | Team admin+ (`members:read`): what the member holds and owns |
@@ -988,7 +987,7 @@ owner-managed) are enforced, not just stored. See
 
 - **Allowed email domains** gate every way into the organization: invitations
   (create and accept), invited registration, administrator-created users,
-  `AddMember`/SCIM, and SSO just-in-time provisioning.
+  SCIM provisioning, and SSO just-in-time provisioning.
 - **IP allowlist**: `middleware.IPAllowlistGate` runs on every user-token
   request (in `buildBaseMiddlewares` for the token's organization and after
   `RequireMembership` on `/tenants/{tenant}` for the URL organization), and on
@@ -1581,7 +1580,7 @@ router.Group("/api/v1/tenants/{tenant}", func(r Router) {
 
     // Admin operations
     r.PATCH("/", h.Update, middleware.RequireTeamAdmin())
-    r.POST("/members", h.AddMember, middleware.RequireTeamAdmin())
+    r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin())
 
     // Owner-only operations
     r.DELETE("/", h.Delete, middleware.RequireTeamOwner())
