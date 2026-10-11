@@ -1522,6 +1522,8 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 type ResetPasswordInput struct {
 	Token       string `json:"token" validate:"required"`
 	NewPassword string `json:"new_password" validate:"required,min=8,max=128"`
+	IPAddress   string `json:"-"`
+	UserAgent   string `json:"-"`
 }
 
 // ResetPassword resets a user's password using the reset token.
@@ -1549,10 +1551,17 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 		return fmt.Errorf("password validation failed: %w", err)
 	}
 
+	// A first password (an administrator's setup link) is a set, not a
+	// change: no "your password was changed" notice for it.
+	firstPassword := u.PasswordHash() == nil
+
 	// Security: Clear reset token FIRST to prevent race condition reuse (CWE-640).
 	// If two concurrent requests use the same token, the first clears it and
 	// the second will fail at GetByPasswordResetToken (token no longer exists).
 	u.ClearPasswordResetToken()
+	// The link reached this mailbox, which proves the address: an account
+	// still waiting for its verification email is verified by it.
+	u.VerifyEmail()
 	if err := s.userRepo.Update(ctx, u); err != nil {
 		return fmt.Errorf("failed to clear reset token: %w", err)
 	}
@@ -1573,6 +1582,20 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 
 	if err := s.userRepo.UpdatePasswordHash(ctx, u.ID(), passwordHash); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	via, message := "reset", "Password reset by emailed link; all sessions signed out"
+	if firstPassword {
+		via, message = "setup", "Password set by setup link"
+	}
+	s.audit(ctx, auditapp.AuditContext{
+		ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress, UserAgent: input.UserAgent,
+	}, auditapp.NewSuccessEvent(auditdom.ActionAuthPasswordChanged, auditdom.ResourceTypeUser, u.ID().String()).
+		WithResourceName(u.Email()).
+		WithMessage(message).
+		WithMetadata("via", via))
+	if !firstPassword && s.securityNotifier != nil {
+		s.securityNotifier.NotifyPasswordChanged(ctx, u.Email(), u.Name(), input.IPAddress)
 	}
 
 	s.logger.Info("password reset completed", "user_id", u.ID().String())
