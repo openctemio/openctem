@@ -143,8 +143,9 @@ func TenantMayChoose(m Mode, p PlatformPolicy) bool {
 
 // ScopeEntriesNeedApproval reports whether scope entries keep their RFC-054
 // approvals under mode m: only Strict. In Off and On a scope entry is a
-// target list item; scans are what people approve.
-func ScopeEntriesNeedApproval(m Mode) bool { return m == ModeStrict }
+// target list item; scans are what people approve. An unknown mode keeps
+// them (fail closed, as EffectiveApprovalsUnder counts it).
+func ScopeEntriesNeedApproval(m Mode) bool { return m != ModeOff && m != ModeOn }
 
 // TierCeilingsEnforced reports whether scope entries' tier ceilings
 // (max_tier) limit what probes their targets may get. Only in Strict: in
