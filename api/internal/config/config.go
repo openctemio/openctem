@@ -737,7 +737,7 @@ func SMTPFromEnv() SMTPConfig {
 		FromName:   getEnv("SMTP_FROM_NAME", "OpenCTEM"),
 		TLS:        getEnvBool("SMTP_TLS", true),
 		SkipVerify: getEnvBool("SMTP_SKIP_VERIFY", false),
-		BaseURL:    getEnv("SMTP_BASE_URL", "http://localhost:3000"), // Frontend URL for email links
+		BaseURL:    getEnv("SMTP_BASE_URL", publicURLOr("http://localhost:3000")), // Frontend URL for email links
 		Timeout:    getEnvDuration("SMTP_TIMEOUT", 30*time.Second),
 	}
 }
@@ -1376,7 +1376,7 @@ func Load() (*Config, error) {
 		CORS: CORSConfig{
 			// F-12: Default to localhost dev origin instead of wildcard. Production
 			// validation in middleware/middleware.go rejects "*" regardless.
-			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
+			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{publicOriginOr("http://localhost:3000")}),
 			AllowedMethods: getEnvSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}),
 			AllowedHeaders: getEnvSlice("CORS_ALLOWED_HEADERS", []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"}),
 			MaxAge:         getEnvInt("CORS_MAX_AGE", 86400),
@@ -1393,7 +1393,7 @@ func Load() (*Config, error) {
 		SMTP: SMTPFromEnv(),
 		OAuth: OAuthConfig{
 			Enabled:             getEnvBool("OAUTH_ENABLED", true),
-			FrontendCallbackURL: getEnv("OAUTH_FRONTEND_CALLBACK_URL", "http://localhost:3000/auth/callback"),
+			FrontendCallbackURL: getEnv("OAUTH_FRONTEND_CALLBACK_URL", publicURLOr("http://localhost:3000")+"/auth/callback"),
 			StateSecret:         getEnv("OAUTH_STATE_SECRET", ""),
 			StateDuration:       getEnvDuration("OAUTH_STATE_DURATION", 10*time.Minute),
 			Google: OAuthProviderConfig{
@@ -1607,6 +1607,9 @@ func (c *Config) validateStorage() error {
 
 // validateBasic validates basic configuration regardless of environment.
 func (c *Config) validateBasic() error {
+	if raw := strings.TrimSpace(c.App.URL); raw != "" && parsePublicURL(raw) == nil {
+		return errors.New("APP_URL must be an http or https URL without credentials, query or fragment, e.g. https://ctem.example.com")
+	}
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
 	}
@@ -2221,6 +2224,40 @@ func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 		return fmt.Errorf("retired environment variables are set and no longer read: %s", strings.Join(bad, ", "))
 	}
 	return nil
+}
+
+// parsePublicURL parses APP_URL: an absolute http(s) URL with a host and no
+// credentials, query or fragment, else nil.
+func parsePublicURL(raw string) *url.URL {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return nil
+	}
+	return u
+}
+
+// publicURLOr is APP_URL without a trailing slash, or fallback when APP_URL is
+// unset or invalid. The web console and the API share that origin behind the
+// gateway, so the email link base and the OAuth callback follow it unless
+// SMTP_BASE_URL / OAUTH_FRONTEND_CALLBACK_URL say otherwise. The value comes
+// from configuration, never from a request, so a forged Host header cannot
+// steer links in emails.
+func publicURLOr(fallback string) string {
+	if u := parsePublicURL(os.Getenv("APP_URL")); u != nil {
+		return strings.TrimRight(u.String(), "/")
+	}
+	return fallback
+}
+
+// publicOriginOr is the origin (scheme://host[:port]) of APP_URL, or fallback.
+// It is the default CORS (and WebSocket Origin) allow-list: exactly the
+// platform's own origin.
+func publicOriginOr(fallback string) string {
+	if u := parsePublicURL(os.Getenv("APP_URL")); u != nil {
+		return u.Scheme + "://" + u.Host
+	}
+	return fallback
 }
 
 // sensorVersionSetting reads a SENSOR_*_VERSION value: "none" or "off" means
