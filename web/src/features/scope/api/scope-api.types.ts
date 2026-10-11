@@ -41,6 +41,14 @@ export type ApiScopeStats = ScopeStatsResponse
 export type ApiCheckScopeResponse = CheckScopeResponse
 // POST /scope/targets/bulk: one result per item (RFC-054 §14).
 export type ApiBulkScopeTargetsResponse = BulkCreateScopeTargetsResponse
+// What confirming assets did to scope (RFC-054 §14.5).
+export type ApiConfirmScopeCoverage =
+  Schemas['github_com_openctemio_openctem_api_internal_app_scope.ConfirmCoverage']
+// GET /scope/suggestions/addresses (RFC-054 §14.7).
+export type ApiAddressSuggestions =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.AddressSuggestions']
+export type ApiAddressSuggestion =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.AddressSuggestion']
 export type BulkOperationResponse = ScopeBulkOperationResponse
 
 export type PaginationLinks = Schemas['internal_infra_http_handler.PaginationLinks']
@@ -128,6 +136,8 @@ export type ScopeT2MaxDuration = '7d' | '30d' | '90d' | '365d' | 'permanent'
 
 export interface UpdateScopeSettingsInput {
   auto_join_discovered: boolean
+  /** A person confirming an asset also adds its exact scope entry (RFC-054 §14.5). */
+  confirm_adds_to_scope: boolean
   one_off_targets: ScopeOneOffPolicy
   one_off_max_days: number
   /** null: the default min(1, admins - 1). */

@@ -24,6 +24,7 @@ import {
 import { usePermissions, Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useAssetAttribution, useDecideAttribution } from '../hooks/use-asset-attribution'
+import { useConfirmScopeFollowUp } from '@/features/scope/hooks/use-confirm-scope-follow-up'
 import {
   ATTRIBUTION_STATE_CLASS,
   ATTRIBUTION_STATE_LABEL,
@@ -68,6 +69,7 @@ export function AssetAttributionSection({
 }) {
   const { attribution, isLoading, error, mutate } = useAssetAttribution(assetId)
   const { decide, saving } = useDecideAttribution(assetId)
+  const followScope = useConfirmScopeFollowUp()
   const { can } = usePermissions()
   const [draft, setDraft] = useState<ScopeEntryDraft | null>(null)
 
@@ -76,6 +78,9 @@ export function AssetAttributionSection({
       const next = await decide(state)
       await mutate(next, { revalidate: false })
       toast.success(`Ownership set to ${ATTRIBUTION_STATE_LABEL[state].toLowerCase()}`)
+      await followScope(next?.scope)
+      // A follow-up add changes what scans may reach: read the standing again.
+      if (next?.scope?.step_up_required) void mutate()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not save the decision')
     }

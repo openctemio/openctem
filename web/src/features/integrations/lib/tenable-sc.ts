@@ -124,6 +124,8 @@ export interface ConnectorSettings {
   batchSize: number
   licenseCap: number
   safetyMargin: number
+  /** The synced inventory gets its exact scope entries (RFC-054 §14.8; default on). */
+  inventoryInScope: boolean
 }
 
 export const DEFAULT_CONNECTOR_SETTINGS: ConnectorSettings = {
@@ -137,6 +139,7 @@ export const DEFAULT_CONNECTOR_SETTINGS: ConnectorSettings = {
   batchSize: 0,
   licenseCap: 0,
   safetyMargin: 0,
+  inventoryInScope: true,
 }
 
 /** The connector settings stored in the integration's config. */
@@ -154,6 +157,7 @@ export function readConnectorSettings(integration: Integration | undefined): Con
     batchSize: n('batch_size'),
     licenseCap: n('license_cap'),
     safetyMargin: n('safety_margin'),
+    inventoryInScope: c.inventory_in_scope !== false && c.inventory_in_scope !== 'false',
   }
 }
 
@@ -189,6 +193,7 @@ export function connectorConfig(
     min_severity: s.minSeverity,
     full_sync_days: s.fullSyncDays,
     coverage_enabled: s.coverageEnabled,
+    inventory_in_scope: s.inventoryInScope,
   }
   const optional: Array<[string, number]> = [
     ['coverage_policy_id', s.coveragePolicyId],
