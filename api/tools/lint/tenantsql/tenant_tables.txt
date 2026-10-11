@@ -15,6 +15,7 @@ asset_identifiers
 asset_identity_backfill
 asset_merge_log
 asset_program_links
+bounty_program_target_assets
 asset_relationships
 asset_services
 asset_software

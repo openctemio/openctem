@@ -256,7 +256,7 @@ func (V1) Parse(line []byte) (bp.PublicProgram, error) {
 		TermsDocSHA256: r.Terms.SHA256, AsOf: r.LastSeen,
 		Provenance: bp.FeedProvenance{Source: r.Provenance.Source, SourceURL: r.Provenance.SourceURL,
 			FetchedAt: r.Provenance.FetchedAt, Dataset: r.Provenance.Dataset, DatasetCommit: r.Provenance.DatasetCommit,
-			OriginalPlatform: r.Provenance.OriginalPlatform, OriginalURL: r.Provenance.OriginalURL}}, nil
+			OriginalPlatform: r.Provenance.OriginalPlatform, OriginalURL: r.Provenance.OriginalURL, LastChanged: r.LastChanged}}, nil
 }
 
 // v1RulesText turns the feed's rules into the headers the platform can

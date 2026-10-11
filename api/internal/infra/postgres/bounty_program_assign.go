@@ -32,13 +32,17 @@ const programCoveredAssets = `
 	SELECT a.id
 	FROM assets a
 	WHERE a.tenant_id = $1
-	  AND EXISTS (
+	  AND (EXISTS (
+		SELECT 1 FROM bounty_program_target_assets ta
+		WHERE ta.tenant_id = $1 AND ta.program_id = $2 AND ta.asset_id = a.id
+		  AND EXISTS (SELECT 1 FROM bounty_programs bp WHERE bp.tenant_id = $1 AND bp.id = $2 AND bp.status <> 'ended'))
+	  OR EXISTS (
 		SELECT 1 FROM entries e
 		WHERE (e.target_type = 'domain' AND e.p LIKE '*.%'
 		       AND (lower(a.name) = substr(e.p, 3) OR right(lower(a.name), length(e.p) - 1) = substr(e.p, 2)))
 		   OR (e.target_type = 'domain' AND e.p NOT LIKE '*%' AND lower(a.name) = e.p)
 		   OR (e.target_type IN ('ip_address', 'cidr') AND pg_input_is_valid(a.name, 'inet')
-		       AND pg_input_is_valid(e.p, 'inet') AND a.name::inet <<= e.p::inet))
+		       AND pg_input_is_valid(e.p, 'inet') AND a.name::inet <<= e.p::inet)))
 	  AND NOT EXISTS (
 		SELECT 1 FROM excl x
 		WHERE (x.p LIKE '*.%' AND (lower(a.name) = substr(x.p, 3) OR right(lower(a.name), length(x.p) - 1) = substr(x.p, 2)))
