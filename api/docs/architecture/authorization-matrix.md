@@ -627,7 +627,6 @@ These routes require the tenant ID in the URL path and use database-based member
 | `GET /api/v1/tenants/{tenant}/members` | Team viewer+; **emails, last sign-in and second-factor status only for owner/admin** (others get ids, names, avatars, roles; `search` matches names only) |
 | `GET /api/v1/tenants/{tenant}/invitations` | Team viewer+ |
 | `PATCH /api/v1/tenants/{tenant}` | Team admin+ (a new `slug`: owner only + **step-up**) |
-| `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
 | `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
 | `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |
 | `GET /api/v1/tenants/{tenant}/members/{id}/access-report` | Team admin+ (`members:read`): what the member holds and owns |
@@ -980,6 +979,26 @@ gated (none adds a way in).
 `/health` and `/ready` remain public. Configure the scraper's bearer token to
 match `METRICS_TOKEN`.
 
+## Pentest campaign roles
+
+Inside the pentest module, campaign membership decides who sees a campaign
+(non-members get 404; admins see every campaign). Each member has one role:
+
+| Role | Reads | Writes |
+|---|---|---|
+| lead | everything in the campaign | campaign, team, status, findings, retests, reports |
+| tester | everything in the campaign | creates findings; edits, changes status of and retests own or assigned findings; evidence on those |
+| reviewer | everything in the campaign | status, edits and retests on any finding (no delete) |
+| observer | everything in the campaign | nothing |
+| client | the campaign, its team and its **published** findings (never draft or in review) | nothing |
+
+A client gets no campaign-wide read: no stats or finding counts (they
+include unpublished work), no exports, no reports, no campaign attachments
+and no report-writing (MCP) tools. Every surface that lists or reads pentest
+findings (campaign list, the pentest findings list, the generic findings
+list and groups, single-finding reads, retests, evidence) applies the same
+rule in SQL or in `ResolveCampaignRoleForFinding`.
+
 ## Organization access policy (RFC-025)
 
 Two per-organization policies (`Security.AllowedDomains`, `Security.IPWhitelist`,
@@ -988,7 +1007,7 @@ owner-managed) are enforced, not just stored. See
 
 - **Allowed email domains** gate every way into the organization: invitations
   (create and accept), invited registration, administrator-created users,
-  `AddMember`/SCIM, and SSO just-in-time provisioning.
+  SCIM provisioning, and SSO just-in-time provisioning.
 - **IP allowlist**: `middleware.IPAllowlistGate` runs on every user-token
   request (in `buildBaseMiddlewares` for the token's organization and after
   `RequireMembership` on `/tenants/{tenant}` for the URL organization), and on
@@ -1581,7 +1600,7 @@ router.Group("/api/v1/tenants/{tenant}", func(r Router) {
 
     // Admin operations
     r.PATCH("/", h.Update, middleware.RequireTeamAdmin())
-    r.POST("/members", h.AddMember, middleware.RequireTeamAdmin())
+    r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin())
 
     // Owner-only operations
     r.DELETE("/", h.Delete, middleware.RequireTeamOwner())

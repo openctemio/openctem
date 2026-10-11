@@ -71,6 +71,9 @@ type BranchStore interface {
 // BaselineReader reads which findings are open on a branch.
 type BaselineReader interface {
 	FingerprintsOpenOnBranch(ctx context.Context, tenantID, branchID shared.ID, fingerprints []string) ([]string, error)
+	// BranchCountsAsExposure: the branch is default, protected, or of type
+	// main or release (a release line, never a feature branch).
+	BranchCountsAsExposure(ctx context.Context, tenantID, branchID shared.ID) (bool, error)
 }
 
 // ReportIngester applies a run's report (internal/app/ingest).
@@ -257,9 +260,8 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
 		return nil, ErrExchangeRefused
 	}
-	// A token that signs no repository name (Bitbucket) names its
-	// repository asset through the job; the name must not belong to another
-	// of the tenant's repositories.
+	// A repository name stays with the repository id that first reported
+	// under it (checkRepositoryBinding).
 	if refusal, err := s.checkRepositoryBinding(ctx, tenantID, cfg, claims); err != nil {
 		return nil, err
 	} else if refusal != nil {
@@ -326,17 +328,29 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	return out, nil
 }
 
-// RefuseRepositoryBinding refuses a job whose reported repository name is
-// already bound to another repository id of the same CI organization.
+// RefuseRepositoryBinding refuses a job whose repository name is already
+// bound to another repository id of the same CI issuer in the tenant.
 const RefuseRepositoryBinding = "repository_binding"
 
-// checkRepositoryBinding protects repository names a token does not sign
-// (Bitbucket signs the repository UUID, not its name). The first repository
-// id that reports under a name keeps it: another repository of the same
-// workspace cannot report into that repository asset. Other providers sign
-// the name and are not checked.
+// bindsRepositoryID reports whether a provider's pipeline key is the
+// repository's own immutable id (GitHub repository_id, GitLab project_id,
+// Bitbucket repositoryUuid), so a repository name can be bound to it. The
+// other providers key pipelines on a CI project or job, which may build
+// several repositories.
+func bindsRepositoryID(p cirun.Provider) bool {
+	return p == cirun.ProviderGitHub || p == cirun.ProviderGitLab || p == cirun.ProviderBitbucket
+}
+
+// checkRepositoryBinding keeps a repository asset with the repository that
+// first reported into it. Trust rules match owners and repositories by
+// name; a name can change hands (an organization renamed or deleted and its
+// name registered again, a repository deleted and created anew, and on
+// Bitbucket a name the token does not sign at all). The first repository id
+// that reports under a name keeps it while that pipeline is not retired:
+// a different repository under the same name is refused (audited) until an
+// administrator retires the old pipeline.
 func (s *Service) checkRepositoryBinding(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims) (*cirun.Refusal, error) {
-	if cfg.Provider != cirun.ProviderBitbucket {
+	if !bindsRepositoryID(cfg.Provider) || strings.TrimSpace(c.RepositoryID) == "" {
 		return nil, nil
 	}
 	name := asset.NormalizeName(c.CanonicalRepository(), asset.AssetTypeRepository, "")
@@ -459,6 +473,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		Branch:            truncate(c.Branch, 255),
 		CommitSHA:         truncate(c.SHA, 64),
 		CommitVerified:    c.CommitVerified,
+		BaseRef:           truncate(CleanBaseRef(c), 255),
 		PullRequest:       truncate(c.PullRequest, 32),
 		DefaultBranch:     defaultBranch,
 		IsDefaultBranch:   c.Branch != "" && c.PullRequest == "" && c.Branch == defaultBranch,
@@ -867,4 +882,14 @@ func nonEmpty(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// CleanBaseRef is the base branch a run records: only for a run that is not
+// on the branch itself.
+func CleanBaseRef(c cirun.Claims) string {
+	b := cirun.CleanBranchName(c.BaseRef)
+	if b == c.Branch {
+		return ""
+	}
+	return b
 }

@@ -63,6 +63,8 @@ DELETE /api/v1/workflows/{}
 DELETE /api/v1/workflows/{}/edges/{}
 DELETE /api/v1/workflows/{}/nodes/{}
 GET /api/v1/admin/auth/validate
+GET /api/v1/admin/docs
+GET /api/v1/admin/openapi.yaml
 GET /api/v1/admin/target-mappings
 GET /api/v1/admin/target-mappings/stats
 GET /api/v1/admin/target-mappings/{}
@@ -102,7 +104,6 @@ GET /api/v1/capabilities/{}
 GET /api/v1/compensating-controls
 GET /api/v1/compensating-controls/{}
 GET /api/v1/compliance/assessments
-GET /api/v1/compliance/controls/{}
 GET /api/v1/compliance/findings/{}/controls
 GET /api/v1/compliance/frameworks
 GET /api/v1/compliance/frameworks/{}
@@ -114,7 +115,6 @@ GET /api/v1/control-tests/stats
 GET /api/v1/ctem-cycles
 GET /api/v1/ctem-cycles/metrics/trend
 GET /api/v1/ctem-cycles/{}/metrics
-GET /api/v1/ctem-ids
 GET /api/v1/dashboard/data-quality
 GET /api/v1/dashboard/executive-summary
 GET /api/v1/dashboard/executive-summary/export
@@ -220,7 +220,6 @@ GET /api/v1/threat-models/{}/coverage
 GET /api/v1/users/{}/roles
 GET /api/v1/validation/coverage
 GET /api/v1/verification-checklists/{}
-GET /api/v1/vulnerabilities/cve/{}/affected-assets
 GET /api/v1/workflow-runs
 GET /api/v1/workflow-runs/{}
 GET /api/v1/workflows
@@ -256,11 +255,9 @@ POST /api/v1/approvals/{}/cancel
 POST /api/v1/approvals/{}/reject
 POST /api/v1/assets/dedup/reviews/{}/approve
 POST /api/v1/assets/dedup/reviews/{}/reject
-POST /api/v1/assets/import/csv
 POST /api/v1/assets/{}/lifecycle/snooze
 POST /api/v1/assets/{}/owners
 POST /api/v1/assets/{}/relationships
-POST /api/v1/assets/{}/relationships/batch
 POST /api/v1/assignment-rules
 POST /api/v1/assignment-rules/{}/test
 POST /api/v1/attachments
@@ -281,7 +278,6 @@ POST /api/v1/compensating-controls/{}/test
 POST /api/v1/compliance/controls/{}/assess
 POST /api/v1/compliance/findings/{}/controls
 POST /api/v1/compliance/findings/{}/controls/auto-map
-POST /api/v1/components/import
 POST /api/v1/control-tests
 POST /api/v1/ctem-cycles
 POST /api/v1/ctem-cycles/{}/activate
@@ -349,7 +345,6 @@ POST /api/v1/template-sources/{}/sync
 POST /api/v1/tenants
 POST /api/v1/tenants/{}/invitations
 POST /api/v1/tenants/{}/invitations/{}/resend
-POST /api/v1/tenants/{}/members
 POST /api/v1/tenants/{}/members/{}/reactivate
 POST /api/v1/tenants/{}/members/{}/suspend
 POST /api/v1/tenants/{}/settings/asset-lifecycle/dry-run
@@ -360,7 +355,6 @@ POST /api/v1/tenants/{}/settings/modules/validate
 POST /api/v1/tenants/{}/settings/risk-scoring/preview
 POST /api/v1/tenants/{}/settings/risk-scoring/recalculate
 POST /api/v1/threat-actors
-POST /api/v1/threat-intel/enrich
 POST /api/v1/threat-models/generate
 POST /api/v1/users/{}/roles
 POST /api/v1/validation/evidence
