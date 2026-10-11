@@ -39,7 +39,7 @@ version_fixture "$tmp/bump"
 sed -i 's/release: v0.8.0/release: v0.9.0/; s/latest: v0.6.4/latest: v0.7.0/' "$tmp/bump/versions.yaml"
 bash "$SYNC" --root "$tmp/bump" >/dev/null 2>&1
 assert_eq "bump: .env.example" "OPENCTEM_VERSION=v0.9.0" "$(head -n 1 "$tmp/bump/api/deploy/.env.example")"
-assert_contains "bump: compose example" "e.g. v0.9.0}}" "$(cat "$tmp/bump/api/deploy/docker-compose.yml")"
+assert_contains "bump: compose default" "OPENCTEM_VERSION:-v0.9.0}}" "$(cat "$tmp/bump/api/deploy/docker-compose.yml")"
 assert_contains "bump: sensor image" 'sensor:v0.7.0"' "$(cat "$tmp/bump/api/internal/infra/http/handler/sensor_handler.go")"
 assert_contains "bump: other lines untouched" "OTHER=1" "$(cat "$tmp/bump/api/deploy/.env.example")"
 
@@ -75,7 +75,7 @@ git -C "$tmp/tags" tag v0.8.0
 assert_rc "release == newest tag" 0 bash "$SYNC" --check --root "$tmp/tags"
 sed -i 's/release: v0.8.0/release: v0.9.0/' "$tmp/tags/versions.yaml"
 sed -i 's/=v0.8.0/=v0.9.0/' "$tmp/tags/api/deploy/.env.example"
-sed -i 's/e.g. v0.8.0/e.g. v0.9.0/' "$tmp/tags/api/deploy/docker-compose.yml"
+sed -i 's/OPENCTEM_VERSION:-v0.8.0/OPENCTEM_VERSION:-v0.9.0/' "$tmp/tags/api/deploy/docker-compose.yml"
 out="$(bash "$SYNC" --check --root "$tmp/tags" 2>&1)"
 assert_contains "release newer than any tag" "platform.release v0.9.0 is newer than the newest tag v0.8.0" "$out"
 
