@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { CodeHighlighter } from './code-highlighter'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface DataFlowTabProps {
   finding: FindingDetail
@@ -336,6 +337,7 @@ function DataFlowSummary({ dataFlow }: { dataFlow: DataFlow }) {
 }
 
 export function DataFlowTab({ finding }: DataFlowTabProps) {
+  const { t } = useTranslation()
   const dataFlow = finding.dataFlow
 
   if (!dataFlow) {
@@ -344,43 +346,27 @@ export function DataFlowTab({ finding }: DataFlowTabProps) {
         <div className="rounded-full bg-muted p-4 mb-4">
           <ArrowRight className="h-8 w-8 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-semibold mb-2">No Attack Path Data</h3>
+        <h3 className="text-lg font-semibold mb-2">
+          {t('findings.dataFlow.emptyTitle', 'No data flow')}
+        </h3>
         <p className="text-muted-foreground text-sm max-w-md">
-          This finding doesn&apos;t have data flow (taint tracking) information. Data flow analysis
-          shows how untrusted data travels from source to sink, helping you understand the attack
-          path.
+          {t(
+            'findings.dataFlow.empty',
+            'The scanner sent no source-to-sink trace for this finding. Semgrep sends one when run with --dataflow-traces.'
+          )}
         </p>
-        <div className="mt-6 p-4 bg-muted/50 rounded-lg text-start text-sm max-w-md">
-          <p className="font-medium mb-2">To enable data flow tracking:</p>
-          <ul className="list-disc list-inside text-muted-foreground space-y-1">
-            <li>
-              Run Semgrep with{' '}
-              <code className="text-xs bg-muted px-1 rounded">--dataflow-traces</code>
-            </li>
-            <li>Use CodeQL path queries</li>
-            <li>Enable taint tracking in your scanner</li>
-          </ul>
-        </div>
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      {/* Header explanation */}
-      <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
-        <div className="flex items-start gap-3">
-          <Info className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-semibold mb-1">Attack Path Analysis</h3>
-            <p className="text-muted-foreground text-sm">
-              This diagram shows how untrusted data flows through your code from the entry point
-              (source) to where the vulnerability is triggered (sink). Use this to identify the best
-              place to add validation or sanitization.
-            </p>
-          </div>
-        </div>
-      </div>
+      <p className="text-muted-foreground text-sm">
+        {t(
+          'findings.dataFlow.hint',
+          'How untrusted data reaches the vulnerable code, from source to sink.'
+        )}
+      </p>
 
       {/* Summary statistics */}
       <DataFlowSummary dataFlow={dataFlow} />
