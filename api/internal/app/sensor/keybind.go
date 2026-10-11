@@ -58,6 +58,9 @@ type KeyBindResult struct {
 	TenantID shared.ID
 	Name     string
 	KeyID    string // the thumbprint, the keyid of every signature
+	// Confirmed: the sensor already signs with this key (an earlier bind
+	// whose answer it lost); nothing changed.
+	Confirmed bool
 }
 
 // errKeyBindProof: the proof did not verify or is outside the window.
@@ -124,6 +127,15 @@ func (s *SensorService) BindSigningKey(ctx context.Context, id SensorIdentity, i
 	if s.signingKeys == nil {
 		return nil, shared.NewDomainError("UNAVAILABLE", "key binding not available", shared.ErrValidation)
 	}
+	// A sensor that already signs with this very key asks who it is after
+	// losing a bind answer: confirmed, nothing changes.
+	if id.KeyBound() && !id.Paused && len(in.PublicKey) == ed25519.PublicKeySize &&
+		sensorsig.Thumbprint(ed25519.PublicKey(in.PublicKey)) == id.KeyThumbprint() {
+		if !s.validProof(ed25519.PublicKey(in.PublicKey), in.IssuedAt, in.Proof) {
+			return nil, errKeyBindProof
+		}
+		return &KeyBindResult{SensorID: a.ID, TenantID: tenantID, Name: a.Name, KeyID: id.KeyThumbprint(), Confirmed: true}, nil
+	}
 	// A key-bound sensor, a paused one or a platform sensor never binds.
 	if a.KeyBound() || id.KeyBound() || id.Paused || a.IsPlatformSensor || a.Status != sensordom.SensorStatusActive {
 		return refuse("not an active bearer-key sensor", sensordom.ErrKeyBindConflict)
@@ -140,10 +152,8 @@ func (s *SensorService) BindSigningKey(ctx context.Context, id SensorIdentity, i
 	}
 	pub := ed25519.PublicKey(in.PublicKey)
 	thumb := sensorsig.Thumbprint(pub)
-	at, err := time.Parse(time.RFC3339, in.IssuedAt)
 	now := s.now()
-	if err != nil || at.Before(now.Add(-KeyBindProofWindow)) || at.After(now.Add(KeyBindProofWindow)) ||
-		!ed25519.Verify(pub, KeyBindProofMessage(thumb, in.IssuedAt), in.Proof) {
+	if !s.validProof(pub, in.IssuedAt, in.Proof) {
 		return refuse("invalid or stale proof of possession", errKeyBindProof)
 	}
 	key := &sensordom.SigningKey{ID: shared.NewID(), TenantID: tenantID, SensorID: a.ID, Thumbprint: thumb,
@@ -158,6 +168,15 @@ func (s *SensorService) BindSigningKey(ctx context.Context, id SensorIdentity, i
 	s.auditKeyBind(ctx, a, in.ClientIP, thumb, "", nil)
 	s.notifyStatus(a)
 	return &KeyBindResult{SensorID: a.ID, TenantID: tenantID, Name: a.Name, KeyID: thumb}, nil
+}
+
+// validProof checks the proof of possession of pub: a signature of
+// KeyBindProofMessage with a timestamp within KeyBindProofWindow.
+func (s *SensorService) validProof(pub ed25519.PublicKey, issuedAt string, proof []byte) bool {
+	at, err := time.Parse(time.RFC3339, issuedAt)
+	now := s.now()
+	return err == nil && !at.Before(now.Add(-KeyBindProofWindow)) && !at.After(now.Add(KeyBindProofWindow)) &&
+		ed25519.Verify(pub, KeyBindProofMessage(sensorsig.Thumbprint(pub), issuedAt), proof)
 }
 
 // auditKeyBind records a bind or a refused bind at high severity: a bind
