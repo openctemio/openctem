@@ -114,6 +114,9 @@ func registerSensorManagementRoutes(
 		// only. Requiring key-bound identity narrows, allowing bearer keys
 		// widens (the handler checks which). Before /{id}.
 		r.GET("/identity-policy", h.GetIdentityPolicy, middleware.Require(permission.SensorsRead))
+		// Protocol v3 bindings and the gRPC self-probe (RFC-059): platform
+		// configuration, no tenant data. Before /{id}.
+		r.GET("/transport", h.GetTransportStatus, middleware.Require(permission.SensorsRead))
 		r.PUT("/identity-policy", h.SetIdentityPolicy, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden))
 		// Per-sensor grants (RFC-052 §5). A change that widens needs
 		// sensors:grant:widen (the service decides). Before /{id}.

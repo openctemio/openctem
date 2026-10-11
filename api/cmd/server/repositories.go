@@ -12,29 +12,31 @@ type Repositories struct {
 	Audit  *postgres.AuditRepository
 
 	// Assets & Components
-	Asset                  *postgres.AssetRepository
-	RepoExt                *postgres.RepositoryExtensionRepository
-	Component              *postgres.ComponentRepository
-	VEXStatement           *postgres.VEXStatementRepository
-	LicensePolicy          *postgres.LicensePolicyRepository
-	AssetGroup             *postgres.AssetGroupRepository
-	AssetType              *postgres.AssetTypeRepository
-	AssetTypeCat           *postgres.AssetTypeCategoryRepository
-	ScopeTarget            *postgres.ScopeTargetRepository
-	ScopeExcl              *postgres.ScopeExclusionRepository
-	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
-	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
-	Software               *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
-	CVECorpus              *postgres.CVECorpusRepository              // CVE corpus for inventory matching (RFC-066)
-	SoftwareMatch          *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
-	AssetAttributeSources  *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
-	AssetChangeEvents      *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
-	APISpec                *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
-	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
-	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
-	RelationshipSuggestion *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
-	ThreatModel            *postgres.ThreatModelRepository            // CTEM: Continuous threat models
-	AttackerProfileReader  *postgres.AttackerProfileReader            // CTEM: Attacker profiles (generation input)
+	Asset                   *postgres.AssetRepository
+	RepoExt                 *postgres.RepositoryExtensionRepository
+	Component               *postgres.ComponentRepository
+	VEXStatement            *postgres.VEXStatementRepository
+	LicensePolicy           *postgres.LicensePolicyRepository
+	AssetGroup              *postgres.AssetGroupRepository
+	AssetType               *postgres.AssetTypeRepository
+	AssetTypeCat            *postgres.AssetTypeCategoryRepository
+	ScopeTarget             *postgres.ScopeTargetRepository
+	ScopeExcl               *postgres.ScopeExclusionRepository
+	AssetService            *postgres.AssetServiceRepository           // CTEM: Network services on assets
+	WebEndpoint             *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
+	Software                *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
+	CVECorpus               *postgres.CVECorpusRepository              // CVE corpus for inventory matching (RFC-066)
+	SoftwareMatch           *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
+	AssetAttributeSources   *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
+	AssetFreshness          *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
+	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository // Automatic enrichment requests (RFC-075)
+	AssetChangeEvents       *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
+	APISpec                 *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
+	AssetStateHistory       *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
+	AssetRelationship       *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
+	RelationshipSuggestion  *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
+	ThreatModel             *postgres.ThreatModelRepository            // CTEM: Continuous threat models
+	AttackerProfileReader   *postgres.AttackerProfileReader            // CTEM: Attacker profiles (generation input)
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -300,29 +302,31 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Audit:  postgres.NewAuditRepository(db),
 
 		// Assets & Components
-		Asset:                  postgres.NewAssetRepository(db),
-		RepoExt:                postgres.NewRepositoryExtensionRepository(db),
-		Component:              postgres.NewComponentRepository(db),
-		VEXStatement:           postgres.NewVEXStatementRepository(db),
-		LicensePolicy:          postgres.NewLicensePolicyRepository(db),
-		AssetGroup:             postgres.NewAssetGroupRepository(db),
-		AssetType:              postgres.NewAssetTypeRepository(db),
-		AssetTypeCat:           postgres.NewAssetTypeCategoryRepository(db),
-		ScopeTarget:            postgres.NewScopeTargetRepository(db),
-		ScopeExcl:              postgres.NewScopeExclusionRepository(db),
-		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
-		WebEndpoint:            postgres.NewWebEndpointRepository(db),
-		Software:               postgres.NewSoftwareRepository(db),
-		CVECorpus:              postgres.NewCVECorpusRepository(db),
-		SoftwareMatch:          postgres.NewSoftwareMatchRepository(db),
-		AssetAttributeSources:  postgres.NewAssetAttributeSourceRepository(db),
-		AssetChangeEvents:      postgres.NewAssetChangeEventRepository(db),
-		APISpec:                postgres.NewAPISpecRepository(db),
-		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
-		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
-		RelationshipSuggestion: postgres.NewRelationshipSuggestionRepository(db), // CTEM: Relationship suggestions
-		ThreatModel:            postgres.NewThreatModelRepository(db),            // CTEM: Continuous threat models
-		AttackerProfileReader:  postgres.NewAttackerProfileReader(db),            // CTEM: Attacker profiles (generation input)
+		Asset:                   postgres.NewAssetRepository(db),
+		RepoExt:                 postgres.NewRepositoryExtensionRepository(db),
+		Component:               postgres.NewComponentRepository(db),
+		VEXStatement:            postgres.NewVEXStatementRepository(db),
+		LicensePolicy:           postgres.NewLicensePolicyRepository(db),
+		AssetGroup:              postgres.NewAssetGroupRepository(db),
+		AssetType:               postgres.NewAssetTypeRepository(db),
+		AssetTypeCat:            postgres.NewAssetTypeCategoryRepository(db),
+		ScopeTarget:             postgres.NewScopeTargetRepository(db),
+		ScopeExcl:               postgres.NewScopeExclusionRepository(db),
+		AssetService:            postgres.NewAssetServiceRepository(db), // CTEM: Network services
+		WebEndpoint:             postgres.NewWebEndpointRepository(db),
+		Software:                postgres.NewSoftwareRepository(db),
+		CVECorpus:               postgres.NewCVECorpusRepository(db),
+		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
+		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
+		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
+		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
+		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
+		APISpec:                 postgres.NewAPISpecRepository(db),
+		AssetStateHistory:       postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
+		AssetRelationship:       postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
+		RelationshipSuggestion:  postgres.NewRelationshipSuggestionRepository(db), // CTEM: Relationship suggestions
+		ThreatModel:             postgres.NewThreatModelRepository(db),            // CTEM: Continuous threat models
+		AttackerProfileReader:   postgres.NewAttackerProfileReader(db),            // CTEM: Attacker profiles (generation input)
 
 		// Vulnerabilities & Findings
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),

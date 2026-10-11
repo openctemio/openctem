@@ -53,8 +53,11 @@ approvals to two and asks a justification. Monitor rules never block.
 
 ## Scope entries and the signer
 
-In Off and On a scope widening takes effect without a second person and a
-scope entry is not a tier ceiling (its targets may get any probe the scan's
+In Off and On a scope widening takes effect without a second person (any
+caller with `attack_surface:scope:write`, with step-up; no member requests),
+a new exclusion is in effect at once (its creator recorded as `approved_by`)
+and taking one out of effect needs no second person; a scope entry is not a
+tier ceiling (its targets may get any probe the scan's
 intensity and rules allow); the change still goes to the signer ledger
 (labelled `scan_approval:<mode>`, `policy_required_approvals: 0`, with
 `set_tier_ceilings: false`). In Strict the RFC-054 §7 approvals and the

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
@@ -778,16 +779,47 @@ func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sens
 // OnStepCompleted is called when a sensor reports step completion.
 // This triggers scheduling of dependent steps.
 func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any) error {
-	return s.OnStepCompletedWithSkips(ctx, runID, stepKey, findingsCount, output, 0, "")
+	return s.OnStepCompletedPartial(ctx, runID, stepKey, findingsCount, output, Partial{})
 }
 
-// OnStepCompletedWithSkips is OnStepCompleted for a command that completed
-// with skipped targets: its sensor's local policy removed skipped of them
-// (refused, or a name that did not resolve) and ran on the rest. The step
-// ends partial with skippedSummary as its message (the results are kept),
-// and so does the run; a skipped target is not retried, since the sensor
-// would refuse it again.
-func (s *Service) OnStepCompletedWithSkips(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any, skipped int, skippedSummary string) error {
+// Partial says why a completed command covered less than it was given.
+type Partial struct {
+	// Skipped targets its sensor's local policy removed (refused, or a
+	// name that did not resolve); SkippedSummary is the step message.
+	Skipped        int
+	SkippedSummary string
+	// Gaps are hosts the sensor could not fully cover (its per-host rate
+	// controller gave them up, they pushed back at the lowest rate, or
+	// blocked the scan; RFC-074); GapSummary is the step message.
+	Gaps       int
+	GapSummary string
+}
+
+func (p Partial) any() bool { return p.Skipped > 0 || p.Gaps > 0 }
+
+// message and code of a partial step: the skipped targets' when there are
+// any, else the coverage gaps'; both messages when both apply.
+func (p Partial) message() (string, string) {
+	var parts []string
+	for _, m := range []string{p.SkippedSummary, p.GapSummary} {
+		if m != "" {
+			parts = append(parts, m)
+		}
+	}
+	code := scanrun.ErrCodeCoverageGaps
+	if p.Skipped > 0 {
+		code = scanrun.ErrCodeTargetsSkipped
+	}
+	return strings.Join(parts, "; "), code
+}
+
+// OnStepCompletedPartial is OnStepCompleted for a command that completed
+// on less than it was given: targets its sensor's local policy skipped, or
+// hosts it could not fully cover. The step ends partial with the summary as
+// its message (the results are kept), and so does the run; a skipped
+// target is not retried, since the sensor would refuse it again, and a
+// host with a gap is never read as "no findings".
+func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any, p Partial) error {
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
 		return err
@@ -795,7 +827,7 @@ func (s *Service) OnStepCompletedWithSkips(ctx context.Context, runID, stepKey s
 	// The run id is parsed and the step key cleaned: both come from the
 	// sensor's command result.
 	s.logger.Info("step completed", "run_id", rid.String(), "step_key", logger.SanitizeValue(stepKey),
-		"findings", findingsCount, "skipped_targets", skipped)
+		"findings", findingsCount, "skipped_targets", p.Skipped, "coverage_gaps", p.Gaps)
 
 	// Get the run with step runs
 	run, err := s.runRepo.GetWithStepRuns(ctx, rid)
@@ -831,14 +863,18 @@ func (s *Service) OnStepCompletedWithSkips(ctx context.Context, runID, stepKey s
 			return s.settleBatchedStep(ctx, run, stepRun, b)
 		}
 		findingsCount = b.findings
-		skipped = b.skipped
-		if skipped > 0 {
-			skippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", skipped)
+		p = Partial{Skipped: b.skipped, Gaps: b.gaps}
+		if b.skipped > 0 {
+			p.SkippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", b.skipped)
+		}
+		if b.gaps > 0 {
+			p.GapSummary = fmt.Sprintf("Completed with %d host(s) not fully covered (see the tasks)", b.gaps)
 		}
 	}
 
-	if stepRun != nil && skipped > 0 {
-		stepRun.Partial(findingsCount, skippedSummary, scanrun.ErrCodeTargetsSkipped)
+	if stepRun != nil && p.any() {
+		msg, code := p.message()
+		stepRun.Partial(findingsCount, msg, code)
 		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 			s.logger.Error("failed to record partial step run", "step_key", stepKey, "error", err)
 		}
@@ -1135,6 +1171,7 @@ type stepBatches struct {
 	failed     int
 	findings   int
 	skipped    int // targets the completed batches' sensors skipped
+	gaps       int // hosts the completed batches' sensors did not fully cover
 	firstError string
 }
 
@@ -1145,6 +1182,9 @@ func (b stepBatches) summary() string {
 	}
 	if b.skipped > 0 {
 		msg += fmt.Sprintf("; %d target(s) skipped by the sensor's local policy", b.skipped)
+	}
+	if b.gaps > 0 {
+		msg += fmt.Sprintf("; %d host(s) not fully covered", b.gaps)
 	}
 	return msg
 }
@@ -1166,7 +1206,7 @@ func (s *Service) checkStepBatches(ctx context.Context, run *scanrun.Run, stepRu
 	if st.Total <= 1 {
 		return stepBatches{}
 	}
-	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, firstError: st.FirstError}
+	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, gaps: st.Gaps, firstError: st.FirstError}
 	if st.Active > 0 {
 		s.logger.Info("scan batch finished; waiting for the others",
 			"run_id", run.ID.String(), "step_key", stepRun.StepKey, "active", st.Active, "total", st.Total)

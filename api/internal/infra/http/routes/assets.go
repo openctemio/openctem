@@ -60,6 +60,8 @@ func registerAssetRoutes(
 		r.PUT("/{id}/attribute-sources/{attribute}/lock", h.LockAttribute, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{id}/attribute-sources/{attribute}/lock", h.ReleaseAttributeLock, middleware.Require(permission.AssetsWrite))
 		r.GET("/{id}/changes", h.ListAssetChanges, middleware.Require(permission.AssetsRead))
+		// When each attribute class was last observed (RFC-075).
+		r.GET("/{id}/freshness", h.GetFreshness, middleware.Require(permission.AssetsRead))
 
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))
@@ -277,8 +279,10 @@ func registerScopeRoutes(
 		// Write operations
 		r.POST("/", h.CreateExclusion, middleware.Require(permission.ScopeWrite))
 		r.PUT("/{id}", h.UpdateExclusion, middleware.Require(permission.ScopeWrite))
-		// Approval is a separate permission (owner/admin by default): a new
-		// exclusion is pending and suppresses nothing until approved.
+		// Approval is a separate permission (owner/admin by default). In the
+		// Strict scan approval mode a new exclusion is pending and suppresses
+		// nothing until approved; in Off and On it is in effect at once
+		// (RFC-073 §6) and these routes only clear rows left pending.
 		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		r.POST("/{id}/reject", h.RejectExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		// How a path exclusion may be tested (RFC-056): the approval

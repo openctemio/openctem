@@ -1762,12 +1762,15 @@ func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRu
 		       LEAST(COALESCE(sum(CASE WHEN status = 'completed'
 		                                AND jsonb_typeof(result->'metadata'->'refused_targets_total') = 'number'
 		                               THEN LEAST(GREATEST((result->'metadata'->>'refused_targets_total')::numeric, 0), $3) END), 0), $3)::bigint,
+		       LEAST(COALESCE(sum(CASE WHEN status = 'completed'
+		                                AND jsonb_typeof(result->'metadata'->'coverage_gaps_total') = 'number'
+		                               THEN LEAST(GREATEST((result->'metadata'->>'coverage_gaps_total')::numeric, 0), $4) END), 0), $4)::bigint,
 		       COALESCE((array_agg(error_message ORDER BY completed_at NULLS LAST, id)
 		                 FILTER (WHERE status IN ('failed', 'expired', 'canceled')
 		                           AND COALESCE(error_message, '') <> ''))[1], '')
 		FROM commands
 		WHERE tenant_id = $1 AND scan_run_step_id = $2`,
-		tenantID.String(), stepRunID.String(), scanrun.MaxSkippedTargetsTotal).Scan(&b.Total, &b.Active, &b.Failed, &b.Findings, &b.Skipped, &b.FirstError)
+		tenantID.String(), stepRunID.String(), scanrun.MaxSkippedTargetsTotal, scanrun.MaxCoverageGapsTotal).Scan(&b.Total, &b.Active, &b.Failed, &b.Findings, &b.Skipped, &b.Gaps, &b.FirstError)
 	if err != nil {
 		return b, fmt.Errorf("step batch state: %w", err)
 	}

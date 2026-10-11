@@ -48,6 +48,7 @@ var Paths = map[string]string{
 	"FingerprintsCheckPath": FingerprintsCheckPath,
 	"BaselineDiffPath":      BaselineDiffPath,
 	"KeysPath":              KeysPath,
+	"IdentityBindPath":      IdentityBindPath,
 	"ManifestPath":          ManifestPath,
 	"ConfigReportPath":      ConfigReportPath,
 }

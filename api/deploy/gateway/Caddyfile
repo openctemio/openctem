@@ -34,11 +34,12 @@
 # mode is a pair of small files under modes/. Environment placeholders
 # {$NAME:default} are substituted when the file is read.
 #
-# Sensor protocol v3 gRPC binding (RFC-059): with
-# OPENCTEM_SENSOR_GATEWAY=passthrough, TLS for SENSOR_PUBLIC_HOSTNAME is passed
-# through at layer 4 to the API's mTLS listener (sensors/passthrough.wrappers;
-# needs the gateway image with the layer4 module, deploy/gateway/Dockerfile).
-# Default off (sensors/off.wrappers).
+# Sensor protocol v3 gRPC binding (RFC-059): with OPENCTEM_SENSOR_GATEWAY=alpn,
+# a TLS connection that offers the sensor ALPN id openctem-sensor/3 is passed
+# through at layer 4 to the API's mTLS listener on this same port
+# (sensors/alpn.wrappers); passthrough adds a dedicated sensor host name routed
+# by SNI (sensors/passthrough.wrappers). Both need the gateway image with the
+# layer4 module (deploy/gateway/Dockerfile). Default off (sensors/off.wrappers).
 # =============================================================================
 {
 	# Admin API stays inside the container (the healthcheck uses it).

@@ -1121,6 +1121,10 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
+	if cond := assetFreshnessCondition(filter.Freshness); cond != "" {
+		conditions = append(conditions, cond)
+	}
+
 	// Crown jewel filter: the is_crown_jewel column is the only source.
 	if filter.IsCrownJewel != nil {
 		conditions = append(conditions, fmt.Sprintf("a.is_crown_jewel = $%d", argIndex))

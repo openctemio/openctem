@@ -112,3 +112,41 @@ func seedReq(method, target, body string, tenant shared.ID, user string) *http.R
 	ctx = context.WithValue(ctx, middleware.UserIDKey, user)
 	return req.WithContext(ctx)
 }
+
+// Automatic enrichment (docs/architecture/asset-freshness.md): on by
+// default; a PUT without the field keeps the stored value (older clients
+// never turn it off by omission); an explicit false turns it off.
+func TestEASMSettingsHandler_Enrichment(t *testing.T) {
+	tenantID := shared.NewID()
+	store := &fakeEASMSettingsStore{}
+	h := NewEASMSettingsHandler(store, nil, &fakeSweeper{}, EASMPlatform{EnrichmentAvailable: true}, &settingsAudit{}, logger.NewNop())
+
+	w := httptest.NewRecorder()
+	h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+	if !strings.Contains(w.Body.String(), `"enrichment_enabled":true`) || !strings.Contains(w.Body.String(), `"enrichment_available":true`) {
+		t.Fatalf("default: %s", w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true,"enrichment_enabled":false}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || !store.es.EnrichmentDisabled {
+		t.Fatalf("turn off: %d %+v", w.Code, store.es)
+	}
+
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || !store.es.EnrichmentDisabled {
+		t.Fatalf("omitted field changed the stored value: %d %+v", w.Code, store.es)
+	}
+
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true,"enrichment_enabled":true}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || store.es.EnrichmentDisabled {
+		t.Fatalf("turn on: %d %+v", w.Code, store.es)
+	}
+	for _, id := range store.tenants {
+		if id != tenantID.String() {
+			t.Fatalf("settings of tenant %s touched", id)
+		}
+	}
+}
