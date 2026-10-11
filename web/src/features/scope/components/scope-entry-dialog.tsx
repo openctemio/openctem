@@ -197,8 +197,13 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const detected = detectScopeKind(name)
   const type: ScopeKind = override ?? detected ?? 'domain'
   const isDomain = type === 'domain'
-  // A member's request is one name for a few days, never a wildcard (§6.1).
-  const isRequest = !canApprove
+  // Scope entries need approval only in Strict scan approval (RFC-073 §6);
+  // unknown (still loading) counts as yes. In Off and On anyone who may add
+  // entries adds them directly.
+  const entriesNeedApproval = settings?.approval_policy?.entries_need_approval ?? true
+  // In Strict a member's request is one name for a few days, never a
+  // wildcard (RFC-054 §6.1).
+  const isRequest = !canApprove && entriesNeedApproval
   const effectiveCoverage: DomainCoverage = isRequest ? 'name' : coverage
   // A request keeps what was typed, so a wildcard is refused, not narrowed.
   const pattern = isDomain && !isRequest ? patternForCoverage(name, effectiveCoverage) : name.trim()
@@ -211,10 +216,10 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const expiryDays = duration.kind === 'days' ? duration.days : 0
   const needsReason = expiring || isRequest || tier === 't2'
   const approvals = approvalsForNew({
-    canApprove,
+    canApprove: !isRequest,
     effective: settings?.effective_widening_approvals ?? 0,
     tier,
-    entriesNeedApproval: settings?.approval_policy?.entries_need_approval,
+    entriesNeedApproval,
   })
   // Entry tier ceilings apply only in Strict scan approval (RFC-073 §6).
   const tierCeilings = settings?.approval_policy?.tier_ceilings ?? true

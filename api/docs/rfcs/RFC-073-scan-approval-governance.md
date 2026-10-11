@@ -191,10 +191,27 @@ owner choose On or Strict.
 approval (`approvals_required = 0`, the entry is in effect at once) and the
 entry is not a tier ceiling; in Strict RFC-054 §7 applies unchanged (the tenant's 0/1/2, at least one with
 two or more administrators and for t2, the sole-owner self-approval). In
-every mode: step-up on every widening route, the dry run, a member without
-`attack_surface:scope:approve` only requests (the request still waits for
-an approver), exclusions, ownership proof, deny list, CIDR caps, audit and
-notification. `GET /scope/settings` returns `approval_policy:
+every mode: step-up on every widening route, the dry run, exclusions,
+ownership proof, deny list, CIDR caps, audit and notification.
+
+Who may widen (amended 2026-10-11, owner decision 2026-10-10: "approval only
+when creating scans, not for scope assets"). In Off and On any caller the
+route lets write scope (`attack_surface:scope:write`) creates or widens an
+entry directly, with step-up: there are no requests and no approvals
+(`Actor.mayWiden`). Only Strict keeps the member request of RFC-054 §6.1 (a
+one-off entry for one name or address, with a reason, waiting for an
+approver) and `attack_surface:scope:approve` for widening an existing entry
+or turning discovery on. Exclusions follow the same mode: in Off and On a new
+exclusion is in effect at once, recorded with its creator as `approved_by`;
+extending it keeps it in effect; taking it out of effect needs the route's
+permission and step-up, not a second person. In Strict an exclusion waits
+for another holder of `attack_surface:scope:exclusions:approve`, an
+extension goes back to review, and taking it out of effect needs an
+approver other than its requester (`Exclusion.AuthorizeReduction`). An
+unreadable or unknown mode is Strict (`scangov.ScopeEntriesNeedApproval`).
+The web console follows `approval_policy.entries_need_approval` and the
+status the API returns: outside Strict it shows no request or approval
+wording. `GET /scope/settings` returns `approval_policy:
 {scan_approval, source, entries_need_approval}`; the owner-only
 `tenant_controlled` approval count of RFC-054 §12.6 is removed.
 
@@ -208,10 +225,13 @@ outside every entry is still refused, exclusions still apply, intrusive
 and the scan's intensity and approval rules decide how hard it probes.
 The entry form shows the tier only in Strict.
 
-Migrating existing entries: nothing is rewritten. Entries already in effect
-stay; an entry pending approval stays pending and is approved as before (an
-approver approves it, or its requester withdraws it); new widenings in Off
-and On take effect at once.
+Migrating existing entries: nothing is rewritten. Entries and exclusions
+already in effect stay; one pending approval stays pending (a pending entry
+widens scanning and a pending exclusion could hide an asset, so neither is
+activated silently) and is approved or rejected on the Approvals tab as
+before, or its requester removes it and adds it again, which in Off and On
+takes effect at once. The Approvals tab says why such left-over rows still
+wait. New changes in Off and On take effect at once.
 
 ## 7. Signer ledger (amends RFC-040 §11.5)
 
@@ -225,7 +245,10 @@ bypasses the scope service hook.
 Decision. Scope-entry changes keep going through the one hook
 (`commitEntry`/`commitExclusion`) in every mode, labelled with the mode
 (`platform_policy: "scan_approval:off|on|strict"`). In Off and On an entry
-widens with `policy_required_approvals = 0`; the signer's former hard
+widens, and an exclusion is taken out of effect, with
+`policy_required_approvals = 0` (Strict: the entry's count, and one approver
+other than the requester for an exclusion); a new exclusion in effect is a
+narrowing and reaches the ledger at creation; the signer's former hard
 minimum of one approval for a t2 entry becomes an operator floor,
 `SIGNER_LEDGER_T2_MIN_APPROVALS` (0 to 2, default 0, accepted by the owner
 2026-10-10), next to `SIGNER_LEDGER_MIN_APPROVALS`.
