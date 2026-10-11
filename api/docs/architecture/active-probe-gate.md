@@ -70,6 +70,15 @@ controller then marks it `expired`.
   notifies all active owners and administrators in-app, and is audited.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
   click.
+- **Adding many entries** (RFC-054 §14). `POST /scope/targets/bulk`
+  (`scope:write`, at most 200 items) runs `scope.Service.CreateTargets`:
+  step-up is checked once before anything is written, then each item is an
+  ordinary `CreateTarget` (guardrails, duplicates, the Strict request rules,
+  the signer ledger before the write, one audit event per entry), and the
+  administrators get one notice for the batch. Each item answers `created`
+  (with its status), `exists` (the organization's own row) or `refused`
+  (code and message). Entries are recorded with origin `import`, or
+  `refusal_fix` when they fix a refused scan.
 - **One authority: scope entries** (RFC-054; migration
   `001262`). Root-domain seeds were folded into permanent `*.<domain>`
   entries and `/api/v1/easm/seeds` is gone; a verified domain, of any
