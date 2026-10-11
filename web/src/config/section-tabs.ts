@@ -10,6 +10,7 @@ import {
   Building,
   Building2,
   ClipboardCheck,
+  Copy,
   Container,
   Crosshair,
   Crown,
@@ -245,5 +246,12 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     icon: ClipboardCheck,
     module: 'attack_surface',
     permission: Permission.AssetsRead,
+  },
+  {
+    label: 'Lookalikes',
+    href: '/attack-surface/lookalikes',
+    icon: Copy,
+    module: 'attack_surface',
+    permission: Permission.ScopeRead,
   },
 ]

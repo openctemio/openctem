@@ -24,6 +24,7 @@ import en_findings from './en/findings.json'
 import en_help from './en/help.json'
 import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
+import en_lookalikes from './en/lookalikes.json'
 import en_nav from './en/nav.json'
 import en_org from './en/org.json'
 import en_pentest from './en/pentest.json'
@@ -56,6 +57,7 @@ import vi_findings from './vi/findings.json'
 import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
+import vi_lookalikes from './vi/lookalikes.json'
 import vi_nav from './vi/nav.json'
 import vi_org from './vi/org.json'
 import vi_pentest from './vi/pentest.json'
@@ -93,6 +95,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   help: en_help,
   insights: en_insights,
   licensePolicy: en_licensePolicy,
+  lookalikes: en_lookalikes,
   nav: en_nav,
   org: en_org,
   pentest: en_pentest,
@@ -128,6 +131,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   help: vi_help,
   insights: vi_insights,
   licensePolicy: vi_licensePolicy,
+  lookalikes: vi_lookalikes,
   nav: vi_nav,
   org: vi_org,
   pentest: vi_pentest,
