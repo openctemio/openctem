@@ -68,8 +68,8 @@ var (
 )
 
 // exclusionReductionApprovals is the approvals taking an exclusion in effect
-// out of effect needs (Exclusion.AuthorizeReduction: one approver other than
-// its requester).
+// out of effect needs in Strict (Exclusion.AuthorizeReduction: one approver
+// other than its requester).
 const exclusionReductionApprovals = 1
 
 // ledgerEntryOf is t as the ledger holds it, nil when t authorizes nothing
@@ -205,7 +205,17 @@ func (s *Service) commitExclusion(ctx context.Context, before *jobsign.LedgerExc
 		Ops: []jobsign.LedgerOp{op}}
 	if widens {
 		ch.Requester = userRef(e.CreatedBy())
-		ch.RequiredApprovals = exclusionReductionApprovals
+		// Taking an exclusion out of effect needs a second person only in
+		// Strict (AuthorizeReduction); the mode labels the change as for
+		// entries.
+		mode := scangov.ModeStrict
+		if s.governance != nil {
+			mode, _ = s.governance.ScanGovernanceMode(ctx, e.TenantID())
+			ch.PlatformPolicy = "scan_approval:" + string(mode)
+		}
+		if scangov.ScopeEntriesNeedApproval(mode) {
+			ch.RequiredApprovals = exclusionReductionApprovals
+		}
 		if id := userRef(reviewer); id != "" {
 			ch.Approvals = append(ch.Approvals, jobsign.LedgerApproval{UserID: id, ApprovedAt: now})
 		}

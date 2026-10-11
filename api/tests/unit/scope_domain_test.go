@@ -351,7 +351,7 @@ func TestExclusionUpdateMethods(t *testing.T) {
 
 	t.Run("UpdateExpiresAt", func(t *testing.T) {
 		future := time.Now().Add(48 * time.Hour)
-		exc.UpdateExpiresAt(&future)
+		exc.UpdateExpiresAt(&future, true)
 		if exc.ExpiresAt() == nil {
 			t.Fatal("expected non-nil ExpiresAt")
 		}

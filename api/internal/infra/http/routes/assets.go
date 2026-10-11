@@ -270,8 +270,10 @@ func registerScopeRoutes(
 		// Write operations
 		r.POST("/", h.CreateExclusion, middleware.Require(permission.ScopeWrite))
 		r.PUT("/{id}", h.UpdateExclusion, middleware.Require(permission.ScopeWrite))
-		// Approval is a separate permission (owner/admin by default): a new
-		// exclusion is pending and suppresses nothing until approved.
+		// Approval is a separate permission (owner/admin by default). In the
+		// Strict scan approval mode a new exclusion is pending and suppresses
+		// nothing until approved; in Off and On it is in effect at once
+		// (RFC-073 §6) and these routes only clear rows left pending.
 		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		r.POST("/{id}/reject", h.RejectExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		// How a path exclusion may be tested (RFC-056): the approval

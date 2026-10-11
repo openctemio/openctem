@@ -356,3 +356,33 @@ describe('ScopeEntryDialog: tier ceilings follow the scan approval mode', () => 
     expect(screen.queryByText(/An entry covers every probe/)).not.toBeInTheDocument()
   })
 })
+
+describe('ScopeEntryDialog: a member outside Strict adds directly', () => {
+  it('no request: a wildcard, no reason, in scope at once', async () => {
+    perms.approve = false
+    api.get.mockReset().mockResolvedValue({
+      ...settings,
+      effective_widening_approvals: 0,
+      approval_policy: {
+        scan_approval: 'off',
+        source: 'organization',
+        entries_need_approval: false,
+        tier_ceilings: false,
+      },
+    })
+    api.post.mockResolvedValue({ pattern: '*.acme.io', status: 'active' })
+    const user = userEvent.setup()
+    wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
+    expect(await screen.findByRole('heading', { name: 'Add to scope' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send request' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('What'), 'acme.io')
+    await user.click(screen.getByRole('button', { name: 'Add to scope' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/v1/scope/targets',
+        expect.objectContaining({ pattern: '*.acme.io' })
+      )
+    )
+    expect(toast.success).toHaveBeenCalledWith('*.acme.io is in scope')
+  })
+})

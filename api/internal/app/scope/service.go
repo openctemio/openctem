@@ -223,17 +223,17 @@ type UpdateTargetInput struct {
 	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
 
 	// Entry fields (RFC-054 §6.1). A later or removed expiry, or a higher
-	// tier, widens: it needs the approval permission and step-up and sends
-	// the entry back to review when approvals are required.
+	// tier, widens: it needs step-up, and in Strict the approval permission;
+	// it sends the entry back to review when approvals are required.
 	Reason        *string `validate:"omitempty,max=1000"`
 	ExpiresAt     *time.Time
 	ExpiresInDays *int
 	ClearExpiry   bool
 	MaxTier       *string `validate:"omitempty,oneof=t0 t1 t2 T0 T1 T2"`
 	// Discovery switches discovery on or off. Turning it on widens what is
-	// discovered (names under the entry join the inventory): approvers
-	// only, with step-up, and every administrator is told; it does not send
-	// the entry back to review (discovery is passive).
+	// discovered (names under the entry join the inventory): step-up (and
+	// in Strict the approval permission), and every administrator is told;
+	// it does not send the entry back to review (discovery is passive).
 	Discovery *bool
 	Actor     Actor
 }
@@ -311,7 +311,7 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 }
 
 // applyDiscovery applies a discovery switch and reports whether it went from
-// off to on (a widening: approvers with step-up only).
+// off to on (a widening: step-up, and in Strict approvers only).
 func (s *Service) applyDiscovery(ctx context.Context, t *scopedom.Target, in UpdateTargetInput) (bool, error) {
 	if in.Discovery == nil || *in.Discovery == t.DiscoverySetting() {
 		return false, nil
@@ -320,7 +320,7 @@ func (s *Service) applyDiscovery(ctx context.Context, t *scopedom.Target, in Upd
 		t.SetDiscovery(false) // narrowing
 		return false, nil
 	}
-	if !in.Actor.system() && !in.Actor.CanApprove {
+	if !in.Actor.system() && !in.Actor.mayWiden(s.entriesNeedApproval(ctx, t.TenantID())) {
 		return false, ErrWideningNeedsApprove
 	}
 	if err := s.requireStepUp(ctx, in.Actor); err != nil {
@@ -381,7 +381,7 @@ func (s *Service) applyEntryUpdate(ctx context.Context, t *scopedom.Target, in U
 		if t.Status() == scopedom.StatusRejected {
 			return false, scopedom.ErrEntryRejected
 		}
-		if !in.Actor.system() && !in.Actor.CanApprove {
+		if !in.Actor.system() && !in.Actor.mayWiden(s.entriesNeedApproval(ctx, t.TenantID())) {
 			return false, ErrWideningNeedsApprove
 		}
 		if err := s.requireStepUp(ctx, in.Actor); err != nil {
@@ -668,9 +668,22 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 	}
 	exclusion.SetWeb(web)
 	exclusion.SetOrigin(input.Origin)
+	// In Off and On (RFC-073 §6) the creator's scope:write is enough: the
+	// exclusion is in effect at once, recorded as approved by its creator.
+	// In Strict it waits for an exclusion approver other than the creator.
+	if !s.entriesNeedApproval(ctx, tenantID) {
+		if err := exclusion.TakeEffect(input.CreatedBy); err != nil {
+			return nil, err
+		}
+	}
 
-	if err := s.exclusionRepo.Create(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to create scope exclusion: %w", err)
+	if err := s.commitExclusion(ctx, nil, exclusion, false, input.CreatedBy, func() error {
+		if err := s.exclusionRepo.Create(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to create scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("scope exclusion created", "id", exclusion.ID().String(), "pattern", logSafe(input.Pattern))
@@ -715,9 +728,10 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		return nil, err
 	}
 	before := ledgerExclusionOf(exclusion, time.Now())
+	needsReview := s.entriesNeedApproval(ctx, parsedTenantID)
 
 	if input.ExpiresAt != nil && exclusion.ShortensWindow(input.ExpiresAt) {
-		if err := exclusion.AuthorizeReduction(input.Reviewer); err != nil {
+		if err := exclusion.AuthorizeReduction(input.Reviewer, needsReview); err != nil {
 			return nil, err
 		}
 		// Shortening an exclusion in effect widens scope: step-up (RFC-054 §6.2).
@@ -731,7 +745,7 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		exclusion.UpdateReason(*input.Reason)
 	}
 	if input.ExpiresAt != nil {
-		exclusion.UpdateExpiresAt(input.ExpiresAt)
+		exclusion.UpdateExpiresAt(input.ExpiresAt, needsReview)
 	}
 
 	if err := s.commitExclusion(ctx, before, exclusion, false, input.Reviewer.UserID, func() error {
@@ -749,7 +763,7 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 }
 
 // DeleteExclusion deletes a scope exclusion by ID with atomic tenant
-// verification. Deleting an exclusion in effect needs the approval
+// verification. In Strict, deleting an exclusion in effect needs the approval
 // permission and someone other than the requester (AuthorizeReduction).
 func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenantID string, reviewer scopedom.Reviewer) error {
 	parsedID, err := shared.IDFromString(exclusionID)
@@ -766,7 +780,7 @@ func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenan
 	if err != nil {
 		return err
 	}
-	if err := exclusion.AuthorizeReduction(reviewer); err != nil {
+	if err := exclusion.AuthorizeReduction(reviewer, s.entriesNeedApproval(ctx, parsedTenantID)); err != nil {
 		return err
 	}
 
@@ -938,8 +952,8 @@ func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, ten
 	return exclusion, nil
 }
 
-// DeactivateExclusion takes a scope exclusion out of effect. That needs the
-// approval permission and someone other than the requester
+// DeactivateExclusion takes a scope exclusion out of effect. In Strict that
+// needs the approval permission and someone other than the requester
 // (AuthorizeReduction).
 func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, tenantID string, reviewer scopedom.Reviewer) (*scopedom.Exclusion, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
@@ -956,7 +970,7 @@ func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, t
 		return nil, err
 	}
 
-	if err := exclusion.AuthorizeReduction(reviewer); err != nil {
+	if err := exclusion.AuthorizeReduction(reviewer, s.entriesNeedApproval(ctx, parsedTenantID)); err != nil {
 		return nil, err
 	}
 	before := ledgerExclusionOf(exclusion, time.Now())

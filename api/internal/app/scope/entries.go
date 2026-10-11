@@ -4,13 +4,18 @@ package scope
 // administrator notification (RFC-054 §6.1, §7; owner decisions S3, S5, S6).
 //
 // Widening (create, activate, a later or removed expiry, a higher tier) is
-// the guarded direction:
+// the guarded direction. Whether it needs a second person follows the
+// organization's scan approval mode (RFC-073 §6, owner decision 2026-10-10:
+// approvals are for scans, not scope entries):
 //
-//   - a caller holding attack_surface:scope:approve re-authenticates
-//     (step-up) and the entry needs the tenant's approval count of other
-//     approvers before it takes effect (0 = at once);
-//   - a caller without it only REQUESTS a one-off entry for a single name or
-//     address, with a reason; it needs at least one approver;
+//   - Off and On: any caller the route lets write scope (scope:write)
+//     re-authenticates (step-up) and the entry takes effect at once; there
+//     are no requests and no approvals;
+//   - Strict: a caller holding attack_surface:scope:approve re-authenticates
+//     and the entry needs the tenant's approval count of other approvers
+//     before it takes effect (0 = at once); a caller without it only
+//     REQUESTS a one-off entry for a single name or address, with a reason;
+//     it needs at least one approver;
 //   - every widening that takes effect, and every new request, notifies the
 //     tenant's administrators.
 //
@@ -138,6 +143,26 @@ func (s *Service) loadPolicy(ctx context.Context, tenantID shared.ID) (policy, e
 	return p, nil
 }
 
+// twoPerson reports whether entries keep the RFC-054 approvals and requests
+// (Strict only).
+func (p policy) twoPerson() bool { return scangov.ScopeEntriesNeedApproval(p.mode) }
+
+// entriesNeedApproval reports whether the tenant's scope entries and
+// exclusions need a second person (the Strict mode). Without governance, or
+// when the mode cannot be read, they do (fail closed).
+func (s *Service) entriesNeedApproval(ctx context.Context, tenantID shared.ID) bool {
+	if s.governance == nil {
+		return true
+	}
+	m, _ := s.governance.ScanGovernanceMode(ctx, tenantID)
+	return scangov.ScopeEntriesNeedApproval(m)
+}
+
+// mayWiden reports whether a person may widen an entry directly: they hold
+// the approval permission, or the organization needs no approvals for
+// entries (the route already required scope:write).
+func (a Actor) mayWiden(needsApproval bool) bool { return a.CanApprove || !needsApproval }
+
 // approvals is the approval count for a widening of an entry of tier tier.
 func (p policy) approvals(tier scopedom.Tier, request bool) int {
 	n := p.settings.EffectiveApprovalsUnder(p.mode, p.admins, tier == scopedom.TierIntrusive)
@@ -253,7 +278,7 @@ func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, target
 	if in.Actor.system() {
 		return d, nil
 	}
-	if !in.Actor.CanApprove {
+	if !in.Actor.mayWiden(p.twoPerson()) {
 		d.request = true
 		switch {
 		case p.settings.OneOffPolicy() != tenant.OneOffAdminsAndRequests:
@@ -276,21 +301,23 @@ func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, target
 	return d, nil
 }
 
-// widenEntry applies a widening change made by actor: step-up and approvals
-// for an approver; refused for anyone else (they request a new entry).
+// widenEntry applies a widening change made by actor: step-up and the
+// policy's approvals for an approver (or anyone with scope:write when the
+// organization needs no approvals); refused for anyone else (they request a
+// new entry).
 func (s *Service) widenEntry(ctx context.Context, t *scopedom.Target, actor Actor, now time.Time) error {
 	if actor.system() {
 		t.Widen("", 0, now)
 		return nil
 	}
-	if !actor.CanApprove {
+	p, err := s.loadPolicy(ctx, t.TenantID())
+	if err != nil {
+		return err
+	}
+	if !actor.mayWiden(p.twoPerson()) {
 		return ErrWideningNeedsApprove
 	}
 	if err := s.requireStepUp(ctx, actor); err != nil {
-		return err
-	}
-	p, err := s.loadPolicy(ctx, t.TenantID())
-	if err != nil {
 		return err
 	}
 	t.Widen(actor.UserID, p.approvals(t.MaxTier(), false), now)
@@ -338,7 +365,7 @@ func (s *Service) PreviewTarget(ctx context.Context, input CreateTargetInput) (*
 	if err != nil {
 		return nil, err
 	}
-	out := &TargetPreview{Status: scopedom.StatusActive, ApprovalsRequired: d.approvals, StepUpRequired: input.Actor.CanApprove && !input.Actor.system()}
+	out := &TargetPreview{Status: scopedom.StatusActive, ApprovalsRequired: d.approvals, StepUpRequired: !d.request && !input.Actor.system()}
 	if d.approvals > 0 {
 		out.Status = scopedom.StatusPending
 	}
