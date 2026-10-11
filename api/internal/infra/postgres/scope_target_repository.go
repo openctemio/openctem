@@ -551,12 +551,27 @@ func (r *ScopeTargetRepository) Count(ctx context.Context, filter scope.TargetFi
 	return count, nil
 }
 
-// ExistsByPattern checks if a target with the given pattern exists.
-func (r *ScopeTargetRepository) ExistsByPattern(ctx context.Context, tenantID shared.ID, targetType scope.TargetType, pattern string) (bool, error) {
-	query := "SELECT EXISTS(SELECT 1 FROM scope_targets WHERE tenant_id = $1 AND target_type = $2 AND pattern = $3 AND ports = '' AND protocol = '')"
-	var exists bool
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), targetType.String(), pattern).Scan(&exists); err != nil {
-		return false, fmt.Errorf("failed to check scope target existence: %w", err)
+// FindByPattern returns the tenant's unlimited entry with this type and
+// pattern (an active entry past its expiry reads as expired), or nil.
+func (r *ScopeTargetRepository) FindByPattern(ctx context.Context, tenantID shared.ID, targetType scope.TargetType, pattern string) (*scope.Existing, error) {
+	query := `SELECT id, CASE WHEN status = 'active' AND expires_at IS NOT NULL AND expires_at <= NOW() THEN 'expired' ELSE status END
+		FROM scope_targets
+		WHERE tenant_id = $1 AND target_type = $2 AND pattern = $3 AND ports = '' AND protocol = ''`
+	return findExisting(r.db.QueryRowContext(ctx, query, tenantID.String(), targetType.String(), pattern))
+}
+
+// findExisting scans an (id, status) row; no row is nil.
+func findExisting(row *sql.Row) (*scope.Existing, error) {
+	var id, status string
+	if err := row.Scan(&id, &status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to find scope row by pattern: %w", err)
 	}
-	return exists, nil
+	parsed, err := shared.IDFromString(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse scope row id: %w", err)
+	}
+	return &scope.Existing{ID: parsed, Status: scope.Status(status)}, nil
 }

@@ -39,8 +39,8 @@ func (r oneTargetRepo) ListActive(context.Context, shared.ID) ([]*scopedom.Targe
 	return nil, nil
 }
 func (r oneTargetRepo) Count(context.Context, scopedom.TargetFilter) (int64, error) { return 0, nil }
-func (r oneTargetRepo) ExistsByPattern(context.Context, shared.ID, scopedom.TargetType, string) (bool, error) {
-	return false, nil
+func (r oneTargetRepo) FindByPattern(context.Context, shared.ID, scopedom.TargetType, string) (*scopedom.Existing, error) {
+	return nil, nil
 }
 
 type staticApprovers []scopedom.Approver
