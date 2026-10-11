@@ -9,6 +9,9 @@
   version-2 identity re-key runs only for findings that still hold a version-1
   key. A 17.7k-finding nuclei file went from about 213k to about 160k SQL
   statements and imports about twice as fast on the same host.
+- A rescan no longer rewrites every finding's source interop data when it is
+  unchanged. On a 17.7k-finding rescan, that update went from 9.3 s writing
+  17,721 rows to 0.28 s writing none.
 - The fingerprint existence check takes the keys as one array parameter, so a
   report above 65,535 findings no longer exceeds PostgreSQL's bind-parameter
   limit.
