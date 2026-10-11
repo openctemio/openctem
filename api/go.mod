@@ -84,7 +84,6 @@ require (
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
@@ -107,8 +106,7 @@ require (
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.2.1-0.20261010105554-cd662a8cd894
-	// sdk-go main at 17ba39a (pkg/transfer, chunked feed transfer): replace with the next tag.
-	github.com/openctemio/sdk-go v0.18.1-0.20261010083220-17ba39a04836
+	github.com/openctemio/sdk-go/pkg/transfer v0.1.0
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/teambition/rrule-go v1.8.2
