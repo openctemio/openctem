@@ -110,7 +110,7 @@ func TestBootstrapAdminCreatesFirstOrganization(t *testing.T) {
 	if !strings.Contains(out.String(), "=== Organization created ===") {
 		t.Fatalf("no organization reported:\n%s", out.String())
 	}
-	m := regexp.MustCompile(`https://ctem\.example\.com/set-password\?token=(\S+)`).FindStringSubmatch(out.String())
+	m := regexp.MustCompile(`https://ctem\.example\.com/set-password#token=(\S+)`).FindStringSubmatch(out.String())
 	if m == nil {
 		t.Fatalf("set-password link not printed:\n%s", out.String())
 	}
