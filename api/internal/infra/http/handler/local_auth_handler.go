@@ -38,7 +38,21 @@ type LocalAuthHandler struct {
 	// signupPolicy answers registration_enabled on /auth/info (the console
 	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
 	signupPolicy signupdom.PolicySource
+	// captcha, when set (CAPTCHA_TURNSTILE_SECRET), must pass before a
+	// registration is looked at.
+	captcha Captcha
 }
+
+// Captcha verifies a CAPTCHA token from the browser (Cloudflare Turnstile).
+type Captcha interface {
+	Verify(ctx context.Context, token, remoteIP string) (bool, error)
+}
+
+// SetCaptcha requires a passing CAPTCHA on registration.
+func (h *LocalAuthHandler) SetCaptcha(c Captcha) { h.captcha = c }
+
+// CodeCaptchaFailed is the error code of a missing or failed CAPTCHA.
+const CodeCaptchaFailed apierror.Code = "CAPTCHA_FAILED"
 
 // SetSignupPolicy wires the platform sign-up policy.
 func (h *LocalAuthHandler) SetSignupPolicy(p signupdom.PolicySource) { h.signupPolicy = p }
@@ -97,6 +111,8 @@ type RegisterRequest struct {
 	// invitation links would fall back to the platform default and
 	// silently ignore an admin's per-tenant "never" setting.
 	InvitationToken string `json:"invitation_token,omitempty" validate:"omitempty,max=200"`
+	// CaptchaToken is the Turnstile token when a CAPTCHA is configured.
+	CaptchaToken string `json:"captcha_token,omitempty" validate:"omitempty,max=2048"`
 }
 
 // RegisterResponse is the response body for user registration.
@@ -129,6 +145,20 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if err := h.validator.Validate(req); err != nil {
 		apierror.ValidationFailed("Validation failed", err).WriteJSON(w)
 		return
+	}
+
+	// The CAPTCHA is checked before the account lookup and the same way for
+	// every address, so it says nothing about the email. A verifier error
+	// (Turnstile unreachable) refuses: sign-up is not worth an open door.
+	if h.captcha != nil {
+		ok, cerr := h.captcha.Verify(r.Context(), req.CaptchaToken, getClientIP(r))
+		if cerr != nil || !ok {
+			if cerr != nil {
+				h.logger.Warn("captcha verification failed", "error", logger.SanitizeError(cerr))
+			}
+			apierror.New(http.StatusBadRequest, CodeCaptchaFailed, "Complete the check and try again.").WriteJSON(w)
+			return
+		}
 	}
 
 	result, err := h.authService.Register(r.Context(), auth.RegisterInput{

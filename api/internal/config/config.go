@@ -1892,6 +1892,13 @@ func (c *Config) validateAuth() error {
 		}
 	}
 
+	// The CAPTCHA needs both halves: the secret makes the API require a
+	// token, the site key makes the web render the check that produces it.
+	// One without the other either blocks every sign-up or checks nothing.
+	if (strings.TrimSpace(c.Auth.CaptchaTurnstileSecret) == "") != (strings.TrimSpace(c.Auth.CaptchaTurnstileSiteKey) == "") {
+		return fmt.Errorf("CAPTCHA_TURNSTILE_SECRET and CAPTCHA_TURNSTILE_SITE_KEY must be set together")
+	}
+
 	// Same sentinel for the credential-at-rest key: only refuse outside
 	// development. Dev keeps the predictable `0123…cdef` value so
 	// `docker compose up` works without further config; non-dev MUST
