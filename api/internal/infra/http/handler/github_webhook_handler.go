@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -22,13 +24,37 @@ type GitHubIssueSink interface {
 // githubWebhookMaxBody bounds the raw body read before signature verification.
 const githubWebhookMaxBody = 5 * 1024 * 1024 // 5 MiB
 
+// GitHubDeliveryWindow is how long a verified delivery id is remembered: a
+// replay of the same signed delivery inside it is acknowledged and ignored.
+const GitHubDeliveryWindow = 24 * time.Hour
+
+// githubDeliveryID is the shape of X-GitHub-Delivery (a GUID); anything else
+// is refused before it becomes a cache key.
+var githubDeliveryID = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+
+// WebhookDeliveryGuard records a delivery key and reports whether it is new.
+// Implemented by redis.WebhookDeliveryStore (shared by every API replica).
+type WebhookDeliveryGuard interface {
+	FirstDelivery(ctx context.Context, key string, ttl time.Duration) (bool, error)
+}
+
+// githubWebhookService is what the handler needs from the integration
+// service (*integration.IntegrationService).
+type githubWebhookService interface {
+	ListGitHubWebhookSecrets(ctx context.Context, tenantID shared.ID) ([]string, error)
+	HandleGitHubPush(ctx context.Context, tenantID shared.ID, ev *integration.GitHubPushEvent) (bool, error)
+}
+
 // GitHubWebhookHandler receives inbound GitHub webhooks (push events) and
 // refreshes the pushed branch's metadata. Public endpoint (no JWT) — verified by
 // GitHub's X-Hub-Signature-256 HMAC against the tenant's per-tenant secret.
 type GitHubWebhookHandler struct {
-	service   *integration.IntegrationService
+	service   githubWebhookService
 	issueSink GitHubIssueSink // nil → issue events are acked but not synced
-	logger    *logger.Logger
+	// deliveries refuses replays of a verified delivery; nil (no Redis, tests)
+	// turns replay protection off.
+	deliveries WebhookDeliveryGuard
+	logger     *logger.Logger
 }
 
 // NewGitHubWebhookHandler creates a new GitHubWebhookHandler.
@@ -40,6 +66,11 @@ func NewGitHubWebhookHandler(svc *integration.IntegrationService, log *logger.Lo
 // construction; nil disables it (issue events are still ack'd).
 func (h *GitHubWebhookHandler) SetIssueSink(sink GitHubIssueSink) {
 	h.issueSink = sink
+}
+
+// SetDeliveryGuard wires delivery-id replay protection.
+func (h *GitHubWebhookHandler) SetDeliveryGuard(g WebhookDeliveryGuard) {
+	h.deliveries = g
 }
 
 // IncomingGitHubWebhook handles POST /api/v1/webhooks/incoming/github?tenant=.
@@ -83,6 +114,29 @@ func (h *GitHubWebhookHandler) IncomingGitHubWebhook(w http.ResponseWriter, r *h
 		h.logger.Warn("github webhook rejected: bad signature", "tenant_id", tenantIDStr, "remote_ip", r.RemoteAddr)
 		apierror.Unauthorized("invalid webhook signature").WriteJSON(w)
 		return
+	}
+
+	// Replay protection: the signature covers the body only, so a captured
+	// delivery verifies forever. Each delivery id is accepted once per
+	// organization inside the window; a replay is acknowledged and ignored.
+	if h.deliveries != nil {
+		delivery := r.Header.Get("X-GitHub-Delivery")
+		if !githubDeliveryID.MatchString(delivery) {
+			apierror.BadRequest("missing or invalid X-GitHub-Delivery header").WriteJSON(w)
+			return
+		}
+		first, derr := h.deliveries.FirstDelivery(r.Context(), "github:"+tenantID.String()+":"+delivery, GitHubDeliveryWindow)
+		if derr != nil {
+			// Fail closed: without the store a replay cannot be told apart.
+			h.logger.Error("github webhook: delivery store unavailable", "tenant_id", tenantIDStr, "error", derr)
+			apierror.ServiceUnavailable("webhook temporarily unavailable").WriteJSON(w)
+			return
+		}
+		if !first {
+			h.logger.Warn("SECURITY: github webhook replay ignored", "tenant_id", tenantIDStr, "delivery", delivery)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 	}
 
 	event := r.Header.Get("X-GitHub-Event")
