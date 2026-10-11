@@ -1,0 +1,15 @@
+{
+  "insights.backToDashboard": "Back to dashboard",
+  "insights.maturity.title": "CTEM maturity",
+  "insights.maturity.description": "A weighted score across your closed CTEM cycles.",
+  "insights.maturity.moduleOffTitle": "Module not enabled",
+  "insights.maturity.moduleOff": "Program maturity needs the CTEM cycles module. Ask your administrator to enable it.",
+  "insights.maturity.loadFailed": "Couldn’t load maturity",
+  "insights.maturity.loadFailedHint": "Try again in a moment.",
+  "insights.maturity.emptyTitle": "No maturity data yet",
+  "insights.maturity.empty": "Maturity is measured from closed CTEM cycles. Close a cycle to see it here.",
+  "insights.dataQuality.title": "Data quality",
+  "insights.dataQuality.description": "Whether the inventory is owned, evidenced and fresh enough to prioritise on.",
+  "insights.programHealth.title": "Program health",
+  "insights.programHealth.description": "Whether risk is being retired: urgent fixes on time, inventory owned, exposure falling."
+}
