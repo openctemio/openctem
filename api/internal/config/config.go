@@ -2214,6 +2214,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	{"CTEM_ENFORCE_COVERAGE_SLO", "unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles)"},
 }
 
 // rejectRetiredEnv fails when any retired or removed name is set, naming
