@@ -83,6 +83,7 @@ const NO_WRITE = 'Only owners and administrators can change CI trust and the gat
  * CI/CD integration page shows these as its Trust and gate tab).
  */
 export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {}) {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
   const canOverride = can(Permission.CIOverride)
@@ -90,8 +91,11 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
     <div className="space-y-4">
       {!embedded && (
         <PageHeader
-          title="CI/CD integration"
-          description="Let CI jobs (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket, CircleCI, Jenkins) send results with their own identity instead of a stored API key, and decide what fails a pipeline."
+          title={t('scans.ci.title', 'CI/CD integration')}
+          description={t(
+            'scans.ci.trustDescription',
+            'Which CI jobs may send results with their own identity, and what fails a pipeline.'
+          )}
         />
       )}
       <CIRequireOIDC canWrite={canWrite} />
@@ -156,8 +160,11 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
       ) : configs.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="No CI trust yet"
-          description="Name the organizations or repositories whose pipelines may send results. Each job proves who it is with its OIDC token and gets an upload token that expires within 15 minutes."
+          title={t('scans.ci.noTrustTitle', 'No CI trust yet')}
+          description={t(
+            'scans.ci.noTrust',
+            'Name the organizations or repositories whose pipelines may send results.'
+          )}
         />
       ) : (
         configs.map((c) => (
