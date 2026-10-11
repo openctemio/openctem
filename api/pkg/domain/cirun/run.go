@@ -64,7 +64,9 @@ type Run struct {
 	CommitSHA  string
 	// CommitVerified: the commit comes from the signed token. A commit the
 	// job reported (its provider signs none) never matches a break-glass.
-	CommitVerified  bool
+	CommitVerified bool
+	// BaseRef is the pull request's base branch (Claims.BaseRef).
+	BaseRef         string
 	PullRequest     string
 	DefaultBranch   string
 	IsDefaultBranch bool
