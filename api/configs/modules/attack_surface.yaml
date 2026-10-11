@@ -16,6 +16,7 @@
   mcp:
     - get_exposure_chains
   jobs:
+    - AssetEnrichmentController
     - CertMonitorController
     - EASMDNSController
     - GraphEnrichmentController

@@ -103,6 +103,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	bountyprogramdom "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
@@ -665,6 +666,8 @@ type Services struct {
 	// AssetDiscoveryNotifier turns newly discovered internet-facing assets into
 	// throttled tenant notifications (in-app + new_asset outbox event).
 	AssetDiscoveryNotifier *assetdiscovery.Notifier
+	// AssetEnricher turns enrichment requests into passive runs (RFC-075).
+	AssetEnricher *assetfreshnessapp.Enricher
 
 	// Suppressions
 	Suppression *suppression.Service
@@ -2453,9 +2456,22 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// because it needs both the workflow dispatcher and the in-app
 	// notification service, which is only built above.
 	s.AssetDiscoveryNotifier = assetdiscovery.NewNotifier(s.Outbox, s.Notification, assetdiscovery.DefaultWindow, log)
+	// Automatic passive enrichment of every new asset, whatever created it
+	// (docs/architecture/asset-freshness.md): ingest, manual create, CSV import.
+	s.AssetEnricher = assetfreshnessapp.NewEnricher(repos.AssetEnrichmentRequests, repos.Asset, s.Tenant, s.Scan,
+		assetfreshnessapp.EnricherConfig{DailyBudget: cfg.Worker.AssetEnrichmentDailyBudget}, log)
+	requestNew := func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
+		if cfg.Worker.AssetEnrichmentEnabled {
+			s.AssetEnricher.RequestAssets(ctx, tenantID, assets, freshdom.ReasonNewAsset)
+		}
+	}
+	s.Asset.SetCreatedAssetsHook(requestNew)
+	s.AssetImport.SetCreatedAssetsHook(requestNew)
+	s.Asset.SetEnrichmentRequests(repos.AssetEnrichmentRequests)
 	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
 		s.WorkflowDispatcher.DispatchAssetsDiscovered(ctx, tenantID, assets)
 		s.AssetDiscoveryNotifier.AssetsDiscovered(ctx, tenantID, assets)
+		requestNew(ctx, tenantID, assets)
 	})
 	// An existing asset a re-scan turned internet-facing is newly exposed
 	// attack surface too: same throttled notification, no asset_discovered.
