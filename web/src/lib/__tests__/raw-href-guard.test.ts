@@ -92,6 +92,7 @@ const REVIEWED = new Set([
   'components/layout/sidebar-footer-links.tsx|a|href={DOCS_URL}',
   'components/layout/sidebar-footer-links.tsx|a|href={REPORT_ISSUE_URL}',
   'features/sensors/components/content-policy-settings.tsx|a|href={DOCS.scanning.scannerContent}',
+  'app/(admin-console)/admin/(console)/operations/page.tsx|a|href={DOCS.sensors.transportPlatform}',
   'features/auth/components/legal-notice.tsx|a|href={termsUrl}',
   'features/auth/components/legal-notice.tsx|a|href={privacyUrl}',
   // Same-origin paths built in the component from route builders/literals.

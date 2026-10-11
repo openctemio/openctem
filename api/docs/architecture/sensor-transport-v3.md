@@ -14,7 +14,7 @@ is built, where it lives and how to work on it.
 | Control stream `Subscribe`, push on command changes (one replica) | built | `sensortransport/subscribe.go`, `postgres/command_notify.go` |
 | Sensor CA, `IssueCertificate`, mTLS listener (gRPC binding), revocation | built | `sensortransport/ca.go`, `issuer.go`, `mtls.go`; `SensorService.SetStatusNotifier` |
 | Redis wake fan-out across replicas | built | `internal/infra/redis/sensor_wake.go` (`SensorWakeBus`, channel `sensor:v3:wake`) |
-| gRPC self-probe: endpoint advertised only while reachable; `GET /api/v1/sensors/transport`, metrics | built | `sensortransport/probe.go`, `handler/sensor_transport_status_handler.go`, `cmd/server/handlers.go` (`setupSensorGRPC`) |
+| gRPC self-probe: endpoint advertised only while reachable; Console > Operations, metrics | built | `sensortransport/probe.go`, `handler/sensor_transport_status_handler.go`, `cmd/server/handlers.go` (`setupSensorGRPC`) |
 | Gateway SNI passthrough (Compose), PROXY protocol | built | `deploy/gateway/Dockerfile`, `deploy/gateway/sensors/*.wrappers`, `deploy/docker-compose.sensor-passthrough.yml`; `SENSOR_MTLS_TRUSTED_PROXIES` |
 | One port without a gateway: the API terminates TLS and splits by ALPN (`SERVER_TLS_CERT_FILE`) | built | `sensortransport/native.go` (`SplitTLS`), `internal/infra/http/tls.go` |
 
@@ -312,9 +312,12 @@ v2 at its next call).
   without ALPN or SNI routing, a closed port or a wrong name fail the probe
   (`foreign_certificate`, `unreachable`, `dns_failed`, `handshake_failed`,
   `http2_refused`), so a sensor is never sent to an endpoint that cannot work.
-- Status: `GET /api/v1/sensors/transport` (`sensors:read`; platform
-  configuration, no tenant data) answers the mode, the HTTPS path and the gRPC
-  state, endpoint, `requires_alpn`, reason and last check; metrics
+- Status: Console > Operations (`GET /api/v1/admin/operations`, field
+  `sensor_transport`; platform admins only, installation infrastructure that
+  organization users never see) answers the mode, the HTTPS path and the gRPC
+  state, endpoint, `requires_alpn`, reason and last check. The page shows a
+  plain-language note per reason, only when an operator can change
+  something; metrics
   `openctem_sensor_transport_grpc_advertised` (0/1) and
   `openctem_sensor_transport_grpc_probe_total{result}` (`ok`, `ok_alpn`, or
   the failure reason); the API logs each
