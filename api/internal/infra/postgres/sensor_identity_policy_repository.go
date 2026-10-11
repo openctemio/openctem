@@ -47,3 +47,29 @@ func (r *SensorIdentityPolicyRepository) SetBearerKeysAllowed(ctx context.Contex
 	n, _ := res.RowsAffected()
 	return n == 1, nil
 }
+
+// KeyBindRequiresApproval reports whether the tenant's bearer-key sensors
+// must be re-paired instead of binding their own key.
+func (r *SensorIdentityPolicyRepository) KeyBindRequiresApproval(ctx context.Context, tenantID shared.ID) (bool, error) {
+	var required bool
+	err := r.db.QueryRowContext(ctx, `SELECT sensor_key_bind_requires_approval FROM tenants WHERE id = $1`, tenantID.String()).Scan(&required)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, shared.ErrNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("read sensor key bind policy: %w", err)
+	}
+	return required, nil
+}
+
+// SetKeyBindRequiresApproval changes the key bind policy; changed is false
+// when it already had that value.
+func (r *SensorIdentityPolicyRepository) SetKeyBindRequiresApproval(ctx context.Context, tenantID shared.ID, required bool) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `UPDATE tenants SET sensor_key_bind_requires_approval = $2, updated_at = NOW()
+		WHERE id = $1 AND sensor_key_bind_requires_approval IS DISTINCT FROM $2`, tenantID.String(), required)
+	if err != nil {
+		return false, fmt.Errorf("write sensor key bind policy: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
