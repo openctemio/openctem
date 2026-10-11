@@ -38,10 +38,10 @@ func TestScopeDryRun(t *testing.T) {
 	mine := seedActAsset(t, db, tenantA, "mine.dry.example")
 	grantScope(t, db, tenantA, member, mine)
 
-	gate := ownershipGate(db).WithPlatformPolicy(scopedom.DefaultGuardrails(), false)
+	gate := ownershipGate(db).WithPlatformPolicy(scopedom.DefaultGuardrails())
 	svc := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
 		scansvc.WithAttributionGate(gate), scansvc.WithActScope(actScopeChecker(db, admin)),
-		scansvc.WithActiveProof(scansvc.ActiveProofPlatformSensors))
+		scansvc.WithProofPolicy(scansvc.StaticProofPolicy(true)))
 	asAdmin := asCaller(ctx, datascope.Caller{UserID: admin.String(), IsAdmin: true})
 	asMember := asCaller(ctx, datascope.Caller{UserID: member.String()})
 

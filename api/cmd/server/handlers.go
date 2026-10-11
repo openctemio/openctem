@@ -640,7 +640,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Scan != nil {
 		handlers.Scope.SetScopeWaitStarter(svc.Scan)
 	}
-	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
+	if svc.ScanPolicy != nil {
+		handlers.Scope.SetProofPolicy(svc.ScanPolicy)
+	}
 	// Private programs (RFC-065 §15.3): owners see every private program;
 	// the scope views leave out the entries of private programs the caller
 	// may not see.

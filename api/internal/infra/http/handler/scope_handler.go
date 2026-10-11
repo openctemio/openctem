@@ -36,8 +36,8 @@ type ScopeHandler struct {
 	settings  ScopeSettingsStore
 	dryRun    ScopeDryRunner
 	coverage  ScopeCoverage
-	// activeProof is the operator's SCOPE_ACTIVE_PROOF (read-only view).
-	activeProof string
+	// proofPolicy is the platform's proof requirement (read-only view).
+	proofPolicy ScopeProofPolicy
 	actors      MemberNamer
 	sweeper     DiscoverySweeper
 	waitStarter ScopeWaitStarter
