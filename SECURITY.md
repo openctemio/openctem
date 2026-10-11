@@ -35,9 +35,18 @@ that is not yours. The full testing rules are in the disclosure policy below.
 | Fix released, by severity (CVSS 3.1) | critical 7 days · high 30 days · medium 90 days · low best effort |
 
 We follow coordinated disclosure: we keep you informed while we work on the
-fix, agree a disclosure date with you, publish a GitHub security advisory with
-the fixed version, and credit you unless you prefer otherwise. Reports under
-this policy are not paid unless we agree to in writing.
+fix, agree a disclosure date with you, and publish a GitHub security advisory
+with the fixed version, with a CVE identifier for a confirmed vulnerability in
+released software.
+
+## Acknowledgements and rewards
+
+This is a vulnerability disclosure programme without monetary rewards. Unless
+you prefer otherwise, we credit you on the
+[security acknowledgements](https://docs.openctem.io/security/acknowledgements/)
+page, in the security advisory and in the release notes of the fixed version.
+**Bug bounty: coming soon** — a programme with rewards is planned; until it
+starts, no report is eligible for a reward.
 
 ## Supported versions
 
