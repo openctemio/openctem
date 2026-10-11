@@ -1,9 +1,13 @@
 package easm
 
 import (
+	"fmt"
 	"net/netip"
 	"slices"
 	"testing"
+
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestDomainPatterns(t *testing.T) {
@@ -45,5 +49,15 @@ func TestSharedAddressAndStrength(t *testing.T) {
 	}
 	if strengthOf([]RuleHint{{Kind: "verified_domain", Value: "x"}}) != StrengthStrong || strengthOf(nil) != StrengthWeak {
 		t.Error("strength order")
+	}
+}
+
+// A review rule that would duplicate an entry names the tenant's existing
+// row in its refusal.
+func TestRefusalOf_Duplicate(t *testing.T) {
+	id := shared.NewID()
+	r := refusalOf(fmt.Errorf("preview: %w", scopedom.NewTargetDuplicate(scopedom.Existing{ID: id, Status: scopedom.StatusPending})))
+	if r.Code != scopedom.CodeEntryExists || r.Existing == nil || r.Existing.ID != id.String() || r.Existing.Status != "pending" {
+		t.Fatalf("refusal %+v", r)
 	}
 }
