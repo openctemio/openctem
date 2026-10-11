@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"math"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
@@ -136,6 +138,44 @@ func (rl *TelemetryRateLimiter) Allow(key string) bool {
 		return true
 	}
 	return rl.bucket(key).Allow()
+}
+
+// RefillTime is how long until key's bucket holds a whole token again: zero
+// when it has one now, or when the limiter is nil or disabled.
+func (rl *TelemetryRateLimiter) RefillTime(key string) time.Duration {
+	if rl == nil || rl.rate <= 0 {
+		return 0
+	}
+	tokens := rl.bucket(key).Tokens()
+	if tokens >= 1 {
+		return 0
+	}
+	secs := (1 - tokens) / float64(rl.rate)
+	if secs >= MaxRetryAfter.Seconds() {
+		return MaxRetryAfter
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
+// MaxRetryAfter bounds every Retry-After computed by JitteredRetryAfter.
+// The sensor SDK honors Retry-After up to the same 5 minutes.
+const MaxRetryAfter = 5 * time.Minute
+
+// retryAfterIntN draws the jitter; a variable so a test can pin it.
+var retryAfterIntN = rand.IntN
+
+// JitteredRetryAfter is the Retry-After, in whole seconds, for a request
+// refused by a bucket that holds a token again after refill: a uniform draw
+// from [ceil(base), ceil(1.5 × base)] with base = max(refill, 1 s), bounded to
+// [1 s, MaxRetryAfter]. It never tells a client to come back before the
+// token exists (below the 5-minute bound), and the up to 50 % jitter spreads
+// refused clients so they do not all retry in the same second.
+func JitteredRetryAfter(refill time.Duration) int {
+	base := min(max(refill, time.Second), MaxRetryAfter).Seconds()
+	lo := int(math.Ceil(base))
+	hi := int(math.Ceil(base * 1.5))
+	n := lo + retryAfterIntN(hi-lo+1)
+	return min(max(n, 1), int(MaxRetryAfter/time.Second))
 }
 
 // MiddlewareKeyed is Middleware with a caller-supplied bucket key (e.g. the
