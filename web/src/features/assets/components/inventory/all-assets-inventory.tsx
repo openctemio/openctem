@@ -98,6 +98,7 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     isInternetAccessible: f.isInternetAccessible,
     isCrownJewel: f.isCrownJewel,
     programAssets: f.programAssets,
+    freshness: f.freshness,
     hasFindings: f.hasFindings,
     lastSeenBefore: f.lastSeenBefore,
     lastSeenAfter: f.lastSeenAfter,
