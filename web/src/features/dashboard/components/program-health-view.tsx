@@ -67,6 +67,7 @@ import {
   Lock,
   type LucideIcon,
 } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
 // TYPES / CONSTANTS
@@ -201,6 +202,7 @@ function ScorecardSkeleton() {
 // ============================================
 
 export function ProgramHealthView() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const [period, setPeriod] = useState<Period>('90')
@@ -352,8 +354,11 @@ export function ProgramHealthView() {
   return (
     <Main>
       <PageHeader
-        title="Program health"
-        description="Outcome metrics — is risk being retired (urgent things fixed in time, inventory owned, exposure falling), not how much activity there is."
+        title={t('insights.programHealth.title', 'Program health')}
+        description={t(
+          'insights.programHealth.description',
+          'Whether risk is being retired: urgent fixes on time, inventory owned, exposure falling.'
+        )}
       >
         <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
           <SelectTrigger className="h-9 w-[150px]" aria-label="Period">
