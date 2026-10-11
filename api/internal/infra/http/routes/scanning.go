@@ -420,7 +420,6 @@ func registerCapabilityRoutes(
 func registerScanRoutes(
 	router Router,
 	h *handler.ScanHandler,
-	ciHandler *handler.CIHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	triggerRateLimiter *middleware.TriggerRateLimiter,
@@ -499,11 +498,6 @@ func registerScanRoutes(
 
 		// Export scan config
 		r.GET("/{id}/export", h.ExportConfig, middleware.Require(permission.ScansRead))
-
-		// CI/CD snippet generation
-		if ciHandler != nil {
-			r.GET("/{id}/ci-snippet", ciHandler.GenerateSnippet, middleware.Require(permission.ScansRead))
-		}
 
 		// Scan runs sub-resource
 		r.GET("/{id}/runs", h.ListScanRuns, middleware.Require(permission.ScansRead))

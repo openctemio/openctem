@@ -487,11 +487,19 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 }
 
 // RunFindings returns the findings on the run's asset that the run recorded.
+//
+// A finding counts as suppressed only through a rule that applies now:
+// approved, unexpired and the tenant's own. The expiry job reopens a finding
+// and keeps its link row, and a link can name a rule that was never approved,
+// so the link alone must not let a finding pass the gate.
 func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]cirun.RunFinding, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(f.rule_id, ''),
 			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
 			COALESCE(f.is_in_kev, FALSE), f.epss_score,
-			EXISTS (SELECT 1 FROM finding_suppressions s WHERE s.finding_id = f.id),
+			EXISTS (SELECT 1 FROM finding_suppressions s
+				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
+				WHERE s.finding_id = f.id AND sr.status = 'approved'
+				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())),
 			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at
 		FROM ci_run_findings rf
 		JOIN findings f ON f.tenant_id = rf.tenant_id AND f.fingerprint = rf.fingerprint
