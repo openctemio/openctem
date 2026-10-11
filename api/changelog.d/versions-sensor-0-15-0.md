@@ -1,0 +1,1 @@
+- Versions: sensor latest v0.15.0 (gRPC on the platform port through ALPN routing, keeps v3 across platform restarts), sdk-go latest v0.21.0.
