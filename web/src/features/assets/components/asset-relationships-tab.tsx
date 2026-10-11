@@ -62,6 +62,7 @@ import type {
 import { RELATIONSHIP_LABELS } from '../types'
 import { RelationshipSection } from './relationships/relationship-section'
 import { AddRelationshipDialog, type AssetOption } from './relationships/add-relationship-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface AssetRelationshipsTabProps {
   assetId: string
@@ -107,6 +108,7 @@ export function AssetRelationshipsTab({
   sourceAsset,
   onNavigateToAsset,
 }: AssetRelationshipsTabProps) {
+  const { t } = useTranslation()
   const { relationships, isLoading, mutate } = useAssetRelationships(assetId)
   const { can } = usePermissions()
   const { currentTenant } = useTenant()
@@ -483,15 +485,21 @@ export function AssetRelationshipsTab({
         onOpenChange={(open) => {
           if (!open) setRemoveTarget(null)
         }}
-        title="Remove Relationship"
-        desc={
-          <>
-            Are you sure you want to remove this relationship between{' '}
-            <strong>{removeTarget?.sourceAssetName}</strong> and{' '}
-            <strong>{removeTarget?.targetAssetName}</strong>? This cannot be undone.
-          </>
+        title={t(
+          'confirm.assetRelationship.removeTitle',
+          'Remove the relationship between {source} and {target}?',
+          {
+            source: removeTarget?.sourceAssetName ?? '',
+            target: removeTarget?.targetAssetName ?? '',
+          }
+        )}
+        desc={t(
+          'confirm.assetRelationship.removeDesc',
+          'Only the link between them is removed; both assets stay. This cannot be undone.'
+        )}
+        confirmText={
+          isSubmitting ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
         }
-        confirmText={isSubmitting ? 'Removing…' : 'Remove'}
         destructive
         isLoading={isSubmitting}
         handleConfirm={handleRemove}

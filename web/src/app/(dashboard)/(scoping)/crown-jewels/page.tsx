@@ -92,6 +92,7 @@ import { mutate } from 'swr'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'
+import { useTranslation } from '@/context/i18n-provider'
 
 const categoryIcons: Record<AssetCategory, React.ElementType> = {
   data: Database,
@@ -154,6 +155,7 @@ function SeverityChips({ sev }: { sev?: CrownJewel['findingSeverity'] }) {
 }
 
 export default function CrownJewelsPage() {
+  const { t } = useTranslation()
   // Same bands as RiskScoreBadge, so the sheet's label matches the table's badge.
   const riskThresholds = useRiskThresholds()
   const riskLabel = (score: number) => getRiskLevel(score, riskThresholds).label
@@ -977,14 +979,16 @@ export default function CrownJewelsPage() {
       <ConfirmDialog
         open={!!deleteJewel}
         onOpenChange={(open) => !open && setDeleteJewel(null)}
-        title="Remove crown jewel?"
-        desc={
-          <>
-            Are you sure you want to remove &quot;{deleteJewel?.name}&quot; from your crown jewels?
-            This will remove tracking and protection requirements.
-          </>
+        title={t('confirm.crownJewel.removeTitle', 'Remove "{name}" from your crown jewels?', {
+          name: deleteJewel?.name ?? '',
+        })}
+        desc={t(
+          'confirm.crownJewel.removeDesc',
+          'Its crown-jewel tracking and protection requirements are removed. The asset itself stays, and you can designate it again later.'
+        )}
+        confirmText={
+          isUndesignating ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
         }
-        confirmText={isUndesignating ? 'Removing...' : 'Remove'}
         destructive
         isLoading={isUndesignating}
         handleConfirm={handleDelete}

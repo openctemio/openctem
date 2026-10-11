@@ -53,6 +53,7 @@ import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useGroups } from '@/features/access-control/api/use-groups'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Backend response shape for GET /tenants/{slug}/members?include=user
 // (defined inline because the typed lib hook doesn't support include param yet)
@@ -221,6 +222,7 @@ const OWNERSHIP_PRIORITY: Record<string, number> = {
 }
 
 export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
+  const { t } = useTranslation()
   const { owners, isLoading, mutate } = useAssetOwners(assetId)
   const { can } = usePermissions()
   const canEdit = can(Permission.AssetsWrite)
@@ -865,22 +867,29 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
       <ConfirmDialog
         open={!!removeOwnerTarget}
         onOpenChange={(open) => !open && setRemoveOwnerTarget(null)}
-        title="Remove Owner"
+        title={t('confirm.assetOwner.removeTitle', 'Remove {name} as an owner of this asset?', {
+          name: removeOwnerTarget?.userName || removeOwnerTarget?.groupName || '',
+        })}
         desc={
           <>
-            Are you sure you want to remove{' '}
-            {removeOwnerTarget?.userName || removeOwnerTarget?.groupName || 'this owner'} from this
-            asset? This action cannot be undone.
+            {t(
+              'confirm.assetOwner.removeDesc',
+              'They are no longer listed or notified as an owner. You can add them again later.'
+            )}
             {removeOwnerTarget?.assignmentSource === 'owner_ref' && (
               <>
                 {' '}
-                This owner was matched from the asset&rsquo;s owner reference, so the owner
-                reference is cleared too.
+                {t(
+                  'confirm.assetOwner.removeOwnerRef',
+                  'This owner was matched from the asset owner reference, so the owner reference is cleared too.'
+                )}
               </>
             )}
           </>
         }
-        confirmText={isSubmitting ? 'Removing...' : 'Remove'}
+        confirmText={
+          isSubmitting ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
+        }
         destructive
         isLoading={isSubmitting}
         handleConfirm={handleRemove}

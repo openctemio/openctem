@@ -52,6 +52,7 @@ import {
   formatSyncTime,
   getSourceDisplayUrl,
 } from '@/lib/api/template-source-types'
+import { useTranslation } from '@/context/i18n-provider'
 
 const SOURCE_TYPE_ICONS: Record<string, React.ElementType> = {
   git: GitBranch,
@@ -81,6 +82,7 @@ function SyncStatusBadge({ status }: { status?: SyncStatus }) {
 }
 
 export function TemplateSourcesSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -360,14 +362,14 @@ export function TemplateSourcesSection() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete template source"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedSource?.name}</strong>? This will also
-            remove all synced templates from this source. This action cannot be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.templateSource.deleteTitle', 'Delete the template source {name}?', {
+          name: selectedSource?.name ?? '',
+        })}
+        desc={t(
+          'confirm.templateSource.deleteDesc',
+          'Every template synced from it is removed too. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}

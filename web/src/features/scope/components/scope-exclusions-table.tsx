@@ -325,13 +325,21 @@ export function ScopeExclusionsTable({
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
-        title="Remove this exclusion?"
+        title={t('confirm.scopeExclusion.removeTitle', 'Remove the exclusion {pattern}?', {
+          pattern: removing?.pattern ?? '',
+        })}
         desc={
           removing?.status === 'active'
-            ? `Scans may reach ${removing?.pattern} again once it is removed. You may be asked to confirm your identity.`
-            : `The record of ${removing?.pattern} is removed.`
+            ? t(
+                'confirm.scopeExclusion.removeActiveDesc',
+                'Scans may reach {pattern} again once it is removed. You may be asked to confirm your identity.',
+                { pattern: removing?.pattern ?? '' }
+              )
+            : t('confirm.scopeExclusion.removeRecordDesc', 'The record of {pattern} is removed.', {
+                pattern: removing?.pattern ?? '',
+              })
         }
-        confirmText="Remove"
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         isLoading={busy}
         handleConfirm={async () => {

@@ -82,6 +82,7 @@ import {
 import { del } from '@/lib/api/client'
 import { CRITICALITY_BADGE_SOFT, CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import { CRITICALITY_LABELS, RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
+import { useTranslation } from '@/context/i18n-provider'
 
 const criticalityColors: Record<Criticality, string> = CRITICALITY_BADGE_SOFT
 
@@ -235,6 +236,7 @@ const BUSINESS_UNIT_EXPORT_FIELDS: ExportFieldConfig<BusinessUnit>[] = [
 ]
 
 export default function BusinessUnitsPage() {
+  const { t } = useTranslation()
   // Fetch from API, fallback to mock data if API returns empty
   const { data: apiData, mutate: refreshList } = useBusinessUnits()
   const { trigger: createBU } = useCreateBusinessUnit()
@@ -985,19 +987,26 @@ export default function BusinessUnitsPage() {
       <ConfirmDialog
         open={!!deleteUnit}
         onOpenChange={(open) => !open && setDeleteUnit(null)}
-        title="Delete business unit?"
+        title={t('confirm.businessUnit.deleteTitle', 'Delete the business unit "{name}"?', {
+          name: deleteUnit?.name ?? '',
+        })}
         desc={
           <>
-            Are you sure you want to delete &quot;{deleteUnit?.name}&quot;? This action cannot be
-            undone.
+            {t(
+              'confirm.businessUnit.deleteDesc',
+              'Its asset links are removed, so those assets no longer take business context from it. The assets themselves stay. This cannot be undone.'
+            )}
             {getChildUnits(businessUnits, deleteUnit?.id || '').length > 0 && (
               <span className="block mt-2 text-destructive">
-                Warning: This unit has sub-units that will also be affected.
+                {t(
+                  'confirm.businessUnit.deleteChildren',
+                  'Its sub-units are kept and become top-level units.'
+                )}
               </span>
             )}
           </>
         }
-        confirmText="Delete"
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />

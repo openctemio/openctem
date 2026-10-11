@@ -27,6 +27,7 @@ import {
   deleteAssetAccessGrant,
   type AssetAccessGrant,
 } from '../hooks/use-asset-access-grants'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface MemberOption {
   user_id: string
@@ -39,6 +40,7 @@ interface MembersResponse {
 }
 
 export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canRead = can(Permission.GroupsRead)
   const canWrite = can(Permission.GroupsWrite)
@@ -210,14 +212,14 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
       <ConfirmDialog
         open={!!revokeTarget}
         onOpenChange={(open) => !open && setRevokeTarget(null)}
-        title="Revoke access"
-        desc={
-          <>
-            {revokeTarget?.userName || revokeTarget?.userEmail || 'This member'} will no longer see
-            this asset unless one of their groups holds it.
-          </>
-        }
-        confirmText={busy ? 'Revoking...' : 'Revoke'}
+        title={t('confirm.assetAccess.revokeTitle', 'Revoke the access of {name} to this asset?', {
+          name: revokeTarget?.userName || revokeTarget?.userEmail || '',
+        })}
+        desc={t(
+          'confirm.assetAccess.revokeDesc',
+          'They no longer see this asset unless one of their groups holds it. You can grant access again later.'
+        )}
+        confirmText={busy ? t('confirm.revoking', 'Revoking…') : t('confirm.revoke', 'Revoke')}
         destructive
         isLoading={busy}
         handleConfirm={revoke}
