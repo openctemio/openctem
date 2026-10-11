@@ -54,6 +54,22 @@ pending ──reveal──▶ pending (sas set) ──approve──▶ approved 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
 
+## Self-binding: a bearer-key sensor becomes key-bound
+
+RFC-052 §4.8. A sensor that authenticates with an API key and sees the
+`key_bind` feature on hello makes its own Ed25519 key, stores it in
+`<state dir>/identity/`, and calls `POST /api/v2/sensor/identity/bind` with
+the public key and a proof signed by it. The platform, in one transaction
+(`SensorSigningKeyRepository.BindToBearerSensor`): sets the sensor row to
+`key_bound` (compare-and-set), inserts the key `active`, retires every API
+key of the sensor. The grant, tenant, zones and trust stay. Service:
+`internal/app/sensor/keybind.go`; handler `SensorControlV2Handler.BindKey`;
+audit `sensor.key_bound` / `sensor.key_bind_refused`; timeline `key_bound`.
+The organization policy `key_bind_requires_approval`
+(`tenants.sensor_key_bind_requires_approval`, identity-policy route and the
+Organization settings switch) turns self-binding off; such sensors are
+re-paired by an administrator.
+
 ## Grants
 
 | Piece | Where |

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented |
+| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented |
 | Scope | api, web, sdk-go (`pkg/sensorsig`, `pkg/sensorproto/pairing`, `pkg/sensorkit`, `pkg/httpsec`), sensor |
 | Builds on | [RFC-032](RFC-032-sensor-enrollment-and-identity.md) (sensor-held Ed25519 key, RFC 9421 signatures, enrollment, `octs_`/`octe_`), [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) (result binding, signed jobs, local ceiling), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones), [RFC-046](RFC-046-scans-redesign.md) and the stage catalog (tiers T0/T1/T2) |
 | Architecture | [sensor-pairing.md](../architecture/sensor-pairing.md), [sensor-platform-trust.md](../architecture/sensor-platform-trust.md), [authorization-matrix.md](../architecture/authorization-matrix.md) |
@@ -273,6 +273,54 @@ kept.
   0600) and `identity.json` (0600), directory 0700. Looser permissions, or
   another owner, stop the sensor with the exact `chmod`/`chown` to run.
 
+### 4.8 Self-binding (bearer-key sensors)
+
+Owner decision 2026-10-11: a sensor that authenticates with an API key moves
+to a key-bound identity by itself, so the whole fleet reaches signed requests
+(and protocol v3, RFC-059) without a re-install.
+
+- `POST /api/v2/sensor/identity/bind`, authenticated by the sensor's API key
+  (the v2 sensor plane), body `{public_key, issued_at, proof}`: the sensor's
+  new Ed25519 public key and a signature by that key of
+  `openctem-sensor-key-bind/v1\n<thumbprint>\n<issued_at>` (proof of
+  possession; `issued_at` within 5 minutes). Hello lists the feature
+  `key_bind`.
+- One transaction: the sensor row becomes `key_bound` (compare-and-set on
+  `auth_kind`, so of two concurrent binds exactly one wins), the key is
+  inserted `active`, every API key of the sensor is retired
+  (`bound_to_signing_key`). One way: no API key is ever minted for the sensor
+  again (RFC-032 D3). The answer names the sensor, tenant and key id the
+  sensor signs as from now on.
+- Unchanged: the sensor id, tenant, grant, trust level, zones and history.
+  The bind changes only how the sensor authenticates.
+- Refused (`key-bind-refused`, `409`): a key-bound, disabled, revoked or
+  platform sensor; a key already registered anywhere; a proof that does not
+  verify or is stale. Refused (`key-bind-approval-required`, `403`): the
+  organization's policy `key_bind_requires_approval` is on; such sensors keep
+  their API key until an administrator re-pairs them (§4.6).
+- Audited at high severity (`sensor.key_bound`, `sensor.key_bind_refused`,
+  with the key fingerprint and source address) and on the sensor's timeline
+  (`key_bound`). The route takes the per-sensor key renewal budget (a burst of
+  5, then one every 2 minutes).
+- Policy: `GET/PUT /api/v1/sensors/identity-policy` field
+  `key_bind_requires_approval` (default `false`). Requiring approval narrows
+  (`sensors:grant:narrow`); allowing self-binding again widens
+  (`sensors:grant:widen` and step-up). A field left out of the `PUT` body is
+  unchanged.
+- Sensor side (sdk-go): a bearer-key daemon whose platform lists `key_bind`
+  makes its key in `<state dir>/identity/` (0600 in 0700), writes it before
+  the call, binds, and from then on signs; an identity in the state directory
+  wins over a configured `API_KEY`. If the answer is lost, the next start
+  finds the stored key and signs with it.
+
+Threat model of the bind (rows 18 to 21 in §6): no privilege is gained
+(same sensor, tenant and grant); a replayed request is useless once the API
+key is retired; a stolen API key could bind an attacker's key, which the
+legitimate sensor notices at once (its API key stops working and it fails
+loudly), and the administrator sees the bind in the audit log and on the
+timeline, revokes the key and re-pairs; an organization that wants every key
+approved turns self-binding off.
+
 ## 5. Grants (SP2)
 
 ### 5.1 Model
@@ -375,6 +423,10 @@ Each line is a test in the implementation PRs.
 | 15 | Scans outside scope | Target network and target scope in the grant, on top of the ownership gate and the local ceiling | private target refused to `easm-external`; target outside CIDRs refused |
 | 16 | Insider widens a sensor | `sensors:grant:widen`, audit, notification, SP4 second approver | narrow-only actor refused a widening |
 | 17 | Compromised platform orders an attack | RFC-040 separate signer and local ceiling (unchanged); the grant is defence in depth on the platform side | — |
+| 18 | Bind gains privileges | The bind keeps the sensor row, tenant, grant, trust and zones; the tenant comes from the API key only | bound sensor keeps its tenant; the same key presented by another tenant's sensor `409` |
+| 19 | Two binds race, or a bind is replayed | Compare-and-set on `auth_kind`; thumbprints unique; the API key is retired in the same transaction | concurrent binds: exactly one `201`, one active key; the old API key `401` after the bind |
+| 20 | Stolen API key binds an attacker's key | Audit `sensor.key_bound` (high) and timeline with fingerprint and address; the legitimate sensor's API key stops working (loud failure); policy `key_bind_requires_approval` for organizations that want approval | bind audited; approval policy refuses `403` and the API key keeps working |
+| 21 | Bind without the private key, or a stale proof | Ed25519 proof over context, thumbprint and a timestamp within 5 minutes | forged, stale, future and malformed proofs `409`, nothing changed |
 | — | Cross-tenant access | Every query tenant-scoped; approval binds to the approver's tenant; grants and pairings of another tenant answer `404` | cross-tenant grant read/update `404`; re-pair of another tenant's sensor `404` |
 
 ## 7. Data and migrations
