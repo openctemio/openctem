@@ -127,7 +127,6 @@ type Handlers struct {
 	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
 	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
 	Scan          *handler.ScanHandler          // nil if not initialized (no database)
-	CI            *handler.CIHandler            // nil if not initialized (no database) - CI/CD snippet generator
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
@@ -907,7 +906,7 @@ func Register(
 
 	// Scan routes (tenant from JWT token)
 	if h.Scan != nil {
-		registerScanRoutes(router, h.Scan, h.CI, authMiddleware, userSync, triggerRateLimiter)
+		registerScanRoutes(router, h.Scan, authMiddleware, userSync, triggerRateLimiter)
 	}
 
 	// Scanner Template routes (tenant from JWT token)
