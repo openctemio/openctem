@@ -22,7 +22,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-005](RFC-005-asynchronous-ingest.md) | Asynchronous Ingest — Decouple Accept from Process | Implemented |
 | [RFC-006](RFC-006-ticketing-provider-and-mapping.md) | Ticketing — Provider Abstraction + Configurable Mapping | Proposed. |
 | [RFC-007](RFC-007-license-aware-scan-coverage.md) | License-Aware Continuous Scan Coverage (Tenable Nessus Pro + Tenable.sc) | Paused (decided 2026-10-04). |
-| [RFC-008](RFC-008-native-shift-left-ci-scanning.md) | Native Shift-Left CI/CD Code Scanning (agent-first) | Phases 1–5 + 7 shipped; Phase 6 (export) partial |
+| [RFC-008](RFC-008-native-shift-left-ci-scanning.md) | Native Shift-Left CI/CD Code Scanning (agent-first) | Superseded by RFC-051 and RFC-077 (the sensor's CI mode was removed in sensor v0.11.0; CI scanning is `openctem-ci`). |
 | [RFC-009](RFC-009-enterprise-sso-saml-scim.md) | Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning | **Proposed** |
 | [RFC-010](RFC-010-jira-assets-cmdb.md) | Jira Assets / JSM CMDB integration | Proposed |
 | [RFC-011](RFC-011-validation-engine-dispatch.md) | Validation Engine: dispatch (make the "V" executable) | Phase 1 (safe-check) shipped |
@@ -91,6 +91,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-073](RFC-073-scan-approval-governance.md) | Scan approval governance (approve scans, not scope entries) | Accepted (owner decision 2026-10-10); P0 in progress |
 | [RFC-074](RFC-074-adaptive-sensor-control.md) | Adaptive sensor control (measured values instead of configured numbers) | Proposed (2026-10-11) |
 | [RFC-075](RFC-075-asset-freshness.md) | Asset freshness and automatic enrichment | Proposed (2026-10-11); P0 in implementation |
+| [RFC-077](RFC-077-ci-enforced-gate-and-pr-feedback.md) | CI enforced gate, pull request feedback and diff-aware runs | Proposed (decisions G-1..G-10 adopted as recommended, 2026-10-11; owner may veto) |
 | [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Proposed (2026-10-11) |
 <!-- END RFC INDEX -->
 

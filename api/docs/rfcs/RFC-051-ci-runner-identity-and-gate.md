@@ -30,9 +30,11 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
 
 ## 2. Decisions
 
-- **R-1** One binary, one SDK. The sensor's one-shot mode is the **runner**
-  mode; the OIDC exchange lives in the SDK kit (sdk-go `pkg/sensorkit`), next
-  to the runner entry point.
+- **R-1** One runner for every CI system. First the sensor's one-shot mode;
+  since sensor v0.11.0 the runner is `openctem-ci` (repository
+  openctemio/ci: per-tool images, the GitHub Action and reusable workflow,
+  GitLab templates, examples for the other providers). The sensor no longer
+  runs in CI, and sdk-go `sensorkit.CIRun` has no caller.
 - **R-2** CI authenticates by OIDC federation only. The `runner` sensor
   type (a sensor API key used from CI) was deprecated, then removed (decided
   2026-10-05, migration `001146`): existing runner sensors and their
@@ -249,7 +251,7 @@ branch sees it. See `docs/architecture/branch-only-findings.md`.
   "baseline": {"branch": "main", "known": true},
   "summary": {"evaluated": 3, "new": 1, "pre_existing": 1, "accepted": 1, "blocking": 1},
   "reasons": [{"code": "severity", "message": "severity high is at or above high", "finding_id": "…", "title": "…", "file": "db.go", "line": 42, "url": "https://…/findings/…"}],
-  "links": {"run": "https://…/ci-runners/…", "findings": "https://…/findings?asset_id=…"} }
+  "links": {"run": "https://…/ci-cd?view=runs&run=…", "findings": "https://…/findings?asset_id=…"} }
 ```
 
 Policy resolution (`ci_gate_policies`): the repository's own policy, else the
@@ -282,19 +284,27 @@ administrator in-app and the `ci.break_glass` channel event.
 
 ## 7. Runner
 
-The sensor's one-shot mode, through sdk-go `pkg/sensorkit` (`CIRun`):
+`openctem-ci` (openctemio/ci, `internal/platform`):
 
-- detects GitHub Actions (`ACTIONS_ID_TOKEN_REQUEST_URL`/`_TOKEN`, from
-  `permissions: id-token: write`) or GitLab CI (an `id_tokens` variable,
-  `OPENCTEM_ID_TOKEN` by default) when `OPENCTEM_TENANT_ID` is set;
+- detects the CI system and its OIDC token: GitHub Actions
+  (`ACTIONS_ID_TOKEN_REQUEST_URL`/`_TOKEN`, from `permissions: id-token:
+  write`), GitLab CI (an `id_tokens` variable, `OPENCTEM_ID_TOKEN` by
+  default), Azure Pipelines (`System.OidcRequestUri`), Bitbucket
+  (`BITBUCKET_STEP_OIDC_TOKEN`), CircleCI and Jenkins (a token minted or
+  bound into `OPENCTEM_ID_TOKEN`), when `OPENCTEM_TENANT_ID` is set;
 - requests the token with audience `OPENCTEM_OIDC_AUDIENCE` (default
-  `openctem:tenant:<tenant id>`), exchanges it lazily at the first upload, and
-  on GitHub re-exchanges with `run_id` when the run token is about to expire;
+  `openctem:tenant:<tenant id>`), exchanges it, and where the provider mints
+  tokens on request (GitHub, Azure) re-exchanges with `run_id` before the run
+  token expires;
 - never prints a token: errors carry the HTTP status and the server's message
   only, and the session's string form redacts it;
-- after the scans, asks for the verdict, prints the reasons and links, and
-  exits 1 on `fail` (2 when the gate cannot be reached and no local `-fail-on`
-  is set; with `-fail-on` the local gate decides offline).
+- with `--aggregate`, every capability job joins one run and a final `gate`
+  job asks for the verdict;
+- prints the verdict's reasons and links and exits 0 (pass), 1 (the gate
+  failed) or 2 (the scan cannot be trusted); `--fail-on` decides offline only
+  when the platform verdict is unavailable.
+
+Enforcement and pull request feedback by the platform: RFC-077.
 
 ## 8. Security
 
@@ -320,6 +330,7 @@ The sensor's one-shot mode, through sdk-go `pkg/sensorkit` (`CIRun`):
 | A token valid for other services (Azure's fixed audience, a CI organization's default audience) | Azure: `org_id` pinned to the issuer, one exchange per `jti`, five-minute tokens; elsewhere a tenant-bound audience is required |
 | A renamed Bitbucket workspace's slug taken by someone else | `workspaceUuid` pinned in the configuration |
 | A Bitbucket repository reporting as another (the name is not signed) | Rules list repository UUIDs; a name stays bound to the first UUID that used it (`repository_binding`) |
+| A name that changed hands (GitHub or GitLab organization renamed or deleted and its name registered again, a repository deleted and created anew): trust rules match names | GitHub, GitLab and Bitbucket: a repository name stays bound to the repository id (`repository_id`, `project_id`, `repositoryUuid`) that first reported under it while that pipeline is not retired; another id is refused (`repository_binding`, audited) until an administrator retires the old pipeline. A rename keeps the id and is admitted |
 | A job naming a commit it did not build (CircleCI) | Marked unverified; never matches a break-glass |
 | A person driving a CI job interactively (CircleCI SSH re-run) | Refused |
 | Pull request builds of fork code where the token cannot say so | Refused unless fork pull requests are admitted |
@@ -338,14 +349,12 @@ custom roles).
 |---|---|---|
 | R1 | Trust configurations, exchange, runs, uploads, CI runners view, runner OIDC | Implemented |
 | R2 | Gate policies, evaluate, break-glass, runner prints the verdict | Implemented |
-| R3 | Diff-aware scans, fingerprint stability across commits | Open |
+| R3 | Diff-aware scans, fingerprint stability across commits | Open (diff-aware runs: RFC-077) |
 | R4 | Remote repository execution by a zoned daemon sensor | Open (needs the executor sandbox and the credential broker) |
-| R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Open |
+| R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Implemented (openctemio/ci) |
 | F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001084) | Implemented |
-| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Open |
-| F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6, migration 001099) | API implemented; console in the follow-up PR |
 | F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented |
-| F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6) | Open |
+| F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6, migration 001099) | Implemented |
 | F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
 | P1 | Azure Pipelines, Bitbucket Pipelines, CircleCI and Jenkins trust; trust preview (section 3.1, migration 001261) | Implemented |
 
