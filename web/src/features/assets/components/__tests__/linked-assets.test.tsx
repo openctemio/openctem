@@ -151,6 +151,11 @@ describe('BusinessUnitAssets', () => {
   it('unlinks through the unit endpoint', async () => {
     wrap(<BusinessUnitAssets unit={{ id: 'bu1', name: 'Payments' }} />)
     await userEvent.click(screen.getByRole('button', { name: 'Unlink web-01' }))
+    // One click asks first and names both sides.
+    expect(api.del).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Unlink web-01 from Payments?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Unlink' }))
     await waitFor(() =>
       expect(api.del).toHaveBeenCalledWith('/api/v1/business-units/bu1/assets/a1')
     )

@@ -16,6 +16,8 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
@@ -43,16 +45,27 @@ import type { AssetGroup } from '../types'
 // ASSETS IN THE GROUP
 // ============================================
 
-function QuickViewAssets({ groupId, onRefresh }: { groupId: string; onRefresh?: () => void }) {
+function QuickViewAssets({
+  groupId,
+  groupName,
+  onRefresh,
+}: {
+  groupId: string
+  groupName: string
+  onRefresh?: () => void
+}) {
   const { data: assets, isLoading, mutate: refreshAssets } = useGroupAssets(groupId)
   const { trigger: removeAssets, isMutating: isRemoving } = useRemoveAssetsFromGroup(groupId)
   const router = useRouter()
   const [removingId, setRemovingId] = useState<string | null>(null)
+  const [pendingRemove, setPendingRemove] = useState<{ id: string; name: string } | null>(null)
+  const { t } = useTranslation()
 
   const handleRemoveAsset = async (assetId: string) => {
     setRemovingId(assetId)
     try {
       await removeAssets([assetId])
+      setPendingRemove(null)
       refreshAssets()
       onRefresh?.()
     } catch {
@@ -120,7 +133,7 @@ function QuickViewAssets({ groupId, onRefresh }: { groupId: string; onRefresh?: 
                         className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleRemoveAsset(asset.id)
+                          setPendingRemove({ id: asset.id, name: asset.name })
                         }}
                         disabled={isRemoving}
                       >
@@ -138,6 +151,22 @@ function QuickViewAssets({ groupId, onRefresh }: { groupId: string; onRefresh?: 
           )}
         </ul>
       )}
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        onOpenChange={(open) => !open && setPendingRemove(null)}
+        destructive
+        title={t('confirm.assetGroup.removeAssetTitle', 'Remove {name} from {group}?', {
+          name: pendingRemove?.name ?? '',
+          group: groupName,
+        })}
+        desc={t(
+          'confirm.assetGroup.removeAssetDesc',
+          'The asset leaves the group, so scans and rules that target the group no longer cover it. The asset itself is not deleted.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
+        isLoading={removingId !== null}
+        handleConfirm={() => (pendingRemove ? handleRemoveAsset(pendingRemove.id) : undefined)}
+      />
     </DetailSection>
   )
 }
@@ -262,7 +291,7 @@ export function GroupQuickView({
               </DetailSection>
             )}
 
-            <QuickViewAssets groupId={group.id} onRefresh={onRefresh} />
+            <QuickViewAssets groupId={group.id} groupName={group.name} onRefresh={onRefresh} />
 
             <DetailSection title="Details">
               <DetailFieldGrid>

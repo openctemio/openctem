@@ -13,6 +13,8 @@ import {
 } from '@/features/shared'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Can, Permission } from '@/lib/permissions'
@@ -33,6 +35,9 @@ import { dedupReasonLabel, describeEvidence } from '../lib/asset-identity'
 export function DedupReviewPage() {
   const { data, isLoading, error, mutate } = useDedupReviews()
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Merging deletes the duplicates, so it asks first; keeping them separate does not.
+  const [pendingMerge, setPendingMerge] = useState<DedupReview | null>(null)
+  const { t } = useTranslation()
 
   const reviews = data?.data ?? []
 
@@ -43,6 +48,7 @@ export function DedupReviewPage() {
       try {
         if (action === 'approve') {
           await approveDedupReview(id)
+          setPendingMerge(null)
           toast.success('Duplicates merged')
         } else {
           await rejectDedupReview(id)
@@ -147,7 +153,7 @@ export function DedupReviewPage() {
               <Button
                 size="sm"
                 disabled={busyId === row.original.id}
-                onClick={() => act(row.original.id, 'approve')}
+                onClick={() => setPendingMerge(row.original)}
               >
                 <GitMerge className="me-1 h-3.5 w-3.5" />
                 Merge
@@ -194,6 +200,32 @@ export function DedupReviewPage() {
         Merging preserves findings from all assets on the kept asset; rejecting leaves them
         separate.
       </p>
+      <ConfirmDialog
+        open={pendingMerge !== null}
+        onOpenChange={(o) => !o && setPendingMerge(null)}
+        destructive
+        title={
+          pendingMerge?.merge_asset_ids.length === 1
+            ? t('confirm.dedup.mergeTitleOne', 'Merge 1 asset into {keep}?', {
+                keep: pendingMerge?.keep_asset_name ?? '',
+              })
+            : t('confirm.dedup.mergeTitle', 'Merge {count} assets into {keep}?', {
+                count: pendingMerge?.merge_asset_ids.length ?? 0,
+                keep: pendingMerge?.keep_asset_name ?? '',
+              })
+        }
+        desc={t(
+          'confirm.dedup.mergeDesc',
+          '{names} are removed from the inventory and their findings move to {keep}. This cannot be undone.',
+          {
+            names: pendingMerge?.merge_asset_names.join(', ') ?? '',
+            keep: pendingMerge?.keep_asset_name ?? '',
+          }
+        )}
+        confirmText={t('confirm.dedup.merge', 'Merge')}
+        isLoading={busyId !== null}
+        handleConfirm={() => (pendingMerge ? act(pendingMerge.id, 'approve') : undefined)}
+      />
     </Main>
   )
 }

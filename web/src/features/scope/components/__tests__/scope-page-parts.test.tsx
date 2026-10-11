@@ -137,6 +137,25 @@ describe('Approvals', () => {
     expect(toast.success).toHaveBeenCalledWith('2 changes approved')
   })
 
+  it("asks before rejecting someone else's change", async () => {
+    routeGets([pendingEntry], [])
+    api.post.mockResolvedValue({ status: 'rejected' })
+    const user = userEvent.setup()
+    wrap(<ScopeApprovals />)
+    const item = (await screen.findByText('*.globex.io')).closest('li')!
+    await user.click(within(item).getByRole('button', { name: /Reject/ }))
+    expect(api.post).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Reject the change to *.globex.io?')
+    await user.click(within(dialog).getByRole('button', { name: 'Reject' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining('/scope/targets/e1/'),
+        expect.anything()
+      )
+    )
+  })
+
   it('names who can approve, or counts them when names are hidden', () => {
     expect(
       approversText({
