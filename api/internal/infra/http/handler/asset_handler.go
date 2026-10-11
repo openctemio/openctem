@@ -586,7 +586,9 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        statuses      query     string  false  "Filter by statuses (comma-separated)"
 // @Param        scopes        query     string  false  "Filter by scopes (comma-separated)"
 // @Param        exposures     query     string  false  "Filter by exposures (comma-separated)"
-// @Param        tags          query     string  false  "Filter by tags (comma-separated)"
+// @Param        tags          query     string  false  "Filter by tags, system tags included (comma-separated, at most 20)"
+// @Param        tags_mode     query     string  false  "any (default): an asset carrying any of tags; all: every one of them"  Enums(any, all)
+// @Param        exclude_tags  query     string  false  "Leave out assets carrying any of these tags (comma-separated, at most 20)"
 // @Param        search        query     string  false  "Full-text search across name and description"
 // @Param        min_risk_score  query   int     false  "Minimum risk score (0-100)"
 // @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
@@ -638,6 +640,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Scopes:           parseQueryArray(query.Get("scopes")),
 		Exposures:        parseQueryArray(query.Get("exposures")),
 		Tags:             parseQueryArray(query.Get("tags")),
+		TagsMode:         query.Get("tags_mode"),
+		ExcludeTags:      parseQueryArray(query.Get("exclude_tags")),
 		Search:           query.Get("search"),
 		MinRiskScore:     parseQueryIntPtr(query.Get("min_risk_score")),
 		MaxRiskScore:     parseQueryIntPtr(query.Get("max_risk_score")),
@@ -1683,20 +1687,47 @@ func statsCountByFields(fields []string) []string {
 	return out
 }
 
-// ListTags returns distinct tags across all assets for the tenant.
-// Supports prefix filtering for autocomplete via ?prefix= query parameter.
+// AssetTagsResponse is GET /assets/tags.
+type AssetTagsResponse struct {
+	// Tags are the tags of the caller's assets, most used first.
+	Tags []string `json:"tags"`
+	// SystemTags are the platform-derived tags (program links) the caller
+	// may see, most used first; only with include_system=true. Read-only.
+	SystemTags []string `json:"system_tags,omitempty"`
+}
+
+// ListTags handles GET /api/v1/assets/tags
+// @Summary      List asset tags
+// @Description  The tags of the assets the caller may list (tenant and data scope), most used first. With include_system=true also the system tags derived from bug-bounty program links, limited to the programs the caller may see.
+// @Tags         Assets
+// @Produce      json
+// @Security     BearerAuth
+// @Param        prefix          query  string  false  "Tags starting with this (case-insensitive)"
+// @Param        q               query  string  false  "Tags containing this (case-insensitive)"
+// @Param        type            query  string  false  "Only tags of assets of this type (repeatable)"
+// @Param        include_system  query  bool    false  "Also list the system tags"
+// @Param        limit           query  int     false  "At most this many tags per list"  default(50)  maximum(100)
+// @Success      200  {object}  AssetTagsResponse
+// @Failure      400  {object}  map[string]string
+// @Failure      401  {object}  map[string]string
+// @Router       /assets/tags [get]
 func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	prefix := r.URL.Query().Get("prefix")
-	types := r.URL.Query()["type"]
+	query := r.URL.Query()
 	limit, ok := listLimit(w, r, 50, 100)
 	if !ok {
 		return
 	}
 
 	tags, err := h.service.ListTags(r.Context(), tenantID, middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()),
-		prefix, types, limit)
+		asset.TagListQuery{
+			Prefix:        query.Get("prefix"),
+			Search:        query.Get("q"),
+			Types:         query["type"],
+			Limit:         limit,
+			IncludeSystem: query.Get("include_system") == "true",
+		})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1704,7 +1735,7 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
+	_ = json.NewEncoder(w).Encode(AssetTagsResponse{Tags: tags.Tags, SystemTags: tags.SystemTags})
 }
 
 // InventoryOverviewResponse is GET /assets/overview: the inventory counted

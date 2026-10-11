@@ -32,6 +32,10 @@ func withTenantContext(req *http.Request) *http.Request {
 // HandlerMockRepository is a mock for handler tests.
 type HandlerMockRepository struct {
 	assets map[string]*asset.Asset
+
+	// The last list filter and tag-list query the service passed down.
+	lastFilter   asset.Filter
+	lastTagQuery asset.TagListQuery
 }
 
 func NewHandlerMockRepository() *HandlerMockRepository {
@@ -96,6 +100,7 @@ func (m *HandlerMockRepository) List(
 	opts asset.ListOptions,
 	page pagination.Pagination,
 ) (pagination.Result[*asset.Asset], error) {
+	m.lastFilter = filter
 	var result []*asset.Asset
 	for _, a := range m.assets {
 		result = append(result, a)
@@ -190,8 +195,13 @@ func (m *HandlerMockRepository) UpdateFindingCounts(ctx context.Context, tenantI
 	return nil
 }
 
-func (m *HandlerMockRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, _ asset.AccessScope, prefix string, types []string, limit int) ([]string, error) {
-	return []string{}, nil
+func (m *HandlerMockRepository) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, q asset.TagListQuery) (asset.TagList, error) {
+	m.lastTagQuery = q
+	out := asset.TagList{Tags: []string{"env-prod"}}
+	if q.IncludeSystem {
+		out.SystemTags = []string{"bug-bounty"}
+	}
+	return out, nil
 }
 
 func (m *HandlerMockRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
