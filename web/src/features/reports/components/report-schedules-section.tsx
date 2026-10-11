@@ -196,7 +196,10 @@ export function ReportSchedulesSection() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold">Scheduled reports</h2>
           <p className="text-sm text-muted-foreground">
-            Recurring finding-summary digests emailed to recipients on a cron cadence.
+            {t(
+              'reports.schedulesHint',
+              'Finding-summary digests emailed to recipients on a schedule.'
+            )}
           </p>
         </div>
         {schedules.length > 0 && (

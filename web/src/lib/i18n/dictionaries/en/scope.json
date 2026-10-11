@@ -216,5 +216,17 @@
   "scope.approvals.immediate": "Changes that widen scope take effect at once in your organization (Scope policy).",
   "scope.approvals.leftOver": "Scope changes need no approval while scan approval is not Strict. These were submitted earlier and still wait: approve or reject them, or their requester can remove them and add them again.",
   "scope.exclusion.submitRequest": "Request exclusion",
-  "scope.exclusion.submitAdd": "Add exclusion"
+  "scope.exclusion.submitAdd": "Add exclusion",
+  "scope.review.title": "Attack surface",
+  "scope.review.description": "Names discovery found that may be yours. Confirming records ownership; only a scope entry lets scans reach a name.",
+  "scope.review.readOnly": "You can view this queue. Deciding ownership needs permission to edit assets.",
+  "scope.cycles.title": "Cycles",
+  "scope.cycles.description": "Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by.",
+  "scope.cycles.emptyTitle": "No cycles yet",
+  "scope.cycles.empty": "Create a cycle to start.",
+  "scope.cycles.noCycleTitle": "No cycle yet",
+  "scope.cycles.noCycle": "A cycle holds the charter, the scope it freezes and the outcome it is judged by.",
+  "scope.cycles.noServices": "No business services yet. Create them under Scoping › Business services.",
+  "scope.cycles.profilesLoadFailed": "Attacker profiles could not be loaded.",
+  "scope.cycles.exclusionsLoadFailed": "Scope exclusions could not be loaded."
 }
