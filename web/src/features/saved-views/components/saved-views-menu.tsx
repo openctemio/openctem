@@ -5,6 +5,8 @@ import { Bookmark, Copy, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   Dialog,
   DialogContent,
@@ -81,6 +83,9 @@ export function SavedViewsMenu({
   const [name, setName] = useState('')
   const [share, setShare] = useState(PERSONAL)
   const [saving, setSaving] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<SavedView | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { t } = useTranslation()
 
   const active = views.find((v) => v.id === activeId)
   const mine = views.filter((v) => v.is_owner)
@@ -114,7 +119,8 @@ export function SavedViewsMenu({
       await deleteSavedView(view.id)
       await mutate()
       if (view.id === activeId) onSelect(null)
-      toast.success(`Deleted view "${view.name}"`)
+      setPendingDelete(null)
+      toast.success(t('confirm.savedView.deleted', 'View "{name}" deleted', { name: view.name }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not delete the view')
     }
@@ -148,10 +154,13 @@ export function SavedViewsMenu({
         <button
           type="button"
           className="rounded-sm p-0.5 hover:bg-muted"
-          aria-label={`Delete view ${view.name}`}
+          aria-label={t('confirm.savedView.deleteLabel', 'Delete view {name}', { name: view.name })}
           onClick={(e) => {
+            // Close the menu and ask first; the row's own click opens the view.
             e.stopPropagation()
-            void remove(view)
+            e.preventDefault()
+            setMenuOpen(false)
+            setPendingDelete(view)
           }}
         >
           <Trash2 className="h-3 w-3" />
@@ -174,7 +183,13 @@ export function SavedViewsMenu({
 
   return (
     <>
-      <DropdownMenu onOpenChange={(open) => open && setWanted(true)}>
+      <DropdownMenu
+        open={menuOpen}
+        onOpenChange={(open) => {
+          setMenuOpen(open)
+          if (open) setWanted(true)
+        }}
+      >
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
@@ -255,6 +270,28 @@ export function SavedViewsMenu({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        destructive
+        title={t('confirm.savedView.deleteTitle', 'Delete view "{name}"?', {
+          name: pendingDelete?.name ?? '',
+        })}
+        desc={
+          pendingDelete?.group_name
+            ? t(
+                'confirm.savedView.deleteSharedDesc',
+                'The view is also removed for everyone in {group}. The data it shows is not affected. This cannot be undone.',
+                { group: pendingDelete.group_name }
+              )
+            : t(
+                'confirm.savedView.deleteDesc',
+                'The saved filters are deleted. The data they show is not affected. This cannot be undone.'
+              )
+        }
+        confirmText={t('confirm.delete', 'Delete')}
+        handleConfirm={() => (pendingDelete ? remove(pendingDelete) : undefined)}
+      />
     </>
   )
 }
