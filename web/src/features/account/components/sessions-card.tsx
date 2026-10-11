@@ -16,6 +16,7 @@ import { formatDateSafe, formatRelative } from '@/lib/format-date'
 import { useRevokeAllSessions, useRevokeSession } from '../api/use-sessions'
 import { describeUserAgent, type DeviceKind } from '../lib/user-agent'
 import type { Session } from '../types/account.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 const DEVICE_ICON: Record<DeviceKind, typeof Monitor> = {
   desktop: Monitor,
@@ -34,6 +35,7 @@ interface SessionsCardProps {
  * that device's next request.
  */
 export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardProps) {
+  const { t } = useTranslation()
   const { revokeSession, isRevoking } = useRevokeSession()
   const { revokeAllSessions, isRevoking: isRevokingAll } = useRevokeAllSessions()
   const [toRevoke, setToRevoke] = useState<Session | null>(null)
@@ -143,12 +145,20 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
       <ConfirmDialog
         open={!!toRevoke}
         onOpenChange={(open) => !open && setToRevoke(null)}
-        title="Sign out this session?"
-        desc="That device is signed out immediately and has to sign in again."
+        title={(() => {
+          const d = toRevoke ? describeUserAgent(toRevoke.user_agent) : null
+          return t('confirm.session.revokeTitle', 'Sign out {device}?', {
+            device: d ? `${d.browser} / ${d.os}` : '',
+          })
+        })()}
+        desc={t(
+          'confirm.session.revokeDesc',
+          'That device is signed out at once and has to sign in again.'
+        )}
         confirmText={
           <>
             {isRevoking && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Sign out
+            {t('confirm.session.revoke', 'Sign out')}
           </>
         }
         destructive
@@ -158,12 +168,15 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
       <ConfirmDialog
         open={confirmAll}
         onOpenChange={setConfirmAll}
-        title="Sign out all other sessions?"
-        desc="Every device except this one is signed out immediately."
+        title={t('confirm.session.revokeOthersTitle', 'Sign out all other sessions?')}
+        desc={t(
+          'confirm.session.revokeOthersDesc',
+          'Every device except this one is signed out at once and has to sign in again.'
+        )}
         confirmText={
           <>
             {isRevokingAll && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Sign out all others
+            {t('confirm.session.revokeOthers', 'Sign out all others')}
           </>
         }
         destructive

@@ -16,16 +16,6 @@ import { AlertCircle, Building2, Check, Loader2, Plus, Trash2 } from 'lucide-rea
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -64,6 +54,8 @@ import {
   type OrgTrustSettingsInput,
 } from '../api/use-org-trusts'
 import { MAX_EXTERNAL_ACCESS_DAYS, formatShortDate } from '../lib/external-access'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 const DEFAULT_SETTINGS: OrgTrustSettingsInput = {
   max_role: 'member',
@@ -481,6 +473,7 @@ function TrustRow({
 
 /** Settings › Trusted organizations. Owners change trusts; admins read them. */
 export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; isOwner: boolean }) {
+  const { t } = useTranslation()
   const { trusts, isLoading, error, mutate } = useOrgTrusts(canRead)
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<OrgTrust | null>(null)
@@ -595,32 +588,35 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
         onOpenChange={(o) => !o && setApproving(null)}
         onApproved={refresh}
       />
-      <AlertDialog open={!!ending} onOpenChange={(o) => !o && setEnding(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>End trust with {ending?.organization}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {ending?.direction === 'outgoing'
-                ? `Members from ${ending?.organization} are disabled here. Nothing is deleted: an owner can enable them again.`
-                : `Your people are disabled in ${ending?.organization}. Nothing is deleted.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={endBusy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
-                void end()
-              }}
-              disabled={endBusy}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {endBusy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              End trust
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!ending}
+        onOpenChange={(o) => !o && !endBusy && setEnding(null)}
+        destructive
+        title={t('confirm.orgTrust.endTitle', 'End trust with {org}?', {
+          org: ending?.organization ?? '',
+        })}
+        desc={
+          ending?.direction === 'outgoing'
+            ? t(
+                'confirm.orgTrust.endOutgoingDesc',
+                'Members from {org} are disabled here at once. Nothing is deleted: an owner can enable them again.',
+                { org: ending?.organization ?? '' }
+              )
+            : t(
+                'confirm.orgTrust.endIncomingDesc',
+                'Your people are disabled in {org} at once. Nothing is deleted.',
+                { org: ending?.organization ?? '' }
+              )
+        }
+        confirmText={
+          <>
+            {endBusy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+            {t('confirm.orgTrust.end', 'End trust')}
+          </>
+        }
+        isLoading={endBusy}
+        handleConfirm={() => end()}
+      />
     </div>
   )
 }

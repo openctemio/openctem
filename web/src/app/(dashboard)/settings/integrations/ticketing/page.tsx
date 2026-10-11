@@ -71,6 +71,7 @@ import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { mutate } from 'swr'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** The API's default Jira priority per severity (shown as the placeholder). */
 const DEFAULT_JIRA_PRIORITY: Record<SeverityLevel, string> = {
@@ -506,6 +507,7 @@ async function revalidateIntegrations() {
 }
 
 function TicketingRowActions({ integration }: { integration: Integration }) {
+  const { t } = useTranslation()
   const [configOpen, setConfigOpen] = useState(false)
   const [routingOpen, setRoutingOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -569,9 +571,14 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
     <ConfirmDialog
       open={deleteOpen}
       onOpenChange={setDeleteOpen}
-      title="Delete ticketing connection"
-      desc={`Delete "${integration.name}"? This cannot be undone.`}
-      confirmText="Delete"
+      title={t('confirm.ticketing.deleteTitle', 'Delete the ticketing connection "{name}"?', {
+        name: integration.name,
+      })}
+      desc={t(
+        'confirm.ticketing.deleteDesc',
+        'Its settings are deleted and findings no longer sync with it. Tickets already in the tracker are not deleted. This cannot be undone.'
+      )}
+      confirmText={t('confirm.delete', 'Delete')}
       destructive
       isLoading={isDeleting}
       handleConfirm={() => void handleDelete()}

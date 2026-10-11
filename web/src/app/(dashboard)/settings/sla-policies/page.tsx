@@ -23,8 +23,10 @@ import {
   invalidateSlaPoliciesCache,
   type SlaPolicy,
 } from '@/features/sla/api/use-sla-policies-api'
+import { useTranslation } from '@/context/i18n-provider'
 
 export default function SlaPoliciesPage() {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSlaPoliciesApi()
   const policies = useMemo(() => data?.data ?? [], [data])
   // Only the default policy governs findings (asset overrides have no editor
@@ -223,14 +225,14 @@ export default function SlaPoliciesPage() {
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Delete SLA policy"
-        desc={
-          <>
-            Delete <strong>{deleteTarget?.name}</strong>? It does not apply to any finding (only the
-            default policy does). This action cannot be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.slaPolicy.deleteTitle', 'Delete the SLA policy "{name}"?', {
+          name: deleteTarget?.name ?? '',
+        })}
+        desc={t(
+          'confirm.slaPolicy.deleteDesc',
+          'It does not apply to any finding (only the default policy does). This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDelete}

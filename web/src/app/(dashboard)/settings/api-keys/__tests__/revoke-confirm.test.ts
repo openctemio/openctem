@@ -24,6 +24,10 @@ describe('API key revoke', () => {
     )
   })
 
+  it('revoke and delete both ask for the key name (irreversible)', () => {
+    expect(src.match(/typeToConfirm=\{k\.name\}/g)).toHaveLength(2)
+  })
+
   it('error toasts carry the server reason', () => {
     expect(src).toMatch(/getErrorMessage\(error, 'Failed to revoke the key'\)/)
   })

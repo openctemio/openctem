@@ -63,6 +63,7 @@ import {
 } from '@/features/notifications/types/notification-outbox.types'
 import { safeHref } from '@/lib/safe-href'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Status icon mapping
 const STATUS_ICONS: Record<OutboxStatus, React.ElementType> = {
@@ -170,6 +171,7 @@ function QueueHealthStatus({
 }
 
 export default function NotificationOutboxPage() {
+  const { t } = useTranslation()
   // State
   // The list lives in the URL (one list convention): page, per_page, status.
   const list = useListParams({ defaultPageSize: 10, filters: { status: 'all' } })
@@ -526,10 +528,13 @@ export default function NotificationOutboxPage() {
         <ConfirmDialog
           open={deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
-          title="Delete Entry"
+          title={t('confirm.outbox.deleteTitle', 'Delete this notification entry?')}
           desc={
             <>
-              Are you sure you want to delete this notification entry? This action cannot be undone.
+              {t(
+                'confirm.outbox.deleteDesc',
+                'The entry leaves the outbox and is not sent or retried. This cannot be undone.'
+              )}
               {selectedEntry && (
                 <span className="mt-2 block font-medium">{selectedEntry.title}</span>
               )}
@@ -539,10 +544,10 @@ export default function NotificationOutboxPage() {
             isDeleting ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                Deleting...
+                {t('confirm.deleting', 'Deleting…')}
               </>
             ) : (
-              'Delete'
+              t('confirm.delete', 'Delete')
             )
           }
           destructive

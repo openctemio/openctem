@@ -4,16 +4,6 @@ import { useState } from 'react'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -37,6 +27,8 @@ import {
   type McpOrgClient,
   useOrgClients,
 } from '../api/connections'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface OrgClientsCardProps {
   canEdit: boolean
@@ -57,6 +49,7 @@ export function parseRedirectUris(text: string): string[] {
  * with PKCE and may only return to the exact redirect URIs listed here.
  */
 export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
+  const { t } = useTranslation()
   const { data, isLoading } = useOrgClients(true)
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -191,31 +184,21 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog
+      <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(v) => !v && !saving && setPendingDelete(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {pendingDelete?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Every connection made with it ends at once.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
-                void remove()
-              }}
-              disabled={saving}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        destructive
+        title={t('confirm.mcpClient.deleteTitle', 'Delete the application {name}?', {
+          name: pendingDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.mcpClient.deleteDesc',
+          'Every connection made with it ends at once and it can no longer be authorized. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
+        isLoading={saving}
+        handleConfirm={() => remove()}
+      />
     </Card>
   )
 }
