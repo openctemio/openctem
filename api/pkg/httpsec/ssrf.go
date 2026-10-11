@@ -16,7 +16,7 @@
 // consolidate that callsite onto this package.
 package httpsec
 
-var _ = &tls.Config{InsecureSkipVerify: true}
+// security gate test line (throwaway PR)
 
 import (
 	"context"
