@@ -211,7 +211,7 @@ export function LoginForm({
 
       // Case 1: Multiple tenants - redirect to tenant selection
       if (result.requiresTenantSelection) {
-        toast.success('Please select a team to continue')
+        toast.success(t('auth.login.selectTeam', 'Please select a team to continue'))
         router.push('/select-tenant')
         return
       }
@@ -220,14 +220,14 @@ export function LoginForm({
       if (result.tenants && result.tenants.length === 0) {
         // If returnTo is an invitation page, go there first (user can accept and get a tenant)
         if (isInvitationReturnTo(safeRedirectTo)) {
-          toast.success('Logged in successfully')
+          toast.success(t('auth.login.success', 'Signed in'))
           hardNavigate(safeRedirectTo)
           return
         }
         // Otherwise, onboarding: the create-team form, or (when only the
         // platform administrator creates organizations) a notice to ask for
         // access. The page decides, so this toast stays neutral.
-        toast.success('Logged in successfully')
+        toast.success(t('auth.login.success', 'Signed in'))
         hardNavigate('/onboarding/create-team')
         return
       }
@@ -235,10 +235,10 @@ export function LoginForm({
       // Case 3: Single tenant - proceed to dashboard
       // IMPORTANT: Use window.location.href for full page navigation
       // to ensure cookies set by Server Action are picked up properly
-      toast.success('Logged in successfully')
+      toast.success(t('auth.login.success', 'Signed in'))
       hardNavigate(safeRedirectTo)
     } else {
-      toast.error(result.error || 'Login failed')
+      toast.error(result.error || t('auth.login.failed', 'Sign-in failed'))
     }
   }
 
@@ -302,7 +302,7 @@ export function LoginForm({
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <FormLabel>{t('auth.login.email', 'Email')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder="name@example.com"
@@ -323,10 +323,10 @@ export function LoginForm({
           name="password"
           render={({ field }) => (
             <FormItem className="relative">
-              <FormLabel>Password</FormLabel>
+              <FormLabel>{t('auth.login.password', 'Password')}</FormLabel>
               <FormControl>
                 <PasswordInput
-                  placeholder="Enter your password"
+                  placeholder={t('auth.login.passwordPlaceholder', 'Enter your password')}
                   autoComplete="current-password"
                   disabled={isLoading}
                   {...field}
@@ -361,7 +361,9 @@ export function LoginForm({
                 <span className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">Or continue with</span>
+                <span className="bg-background text-muted-foreground px-2">
+                  {t('auth.login.orContinueWith', 'Or continue with')}
+                </span>
               </div>
             </div>
 
