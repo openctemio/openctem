@@ -169,6 +169,7 @@ type StepBatch struct {
 	Failed     int    // failed, expired or canceled
 	Findings   int    // sum of the batches' reported findings_count
 	Skipped    int    // sum of the completed batches' refused_targets_total
+	Gaps       int    // sum of the completed batches' coverage_gaps_total
 	FirstError string // first failure message, in completion order
 }
 
