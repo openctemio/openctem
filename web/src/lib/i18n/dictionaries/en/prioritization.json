@@ -1,0 +1,17 @@
+{
+  "prioritization.noRelationships.title": "No relationship data yet",
+  "prioritization.goToAssets": "Go to assets",
+  "prioritization.attackPaths.title": "Attack paths",
+  "prioritization.attackPaths.description": "Assets ranked by how many public entry points reach them.",
+  "prioritization.attackPaths.noRelationships": "Add relationships between your assets to see which ones internet-facing entry points can reach.",
+  "prioritization.attackPaths.rankedTitle": "Assets ranked by attack-path score",
+  "prioritization.attackPaths.rankedHint": "Score = reachable entry points × risk score × criticality weight. Click a node to open its findings.",
+  "prioritization.exposureChains.title": "Exposure chains",
+  "prioritization.exposureChains.description": "Paths from internet-facing entry points to assets with KEV or critical findings, ranked by urgency.",
+  "prioritization.exposureChains.noRelationships": "Add relationships between your assets to trace paths from internet-facing entry points.",
+  "prioritization.exposureChains.rankedTitle": "Chains ranked by urgency",
+  "prioritization.exposureChains.rankedHint": "Each chain is the shortest path. Click a node to open its findings.",
+  "prioritization.exposureChains.emptyTitle": "No exposure chains",
+  "prioritization.exposureChains.emptyDescription": "No internet-facing entry point reaches an asset with KEV or critical findings.",
+  "prioritization.dryRun.previewNote": "A preview only. Saving the rule reclassifies the matching findings."
+}

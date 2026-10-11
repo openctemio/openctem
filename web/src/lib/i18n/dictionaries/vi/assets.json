@@ -5,5 +5,10 @@
   "assets.programTarget.title": "Được một chương trình bug bounty liệt kê. Thẻ từ chương trình do nền tảng gán và không thể sửa.",
   "assets.programTarget.unattested": "chưa chấp nhận điều khoản",
   "assets.programTarget.programOnly": "không thuộc phạm vi của bạn",
-  "assets.programTarget.field": "Chương trình bug bounty"
+  "assets.programTarget.field": "Chương trình bug bounty",
+  "assets.overview.title": "Tài sản",
+  "assets.overview.description": "Mọi thứ tổ chức của bạn sở hữu có thể bị tấn công, theo từng nhóm.",
+  "assets.overview.duplicatesHint": "Một số tài sản có vẻ là cùng một thứ: chấp thuận gộp hoặc giữ riêng.",
+  "assets.duplicates.title": "Rà soát trùng lặp",
+  "assets.duplicates.description": "Chấp thuận hoặc từ chối gộp các tài sản có vẻ trùng nhau."
 }
