@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated; revised by the owner 2026-10-11: no enable flag, bindings chosen automatically, T15; one port for every setup by ALPN routing, T16) |
+| Status | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated; revised by the owner 2026-10-11: no enable flag, bindings chosen automatically, T15; one port for every setup by ALPN routing, T16; the same without a gateway, T17) |
 | Authors | Platform team |
 | Related | RFC-026 (v2 results), RFC-029 (v2 control plane), RFC-030 (leases), RFC-032 (enrollment, identity), RFC-035 (doorbell), RFC-040 (mutual distrust), RFC-052 (pairing, key-bound sensors), RFC-055 (tool contract) |
 | Code | `api/proto/openctem/sensor/v3/sensor.proto`, `api/pkg/sensorproto/v3` (generated), `api/internal/infra/sensortransport` (server), sdk-go `pkg/client` (client) |
@@ -75,6 +75,7 @@ mTLS the preferred path where the network allows it.
 | T15 | Automatic selection (owner revision 2026-10-11). The HTTPS binding is always served. The gRPC listener starts once the sensor CA loads and a public host is known (`SENSOR_PUBLIC_HOST`, else the host and port of the platform URL, T16). A self-probe dials that host every minute (30 s while failing), TLS 1.3 offering the ALPN ids `h2` and `openctem-sensor/3`, verifying the server certificate against the sensor CA only; hello names the gRPC endpoint only while the probe passes. The state and reason are shown (`GET /api/v1/sensors/transport`, metrics, a log line per change). `SENSOR_TRANSPORT_V3=auto|off` replaces the enable flag; `off` sends every sensor back to v2. |
 | T14 | Same port 443 by SNI, kept as an option next to T16: the gateway passes TLS for a dedicated sensor host name (`SENSOR_PUBLIC_HOSTNAME`) through at layer 4 to the API's mTLS listener (with PROXY protocol v2, accepted only from `SENSOR_MTLS_TRUSTED_PROXIES`) and terminates every other host as today. A separate port is a configuration option (`SENSOR_PUBLIC_HOST` with its own port, published by the operator). |
 | T16 | Same port 443 for every setup by ALPN (owner revision 2026-10-11: no extra port in any deployment). SNI cannot route an IP address (clients send no server name for one) nor share one host name with the web UI. The sensor's gRPC client therefore offers a dedicated ALPN protocol id, `openctem-sensor/3`, next to `h2`; the gateway's layer-4 router (the gateway image with the layer4 module, `OPENCTEM_SENSOR_GATEWAY=alpn`) passes a ClientHello that offers it through, untouched and with PROXY protocol v2, to the API's mTLS listener, and terminates every other connection as before. The listener lists only `h2` and negotiates it (server preference), so the HTTP/2 stack on both ends is unchanged and no gRPC library has to accept a custom protocol. Without `SENSOR_PUBLIC_HOST` the endpoint is the platform URL's host and port (a name or an address). The self-probe offers the same ids; once it passes, a second probe offers `h2` only: when that passes too (a port of its own, a dedicated SNI host) hello names the endpoint as `grpc_endpoint`, otherwise only as `grpc_alpn_endpoint`, so clients that do not offer the id (which would meet the gateway's own certificate and stop with `platform_certificate_refused`) stay on the HTTPS binding. Behind the stock gateway the probe meets the gateway's certificate and nothing changes: HTTPS binding. |
+| T17 | One port without a gateway (owner question 2026-10-11: web and API deployed separately, no extra port). When `SERVER_TLS_CERT_FILE` and `SERVER_TLS_KEY_FILE` are set the API listener terminates TLS itself and splits by ALPN in the handshake (`tls.Config.GetConfigForClient`): a ClientHello that offers `openctem-sensor/3` gets the mTLS listener's own config (sensor-CA server certificate, client certificate required and resolved at the handshake, `h2` only) and is served by the mTLS listener's server, which resolves the certificate again on every call; any other ClientHello gets the operator's certificate and the normal API (h2 and HTTP/1.1). Same code paths as the dedicated listener, so no weaker check; a PROXY protocol v2 header is believed only from `SENSOR_MTLS_TRUSTED_PROXIES` (it precedes the ClientHello, so the rule covers the whole port). The endpoint is the platform URL's host and port as in T16, advertised by the same two-step probe as `grpc_alpn_endpoint`. Without the two variables (the default) the API serves plain HTTP behind a TLS proxy, unchanged. |
 
 ## 4. The service
 
@@ -136,16 +137,28 @@ ids) is the only identity check, at the handshake and on every call.
 
 ### 5.1 Deployment modes
 
-| Setup | Gateway | Endpoint sensors get | Notes |
+Every setup reaches the gRPC binding on the port clients already use, or
+falls back to the HTTPS binding by itself. What decides it is whether some
+component on the path can read the ClientHello and pass the sensor's
+connection, still encrypted, to an mTLS listener of the API.
+
+| Setup | What routes the sensor connection | Endpoint sensors get | Notes |
 |---|---|---|---|
-| IP address only, one port (e.g. `https://192.0.2.10`) | layer4 image, `OPENCTEM_SENSOR_GATEWAY=alpn` | `192.0.2.10:443` as `grpc_alpn_endpoint` | Server certificate minted with an IP SAN by the sensor CA; the API's probe must reach the address from inside its container (hairpin through the published port) |
-| One host name for everything (e.g. `ctem.example.com`) | layer4 image, `alpn` | `ctem.example.com:443` as `grpc_alpn_endpoint` | No extra DNS name or certificate; the public certificate for the web UI is unaffected |
-| Dedicated sensor host name (e.g. `sensors.example.com`) | layer4 image, `passthrough` + `SENSOR_PUBLIC_HOSTNAME`; API `SENSOR_PUBLIC_HOST=sensors.example.com:443` | as `grpc_endpoint` and `grpc_alpn_endpoint` | Routed by SNI and by ALPN; also reached by sensors that do not offer the ALPN id yet |
-| Separate port (explicit) | any; the operator publishes the API's `:8443` | `SENSOR_PUBLIC_HOST` (e.g. `192.0.2.10:8444`) as both fields | Only when configured; no PROXY protocol unless a proxy in front sends it |
-| Stock gateway image (no layer4) | `caddy` image, `off` | none: HTTPS binding | The probe meets the gateway's certificate (`foreign_certificate`); nothing to configure |
-| L7 load balancer that terminates TLS and cannot pass TCP through | any behind it | none: HTTPS binding | The `Subscribe` stream and every RPC work over the Connect protocol on HTTP/1.1 or HTTP/2; keep response buffering off on the balancer |
-| L4 load balancer (TCP passthrough) in front of the gateway | layer4 image, `alpn` | platform host:443 | The balancer must pass TCP unchanged (no TLS termination); set `OPENCTEM_TRUSTED_PROXIES` for the HTTP side as usual |
-| Kubernetes | see notes | — | An ingress controller that routes by SNI only (ssl-passthrough) cannot route by ALPN: either expose the gateway image itself through a `LoadBalancer` Service (ALPN routing as above), or use a dedicated sensor host with ssl-passthrough (T14), or stay on the HTTPS binding through any ingress. Chart support is a follow-up (helm-charts: gateway image with layer4, `OPENCTEM_SENSOR_GATEWAY`, `SENSOR_MTLS_TRUSTED_PROXIES` for the gateway pods) |
+| Our gateway, IP address only, one port (e.g. `https://192.0.2.10`) | layer4 image, `OPENCTEM_SENSOR_GATEWAY=alpn` | `192.0.2.10:443` as `grpc_alpn_endpoint` | Server certificate minted with an IP SAN by the sensor CA; the API's probe must reach the address from inside its container (hairpin through the published port) |
+| Our gateway, one host name for everything (e.g. `ctem.example.com`) | layer4 image, `alpn` | `ctem.example.com:443` as `grpc_alpn_endpoint` | No extra DNS name or certificate; the public certificate for the web UI is unaffected |
+| Our gateway, dedicated sensor host name (e.g. `sensors.example.com`) | layer4 image, `passthrough` + `SENSOR_PUBLIC_HOSTNAME`; API `SENSOR_PUBLIC_HOST=sensors.example.com:443` | as `grpc_endpoint` and `grpc_alpn_endpoint` | Routed by SNI and by ALPN; also reached by sensors that do not offer the ALPN id yet |
+| Our gateway, stock image (no layer4) | nothing | none: HTTPS binding | The probe meets the gateway's certificate (`foreign_certificate`); nothing to configure |
+| No gateway: API exposed directly (web served elsewhere) | the API itself (T17): `SERVER_TLS_CERT_FILE`, `SERVER_TLS_KEY_FILE` | the API URL's host and port (`SENSOR_PUBLIC_API_URL`) as `grpc_alpn_endpoint` | One port for API clients and sensors; the certificate files are re-read when they change |
+| No gateway: API behind an L4 (TCP) load balancer | the API itself (T17) behind the balancer | the balancer's host and port as `grpc_alpn_endpoint` | The balancer must pass TCP unchanged. If it sends PROXY protocol v2, list its addresses in `SENSOR_MTLS_TRUSTED_PROXIES` (then also believed for API clients on that port) |
+| Own TLS proxy with ALPN-aware TCP routing (nginx `stream` + `ssl_preread`, HAProxy `mode tcp`) | the proxy: a ClientHello offering `openctem-sensor/3` goes to the API's `:8443` untouched, everything else to the HTTPS service | the proxy's host and port as `grpc_alpn_endpoint` | Example configs in the architecture doc, both tested against the mTLS listener |
+| SNI-only passthrough (e.g. a Kubernetes ingress with ssl-passthrough) | the proxy, by a dedicated sensor host name, to the API's `:8443` | `SENSOR_PUBLIC_HOST=sensors.example.com:443` as both fields | A router that reads SNI only cannot route by ALPN; give sensors their own name |
+| L7 load balancer or proxy that terminates TLS and cannot pass TCP through | nothing | none: HTTPS binding | Automatic. The `Subscribe` stream and every RPC work over the Connect protocol on HTTP/1.1 or HTTP/2; keep response buffering off |
+| Separate port (explicit) | the operator publishes the API's `:8443` | `SENSOR_PUBLIC_HOST` (e.g. `192.0.2.10:8444`) as both fields | Only when configured; no PROXY protocol unless a proxy in front sends it |
+| Kubernetes | see notes | — | Expose the gateway image (or the API with T17) through a `LoadBalancer` Service for ALPN routing, use a dedicated sensor host with ssl-passthrough, or stay on the HTTPS binding through any ingress. Chart support is a follow-up (helm-charts: gateway image with layer4, `OPENCTEM_SENSOR_GATEWAY`, `SENSOR_MTLS_TRUSTED_PROXIES` for the gateway pods) |
+
+In every row the self-probe decides what hello names: it passes only when the
+path reaches an mTLS listener of the API, so a wrong configuration costs
+nothing but the move to the gRPC binding.
 
 ## 6. Control stream and push
 
@@ -198,6 +211,7 @@ Threat model (each row has a test):
 | Network attacker | force a downgrade | no fallback on identity errors; the HTTPS binding keeps full TLS verification and request signatures; the binding and reason are visible per sensor; a tenant policy "require mTLS" can refuse the fallback (planned) |
 | Network attacker | impersonate the platform on the gRPC host | the sensor pins the sensor CA there |
 | Anyone on the network | offer the sensor ALPN id to reach the mTLS listener through port 443 | the id only routes; the listener requires a sensor-CA client certificate whose key is an active registered key, as on a published port; refused handshakes are debug logs |
+| Anyone on the network | offer the sensor ALPN id to the API's own TLS port (T17) | the split hands the connection the mTLS listener's TLS config and server: sensor-CA client certificate required and resolved at the handshake and on every call, `h2` only; without the gRPC binding the id gets the public certificate and the normal API |
 | Client behind the gateway | forge its address with a PROXY protocol header | the listener believes PROXY headers only from `SENSOR_MTLS_TRUSTED_PROXIES` (the gateway's fixed address) and closes a connection that sends one from elsewhere |
 | Gateway misconfiguration | ALPN routing removed after sensors pinned the endpoint | the probe fails within 30 s and hello withdraws the endpoint; sensors meet a foreign certificate (`platform_certificate_refused`, no downgrade) until their next negotiation moves them to the HTTPS binding |
 | Older sensor (no ALPN id) | sent to a single-port endpoint it cannot reach | that endpoint is named only as `grpc_alpn_endpoint`, which older clients do not read |
@@ -220,6 +234,7 @@ by the v2 code it reuses.
 | `SENSOR_MTLS_CA_CERT_FILE` / `SENSOR_MTLS_CA_KEY_FILE` | — | Sensor CA (PEM) |
 | `SENSOR_MTLS_CA_DIR` | `data/sensor-ca` (in the image: `/app/data/sensor-ca`, on the `api-data` volume) | Where the CA is created when the files are unset |
 | `SENSOR_MTLS_CERT_TTL` | `168h` | Client certificate lifetime (1h–720h) |
+| `SERVER_TLS_CERT_FILE` / `SERVER_TLS_KEY_FILE` | — (plain HTTP) | PEM paths: the API listener terminates TLS itself and serves the gRPC binding on the same port to ClientHellos offering `openctem-sensor/3` (T17). Set both or neither |
 | `SENSOR_MTLS_TRUSTED_PROXIES` | — | CIDRs whose PROXY protocol header is believed on the mTLS listener (the gateway's fixed address); required behind the layer4 gateway, which always sends one |
 
 Gateway (`deploy/gateway`, the image built from its `Dockerfile` with the
@@ -245,6 +260,7 @@ layer4 module; `deploy/docker-compose.sensor-passthrough.yml`):
 | 8 | helm-charts, docs | passthrough values, sensor host, upgrade notes |
 | 9 | openctem, sdk-go, sensor | ALPN routing on the platform's own port (T16): gateway `alpn` mode, endpoint derived from the platform URL, two-step probe, `grpc_alpn_endpoint`; the client offers `openctem-sensor/3` |
 | 10 | helm-charts | follow-up: the gateway image with layer4 and `OPENCTEM_SENSOR_GATEWAY` in the chart, the gateway's address in `SENSOR_MTLS_TRUSTED_PROXIES` |
+| 11 | openctem | one port without a gateway (T17): the API terminates TLS itself and splits by ALPN |
 
 Upgrade: key-bound sensors move to the HTTPS binding at their next hello
 with no configuration. The gRPC binding needs a path to the mTLS listener:
