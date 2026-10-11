@@ -774,7 +774,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 
 // CreateTarget handles POST /api/v1/scope/targets
 // @Summary      Create scope target
-// @Description  Create a scope entry (RFC-054). With attack_surface:scope:approve it needs a recent re-authentication (403 STEP_UP_REQUIRED) and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
+// @Description  Create a scope entry (RFC-054, RFC-073 §6). Under the Off and On scan approval modes any caller with attack_surface:scope:write needs a recent re-authentication (403 STEP_UP_REQUIRED) and the entry is active at once. Under Strict, with attack_surface:scope:approve it needs a recent re-authentication and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -888,7 +888,7 @@ func (h *ScopeHandler) GetTarget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTarget handles PUT /api/v1/scope/targets/{id}
 // @Summary      Update scope target
-// @Description  Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED), and sends the entry back to pending when the organization requires approvals (RFC-054)
+// @Description  Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs a recent re-authentication (403 STEP_UP_REQUIRED), and under Strict attack_surface:scope:approve; it sends the entry back to pending when the organization requires approvals (RFC-054, RFC-073 §6)
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -975,7 +975,7 @@ func (h *ScopeHandler) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 
 // ActivateTarget handles POST /api/v1/scope/targets/{id}/activate
 // @Summary      Activate scope target
-// @Description  Activate a scope entry. Widening: needs attack_surface:scope:approve and a recent re-authentication, then the organization's approvals
+// @Description  Activate a scope entry. Widening: needs a recent re-authentication; under Strict also attack_surface:scope:approve, then the organization's approvals
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -1107,7 +1107,7 @@ func (h *ScopeHandler) ListExclusions(w http.ResponseWriter, r *http.Request) {
 
 // CreateExclusion handles POST /api/v1/scope/exclusions
 // @Summary      Create scope exclusion
-// @Description  Create a scope exclusion. It is created pending and does not affect scanning until another user approves it (attack_surface:scope:exclusions:approve).
+// @Description  Create a scope exclusion. Under the Off and On scan approval modes it is in effect at once (approved_by is its creator). Under Strict it is created pending and does not affect scanning until another user approves it (attack_surface:scope:exclusions:approve).
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -1196,7 +1196,7 @@ func (h *ScopeHandler) GetExclusion(w http.ResponseWriter, r *http.Request) {
 // @Failure      404   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Failure      403  {object}  apierror.Error "Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
+// @Failure      403  {object}  apierror.Error "Strict: takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
 // @Router       /scope/exclusions/{id} [put]
 func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
@@ -1259,7 +1259,7 @@ func exclusionReviewer(r *http.Request) scopedom.Reviewer {
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
-// @Failure      403  {object}  apierror.Error "Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
+// @Failure      403  {object}  apierror.Error "Strict: takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
 // @Router       /scope/exclusions/{id} [delete]
 func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
@@ -1395,7 +1395,7 @@ func (h *ScopeHandler) ActivateExclusion(w http.ResponseWriter, r *http.Request)
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
-// @Failure      403  {object}  apierror.Error "Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
+// @Failure      403  {object}  apierror.Error "Strict: takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester"
 // @Router       /scope/exclusions/{id}/deactivate [post]
 func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")

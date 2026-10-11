@@ -241,7 +241,8 @@ type Exclusion struct {
 	origin Origin
 }
 
-// NewExclusion creates a new scope exclusion awaiting approval.
+// NewExclusion creates a new scope exclusion awaiting approval (TakeEffect
+// puts it into effect when the organization needs no review).
 func NewExclusion(
 	tenantID shared.ID,
 	exclusionType ExclusionType,
@@ -366,13 +367,14 @@ func (e *Exclusion) UpdateReason(reason string) {
 	e.updatedAt = time.Now()
 }
 
-// UpdateExpiresAt changes the exclusion window. An approval covers the window
+// UpdateExpiresAt changes the exclusion window. When exclusions need review
+// (the Strict scan approval mode, RFC-073 §6) an approval covers the window
 // that was approved: extending it (a later date, or removing the expiry) on
 // an approved exclusion sends it back to pending for a fresh review, so
 // scope:write cannot turn a short approved exclusion into a permanent one.
-// Shortening the window keeps the approval.
-func (e *Exclusion) UpdateExpiresAt(expiresAt *time.Time) {
-	if e.IsApproved() && extendsWindow(e.expiresAt, expiresAt) {
+// Without review, and when shortening, the approval stays.
+func (e *Exclusion) UpdateExpiresAt(expiresAt *time.Time, needsReview bool) {
+	if needsReview && e.IsApproved() && extendsWindow(e.expiresAt, expiresAt) {
 		e.approvedBy = ""
 		e.approvedAt = nil
 		e.status = StatusPending
@@ -395,14 +397,16 @@ func (e *Exclusion) InEffect() bool {
 }
 
 // AuthorizeReduction decides whether r may take this exclusion out of effect
-// (deactivate, delete) or shorten its window. An approved exclusion was put
-// into effect by two people, so taking that protection away needs the same:
-// the approval permission, and someone other than the requester. Without it
-// scope:write (a member default) could switch off the exclusion protecting a
-// production system and scan it. An exclusion not in effect protects nothing
-// now, so any change to it is allowed.
-func (e *Exclusion) AuthorizeReduction(r Reviewer) error {
-	if !e.InEffect() {
+// (deactivate, delete) or shorten its window. When exclusions need review
+// (Strict), an approved exclusion was put into effect by two people, so
+// taking that protection away needs the same: the approval permission, and
+// someone other than the requester. Without it scope:write (a member
+// default) could switch off the exclusion protecting a production system and
+// scan it. Without review (Off and On, the organization's accepted default)
+// the route's permission and step-up are the gate. An exclusion not in
+// effect protects nothing now, so any change to it is allowed.
+func (e *Exclusion) AuthorizeReduction(r Reviewer, needsReview bool) error {
+	if !e.InEffect() || !needsReview {
 		return nil
 	}
 	if !r.CanApprove {
@@ -459,6 +463,31 @@ func (e *Exclusion) Approve(approvedBy string) error {
 	e.updatedAt = now
 	return nil
 }
+
+// TakeEffect puts a new exclusion into effect without a second person's
+// review: the organization does not require one (the Off and On scan
+// approval modes, RFC-073 §6). The approval is recorded honestly as the
+// creator's own (by; "system" for a system path), so the row says nobody
+// else reviewed it. Only a pending exclusion nobody reviewed can take
+// effect this way.
+func (e *Exclusion) TakeEffect(by string) error {
+	if e.status != StatusPending || e.IsApproved() || e.rejectedBy != "" {
+		return ErrExclusionNotPending
+	}
+	if by == "" {
+		by = SystemReviewer
+	}
+	now := time.Now()
+	e.approvedBy = by
+	e.approvedAt = &now
+	e.status = StatusActive
+	e.updatedAt = now
+	return nil
+}
+
+// SystemReviewer is the approved_by of an exclusion a system path put into
+// effect without review.
+const SystemReviewer = "system"
 
 // Reject records that rejectedBy declined the exclusion. A rejected exclusion
 // never takes effect; only a pending one can be rejected.

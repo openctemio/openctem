@@ -201,5 +201,20 @@
   "scope.settings.scanApprovalByOwner": "Do chủ sở hữu đặt trong Cài đặt > Phê duyệt quét.",
   "scope.approvals.noneNeeded": "Mục phạm vi không cần phê duyệt khi phê duyệt quét không ở chế độ Nghiêm ngặt: thay đổi mở rộng phạm vi có hiệu lực ngay.",
   "scope.refusal.label.constrained": "Mục giới hạn",
-  "scope.refusal.message.constrained": "Các mục phạm vi bao phủ mục tiêu này chỉ cho phép một số cổng hoặc một đường dẫn, và tác vụ này có thể chạm tới cổng hoặc đường dẫn khác."
+  "scope.refusal.message.constrained": "Các mục phạm vi bao phủ mục tiêu này chỉ cho phép một số cổng hoặc một đường dẫn, và tác vụ này có thể chạm tới cổng hoặc đường dẫn khác.",
+  "scope.exclusion.toastActive": "{label} đã nằm ngoài phạm vi",
+  "scope.exclusion.toastPending": "{label} đang chờ một người phê duyệt khác",
+  "scope.exclusion.toastPendingHint": "Các lần quét vẫn chạm tới mục này cho đến khi loại trừ được phê duyệt.",
+  "scope.exclusion.outcomeReview": "Một người phê duyệt khác phải phê duyệt trước khi các lần quét bắt đầu bỏ qua mục này.",
+  "scope.exclusion.outcomeNow": "Có hiệu lực ngay: các lần quét sẽ bỏ qua mục này. Thay đổi được ghi vào nhật ký kiểm toán, và người quản lý phạm vi có thể gỡ bỏ sau.",
+  "scope.exclusion.liftNeedsApprover": "Gỡ bỏ một loại trừ làm mở rộng phạm vi: cần quyền phê duyệt loại trừ.",
+  "scope.exclusion.liftNeedsWrite": "Gỡ bỏ một loại trừ cần quyền ghi phạm vi.",
+  "scope.exclusion.removeNeedsApprover": "Xóa một loại trừ đang có hiệu lực làm mở rộng phạm vi: cần quyền phê duyệt loại trừ.",
+  "scope.approvals.emptyTitle": "Không có thay đổi nào đang chờ phê duyệt",
+  "scope.approvals.requiredN": "Tổ chức của bạn yêu cầu {n} lượt phê duyệt cho các thay đổi mở rộng phạm vi (chính sách phạm vi).",
+  "scope.approvals.required1": "Tổ chức của bạn yêu cầu 1 lượt phê duyệt cho các thay đổi mở rộng phạm vi (chính sách phạm vi).",
+  "scope.approvals.immediate": "Các thay đổi mở rộng phạm vi có hiệu lực ngay trong tổ chức của bạn (chính sách phạm vi).",
+  "scope.approvals.leftOver": "Thay đổi phạm vi không cần phê duyệt khi chế độ phê duyệt quét không phải là Nghiêm ngặt. Các mục dưới đây được gửi trước đó và vẫn đang chờ: hãy phê duyệt hoặc từ chối, hoặc người yêu cầu có thể xóa rồi thêm lại.",
+  "scope.exclusion.submitRequest": "Yêu cầu loại trừ",
+  "scope.exclusion.submitAdd": "Thêm loại trừ"
 }

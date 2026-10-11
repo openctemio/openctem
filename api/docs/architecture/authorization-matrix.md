@@ -239,8 +239,16 @@ and SBOM import write it.
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
 
-An exclusion stops scans from touching whatever it matches, so it is a
-two-person control:
+An exclusion stops scans from touching whatever it matches. Whether it is a
+two-person control follows the organization's scan approval mode (RFC-073
+§6, owner decision 2026-10-10: approvals are for scans, not scope entries):
+
+- **Off (default) and On:** `attack_surface:scope:write` is enough. A new
+  exclusion is in effect at once and records its creator as `approved_by`
+  (nobody else reviewed it; the audit entry carries the state after). Extending
+  it keeps it in effect; deactivating, deleting or shortening it needs only the
+  route's permission and step-up (deactivate, delete), not a second person.
+- **Strict:** the rules below. An unreadable mode counts as Strict.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
@@ -248,7 +256,9 @@ two-person control:
 | `POST /api/v1/scope/exclusions` · `PUT /{id}` · `POST /{id}/activate` · `/{id}/deactivate` | `attack_surface:scope:write` |
 | `POST /api/v1/scope/exclusions/{id}/approve` · `/{id}/reject` | `attack_surface:scope:exclusions:approve` (owner, admin) |
 | `DELETE /api/v1/scope/exclusions/{id}` · `POST /bulk/delete` | `attack_surface:scope:delete` |
-| Taking an exclusion **in effect** out of effect: `/{id}/deactivate`, `DELETE`, bulk delete, or a `PUT` that moves `expires_at` earlier (a past date included) | in addition `attack_surface:scope:exclusions:approve`, and the caller must not be the requester (403 otherwise; research doc 15, L-07) |
+| Strict: taking an exclusion **in effect** out of effect: `/{id}/deactivate`, `DELETE`, bulk delete, or a `PUT` that moves `expires_at` earlier (a past date included) | in addition `attack_surface:scope:exclusions:approve`, and the caller must not be the requester (403 otherwise; research doc 15, L-07) |
+
+In Strict:
 
 - A new exclusion is created `pending` and is applied nowhere — not to scan
   target selection, not to `POST /scope/check`, not to coverage — until it is
@@ -278,6 +288,9 @@ two-person control:
   switch for callers without the approve permission.
 - Known gap: rows from before `created_by` was recorded have no requester, so
   the not-the-requester check cannot apply to them.
+- Leaving Strict activates nothing: exclusions still `pending` stay pending
+  (they apply nowhere) and are approved or rejected on the Approvals tab, or
+  their requester deletes them and adds them again.
 - Every change to a scope target or exclusion (create, update, delete, bulk
   delete, activate, deactivate, approve, reject) is one audit entry
   (`scope_target.*`, `scope_exclusion.*`) with the caller and the state before
