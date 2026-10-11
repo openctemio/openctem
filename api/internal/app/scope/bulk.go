@@ -26,8 +26,8 @@ const MaxBulkTargets = 200
 
 // BulkTargetItem is one entry of a bulk add.
 type BulkTargetItem struct {
-	TargetType string
-	Pattern    string
+	TargetType string `json:"target_type"`
+	Pattern    string `json:"pattern"`
 }
 
 // BulkTargetsInput is a bulk add: the items and what they share.
@@ -37,8 +37,9 @@ type BulkTargetsInput struct {
 	Reason    string
 	CreatedBy string
 	Actor     Actor
-	// Origin is import (the default: a pasted list or a selection) or
-	// refusal_fix (the targets a scan refused).
+	// Origin is import (the default: a pasted list or a selection),
+	// refusal_fix (the targets a scan refused) or manual (a person's
+	// confirmation of assets).
 	Origin scopedom.Origin
 }
 
@@ -73,7 +74,9 @@ func (s *Service) CreateTargets(ctx context.Context, in BulkTargetsInput) ([]Bul
 		return nil, ErrBulkTargetsTooMany
 	}
 	origin := in.Origin
-	if origin != scopedom.OriginRefusalFix {
+	switch origin {
+	case scopedom.OriginRefusalFix, scopedom.OriginManual:
+	default:
 		origin = scopedom.OriginImport
 	}
 
