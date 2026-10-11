@@ -253,7 +253,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	if !in.AllowNonNetworkTargets {
 		var rejected []rejectedTarget
 		var err error
-		accepted, rejected, err = s.validateTargetsEach(ctx, in.TenantID.String(), targets, limit)
+		accepted, rejected, err = s.validateTargetsEach(ctx, in.TenantID.String(), targets, limit, in.SensorID)
 		if err != nil {
 			return nil, err
 		}
@@ -357,9 +357,16 @@ func (s *Service) refuseInternalOutsideZones(ctx context.Context, in DispatchTar
 	if len(zones) > 0 {
 		return kept, nil
 	}
-	allowed := make([]string, 0, len(kept)-len(internal))
+	// No zone: the organization's own sensors may take private (never
+	// loopback, link-local or denied) targets when their local policy
+	// allows private ranges (the claiming sensor at a claim).
+	own, err := s.ownSensorsAdmitPrivate(ctx, in.TenantID, in.SensorID)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make([]string, 0, len(kept))
 	for _, t := range kept {
-		if internal[t] {
+		if internal[t] && !(own && ownSensorPrivate(t)) {
 			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: ReasonInternalOutsideZones, Code: scopedom.RefusalZoneNone})
 			continue
 		}
