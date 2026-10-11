@@ -1,8 +1,9 @@
 /**
  * Basic Info Step
  *
- * Step 1: name, then what to run: a single check (one scanner) or a scan
- * workflow. The starter workflows (system templates tagged "starter":
+ * Step 1: name, the scan intensity (RFC-071: passive, active, intrusive;
+ * every choice below is filtered by it), then what to run: a single check
+ * (one scanner) or a scan workflow. The starter workflows (system templates tagged "starter":
  * Discover, Discover + Vuln, Web app, Network, Code / CI) are offered first;
  * any other active workflow is one choice away. Every list comes from the
  * API: the tool registry's active scanners and the active workflow templates.
@@ -35,7 +36,7 @@ import {
   readinessLabel,
   type WorkflowReadiness,
 } from '@/features/scan-workflows/lib/readiness'
-import { Radar, GitBranch, Layers, ChevronRight } from 'lucide-react'
+import { Radar, GitBranch, Layers, ChevronRight, RefreshCw } from 'lucide-react'
 import { useMemo } from 'react'
 import type { NewScanFormData } from '../../types'
 import { useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
@@ -47,6 +48,16 @@ import { TENABLE_SC_TOOL } from '@/features/integrations/lib/tenable-sc'
 import { TenableScanFields } from './tenable-scan-fields'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { Module } from '@/config/route-permissions'
+import type { ScanIntensity } from '@/lib/api/scan-types'
+import { IntensityPicker } from '../intensity-picker'
+import {
+  fitsIntensity,
+  intensityForTier,
+  toolTier,
+  workflowTier,
+  type ProbeTier,
+} from '../../lib/scan-intensity'
+import { continuousDiscoveryPair } from '../../lib/continuous-discovery'
 
 interface BasicInfoStepProps {
   data: NewScanFormData
@@ -84,21 +95,81 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
   )
   const selectedWorkflow = workflows.find((w) => w.id === data.workflowId)
   const selectedStarter = starters.find((w) => w.id === data.workflowId)
+  // The tier each workflow probes at, for the intensity filter.
+  const tierOf = useMemo(() => {
+    const m = new Map<string, ProbeTier>()
+    for (const w of workflows) m.set(w.id, workflowTier(w.steps))
+    return m
+  }, [workflows])
+  const aboveReason = (tier: ProbeTier | undefined): string | undefined =>
+    tier !== undefined && !fitsIntensity(tier, data.intensity)
+      ? t('scans.intensity.aboveCeiling', undefined, {
+          level: t(`scans.intensity.${intensityForTier(tier)}`),
+        })
+      : undefined
+  const pair = useMemo(() => continuousDiscoveryPair(starters), [starters])
   // What the "what to run" choice shows as selected
-  const choice = data.mode === 'single' ? 'single' : selectedStarter ? selectedStarter.id : 'other'
+  const choice =
+    data.mode === 'single'
+      ? 'single'
+      : data.continuousProbeWorkflowId && pair
+        ? 'continuous'
+        : selectedStarter
+          ? selectedStarter.id
+          : 'other'
   const choose = (value: string) => {
     if (value === 'single') {
-      onChange({ mode: 'single', workflowId: undefined })
+      onChange({ mode: 'single', workflowId: undefined, continuousProbeWorkflowId: undefined })
+    } else if (value === 'continuous' && pair) {
+      // Passive discovery of the roots every day; the probing scan is saved
+      // with it (active, only assets new since its last run).
+      onChange({
+        mode: 'workflow',
+        scannerName: '',
+        workflowId: pair.passive.id,
+        continuousProbeWorkflowId: pair.probe.id,
+        intensity: 'passive',
+        schedule: { ...data.schedule, runImmediately: false, saveOnly: false, frequency: 'daily' },
+      })
     } else if (value === 'other') {
       onChange({
         mode: 'workflow',
         scannerName: '',
         workflowId: selectedStarter ? undefined : data.workflowId,
+        continuousProbeWorkflowId: undefined,
       })
     } else {
-      onChange({ mode: 'workflow', scannerName: '', workflowId: value })
+      // A discovery starter that sends nothing to the targets defaults the
+      // scan to passive.
+      const passive = tierOf.get(value) === 0
+      onChange({
+        mode: 'workflow',
+        scannerName: '',
+        workflowId: value,
+        continuousProbeWorkflowId: undefined,
+        ...(passive ? { intensity: 'passive' as ScanIntensity } : {}),
+      })
     }
   }
+  // A lower intensity drops a scanner or workflow above it.
+  const changeIntensity = (intensity: ScanIntensity) => {
+    const next: Partial<NewScanFormData> = { intensity }
+    if (
+      data.mode === 'single' &&
+      data.scannerName &&
+      !fitsIntensity(toolTier(data.scannerName), intensity)
+    ) {
+      next.scannerName = ''
+    }
+    const wfTier = data.workflowId ? tierOf.get(data.workflowId) : undefined
+    if (data.mode === 'workflow' && wfTier !== undefined && !fitsIntensity(wfTier, intensity)) {
+      next.workflowId = undefined
+      next.continuousProbeWorkflowId = undefined
+    }
+    onChange(next)
+  }
+  const runnableHere = runnable.filter((w) => !aboveReason(tierOf.get(w.id)))
+  const aboveHere = runnable.filter((w) => !!aboveReason(tierOf.get(w.id)))
 
   return (
     <div className="space-y-5 px-4 sm:px-6 py-4">
@@ -114,6 +185,9 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
           onChange={(e) => onChange({ name: e.target.value })}
         />
       </div>
+
+      {/* Intensity first: everything below is filtered by it */}
+      <IntensityPicker value={data.intensity} onChange={changeIntensity} />
 
       {/* What to run: a single check, a starter workflow or another workflow */}
       {!lockMode && offerWorkflows && (
@@ -139,8 +213,18 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                 icon={<GitBranch className="h-4 w-4" />}
                 stages={planStages(s.steps ?? []).stages.map((g) => g.map((st) => st.name))}
                 readiness={s.readiness}
+                aboveCeiling={aboveReason(tierOf.get(s.id))}
               />
             ))}
+            {pair && (
+              <ChoiceCard
+                value="continuous"
+                title={t('scans.basic.continuous')}
+                description={t('scans.basic.continuousHint')}
+                icon={<RefreshCw className="h-4 w-4" />}
+                readiness={pair.passive.readiness}
+              />
+            )}
             <ChoiceCard
               value="other"
               title={t('scans.basic.anotherWorkflow')}
@@ -163,6 +247,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
             onChange={(scannerName) => onChange({ scannerName })}
             allowConnectors={TENABLE_CONNECTOR_ENABLED}
             zoneId={data.scanZoneId}
+            intensity={data.intensity}
           />
           <p className="text-muted-foreground text-xs">
             {t('scans.basic.scannerHint')}
@@ -204,7 +289,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
               {data.workflowId && !selectedWorkflow && !isLoadingWorkflows && (
                 <SelectItem value={data.workflowId}>{t('scans.basic.currentInactive')}</SelectItem>
               )}
-              {runnable.map((workflow) => (
+              {runnableHere.map((workflow) => (
                 <SelectItem key={workflow.id} value={workflow.id}>
                   <div className="flex items-center gap-2">
                     <span>{workflow.name}</span>
@@ -221,6 +306,28 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                   </div>
                 </SelectItem>
               ))}
+              {aboveHere.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel className="text-xs text-muted-foreground">
+                    {t('scans.intensity.aboveGroup')}
+                  </SelectLabel>
+                  {aboveHere.map((workflow) => (
+                    <SelectItem
+                      key={workflow.id}
+                      value={workflow.id}
+                      disabled
+                      title={aboveReason(tierOf.get(workflow.id))}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>{workflow.name}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {aboveReason(tierOf.get(workflow.id))}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
               {notAvailable.length > 0 && (
                 <SelectGroup>
                   <SelectLabel className="text-xs text-muted-foreground">
@@ -295,6 +402,7 @@ function ChoiceCard({
   icon,
   stages,
   readiness,
+  aboveCeiling,
 }: {
   value: string
   title: string
@@ -303,12 +411,14 @@ function ChoiceCard({
   /** Step names by stage: steps of one stage run in parallel. */
   stages?: string[][]
   readiness?: WorkflowReadiness
+  /** Why the choice is above the scan's intensity, when it is. */
+  aboveCeiling?: string
 }) {
   const { t } = useTranslation()
   const id = `run-choice-${value}`
-  const off = !isRunnable(readiness)
-  const label = readinessLabel(readiness)
-  const problem = firstProblem(readiness)
+  const off = !isRunnable(readiness) || !!aboveCeiling
+  const label = aboveCeiling ?? readinessLabel(readiness)
+  const problem = aboveCeiling ? undefined : firstProblem(readiness)
   const fixHref = readinessFixHref(readiness)
   return (
     <Label

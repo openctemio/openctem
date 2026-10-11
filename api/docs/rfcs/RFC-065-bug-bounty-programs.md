@@ -726,7 +726,12 @@ covers the target.
 > `programfeed:<sequence>`, observed at the record's `last_changed`) or
 > `import` (`program-import` / `program-manual`, run the program and its
 > terms hash); the report opens no exposure and closes no port. The
-> confidentiality of private-program assets follows.
+> confidentiality of private-program assets follows. Crawlers,
+> template scanners and top-ports scans run inside a limit on sensors that
+> enforce it: the signed job carries the limits, the sensor's task
+> forwarder refuses other ports and out-of-prefix requests, and the sensor
+> reports `scope.limits@1` (docs/architecture/job-signing.md, "Scope
+> limits"; sdk-go `pkg/scopelimit`).
 
 The feed importer is an asset collector, not a second asset pipeline:
 
