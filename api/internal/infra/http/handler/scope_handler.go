@@ -42,6 +42,7 @@ type ScopeHandler struct {
 	sweeper     DiscoverySweeper
 	waitStarter ScopeWaitStarter
 	programs    HiddenPrograms
+	addresses   ScopeAddressSuggester
 }
 
 // HiddenPrograms lists the private programs whose entries the caller may

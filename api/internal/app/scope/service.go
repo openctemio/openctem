@@ -53,6 +53,8 @@ type Service struct {
 	// The scope join after a committed change (join.go).
 	joiner  ScopeJoiner
 	visible VisibleAssetCounter
+	// connectors reads a connector integration (connector.go).
+	connectors ConnectorIntegrations
 	// ledger is the job signer's scope ledger (ledger.go); nil: none.
 	ledger LedgerFeed
 	// ledgerTemplates lists the approved template versions for snapshots.
