@@ -41,6 +41,7 @@ for registered lookalikes:
 | D3 | Registered candidates re-checked daily, the rest weekly, at most 100 per watch and 300 per tenant per hourly run; CT at most 10 queries per tenant per run and weekly per name | Bounded load on the resolver and on crt.sh |
 | D4 | Findings are exposures, triaged with the existing exposure states | One triage model; alerts, digest and the change feed pick them up |
 | D5 | A resolver failure concludes nothing (the candidate stays due) | No false "unregistered" |
+| D6 | Per-organization off switch `lookalike_ct_enabled` (EASM settings, on by default, audited with the section); off, or an unreadable setting, sends no candidate name to crt.sh and the DNS checks continue | Same pattern as the CT opt-out (E8) |
 
 Not built: WHOIS/RDAP registration dates, page similarity (would contact the
 host), takedown workflows with registrars, monitoring of third-party brands,
