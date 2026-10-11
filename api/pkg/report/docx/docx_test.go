@@ -4,10 +4,18 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"image"
+	"image/png"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/openctemio/openctem/api/pkg/report/markdown"
 )
+
+func pngEncode(w io.Writer) error {
+	return png.Encode(w, image.NewRGBA(image.Rect(0, 0, 4, 1)))
+}
 
 const docOpen = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>`
 const docClose = `<w:sectPr/></w:body></w:document>`
@@ -123,7 +131,7 @@ func TestRender_EmptyCellKeepsAParagraph(t *testing.T) {
 func TestRender_Markdown(t *testing.T) {
 	md := "Some **bold** and `code` text.\n\n- first\n- second\n\n```\nGET / HTTP/1.1\n```"
 	doc := render(t, docWith(para("{@description}", "")), Data{"description": md})
-	for _, want := range []string{"<w:b/>", "Consolas", "• first", "GET / HTTP/1.1", "bold"} {
+	for _, want := range []string{"<w:b/>", "Consolas", "• ", "first", "GET / HTTP/1.1", "bold"} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("markdown output lacks %q: %s", want, doc)
 		}
@@ -251,5 +259,48 @@ func TestRender_OutputBound(t *testing.T) {
 	_, _, err := Render(docWith(para("{#items}", "")+para("{.}", "")+para("{/items}", "")), Data{"items": items}, false)
 	if !errors.Is(err, ErrOutputTooLarge) {
 		t.Fatalf("err = %v, want ErrOutputTooLarge", err)
+	}
+}
+
+func TestRender_EmbedsEvidenceImages(t *testing.T) {
+	var png bytes.Buffer
+	if err := pngEncode(&png); err != nil {
+		t.Fatal(err)
+	}
+	url := "/api/v1/attachments/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	tpl := docWith(para("{@description}", ""))
+	md := "Proof:\n\n![login bypass](" + url + ")\n\n![remote](https://example.com/x.png)"
+	out, _, err := RenderWithImages(tpl, Data{"description": md}, map[string]markdown.Image{
+		url: {ContentType: "image/png", Data: png.Bytes(), Width: 4000, Height: 1000},
+	}, false)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	doc := readPart(t, out, "word/document.xml")
+	if err := wellFormed(doc); err != nil {
+		t.Fatalf("document not well-formed: %v", err)
+	}
+	if !strings.Contains(doc, `r:embed="rIdEvidence1"`) || !strings.Contains(doc, `descr="login bypass"`) {
+		t.Fatalf("drawing missing: %s", doc)
+	}
+	if !strings.Contains(doc, `cx="5486400"`) {
+		t.Fatal("a wide image is not scaled to the page width")
+	}
+	if !strings.Contains(doc, "[remote]") || strings.Contains(doc, "example.com/x.png\"") {
+		t.Fatal("an unresolved image must be its alt text")
+	}
+	rels := readPart(t, out, "word/_rels/document.xml.rels")
+	if !strings.Contains(rels, `Target="media/evidence-1.png"`) {
+		t.Fatalf("relationship missing: %s", rels)
+	}
+	if got := readPart(t, out, "word/media/evidence-1.png"); got != png.String() {
+		t.Fatal("media part does not hold the image")
+	}
+	if ct := readPart(t, out, "[Content_Types].xml"); !strings.Contains(ct, `Extension="png"`) {
+		t.Fatal("png content type not declared")
+	}
+	// The output is still a template the checks accept (no external links).
+	if _, err := Inspect(out); err != nil {
+		t.Fatalf("rendered package fails the checks: %v", err)
 	}
 }
