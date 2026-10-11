@@ -121,6 +121,7 @@ type ReviewService struct {
 	coverage  ReviewCoverage
 	addrs     ReviewAddressStore
 	orgName   OrgNamer
+	seeded    SeededNetworks
 }
 
 // SetDecisionEffects runs reclassification and rejection hygiene after each

@@ -236,6 +236,8 @@ type Repositories struct {
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
 	EASMSummary *postgres.EASMSummaryRepository
+	// EASMNetworkSeed stores AS number and organization seeds (RFC-082).
+	EASMNetworkSeed *postgres.EASMNetworkSeedRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -499,6 +501,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
+		EASMNetworkSeed:  postgres.NewEASMNetworkSeedRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),
