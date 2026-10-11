@@ -35,6 +35,8 @@ export interface EASMSettingsInput {
   dns_interval_hours: number
   /** Automatic passive enrichment of new assets; omitted keeps the stored value. */
   enrichment_enabled?: boolean
+  /** Look network seeds up in RIPEstat (RFC-082); omitted keeps the stored value. */
+  network_lookups_enabled?: boolean
 }
 
 /** PUT /api/v1/easm/settings (settings:write, audited). */

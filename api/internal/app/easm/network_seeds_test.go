@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 type fakeSeedStore struct {
@@ -235,5 +236,49 @@ func TestRIPEstatClientIsGuarded(t *testing.T) {
 	c.base, c.wait = srv.URL+"/data/", 0
 	if _, err := c.ASNHolder(context.Background(), "AS3333"); err == nil {
 		t.Fatal("the guarded client reached a loopback server")
+	}
+}
+
+type seedSettings struct {
+	off bool
+	err error
+}
+
+func (s seedSettings) GetEASMSettings(context.Context, string) (*tenant.EASMSettings, error) {
+	return &tenant.EASMSettings{NetworkLookupsDisabled: s.off}, s.err
+}
+
+type countingSource struct {
+	fakeSource
+	calls *int
+}
+
+func (c countingSource) ASNHolder(ctx context.Context, asn string) (string, error) {
+	*c.calls++
+	return c.fakeSource.ASNHolder(ctx, asn)
+}
+
+// The organization's opt-out (and an unreadable setting) sends nothing to
+// RIPEstat; a manual refresh is refused.
+func TestNetworkSeedLookupsOptOut(t *testing.T) {
+	ctx := context.Background()
+	tid := shared.NewID()
+	for _, st := range []seedSettings{{off: true}, {err: errors.New("db down")}} {
+		calls := 0
+		store := newFakeSeedStore()
+		svc := NewNetworkSeedService(store, countingSource{fakeSource{holder: "X"}, &calls}, scopedom.DefaultGuardrails(), nil)
+		svc.async = func(f func()) { f() }
+		svc.SetSettings(st)
+		v, err := svc.Create(ctx, tid, nil, easmseed.KindASN, "AS3333", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if calls != 0 || store.seeds[v.ID].ExpandError == "" {
+			t.Fatalf("%+v: source called %d times, error %q", st, calls, store.seeds[v.ID].ExpandError)
+		}
+		store.claimed = map[string]time.Time{}
+		if err := svc.Expand(ctx, tid, v.ID); !errors.Is(err, ErrLookupsOff) {
+			t.Fatalf("%+v: manual refresh: %v", st, err)
+		}
 	}
 }

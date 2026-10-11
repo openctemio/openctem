@@ -190,6 +190,8 @@ func (h *EASMNetworkSeedHandler) Expand(w http.ResponseWriter, r *http.Request) 
 		switch {
 		case errors.Is(err, shared.ErrNotFound):
 			apierror.NotFound("Seed").WriteJSON(w)
+		case errors.Is(err, easmapp.ErrLookupsOff):
+			apierror.Conflict("Lookups in public routing data are turned off for the organization").WriteJSON(w)
 		case errors.Is(err, easmapp.ErrExpandTooSoon):
 			w.Header().Set("Retry-After", "900")
 			apierror.TooManyRequests("The seed was refreshed less than 15 minutes ago").WriteJSON(w)

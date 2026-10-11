@@ -36,6 +36,7 @@ A seed **never authorizes a probe** and never widens scope by itself.
 | D3 | Expansion results are suggestions only; scope entries come from the scope flow | RFC-054: only scope entries authorize probes; approvals and guardrails stay the gate |
 | D4 | A cloud or CDN AS (shared provider list) offers no prefixes; organization search drops shared ASes and keeps only ASes whose registration names the organization | Those networks serve other organizations |
 | D5 | No platform-side reverse-DNS sweep of CIDR entries | Sweeping netblocks is active-ish volume work; it belongs in the sensor pipeline (dnsx PTR, RFC-036 P3) |
+| D7 | Per-organization off switch `network_lookups_enabled` (EASM settings, on by default, audited with the section); off, or an unreadable setting, sends nothing to RIPEstat and a manual refresh answers 409 | Same pattern as the CT opt-out (E8): the organization decides what leaves the platform |
 | D6 | No new scope target type for ASN | An AS changes owners and leases; authorizing by AS would authorize addresses nobody reviewed |
 
 Not built: Team Cymru or WHOIS lookups, per-tenant source keys, automatic
@@ -77,7 +78,7 @@ decision), favicon/analytics-id seeds.
 | Third parties | A tenant seeds someone else's AS to scan their ranges | Seeds authorize nothing; prefixes go through the scope flow, guardrails (deny list, CIDR caps) and, for platform sensors, domain/ownership proof; shared providers offer nothing |
 | Another organization | Read or change seeds across tenants | Tenant from the token in every query; cross-tenant DB tests (get, delete, claim) |
 | RIPEstat / network path | Hostile or huge response, SSRF via redirect | SSRF-guarded client, fixed host, size cap, strict JSON, every prefix parsed and canonicalized, every AS normalized, text cleaned and capped |
-| Data disclosure | AS numbers and organization names sent to RIPEstat | Documented in the UI; public data about the organization; nothing else is sent |
+| Data disclosure | AS numbers and organization names sent to RIPEstat | Documented in the UI; public data about the organization; nothing else is sent; the organization can turn lookups off (fail closed on an unreadable setting) |
 | Abuse of the source | Many refreshes | 15-minute cooldown per seed, 1 request/s per process, 50 seeds per tenant, weekly refresh |
 
 ## 5. Rollout

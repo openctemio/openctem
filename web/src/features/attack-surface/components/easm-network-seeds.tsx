@@ -38,6 +38,7 @@ import {
   refreshNetworkSeed,
   useEASMNetworkSeeds,
 } from '../hooks/use-easm-network-seeds'
+import { useEASMSettings } from '../hooks/use-easm-settings'
 
 type SeedKind = 'asn' | 'org_name'
 
@@ -229,6 +230,8 @@ export function EASMNetworkSeedsPanel() {
   const canWrite = can(Permission.ScopeWrite)
   const canDelete = can(Permission.ScopeDelete)
   const { seeds, max, error, isLoading, mutate } = useEASMNetworkSeeds()
+  const { settings } = useEASMSettings()
+  const lookupsOff = settings?.network_lookups_enabled === false
   const [kind, setKind] = useState<SeedKind>('asn')
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
@@ -281,6 +284,14 @@ export function EASMNetworkSeedsPanel() {
           'AS numbers and organization names that are yours. Each is looked up in public routing data (RIPEstat; the value is sent there): an AS number lists the address ranges it announces, which you can add as scope entries; an organization name lists the AS numbers registered to it. A seed never lets a scan reach anything by itself, scope entries do.'
         )}
       </p>
+      {lookupsOff && (
+        <p className="rounded-md border p-3 text-sm">
+          {t(
+            'networkSeeds.lookupsOff',
+            'Lookups in public routing data are turned off for your organization (Attack surface › Monitoring). Seeds are kept but not looked up.'
+          )}
+        </p>
+      )}
       {canWrite && (
         <form
           className="flex flex-wrap items-end gap-2"

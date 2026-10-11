@@ -75,3 +75,26 @@ func TestEASMNetworkSeedHandler(t *testing.T) {
 		t.Fatal("create not audited")
 	}
 }
+
+// RIPEstat lookups are on by default; the switch turns them off and an
+// omitted field keeps the stored value.
+func TestEASMSettingsNetworkLookups(t *testing.T) {
+	tenantID := shared.NewID()
+	store := &fakeEASMSettingsStore{}
+	h := NewEASMSettingsHandler(store, nil, &fakeSweeper{}, EASMPlatform{}, &settingsAudit{}, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+	if !strings.Contains(w.Body.String(), `"network_lookups_enabled":true`) {
+		t.Fatalf("default: %s", w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true,"network_lookups_enabled":false}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || !store.es.NetworkLookupsDisabled {
+		t.Fatalf("off: %d %+v", w.Code, store.es)
+	}
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true}`, tenantID, "u1"))
+	if !store.es.NetworkLookupsDisabled {
+		t.Fatal("omitted field turned lookups back on")
+	}
+}

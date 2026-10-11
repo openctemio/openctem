@@ -2483,6 +2483,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetAssetsObservedCallback(assetfreshnessapp.NewRecorder(repos.AssetFreshness, log).AssetsObserved)
 	// Network seeds (RFC-082): expanded from RIPEstat through the SSRF guard.
 	s.EASMNetworkSeeds = easmapp.NewNetworkSeedService(repos.EASMNetworkSeed, easmapp.NewRIPEstat(), s.ScopeGuardrails, log.With("service", "easm-network-seeds"))
+	s.EASMNetworkSeeds.SetSettings(s.Tenant) // per-organization opt-out of RIPEstat lookups
 
 	// A successful scan run fires the `scan_completed` workflow trigger.
 	s.ScanRun.SetRunCompletedCallback(s.WorkflowDispatcher.DispatchScanCompleted)
