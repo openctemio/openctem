@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ type Server struct {
 	// rateLimit is the global per-IP rate limit, also applied to the
 	// prefix handlers (MountPrefix).
 	rateLimit func(http.Handler) http.Handler
+	// splitTLS shares the TLS port with the sensor gRPC binding.
+	splitTLS TLSSplitter
 }
 
 type prefixHandler struct {
@@ -160,12 +163,26 @@ func (s *Server) Logger() *logger.Logger {
 
 // Start starts the HTTP server.
 func (s *Server) Start() error {
-	s.logger.Info("starting HTTP server", "addr", s.config.Server.Addr())
-
-	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("failed to start server: %w", err)
+	if !s.config.Server.TLSEnabled() {
+		s.logger.Info("starting HTTP server", "addr", s.config.Server.Addr())
+		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("failed to start server: %w", err)
+		}
+		return nil
 	}
 
+	ln, err := net.Listen("tcp", s.config.Server.Addr())
+	if err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+	if ln, err = s.tlsListener(ln); err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+	s.logger.Info("starting HTTPS server (TLS terminated by the API)", "addr", s.config.Server.Addr(),
+		"sensor_grpc_on_this_port", s.splitTLS != nil)
+	if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
 	return nil
 }
 

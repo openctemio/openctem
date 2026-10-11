@@ -1,0 +1,17 @@
+{
+  "prioritization.noRelationships.title": "Chưa có dữ liệu quan hệ",
+  "prioritization.goToAssets": "Đến tài sản",
+  "prioritization.attackPaths.title": "Đường tấn công",
+  "prioritization.attackPaths.description": "Tài sản xếp hạng theo số điểm vào công khai có thể chạm tới chúng.",
+  "prioritization.attackPaths.noRelationships": "Thêm quan hệ giữa các tài sản để xem điểm vào hướng Internet chạm tới được những tài sản nào.",
+  "prioritization.attackPaths.rankedTitle": "Tài sản xếp hạng theo điểm đường tấn công",
+  "prioritization.attackPaths.rankedHint": "Điểm = số điểm vào chạm tới × điểm rủi ro × trọng số mức quan trọng. Bấm vào một nút để mở các phát hiện của nó.",
+  "prioritization.exposureChains.title": "Chuỗi phơi nhiễm",
+  "prioritization.exposureChains.description": "Đường đi từ điểm vào hướng Internet tới tài sản có phát hiện KEV hoặc nghiêm trọng, xếp theo mức khẩn cấp.",
+  "prioritization.exposureChains.noRelationships": "Thêm quan hệ giữa các tài sản để lần ra đường đi từ điểm vào hướng Internet.",
+  "prioritization.exposureChains.rankedTitle": "Chuỗi xếp theo mức khẩn cấp",
+  "prioritization.exposureChains.rankedHint": "Mỗi chuỗi là đường đi ngắn nhất. Bấm vào một nút để mở các phát hiện của nó.",
+  "prioritization.exposureChains.emptyTitle": "Không có chuỗi phơi nhiễm",
+  "prioritization.exposureChains.emptyDescription": "Không điểm vào hướng Internet nào chạm tới tài sản có phát hiện KEV hoặc nghiêm trọng.",
+  "prioritization.dryRun.previewNote": "Chỉ là xem trước. Lưu quy tắc sẽ phân loại lại các phát hiện khớp."
+}
