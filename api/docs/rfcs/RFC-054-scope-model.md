@@ -1049,7 +1049,14 @@ scan approval is **Strict**; in Off (default) and On a widening needs no
 second person. The platform policy of §12.6 now governs scan approval
 (`tenant_controlled`, `off`, `on`, `strict`; RFC-073 §5); its
 `tenant_controlled` owner-only approval count is removed. Unchanged in every
-mode: step-up on widening routes, the dry run, members only request, the
+mode: step-up on widening routes, the dry run, the
 T2 maximum duration and re-attestation (§12.4, §12.5), ownership proof, the
 platform deny list, CIDR caps, audit and notification.
+
+Amended 2026-10-11 (owner decision 2026-10-10: "approval only when creating
+scans, not for scope assets"): member requests (§6.1) and the exclusion
+review of §6.2 also apply only in Strict. In Off and On a caller with
+`attack_surface:scope:write` adds or widens an entry directly (step-up kept)
+and an exclusion is in effect at once; rows left pending stay pending and
+reviewable. Details in RFC-073 §6.
 

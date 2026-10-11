@@ -908,6 +908,8 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 		Metadata      struct {
 			RefusedTargets      json.RawMessage `json:"refused_targets"`
 			RefusedTargetsTotal int             `json:"refused_targets_total"`
+			CoverageGaps        json.RawMessage `json:"coverage_gaps"`
+			CoverageGapsTotal   int             `json:"coverage_gaps_total"`
 		} `json:"metadata"`
 	}
 
@@ -916,6 +918,11 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 	}
 	skipped, skippedTotal := scanrundom.ParseSkippedTargets(result.Metadata.RefusedTargets, result.Metadata.RefusedTargetsTotal)
 	skippedSummary := scanrundom.SkippedSummary(skipped, skippedTotal)
+	// Hosts the sensor could not fully cover: the step ends partial, the
+	// hosts are not read as "no findings" (RFC-074).
+	gaps, gapsTotal := scanrundom.ParseCoverageGaps(result.Metadata.CoverageGaps, result.Metadata.CoverageGapsTotal)
+	partial := scanrun.Partial{Skipped: skippedTotal, SkippedSummary: skippedSummary,
+		Gaps: gapsTotal, GapSummary: scanrundom.CoverageGapSummary(gaps, gapsTotal)}
 
 	// Trigger scan workflow progression asynchronously with independent context
 	// Use background context since the HTTP request context will be canceled after response
@@ -923,7 +930,7 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := h.scanRunService.OnStepCompletedWithSkips(bgCtx, payload.ScanRunID, payload.StepKey, result.FindingsCount, result.Output, skippedTotal, skippedSummary); err != nil {
+		if err := h.scanRunService.OnStepCompletedPartial(bgCtx, payload.ScanRunID, payload.StepKey, result.FindingsCount, result.Output, partial); err != nil {
 			h.logger.Error("failed to trigger pipeline progression",
 				"scan_run_id", payload.ScanRunID,
 				"step_key", payload.StepKey,

@@ -1,0 +1,5 @@
+### Behaviour change: sensor protocol v3 picks its bindings by itself
+
+- `SENSOR_TRANSPORT_V3_ENABLED` is retired (startup refuses it). `SENSOR_TRANSPORT_V3` is `auto` by default: the HTTPS binding (`/api/v3/sensor`) is always served, so key-bound sensors move to protocol v3 at their next hello with no configuration; `off` serves no v3 and sends every sensor back to v2 at its next call.
+- The gRPC binding listens once the sensor CA loads and a public host is known (`SENSOR_PUBLIC_HOST`, else `sensors.<host>:<port>` of the platform URL when its host is a DNS name). A self-probe dials that host through the gateway every minute and verifies the server certificate against the sensor CA; hello names the gRPC endpoint only while the probe passes, so a gateway without passthrough, a closed port or a wrong name leave sensors on the HTTPS binding instead of sending them to an endpoint that cannot work.
+- `GET /api/v1/sensors/transport` (`sensors:read`) reports the mode and the gRPC binding's state, endpoint and reason; metrics `openctem_sensor_transport_grpc_advertised` and `openctem_sensor_transport_grpc_probe_total{result}`.

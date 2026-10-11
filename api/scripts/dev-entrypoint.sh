@@ -57,32 +57,11 @@ main() {
     # Clean old binary to ensure fresh build
     rm -rf /app/tmp/openctem 2>/dev/null || true
 
-    # go.work for a local sdk-go checkout mounted at /app/sdk-go, only when the
-    # API actually requires sdk-go (it does since the chunked feed transfer).
-    # Without that requirement, adding sdk-go to the workspace serves no
-    # purpose and can only change which versions of shared dependencies the
-    # dev binary is built with (MVS across the workspace), so it would no
-    # longer match CI and the release image; such a go.work is removed.
-    # A mounted checkout that lacks a package the API imports (an older
-    # branch) would break every hot-reload build: then the go.mod pin is used.
-    if [ -d "/app/sdk-go" ] && grep -q 'github.com/openctemio/sdk-go ' /app/go.mod; then
-        echo "Creating go.work for local SDK..."
-        cat > /app/go.work <<GOWORK
-go $(grep '^go ' /app/go.mod | awk '{print $2}')
-
-use (
-	.
-	./sdk-go
-)
-GOWORK
-        if ! (cd /app && go list -deps ./cmd/server >/dev/null 2>&1); then
-            echo "Warning: /app/sdk-go does not build with this API (check out sdk-go main); using the go.mod pin"
-            rm -f /app/go.work /app/go.work.sum
-        fi
-    elif [ -f /app/go.work ] && grep -q '^[[:space:]]*\./sdk-go$' /app/go.work; then
-        echo "Removing go.work: the API does not require sdk-go"
-        rm -f /app/go.work /app/go.work.sum
-    fi
+    # Build from the go.mod pins only, exactly like CI and the release image
+    # (both run with GOWORK=off). The API needs one SDK module,
+    # github.com/openctemio/sdk-go/pkg/transfer, resolved from its tag; a
+    # mounted SDK checkout or a stale go.work in the source mount is ignored.
+    export GOWORK=off
 
     # Ensure go dependencies are in sync
     echo "Syncing Go dependencies..."

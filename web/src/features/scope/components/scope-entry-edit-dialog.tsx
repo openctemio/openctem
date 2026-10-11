@@ -122,7 +122,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (widening && !canApprove) {
+    if (widening && !canApprove && entriesNeedApproval) {
       setError(t('scope.error.WIDENING_NEEDS_APPROVER'))
       return
     }
@@ -240,7 +240,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
             {widening && (
               <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
                 {t('scope.edit.widens', 'This widens the entry.')}{' '}
-                {canApprove
+                {canApprove || !entriesNeedApproval
                   ? needsApprovals
                     ? t(
                         'scope.edit.widensPending',

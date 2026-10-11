@@ -275,21 +275,25 @@ type RepositoryExtensionRepository interface {
 
 // Filter defines the filtering options for listing assets.
 type Filter struct {
-	TenantID         *string             // Filter by tenant ID
-	Name             *string             // Filter by name (partial match)
-	Types            []AssetType         // Filter by asset types
-	Lenses           []Lens              // Filter by registry lens (the stored asset_lens)
-	Criticalities    []Criticality       // Filter by criticality levels
-	Statuses         []Status            // Filter by statuses
-	Scopes           []Scope             // Filter by scopes
-	Exposures        []Exposure          // Filter by exposure levels
-	Providers        []Provider          // Filter by providers
-	SyncStatuses     []SyncStatus        // Filter by sync statuses
-	Tags             []string            // Filter by tags
-	Search           *string             // Full-text search across name and description
-	MinRiskScore     *int                // Filter by minimum risk score
-	MaxRiskScore     *int                // Filter by maximum risk score
-	HasFindings      *bool               // Filter by whether asset has findings
+	TenantID      *string       // Filter by tenant ID
+	Name          *string       // Filter by name (partial match)
+	Types         []AssetType   // Filter by asset types
+	Lenses        []Lens        // Filter by registry lens (the stored asset_lens)
+	Criticalities []Criticality // Filter by criticality levels
+	Statuses      []Status      // Filter by statuses
+	Scopes        []Scope       // Filter by scopes
+	Exposures     []Exposure    // Filter by exposure levels
+	Providers     []Provider    // Filter by providers
+	SyncStatuses  []SyncStatus  // Filter by sync statuses
+	Tags          []string      // Filter by tags
+	Search        *string       // Full-text search across name and description
+	MinRiskScore  *int          // Filter by minimum risk score
+	MaxRiskScore  *int          // Filter by maximum risk score
+	HasFindings   *bool         // Filter by whether asset has findings
+	// Freshness keeps assets whose data is "stale" (an attribute class past
+	// its TTL) or "never" (a passive class that applies was never observed);
+	// docs/architecture/asset-freshness.md. "" = no filter.
+	Freshness        string
 	ParentID         *string             // Filter by parent asset ID
 	IsCrownJewel     *bool               // Filter crown jewel assets
 	SubType          *string             // Filter by sub_type
@@ -644,6 +648,7 @@ func (f Filter) IsEmpty() bool {
 		f.MinRiskScore == nil &&
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
+		f.Freshness == "" &&
 		f.ParentID == nil &&
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&

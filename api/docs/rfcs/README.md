@@ -67,14 +67,14 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-049](RFC-049-unified-connector-framework.md) | Unified connector framework (platform-direct and sensor-relayed) | **Proposed** (2026-10-04). |
 | [RFC-050](RFC-050-asset-access-model.md) | Asset access model | Accepted (decisions A1–A13, 2026-10-04); P0 largely implemented (W1–W4, W6, W6a, W7, W8); P1–P3 not built |
 | [RFC-051](RFC-051-ci-runner-identity-and-gate.md) | CI runner identity and the central gate | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented |
-| [RFC-052](RFC-052-sensor-pairing-and-authorization.md) | Sensor pairing and per-sensor authorization | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented |
+| [RFC-052](RFC-052-sensor-pairing-and-authorization.md) | Sensor pairing and per-sensor authorization | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented |
 | [RFC-053](RFC-053-migration-baseline.md) | Migration baseline (squash the migration chain) | Implemented |
 | [RFC-054](RFC-054-scope-model.md) | Scope model (what a tenant may actively probe) | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13); P0 implemented |
 | [RFC-055](RFC-055-tool-contract-v1.md) | Tool Contract v1 (capabilities, descriptors, inputs and outputs of every sensor tool) | Accepted (decisions TC1–TC16, 2026-10-07); in implementation: capability contracts from `ctis/capability` in the stage catalog and ingest (OC1, OC4) shipped; per-tenant tool descriptors (OC2) and later items not built |
 | [RFC-056](RFC-056-web-attack-surface.md) | Web attack surface (origins, endpoints, parameters, path patterns) | Implemented (decisions WS1–WS14, 2026-10-07; W-OC1–W-OC8) |
 | [RFC-057](RFC-057-finding-evidence-and-retest.md) | Finding evidence and honest retests | Implemented in the API (decided 2026-10-07: mask by default with an audited reveal; a tool-agnostic evidence contract); the SDK and sensor emitters follow the tool contract track (RFC-055) |
 | [RFC-058](RFC-058-external-members.md) | External members and trusted organizations | Accepted (owner delegated GA1–GA28, 2026-10-08). |
-| [RFC-059](RFC-059-sensor-transport-v3.md) | Sensor transport v3 — gRPC with mTLS, Connect/HTTPS fallback | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated) |
+| [RFC-059](RFC-059-sensor-transport-v3.md) | Sensor transport v3 — gRPC with mTLS, Connect/HTTPS fallback | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated; revised by the owner 2026-10-11: no enable flag, bindings chosen automatically, T15; one port for every setup by ALPN routing, T16) |
 | [RFC-060](RFC-060-tool-network-confinement-and-overrides.md) | Tool network confinement, verified built-ins and the tool override surface | Proposed (owner 2026-10-08: "the tool SDK must be secure", and "a developer must be able to override fields such as the User-Agent; support flexibility as much as possible") |
 | [RFC-061](RFC-061-content-packs.md) | Content packs — templates, rules, wordlists and signatures as a contract | Proposed (owner 2026-10-08: "a developer writes a tool and wants to point it at templates or rules other than the default: default + custom, custom only, or another source; it must be flexible and there must be a contract the platform understands". And: "should the tool check for updates before running, or should the platform push them? Think through every use case") |
 | [RFC-062](RFC-062-mcp-authorization.md) | MCP authorization — OAuth 2.1 for AI clients | Accepted (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
@@ -89,6 +89,8 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-071](RFC-071-scan-intensity.md) | Scan intensity (passive, active, intrusive) | Accepted (delegated, 2026-10-10); P0 in implementation |
 | [RFC-072](RFC-072-chunked-feed-transfer.md) | Chunked feed transfer | Accepted (2026-10-10, delegated; D1–D8 adopted as recommended, §12). |
 | [RFC-073](RFC-073-scan-approval-governance.md) | Scan approval governance (approve scans, not scope entries) | Accepted (owner decision 2026-10-10); P0 in progress |
+| [RFC-074](RFC-074-adaptive-sensor-control.md) | Adaptive sensor control (measured values instead of configured numbers) | Proposed (2026-10-11) |
+| [RFC-075](RFC-075-asset-freshness.md) | Asset freshness and automatic enrichment | Proposed (2026-10-11); P0 in implementation |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

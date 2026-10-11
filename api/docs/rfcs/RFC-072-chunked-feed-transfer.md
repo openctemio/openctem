@@ -315,7 +315,7 @@ F1/F2 and F3 are independent; F4 needs F1 and F3; F5 needs F2 and F3.
 
 | # | Decision | Adopted |
 |---|---|---|
-| D1 | One shared layer in sdk-go; the api takes a dependency on sdk-go for it (the packages are stdlib + `httpsec`/`jobsig` + Prometheus) | yes |
+| D1 | One shared layer in sdk-go, published as its own module `github.com/openctemio/sdk-go/pkg/transfer` (tags `pkg/transfer/vX.Y.Z`; standard library + Prometheus). The api, vulnfeed and programfeed require that module, not the whole SDK | yes |
 | D2 | Flat release layout, chunks named `sha256-<hex>.jsonl.gz` | yes |
 | D3 | Content-defined chunk boundaries from record ids (target 2 000 records, cap 48 MiB uncompressed) | yes |
 | D4 | The SDK verifies through a `Verifier`/`Trust` interface; each feed keeps its key set rules (`feedsign`); the SDK ships a plain Ed25519 DSSE signer and verifier on the `jobsig` envelope | yes |
