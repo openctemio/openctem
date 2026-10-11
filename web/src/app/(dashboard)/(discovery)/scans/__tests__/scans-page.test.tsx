@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import ScansPage from '../page'
@@ -9,6 +9,8 @@ import ScansPage from '../page'
 // tenant's 21st scan could not be seen and the footer read "of 20".
 const configCalls: Array<Record<string, unknown> | undefined> = []
 let configsResponse: unknown
+const bulkDisable = vi.hoisted(() => vi.fn())
+const bulkDelete = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/api/scan-hooks', () => ({
   useScanConfigs: (filters?: Record<string, unknown>) => {
@@ -21,8 +23,8 @@ vi.mock('@/lib/api/scan-hooks', () => ({
   }),
   useBulkActivateScanConfigs: () => ({ trigger: vi.fn(), isMutating: false }),
   useBulkPauseScanConfigs: () => ({ trigger: vi.fn(), isMutating: false }),
-  useBulkDisableScanConfigs: () => ({ trigger: vi.fn(), isMutating: false }),
-  useBulkDeleteScanConfigs: () => ({ trigger: vi.fn(), isMutating: false }),
+  useBulkDisableScanConfigs: () => ({ trigger: bulkDisable, isMutating: false }),
+  useBulkDeleteScanConfigs: () => ({ trigger: bulkDelete, isMutating: false }),
   invalidateScanConfigsCache: vi.fn(),
 }))
 vi.mock('@/features/scans/components', () => ({
@@ -131,5 +133,34 @@ describe('Scans › Configurations', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: /Desc/ }))
     expect(urlState.sort).toBe('-total_runs')
     expect(urlState.page).toBeUndefined()
+  })
+
+  it('asks before disabling the selected scans, with the count', async () => {
+    bulkDisable.mockReset()
+    bulkDisable.mockResolvedValue({ message: 'ok' })
+    render(<ScansPage />)
+    const boxes = screen.getAllByRole('checkbox')
+    await userEvent.click(boxes[1])
+    await userEvent.click(screen.getByRole('button', { name: 'Disable' }))
+    expect(bulkDisable).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Disable 1 scan?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Disable' }))
+    await waitFor(() => expect(bulkDisable).toHaveBeenCalledTimes(1))
+    expect(bulkDisable.mock.calls[0][0].scan_ids).toHaveLength(1)
+  })
+
+  it('a bulk delete of ten or more scans asks to type the count', async () => {
+    bulkDelete.mockReset()
+    render(<ScansPage />)
+    await userEvent.click(screen.getAllByRole('checkbox')[0])
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete 25 scans?')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), '25')
+    expect(confirm).toBeEnabled()
+    expect(bulkDelete).not.toHaveBeenCalled()
   })
 })

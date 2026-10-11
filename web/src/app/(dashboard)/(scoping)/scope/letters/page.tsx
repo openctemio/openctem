@@ -12,6 +12,7 @@ import { useId, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Download, FileSignature, Loader2, Upload } from 'lucide-react'
 import { Main } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -186,12 +187,14 @@ export default function ScopeLettersPage() {
   const { data, error, isLoading, mutate } = useLetters()
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  const [pendingRevoke, setPendingRevoke] = useState<AuthorizationLetter | null>(null)
 
   const revoke = async (l: AuthorizationLetter) => {
     setBusy(l.id)
     try {
       await revokeLetter(l.id)
       toast.success(t('letters.revoked', 'Letter revoked: entries naming it no longer authorize'))
+      setPendingRevoke(null)
       await mutate()
     } catch (err) {
       toast.error(errorText(err, t('letters.revokeFailed', 'The letter could not be revoked')))
@@ -298,7 +301,7 @@ export default function ScopeLettersPage() {
                         size="sm"
                         className="text-destructive"
                         disabled={busy === l.id}
-                        onClick={() => revoke(l)}
+                        onClick={() => setPendingRevoke(l)}
                       >
                         {t('letters.revoke', 'Revoke')}
                       </Button>
@@ -310,6 +313,21 @@ export default function ScopeLettersPage() {
           </Table>
         )}
       </div>
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        onOpenChange={(open) => !open && setPendingRevoke(null)}
+        destructive
+        title={t('confirm.letter.revokeTitle', 'Revoke the letter "{name}"?', {
+          name: pendingRevoke?.title ?? '',
+        })}
+        desc={t(
+          'confirm.letter.revokeDesc',
+          'Scope entries that name this letter stop authorizing active scans at once. A revoked letter cannot be reinstated; upload a new letter instead.'
+        )}
+        confirmText={t('confirm.revoke', 'Revoke')}
+        isLoading={busy !== null}
+        handleConfirm={() => (pendingRevoke ? revoke(pendingRevoke) : undefined)}
+      />
     </Main>
   )
 }
