@@ -76,13 +76,26 @@ func registerVersionRoute(router Router, authMiddleware Middleware) {
 	router.GET("/api/v1/version", handler.Version, authMiddleware)
 }
 
-// registerDocsRoutes registers API documentation endpoints (public).
-func registerDocsRoutes(router Router, h *handler.DocsHandler) {
-	// OpenAPI spec (YAML)
-	router.GET("/openapi.yaml", h.ServeOpenAPISpec)
-
-	// Scalar API documentation UI
-	router.GET("/docs", h.ServeDocsUI)
+// registerDocsRoutes registers the API documentation (the OpenAPI spec and
+// the API reference page). The public documentation lives on the docs site,
+// so in production the API serves:
+//   - /openapi.yaml to signed-in users only (authMiddleware);
+//   - no public /docs page;
+//   - /api/v1/admin/docs and /api/v1/admin/openapi.yaml to platform
+//     administrators with a verified console session (consoleAuth).
+//
+// Outside production /docs and /openapi.yaml stay public for development.
+func registerDocsRoutes(router Router, h *handler.DocsHandler, production bool, authMiddleware, consoleAuth Middleware) {
+	if production {
+		router.GET("/openapi.yaml", h.ServeOpenAPISpec, authMiddleware)
+	} else {
+		router.GET("/openapi.yaml", h.ServeOpenAPISpec)
+		router.GET("/docs", h.ServeDocsUI)
+	}
+	if consoleAuth != nil {
+		router.GET("/api/v1/admin/openapi.yaml", h.ServeOpenAPISpec, consoleAuth)
+		router.GET("/api/v1/admin/docs", h.ServeConsoleDocsUI, consoleAuth)
+	}
 }
 
 // registerDashboardRoutes registers dashboard endpoints.
