@@ -189,3 +189,17 @@ describe('tenable scan config', () => {
     expect(tenableScanConfigError({ ...c, integrationId: '' })).toMatch(/connector/)
   })
 })
+
+describe('connector inventory in scope (RFC-054 §14.8)', () => {
+  it('is on unless the config says false, and is written back', () => {
+    const on = readConnectorSettings({ config: {} } as unknown as Integration)
+    expect(on.inventoryInScope).toBe(true)
+    const off = readConnectorSettings({
+      config: { inventory_in_scope: false },
+    } as unknown as Integration)
+    expect(off.inventoryInScope).toBe(false)
+    expect(
+      connectorConfig({ ...on, sensorId: 's1', inventoryInScope: false }).inventory_in_scope
+    ).toBe(false)
+  })
+})

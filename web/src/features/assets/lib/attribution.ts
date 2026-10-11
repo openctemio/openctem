@@ -4,6 +4,8 @@
  * section and its tests.
  */
 
+import type { ApiConfirmScopeCoverage } from '@/features/scope/api/scope-api.types'
+
 export type AttributionState =
   'confirmed' | 'needs_review' | 'candidate' | 'dependency' | 'monitor_only' | 'rejected'
 
@@ -21,6 +23,8 @@ export interface AttributionEvidence {
 
 /** GET /api/v1/assets/{id}/attribution */
 export interface AssetAttribution {
+  /** What a confirmation did to scope (RFC-054 §14.5); decisions only. */
+  scope?: ApiConfirmScopeCoverage
   state: AttributionState
   confidence: number
   reason?: string

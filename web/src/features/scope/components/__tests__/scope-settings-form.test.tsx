@@ -67,10 +67,12 @@ describe('ScopeSettingsForm', () => {
     wrap(<ScopeSettingsForm settings={settings} />)
     expect(screen.getByText('Platform sensors need proof')).toBeInTheDocument()
     expect(screen.getByText('Always on')).toBeInTheDocument()
-    // The one switch is auto-join; nothing else toggles.
+    // The switches are auto-join and confirm-adds; nothing turns scope off.
     const switches = screen.getAllByRole('switch')
-    expect(switches).toHaveLength(1)
+    expect(switches).toHaveLength(2)
     expect(switches[0]).toHaveAccessibleName('Add discovered names automatically')
+    expect(switches[1]).toHaveAccessibleName('Confirming an asset adds it to scope')
+    expect(switches[1]).toBeChecked()
     expect(screen.queryByText(/disable scope|turn scope off/i)).not.toBeInTheDocument()
   })
 
@@ -80,11 +82,13 @@ describe('ScopeSettingsForm', () => {
     wrap(<ScopeSettingsForm settings={settings} />)
     const save = screen.getByRole('button', { name: /Save changes/ })
     expect(save).toBeDisabled()
-    await user.click(screen.getByRole('switch'))
+    await user.click(screen.getByRole('switch', { name: 'Add discovered names automatically' }))
+    await user.click(screen.getByRole('switch', { name: 'Confirming an asset adds it to scope' }))
     await user.click(save)
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith('/api/v1/scope/settings', {
         auto_join_discovered: false,
+        confirm_adds_to_scope: false,
         one_off_targets: 'admins_and_requests',
         one_off_max_days: 7,
         widening_approvals: null,
@@ -97,7 +101,7 @@ describe('ScopeSettingsForm', () => {
     perms.approve = false
     wrap(<ScopeSettingsForm settings={settings} />)
     expect(screen.queryByRole('button', { name: /Save changes/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('switch')).toBeDisabled()
+    for (const sw of screen.getAllByRole('switch')) expect(sw).toBeDisabled()
     expect(screen.getByText('Only scope approvers can change these.')).toBeInTheDocument()
   })
 

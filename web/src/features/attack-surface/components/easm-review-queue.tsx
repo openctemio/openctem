@@ -46,6 +46,7 @@ import { useEASMSummary } from '../hooks/use-easm-summary'
 import { EASMRuleSuggestions } from './easm-rule-suggestions'
 import { reviewReasonLabel } from '../lib/review-reasons'
 import { ScopeEntryDialog, ScopeFixButtons, type ScopeEntryDraft } from '@/features/scope'
+import { useConfirmScopeFollowUp } from '@/features/scope/hooks/use-confirm-scope-follow-up'
 import {
   Select,
   SelectContent,
@@ -104,6 +105,7 @@ export function EASMReviewQueue() {
     perPage: pagination.pageSize,
   })
   const { decide, saving } = useDecideReviewBatch()
+  const followScope = useConfirmScopeFollowUp()
 
   const clearSelection = () => {
     setSelected([])
@@ -125,6 +127,7 @@ export function EASMReviewQueue() {
         )
       clearSelection()
       void mutate()
+      void followScope(res.scope)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not save the decision')
     }

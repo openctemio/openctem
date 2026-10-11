@@ -250,8 +250,7 @@ export type EASMVerifiedDomainList = Schemas['internal_infra_http_handler.EASMVe
 export type EASMReviewEvidence =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence']
 /** POST /api/v1/easm/candidates/decisions */
-export type EASMDecisionResult =
-  Schemas['github_com_openctemio_openctem_api_internal_app_easm.DecisionResult']
+export type EASMDecisionResult = Schemas['internal_infra_http_handler.EASMDecisionResponse']
 /** GET/POST/PATCH /api/v1/easm/seeds — EASM seeds (RFC-036 §6.3). */
 export type EASMSettings = Schemas['internal_infra_http_handler.EASMSettingsResponse']
 export type EASMSweepTicket =
