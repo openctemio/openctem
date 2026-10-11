@@ -32,6 +32,10 @@ type EASMSettings struct {
 	// EnrichmentDisabled stops automatic passive enrichment of new assets
 	// (docs/architecture/asset-freshness.md); on by default.
 	EnrichmentDisabled bool `json:"enrichment_disabled,omitempty"`
+	// NetworkLookupsDisabled stops looking network seeds up in public routing
+	// data (RIPEstat): their AS numbers and organization names are no longer
+	// sent there (docs/rfcs/RFC-082-network-seeds.md).
+	NetworkLookupsDisabled bool `json:"network_lookups_disabled,omitempty"`
 }
 
 // Validate checks the floors: an interval is 0 (default) or 6..168 hours.

@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -70,7 +71,35 @@ type NetworkSeedService struct {
 	log        *logger.Logger
 	now        func() time.Time
 	// async runs an expansion in the background (tests run it inline).
-	async func(func())
+	async    func(func())
+	settings NetworkSeedSettings
+}
+
+// NetworkSeedSettings reads the organization's attack-surface settings,
+// where the switch for lookups in public routing data lives.
+type NetworkSeedSettings interface {
+	GetEASMSettings(ctx context.Context, tenantID string) (*tenant.EASMSettings, error)
+}
+
+// SetSettings wires the organization's lookup switch. Without it lookups run.
+func (s *NetworkSeedService) SetSettings(st NetworkSeedSettings) { s.settings = st }
+
+// ErrLookupsOff refuses a lookup the organization turned off.
+var ErrLookupsOff = fmt.Errorf("%w: lookups in public routing data are turned off for the organization", shared.ErrConflict)
+
+// lookupsAllowed reports whether the organization lets seeds be looked up
+// in public routing data. An unreadable setting answers no (fail closed:
+// nothing is sent on a database error).
+func (s *NetworkSeedService) lookupsAllowed(ctx context.Context, tenantID shared.ID) bool {
+	if s.settings == nil {
+		return true
+	}
+	es, err := s.settings.GetEASMSettings(ctx, tenantID.String())
+	if err != nil {
+		s.log.Warn("network seed settings unreadable; lookup skipped", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return false
+	}
+	return !es.NetworkLookupsDisabled
 }
 
 // NewNetworkSeedService creates the service.
@@ -150,6 +179,9 @@ func (s *NetworkSeedService) Expand(ctx context.Context, tenantID shared.ID, id 
 	if _, err := s.store.Get(ctx, tenantID, id); err != nil {
 		return err
 	}
+	if !s.lookupsAllowed(ctx, tenantID) {
+		return ErrLookupsOff
+	}
 	ok, err := s.store.ClaimExpansion(ctx, tenantID, id, s.now(), easmseed.ExpandCooldown)
 	if err != nil {
 		return err
@@ -210,6 +242,10 @@ func (s *NetworkSeedService) RefreshDue(ctx context.Context, skip func(shared.ID
 func (s *NetworkSeedService) expand(ctx context.Context, tenantID shared.ID, id string) {
 	sd, err := s.store.Get(ctx, tenantID, id)
 	if err != nil {
+		return
+	}
+	if !s.lookupsAllowed(ctx, tenantID) {
+		_ = s.store.SaveExpansion(ctx, tenantID, id, "", nil, nil, "lookups in public routing data are turned off for the organization")
 		return
 	}
 	var holder string

@@ -220,6 +220,28 @@ export function EASMMonitoringCard() {
             </p>
           )}
         </section>
+        <section
+          className="space-y-3 md:col-span-2"
+          aria-label={t('networkSeeds.lookups.title', 'Network seed lookups')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-network-lookups" className="font-medium">
+              {t('networkSeeds.lookups.title', 'Network seed lookups')}
+            </Label>
+            <Switch
+              id="easm-network-lookups"
+              checked={!!settings.network_lookups_enabled}
+              disabled={!canSettings || busy}
+              onCheckedChange={(on) => void save({ network_lookups_enabled: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'networkSeeds.lookups.description',
+              'Your AS numbers and organization names are sent to RIPEstat to find your address ranges. Turn this off to keep them private; network seeds are then not looked up.'
+            )}
+          </p>
+        </section>
       </CardContent>
     </Card>
   )
