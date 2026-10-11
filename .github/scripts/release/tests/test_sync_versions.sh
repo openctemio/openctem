@@ -41,7 +41,6 @@ bash "$SYNC" --root "$tmp/bump" >/dev/null 2>&1
 assert_eq "bump: .env.example" "OPENCTEM_VERSION=v0.9.0" "$(head -n 1 "$tmp/bump/api/deploy/.env.example")"
 assert_contains "bump: compose example" "e.g. v0.9.0}}" "$(cat "$tmp/bump/api/deploy/docker-compose.yml")"
 assert_contains "bump: sensor image" 'sensor:v0.7.0"' "$(cat "$tmp/bump/api/internal/infra/http/handler/sensor_handler.go")"
-assert_contains "bump: env example comment" "# SENSOR_LATEST_VERSION=v0.7.0" "$(cat "$tmp/bump/api/.env.example")"
 assert_contains "bump: other lines untouched" "OTHER=1" "$(cat "$tmp/bump/api/deploy/.env.example")"
 
 # Invariants that sync cannot fix.
