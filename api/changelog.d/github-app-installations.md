@@ -13,7 +13,7 @@
   organization (15 minutes) and the person's own GitHub authorization reaching
   the installation; one installation belongs to one organization. Audited
   (`scm_app.installed`, `scm_app.removed`).
-- `POST /api/v1/webhooks/incoming/github-app` takes installation events,
+- `POST /api/v1/hooks/github-app` takes installation events,
   verified with the app's webhook secret before anything is read: a deleted or
   suspended installation stops being used at once (`scm_app.status_changed`).
 - Posting the check and comments follows in the next change (RFC-077 phase C).
