@@ -469,5 +469,7 @@
   "admin.users.session.started": "Started",
   "admin.users.sessions": "Active sessions",
   "admin.users.startHint": "Type at least 3 characters of an email, a name or a user id. Accounts are looked up, not listed.",
-  "admin.users.startTitle": "Search for an account"
+  "admin.users.startTitle": "Search for an account",
+  "admin.targetMappings.emptyTitle": "No target mappings",
+  "admin.targetMappings.empty": "Without mappings, scans skip every asset. Map each scanner target type to the asset types it can scan."
 }

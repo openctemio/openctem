@@ -307,8 +307,11 @@ export default function TargetMappingsPage() {
         ) : noMappingsAtAll ? (
           <EmptyState
             icon={Waypoints}
-            title="No target mappings"
-            description="Without mappings, smart filtering cannot match any asset to a scanner, so scans skip every asset. Map each target type that your scanners declare to the asset types it can scan."
+            title={t('admin.targetMappings.emptyTitle', 'No target mappings')}
+            description={t(
+              'admin.targetMappings.empty',
+              'Without mappings, scans skip every asset. Map each scanner target type to the asset types it can scan.'
+            )}
             action={newButton}
           />
         ) : (

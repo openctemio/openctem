@@ -354,12 +354,8 @@ func (s *Service) PreviewTarget(ctx context.Context, input CreateTargetInput) (*
 	if err := g.CheckPattern(targetType, input.Pattern); err != nil {
 		return nil, err
 	}
-	exists, err := s.targetRepo.ExistsByPattern(ctx, tenantID, targetType, input.Pattern)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check target existence: %w", err)
-	}
-	if exists {
-		return nil, scopedom.ErrTargetAlreadyExists
+	if err := s.targetDuplicate(ctx, tenantID, targetType, input.Pattern); err != nil {
+		return nil, err
 	}
 	d, err := s.decideNewEntry(ctx, tenantID, targetType, input, time.Now().UTC(), true)
 	if err != nil {
