@@ -65,6 +65,7 @@ import {
   canCancelApproval,
   type ApprovalTab,
 } from '@/features/findings/lib/approvals'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
 // CONSTANTS
@@ -145,6 +146,7 @@ function ApprovalsLoadingSkeleton() {
 // ============================================
 
 export default function ApprovalsPage() {
+  const { t } = useTranslation()
   // Tab (status) and page live in the URL, like every list.
   const list = useListParams({ filters: { status: '' } })
   const activeTab: ApprovalTab = APPROVAL_TABS.includes(list.filters.status)
@@ -566,16 +568,19 @@ export default function ApprovalsPage() {
       <ConfirmDialog
         open={approveDialogOpen}
         onOpenChange={setApproveDialogOpen}
-        title="Approve Status Change"
-        desc="Are you sure you want to approve this request?"
+        title={t('confirm.findingApproval.approveTitle', 'Approve this status change?')}
+        desc={t(
+          'confirm.findingApproval.approveDesc',
+          'The finding moves to the requested status at once.'
+        )}
         confirmText={
           isApproving ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Approving...
+              {t('confirm.suppression.approving', 'Approving…')}
             </>
           ) : (
-            'Approve'
+            t('confirm.suppression.approve', 'Approve')
           )
         }
         isLoading={isApproving}
@@ -668,17 +673,20 @@ export default function ApprovalsPage() {
       <ConfirmDialog
         open={cancelDialogOpen}
         onOpenChange={setCancelDialogOpen}
-        title="Cancel Request"
-        desc="Are you sure you want to cancel this approval request? This action cannot be undone."
-        cancelBtnText="Keep Request"
+        title={t('confirm.findingApproval.cancelTitle', 'Cancel this approval request?')}
+        desc={t(
+          'confirm.findingApproval.cancelDesc',
+          'The request is withdrawn and the finding keeps its current status. This cannot be undone; ask again if needed.'
+        )}
+        cancelBtnText={t('confirm.findingApproval.keep', 'Keep request')}
         confirmText={
           isCancelling ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Canceling...
+              {t('confirm.findingApproval.cancelling', 'Cancelling…')}
             </>
           ) : (
-            'Cancel Request'
+            t('confirm.findingApproval.cancel', 'Cancel request')
           )
         }
         destructive

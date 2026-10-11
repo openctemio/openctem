@@ -39,6 +39,8 @@ import {
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can } from '@/lib/permissions'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -59,6 +61,7 @@ interface SectionProps {
 
 /** The Teams tab of /settings/teams (moved from its own page; content unchanged). */
 export function TeamsSection({ header }: SectionProps) {
+  const { t } = useTranslation()
   const { mutate } = useSWRConfig()
 
   // API Hooks
@@ -342,37 +345,33 @@ export function TeamsSection({ header }: SectionProps) {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Delete team</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete the team &quot;{groupToDelete?.name}&quot;? This
-              action cannot be undone. Members will lose access to assets owned by this team.
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteDialogOpen(false)
-                setGroupToDelete(null)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteGroup} disabled={isDeleting}>
-              {isDeleting ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Delete team
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) setGroupToDelete(null)
+        }}
+        destructive
+        title={t('confirm.team.deleteTitle', 'Delete the team "{name}"?', {
+          name: groupToDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.team.deleteDesc',
+          'Members lose the access this team gives them, including to assets the team owns. This cannot be undone.'
+        )}
+        confirmText={
+          <>
+            {isDeleting ? (
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="me-2 h-4 w-4" />
+            )}
+            {t('confirm.team.delete', 'Delete team')}
+          </>
+        }
+        isLoading={isDeleting}
+        handleConfirm={handleDeleteGroup}
+      />
     </>
   )
 }
