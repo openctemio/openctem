@@ -26,6 +26,7 @@ import (
 // removedRoutes: "METHOD /path" (parameter names do not matter) and why.
 var removedRoutes = map[string]string{
 	"DELETE /api/v1/tenants/{tenant}/members/{userId}": "offboarding without step-up; POST /api/v1/organization/members/{member_id}/offboard is the one route",
+	"POST /api/v1/tenants/{tenant}/members":            "added any existing account without its consent; an invitation is the only way in",
 	"GET /api/v1/dashboard/stats/global":               "summed every organization in the token, skipping the other organizations' IP allowlist, SSO, modules and data scope",
 	"POST /api/v1/audit-logs/rebaseline":               "the owner could re-sign the chain that guards against them; the admin console keeps the rebaseline",
 	// One capability resource: /capabilities with filters and include=usage.
@@ -107,6 +108,15 @@ func TestRemovedRoutes_TenantMemberDeleteIsGone(t *testing.T) {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
 		return rec.Code
+	}
+
+	// Direct add of an existing account by user id is gone (consent comes
+	// from an invitation); listing the members on the same path still works.
+	if code := serve(http.MethodPost, "/api/v1/tenants/acme/members"); code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /api/v1/tenants/acme/members: got %d, want 405", code)
+	}
+	if code := serve(http.MethodGet, "/api/v1/tenants/acme/members"); code == http.StatusNotFound || code == http.StatusMethodNotAllowed {
+		t.Errorf("GET /api/v1/tenants/acme/members: got %d from the router, want the handler", code)
 	}
 
 	path := "/api/v1/tenants/acme/members/" + shared.NewID().String()

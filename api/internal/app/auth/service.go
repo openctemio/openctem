@@ -980,10 +980,7 @@ func (s *AuthService) IdentifyRefreshSession(ctx context.Context, refreshToken s
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 	if storedToken.IsUsed() {
-		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
-		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
-			s.logger.Error("failed to revoke token family", "error", err)
-		}
+		s.onRefreshTokenReuse(ctx, storedToken)
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 	if !storedToken.IsValid() {
@@ -1036,10 +1033,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// RefreshToken; without it, theft replayed via this endpoint went
 	// undetected.
 	if storedToken.IsUsed() {
-		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
-		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
-			s.logger.Error("failed to revoke token family", "error", err)
-		}
+		s.onRefreshTokenReuse(ctx, storedToken)
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
@@ -1101,6 +1095,17 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, err
 	}
 
+	// Rotate before minting: the presented token is spent first, and a
+	// failure to record that refuses the exchange. Marking it after minting
+	// (and only logging a failure) could leave the old token usable next to
+	// the new one.
+	if err := storedToken.MarkUsed(); err != nil {
+		return nil, err
+	}
+	if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
+		return nil, fmt.Errorf("failed to update refresh token: %w", err)
+	}
+
 	// Determine if user is admin (owner or admin role)
 	// Owner/Admin: isAdmin=true → bypass permission checks, no permissions in JWT
 	// Member/Viewer/Custom: isAdmin=false → permissions fetched from DB on each request
@@ -1132,18 +1137,6 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	sess.UpdateActivity()
 	if err := s.sessionRepo.Update(ctx, sess); err != nil {
 		s.logger.Error("failed to update session activity", "error", err)
-	}
-
-	// S-3-rotate: rotate refresh token (mark old as used + issue new in same family).
-	// Matches the pattern used in CreateFirstTeam (line ~1300) and Refresh.
-	// Without rotation, a stolen refresh token remains valid for the full window;
-	// with rotation, theft is detected on the next legitimate use (token-already-used).
-	if err := storedToken.MarkUsed(); err != nil {
-		s.logger.Error("failed to mark refresh token as used", "error", err)
-	} else {
-		if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
-			s.logger.Error("failed to update refresh token", "error", err)
-		}
 	}
 
 	newRefreshTokenStr, _, err := s.tokenGenerator.GenerateGlobalRefreshToken(
@@ -1230,6 +1223,35 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// onRefreshTokenReuse handles a refresh token presented after it was already
+// rotated. Either the legitimate client or a thief holds a copy, and there is
+// no telling which, so the whole session ends: its token family, its other
+// refresh tokens and (through the revocation store) its access tokens, which
+// used to stay valid until they expired. The event is audited for alerting.
+func (s *AuthService) onRefreshTokenReuse(ctx context.Context, stored *sessiondom.RefreshToken) {
+	s.logger.Warn("SECURITY: refresh token reused; ending the session",
+		"family", stored.Family().String(), "session_id", stored.SessionID().String())
+	if err := s.refreshTokenRepo.RevokeByFamily(ctx, stored.Family()); err != nil {
+		s.logger.Error("failed to revoke token family", "error", err)
+	}
+	if sess, err := s.sessionRepo.GetByID(ctx, stored.SessionID()); err == nil && sess.IsActive() {
+		if err := sess.Revoke(); err == nil {
+			if err := s.sessionRepo.Update(ctx, sess); err != nil {
+				s.logger.Error("failed to revoke session after refresh token reuse", "error", err)
+			}
+		}
+	}
+	if err := s.refreshTokenRepo.RevokeBySessionID(ctx, stored.SessionID()); err != nil {
+		s.logger.Error("failed to revoke session refresh tokens", "error", err)
+	}
+	markSessionRevoked(ctx, s.revocations, s.revocationTTL(), stored.SessionID().String(), s.logger.Error)
+	s.audit(ctx, auditapp.AuditContext{ActorID: stored.UserID().String(), SessionID: stored.SessionID().String()},
+		auditapp.NewSuccessEvent(auditdom.ActionAuthSessionRevoked, auditdom.ResourceTypeUser, stored.UserID().String()).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage("Refresh token reused after rotation: session ended (possible token theft)").
+			WithMetadata("reason", "refresh_token_reuse"))
+}
+
 // RefreshTokenInput represents the input for token refresh.
 // Requires tenant_id to generate tenant-scoped access token.
 type RefreshTokenInput struct {
@@ -1278,11 +1300,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 
 	// Check if token has been used (replay attack detection)
 	if storedToken.IsUsed() {
-		// Possible replay attack - revoke entire token family
-		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
-		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
-			s.logger.Error("failed to revoke token family", "error", err)
-		}
+		s.onRefreshTokenReuse(ctx, storedToken)
 		return nil, sessiondom.ErrRefreshTokenUsed
 	}
 
@@ -1766,6 +1784,10 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
+	if storedToken.IsUsed() {
+		s.onRefreshTokenReuse(ctx, storedToken)
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
 	if !storedToken.IsValid() {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
@@ -1962,6 +1984,10 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
+	if storedToken.IsUsed() {
+		s.onRefreshTokenReuse(ctx, storedToken)
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
 	if !storedToken.IsValid() {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
