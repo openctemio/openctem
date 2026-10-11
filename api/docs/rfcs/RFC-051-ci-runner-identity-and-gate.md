@@ -272,7 +272,9 @@ For each finding the run reported:
 
 Any scanner failure the runner reports fails the run. `warn` mode passes and
 sets `would_fail`. The verdict is stored on the run and audited
-(`ci_run.evaluated`).
+(`ci_run.evaluated`). The first verdict is final: evaluating an evaluated run
+returns the stored verdict unchanged and audits nothing (RFC-077 G-4); a
+re-run of the pipeline gets its own run.
 
 **Break-glass** (`ci_gate_overrides`, `scans:ci:override`): one commit (a
 prefix of at least 7 hex characters) of one repository passes until the
