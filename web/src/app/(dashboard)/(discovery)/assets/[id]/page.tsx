@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DetailSections, PageHeader } from '@/features/shared'
 import {
   AssetAttributeSourcesSection,
+  AssetFreshnessSection,
   AssetAttributionSection,
   AssetIdentitySections,
   AssetTimeline,
@@ -213,6 +214,7 @@ export default function AssetDetailPage() {
               assetType={asset.type}
             />
             <AssetAttributeSourcesSection assetId={asset.id} />
+            <AssetFreshnessSection assetId={asset.id} />
             <AssetIdentitySections
               assetId={asset.id}
               assetName={asset.name}

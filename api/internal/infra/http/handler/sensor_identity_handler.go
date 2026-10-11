@@ -23,6 +23,17 @@ type SensorIdentityPolicy struct {
 	// BearerKeysAllowed: new sensors may be created with an API key
 	// (octs_). False: pairing (key-bound identity) only.
 	BearerKeysAllowed bool `json:"bearer_keys_allowed"`
+	// KeyBindRequiresApproval: a bearer-key sensor may not bind its own
+	// signing key (RFC-052 §4.8); an administrator re-pairs it. False
+	// (default): self-binding allowed, audited.
+	KeyBindRequiresApproval bool `json:"key_bind_requires_approval"`
+}
+
+// SensorIdentityPolicyUpdate changes the fields it carries; an omitted
+// field is unchanged.
+type SensorIdentityPolicyUpdate struct {
+	BearerKeysAllowed       *bool `json:"bearer_keys_allowed,omitempty"`
+	KeyBindRequiresApproval *bool `json:"key_bind_requires_approval,omitempty"`
 }
 
 // GetIdentityPolicy godoc
@@ -38,21 +49,33 @@ func (h *SensorHandler) GetIdentityPolicy(w http.ResponseWriter, r *http.Request
 		apierror.Unauthorized("").WriteJSON(w)
 		return
 	}
-	allowed, err := h.service.BearerKeysAllowed(r.Context(), tid)
+	p, err := h.identityPolicy(r, tid)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, SensorIdentityPolicy{BearerKeysAllowed: allowed})
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (h *SensorHandler) identityPolicy(r *http.Request, tid shared.ID) (SensorIdentityPolicy, error) {
+	allowed, err := h.service.BearerKeysAllowed(r.Context(), tid)
+	if err != nil {
+		return SensorIdentityPolicy{}, err
+	}
+	approval, err := h.service.KeyBindRequiresApproval(r.Context(), tid)
+	if err != nil {
+		return SensorIdentityPolicy{}, err
+	}
+	return SensorIdentityPolicy{BearerKeysAllowed: allowed, KeyBindRequiresApproval: approval}, nil
 }
 
 // SetIdentityPolicy godoc
 // @Summary      Set the sensor identity policy
-// @Description  Requiring key-bound identity narrows (sensors:grant:narrow); allowing bearer keys again widens (sensors:grant:widen). Audited at high severity.
+// @Description  Requiring key-bound identity or approval of sensor key binds narrows (sensors:grant:narrow); allowing bearer keys or self-binding again widens (sensors:grant:widen, with a recent re-authentication). Omitted fields are unchanged. Audited at high severity.
 // @Tags         Sensors
 // @Accept       json
 // @Produce      json
-// @Param        body  body      SensorIdentityPolicy  true  "Policy"
+// @Param        body  body      SensorIdentityPolicyUpdate  true  "Policy fields to change"
 // @Success      200   {object}  SensorIdentityPolicy
 // @Failure      403   {object}  apierror.Error
 // @Security     BearerAuth
@@ -63,27 +86,41 @@ func (h *SensorHandler) SetIdentityPolicy(w http.ResponseWriter, r *http.Request
 		apierror.Unauthorized("").WriteJSON(w)
 		return
 	}
-	var req SensorIdentityPolicy
+	var req SensorIdentityPolicyUpdate
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
+	widens := (req.BearerKeysAllowed != nil && *req.BearerKeysAllowed) ||
+		(req.KeyBindRequiresApproval != nil && !*req.KeyBindRequiresApproval)
 	need := permission.SensorsGrantNarrow
-	if req.BearerKeysAllowed {
+	if widens {
 		need = permission.SensorsGrantWiden
 	}
 	if !middleware.HasPermission(r.Context(), string(need)) {
-		apierror.Forbidden("Allowing bearer-key sensors needs the permission to widen sensor grants").WriteJSON(w)
+		apierror.Forbidden("Allowing bearer-key sensors or self-bound sensor keys needs the permission to widen sensor grants").WriteJSON(w)
 		return
 	}
-	if err := h.service.SetBearerKeysAllowed(r.Context(), *h.buildAuditContext(r), tid, req.BearerKeysAllowed); err != nil {
+	actx := *h.buildAuditContext(r)
+	if req.BearerKeysAllowed != nil {
+		err = h.service.SetBearerKeysAllowed(r.Context(), actx, tid, *req.BearerKeysAllowed)
+	}
+	if err == nil && req.KeyBindRequiresApproval != nil {
+		err = h.service.SetKeyBindRequiresApproval(r.Context(), actx, tid, *req.KeyBindRequiresApproval)
+	}
+	if err != nil {
 		if writeStepUpError(w, err) {
 			return
 		}
 		h.handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, req)
+	p, err := h.identityPolicy(r, tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
 }
 
 // SensorSigningKeyResponse is one public key of a key-bound sensor.

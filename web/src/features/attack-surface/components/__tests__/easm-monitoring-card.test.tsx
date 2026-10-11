@@ -48,6 +48,8 @@ const settings = {
   ct_available: true,
   dns_available: true,
   last_ct_sweep_at: '2026-10-05T01:00:00Z',
+  enrichment_enabled: true,
+  enrichment_available: true,
 }
 
 beforeEach(() => {
@@ -72,6 +74,29 @@ describe('EASMMonitoringCard', () => {
       ct_interval_hours: 0,
       dns_interval_hours: 12,
     })
+  })
+
+  it('turns automatic enrichment off with only that field changed', async () => {
+    wrap(<EASMMonitoringCard />)
+    const sw = await screen.findByRole('switch', { name: 'Automatic enrichment' })
+    expect(sw).toBeChecked()
+    await userEvent.click(sw)
+    expect(api.put).toHaveBeenCalledWith('/api/v1/easm/settings', {
+      ct_enabled: true,
+      dns_checks_enabled: true,
+      ct_interval_hours: 0,
+      dns_interval_hours: 12,
+      enrichment_enabled: false,
+    })
+  })
+
+  it('cannot change automatic enrichment when the platform turned it off', async () => {
+    api.get.mockResolvedValue({ ...settings, enrichment_available: false })
+    wrap(<EASMMonitoringCard />)
+    expect(await screen.findByRole('switch', { name: 'Automatic enrichment' })).toBeDisabled()
+    expect(
+      screen.getByText('Turned off for the whole platform by the operator.')
+    ).toBeInTheDocument()
   })
 
   it('runs now', async () => {

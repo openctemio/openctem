@@ -48,6 +48,9 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	ln, err := net.Listen("tcp", s.mtls.Addr)
 	if err != nil {
+		if s.adv != nil {
+			s.adv.set(GRPCStatus{State: GRPCUnavailable, Reason: ReasonListenerFailed, CheckedAt: time.Now()})
+		}
 		return err
 	}
 	if len(s.mtlsProxies) > 0 {
@@ -64,8 +67,15 @@ func (s *Server) Start(ctx context.Context) error {
 			s.log.Error("sensor protocol v3 gRPC binding stopped", "error", err)
 		}
 	}()
+	if s.prober != nil {
+		go s.prober.Run(ctx)
+	}
 	return nil
 }
+
+// SetProber sets the self-probe Start runs once the gRPC binding listens;
+// it decides whether Hello advertises the endpoint.
+func (s *Server) SetProber(p *Prober) { s.prober = p }
 
 // Shutdown ends every control stream (on both bindings; call it before the
 // API listener's own shutdown, which would otherwise wait for them) and
@@ -78,6 +88,29 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.mtls.Shutdown(ctx)
 }
 
-// SetGRPCEndpoint sets the host:port Hello names for the gRPC binding (""
-// when it is not served). Call it before serving.
+// SetGRPCEndpoint sets a fixed host:port Hello names for the gRPC binding
+// ("" when it is not served). Call it before serving.
 func (s *Server) SetGRPCEndpoint(endpoint string) { s.cfg.GRPCEndpoint = endpoint }
+
+// SetAdvertiser makes Hello name the endpoint a holds while its self-probe
+// passes (and none otherwise). Call it before serving.
+func (s *Server) SetAdvertiser(a *Advertiser) { s.adv = a }
+
+// GRPCStatus is the gRPC binding's state (fixed endpoint: advertised).
+func (s *Server) GRPCStatus() GRPCStatus {
+	if s.adv != nil {
+		return s.adv.Status()
+	}
+	if s.cfg.GRPCEndpoint != "" {
+		return GRPCStatus{State: GRPCAdvertised, Endpoint: s.cfg.GRPCEndpoint}
+	}
+	return GRPCStatus{State: GRPCUnavailable, Reason: ReasonNoPublicHost}
+}
+
+// grpcEndpoint is the endpoint Hello names now.
+func (s *Server) grpcEndpoint() string {
+	if s.adv != nil {
+		return s.adv.Endpoint()
+	}
+	return s.cfg.GRPCEndpoint
+}

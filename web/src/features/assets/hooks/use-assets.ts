@@ -78,6 +78,8 @@ export interface AssetSearchFilters {
   // Bug-bounty program assets (RFC-065 §16.5): only = assets a program
   // lists or covers; exclude = leave out the program-only ones.
   programAssets?: string
+  /** stale: a class past its freshness window; never: a passive class never observed (RFC-075). */
+  freshness?: string
 
   // CTEM inventory filter dimensions (api: all-assets-inventory).
   // All optional; multi-select where an array.
@@ -421,6 +423,8 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
 
   // Bug-bounty program assets
   if (filters.programAssets) params.program_assets = filters.programAssets
+  if (filters.freshness === 'stale' || filters.freshness === 'never')
+    params.freshness = filters.freshness
 
   // CTEM inventory dimensions
   if (filters.businessUnitIds?.length) params.business_unit_ids = filters.businessUnitIds.join(',')
