@@ -25,6 +25,7 @@ import en_help from './en/help.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_nav from './en/nav.json'
 import en_org from './en/org.json'
+import en_pentest from './en/pentest.json'
 import en_plan from './en/plan.json'
 import en_programs from './en/programs.json'
 import en_scanWindows from './en/scanWindows.json'
@@ -53,6 +54,7 @@ import vi_help from './vi/help.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_nav from './vi/nav.json'
 import vi_org from './vi/org.json'
+import vi_pentest from './vi/pentest.json'
 import vi_plan from './vi/plan.json'
 import vi_programs from './vi/programs.json'
 import vi_scanWindows from './vi/scanWindows.json'
@@ -86,6 +88,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   licensePolicy: en_licensePolicy,
   nav: en_nav,
   org: en_org,
+  pentest: en_pentest,
   plan: en_plan,
   programs: en_programs,
   scanWindows: en_scanWindows,
@@ -117,6 +120,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   licensePolicy: vi_licensePolicy,
   nav: vi_nav,
   org: vi_org,
+  pentest: vi_pentest,
   plan: vi_plan,
   programs: vi_programs,
   scanWindows: vi_scanWindows,
