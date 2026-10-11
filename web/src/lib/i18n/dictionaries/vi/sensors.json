@@ -188,5 +188,9 @@
   "sensors.posture.pin.caFile": "Tệp CA riêng",
   "sensors.posture.pin.none": "Chỉ kho tin cậy của hệ thống",
   "sensors.posture.network.enforced": "Đã giới hạn",
-  "sensors.posture.network.unenforced": "Không giới hạn"
+  "sensors.posture.network.unenforced": "Không giới hạn",
+  "sensors.transportStatus.grpc": "Sensor kết nối qua gRPC với mutual TLS tại {endpoint}.",
+  "sensors.transportStatus.pending": "Đang kiểm tra sensor có kết nối được gRPC không; trong lúc đó sensor dùng HTTPS.",
+  "sensors.transportStatus.httpsOnly": "Sensor kết nối qua HTTPS: không truy cập được kênh gRPC qua địa chỉ của nền tảng",
+  "sensors.transportStatus.off": "Giao thức sensor v3 đang tắt: sensor dùng giao thức v2."
 }
