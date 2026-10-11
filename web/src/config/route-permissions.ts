@@ -147,6 +147,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.AttackSurface,
   },
+  // Passive lookalike-domain monitoring (RFC-083): watches need scope:read.
+  '/attack-surface/lookalikes': {
+    permission: Permission.ScopeRead,
+    module: Module.AttackSurface,
+  },
   '/business-units': {
     permission: Permission.AssetsRead,
     module: Module.BusinessUnits,

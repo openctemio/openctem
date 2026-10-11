@@ -680,6 +680,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Passive lookalike-domain checks (RFC-083): hourly, bounded batches.
+	if svc.EASMLookalikes != nil {
+		w.ControllerManager.Register(controller.NewEASMLookalikeController(svc.EASMLookalikes, svc.Module, 0))
+	}
+
 	// Owner resolution — make the member whose email is owner_ref a primary owner (asset_owners)
 	w.ControllerManager.Register(controller.NewOwnerResolutionController(
 		deps.DB,

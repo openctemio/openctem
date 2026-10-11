@@ -85,6 +85,7 @@ export const EXPOSURE_EVENT_TYPE_LABELS: Record<ExposureEventType, string> = {
   dangling_ns: 'Dangling delegation',
   email_security_weak: 'Weak email security',
   subdomain_takeover: 'Subdomain takeover',
+  lookalike_domain: 'Lookalike domain',
   identity_mfa_gap: 'MFA gap',
   identity_stale_principal: 'Stale identity',
   identity_overprivileged: 'Over-privileged identity',

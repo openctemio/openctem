@@ -395,6 +395,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
 		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
+		EASMLookalike: newEASMLookalikeHandler(svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -1319,4 +1320,16 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		return mode
 	}
 	return s
+}
+
+// newEASMLookalikeHandler serves lookalike monitoring; changes are audited.
+func newEASMLookalikeHandler(svc *Services, log *logger.Logger) *handler.EASMLookalikeHandler {
+	if svc.EASMLookalikes == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMLookalikeHandler(svc.EASMLookalikes, audit, log)
 }
