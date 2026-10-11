@@ -89,6 +89,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-071](RFC-071-scan-intensity.md) | Scan intensity (passive, active, intrusive) | Accepted (delegated, 2026-10-10); P0 in implementation |
 | [RFC-072](RFC-072-chunked-feed-transfer.md) | Chunked feed transfer | Accepted (2026-10-10, delegated; D1–D8 adopted as recommended, §12). |
 | [RFC-073](RFC-073-scan-approval-governance.md) | Scan approval governance (approve scans, not scope entries) | Accepted (owner decision 2026-10-10); P0 in progress |
+| [RFC-074](RFC-074-adaptive-sensor-control.md) | Adaptive sensor control (measured values instead of configured numbers) | Proposed (2026-10-11) |
 | [RFC-075](RFC-075-asset-freshness.md) | Asset freshness and automatic enrichment | Proposed (2026-10-11); P0 in implementation |
 <!-- END RFC INDEX -->
 
