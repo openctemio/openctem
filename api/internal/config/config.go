@@ -64,23 +64,8 @@ type Config struct {
 	Scope ScopeConfig
 }
 
-// Active-probe proof modes, SCOPE_ACTIVE_PROOF (RFC-054 §8.1).
-const (
-	// ScopeProofOff: no proof needed (self-hosted default: the operator is
-	// the tenant). Intrusive probes still need a verified domain.
-	ScopeProofOff = "off"
-	// ScopeProofPlatformSensors: a job on shared platform sensors needs every
-	// target at or under a verified domain of the tenant (SaaS default).
-	ScopeProofPlatformSensors = "platform_sensors"
-	// ScopeProofAll: every active probe needs a verified domain.
-	ScopeProofAll = "all"
-)
-
 // ScopeConfig is the operator's scope guardrails.
 type ScopeConfig struct {
-	// ActiveProof is off, platform_sensors or all. Unset: platform_sensors
-	// when organizations are self-service (SaaS), otherwise off.
-	ActiveProof string
 	// MaxPublicCIDRv4 / v6 cap a public scope range (SCOPE_MAX_PUBLIC_CIDR_V4,
 	// default 16; SCOPE_MAX_PUBLIC_CIDR_V6, default 32).
 	MaxPublicCIDRv4 int
@@ -121,15 +106,6 @@ const ScanZoneResolverSystem = "system"
 // DefaultPublicZoneResolver is the resolver of SaaS installs: tenants must
 // not resolve names through the platform's internal DNS.
 const DefaultPublicZoneResolver = "1.1.1.1:53"
-
-// validate checks the proof mode.
-func (s ScopeConfig) validate() error {
-	switch s.ActiveProof {
-	case ScopeProofOff, ScopeProofPlatformSensors, ScopeProofAll:
-		return nil
-	}
-	return fmt.Errorf("SCOPE_ACTIVE_PROOF must be off, platform_sensors or all, got %q", s.ActiveProof)
-}
 
 // AuditRetentionConfig controls tenant audit-log retention. Entries older than
 // Days are written to a gzip JSONL archive under ArchiveDir, the chain head
@@ -1497,7 +1473,6 @@ func Load() (*Config, error) {
 			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
 		},
 		Scope: ScopeConfig{
-			ActiveProof:     getEnv("SCOPE_ACTIVE_PROOF", ""),
 			ZoneResolver:    getEnv("SCAN_ZONE_RESOLVER", ""),
 			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
@@ -1638,20 +1613,11 @@ func (c *Config) validateBasic() error {
 			return errors.New("VULNFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
-	if c.Scope.ActiveProof == "" {
-		c.Scope.ActiveProof = ScopeProofOff
-		if c.Auth.SelfServiceTenantCreation() {
-			c.Scope.ActiveProof = ScopeProofPlatformSensors
-		}
-	}
 	if c.Scope.ZoneResolver == "" {
 		c.Scope.ZoneResolver = ScanZoneResolverSystem
 		if c.Auth.SelfServiceTenantCreation() {
 			c.Scope.ZoneResolver = DefaultPublicZoneResolver
 		}
-	}
-	if err := c.Scope.validate(); err != nil {
-		return err
 	}
 	switch c.SensorConfig.TransportV3.Mode {
 	case "":
@@ -2190,32 +2156,39 @@ func defaultCookieSecure(appEnv string) bool {
 // DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.
 const DefaultSensorConfigTemplatesDir = "configs/sensor-templates"
 
-// retiredEnv lists the pre-sensor environment variable names. They are no
-// longer read. Startup refuses to run while one is set: silently ignoring,
+// retiredEnv lists environment variable names that are no longer read: the
+// pre-sensor names, and knobs that became console settings. Startup refuses to run while one is set: silently ignoring,
 // say, AGENT_KEY_TTL would turn short-lived sensor keys back into
 // non-expiring ones without the operator noticing.
-var retiredEnv = []struct{ Old, New string }{
-	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR"},
-	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL"},
-	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL"},
-	{"AGENT_LB_JOB_WEIGHT", "SENSOR_LB_JOB_WEIGHT"},
-	{"AGENT_LB_CPU_WEIGHT", "SENSOR_LB_CPU_WEIGHT"},
-	{"AGENT_LB_MEMORY_WEIGHT", "SENSOR_LB_MEMORY_WEIGHT"},
-	{"AGENT_LB_DISK_IO_WEIGHT", "SENSOR_LB_DISK_IO_WEIGHT"},
-	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT"},
-	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS"},
-	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS"},
+var retiredEnv = []struct{ Old, New, Hint string }{
+	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR", ""},
+	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL", ""},
+	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL", ""},
+	{"AGENT_LB_JOB_WEIGHT", "SENSOR_LB_JOB_WEIGHT", ""},
+	{"AGENT_LB_CPU_WEIGHT", "SENSOR_LB_CPU_WEIGHT", ""},
+	{"AGENT_LB_MEMORY_WEIGHT", "SENSOR_LB_MEMORY_WEIGHT", ""},
+	{"AGENT_LB_DISK_IO_WEIGHT", "SENSOR_LB_DISK_IO_WEIGHT", ""},
+	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT", ""},
+	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS", ""},
+	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS", ""},
 	// Sensor protocol v3 picks its bindings itself; off is the only switch.
-	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off"},
+	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off", ""},
+	// The proof requirement is a platform setting edited in the console.
+	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > System > Platform scanning"},
 }
 
 // rejectRetiredEnv fails when any retired name is set, naming its replacement.
 func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 	var bad []string
 	for _, r := range retiredEnv {
-		if _, ok := lookup(r.Old); ok {
-			bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
+		if _, ok := lookup(r.Old); !ok {
+			continue
 		}
+		if r.Hint != "" {
+			bad = append(bad, fmt.Sprintf("%s (%s)", r.Old, r.Hint))
+			continue
+		}
+		bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
 	}
 	if len(bad) > 0 {
 		return fmt.Errorf("retired environment variables are set and no longer read: %s", strings.Join(bad, ", "))

@@ -132,7 +132,6 @@
   "scope.entry.outcomeNow": "Có hiệu lực ngay. Bạn có thể được yêu cầu xác nhận danh tính trước.",
   "scope.entry.outcomeExpires": "Hết hiệu lực ngày {date}.",
   "scope.entry.proofT2": "Quét xâm nhập (T2) còn cần chứng minh bạn kiểm soát {domain}.",
-  "scope.entry.proofAll": "Việc quét còn cần chứng minh bạn kiểm soát {domain}.",
   "scope.entry.proofPlatform": "Cảm biến của nền tảng còn cần chứng minh bạn kiểm soát {domain}; cảm biến của bạn chỉ cần mục này.",
   "scope.entry.verifyDomain": "Xác minh tên miền",
   "scope.entry.errEmpty": "Nhập tên hoặc địa chỉ.",
@@ -240,5 +239,11 @@
   "scope.existing.activate": "Kích hoạt",
   "scope.existing.renew": "Gia hạn {n} ngày",
   "scope.existing.done": "Đã cập nhật {pattern}",
-  "scope.existing.failed": "Thay đổi chưa được lưu."
+  "scope.existing.failed": "Thay đổi chưa được lưu.",
+  "scope.settings.proof.byOperator": "Do người vận hành nền tảng đặt.",
+  "scope.settings.proof.off.hint": "Lượt quét cần một mục phạm vi, tên miền gốc hoặc tên miền đã xác minh, không cần bằng chứng sở hữu.",
+  "scope.settings.proof.off.label": "Không yêu cầu",
+  "scope.settings.proof.platform_sensors.hint": "Lượt quét chạy trên cảm biến dùng chung của nền tảng cần mọi mục tiêu thuộc một tên miền đã xác minh của tổ chức bạn, và thăm dò xâm nhập (T2) cần tên miền đó trên mọi cảm biến. Cảm biến riêng của bạn chỉ cần mục phạm vi.",
+  "scope.settings.proof.platform_sensors.label": "Cảm biến nền tảng cần bằng chứng",
+  "scope.settings.proof.title": "Bằng chứng cho thăm dò chủ động"
 }
