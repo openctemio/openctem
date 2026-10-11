@@ -102,7 +102,7 @@
   "settings.loadFailed": "Không tải được cài đặt",
   "settings.assetLifecycle.title": "Vòng đời tài sản",
   "settings.assetLifecycle.description": "Đánh dấu tài sản là cũ khi đã lâu không có lần quét hay tích hợp nào thấy chúng.",
-  "settings.assetLifecycle.noPermission": "Chỉ chủ sở hữu và quản trị viên được xem hoặc thay đổi cài đặt vòng đời tài sản.",
+  "settings.assetLifecycle.noPermission": "Bạn không có quyền xem hoặc thay đổi cài đặt vòng đời tài sản.",
   "settings.assetLifecycle.staleDetection": "Phát hiện tài sản cũ",
   "settings.assetLifecycle.offByDefault": "Mặc định tắt.",
   "settings.slaPolicies.title": "Chính sách SLA",
