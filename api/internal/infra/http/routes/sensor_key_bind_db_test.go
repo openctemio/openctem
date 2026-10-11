@@ -14,6 +14,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"sync"
@@ -67,14 +68,21 @@ func newEd25519(t *testing.T) ed25519.PrivateKey {
 }
 
 // signedCall makes a request signed by key (RFC 9421), no bearer key.
-func (h *ctlHarness) signedCall(key ed25519.PrivateKey, method, path string) *http.Response {
+func (h *ctlHarness) signedCall(key ed25519.PrivateKey, method, path string, body ...any) *http.Response {
 	h.t.Helper()
 	signer, err := sensorsig.NewSigner(key)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	req, _ := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, bytes.NewReader(nil))
+	var raw []byte
+	if len(body) == 1 {
+		raw, _ = json.Marshal(body[0])
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, bytes.NewReader(raw))
 	req.Header.Set("User-Agent", "openctem-sdk-go/0.20.0 (openctemio-sensor/0.13.0)")
+	if raw != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	hc := &http.Client{Transport: &sensorsig.Transport{Signer: signer, Base: h.srv.Client().Transport}}
 	resp, err := hc.Do(req)
 	if err != nil {
@@ -118,9 +126,17 @@ func TestSensorKeyBind_BearerSensorBecomesKeyBound(t *testing.T) {
 		s.id, h.tenantID, thumb).Scan(&grantKept); err != nil || !grantKept {
 		t.Fatalf("the bound key is not the sensor's active key (%v)", err)
 	}
-	// A key-bound sensor never binds again (signed, so authenticated).
-	if r := h.signedCall(key, http.MethodPost, bindPath); r.StatusCode == http.StatusCreated {
-		t.Fatal("a key-bound sensor bound again")
+	// A key-bound sensor never binds another key (signed, so authenticated).
+	if r := h.signedCall(key, http.MethodPost, bindPath, bindRequest(newEd25519(t), time.Now())); r.StatusCode != http.StatusConflict {
+		t.Fatalf("a key-bound sensor binding another key: %d, want 409", r.StatusCode)
+	}
+	// Its own key, signed by itself: the lost-answer confirmation, 200, no change.
+	if r := h.signedCall(key, http.MethodPost, bindPath, bindRequest(key, time.Now())); r.StatusCode != http.StatusOK {
+		t.Fatalf("confirming the bound key: %d, want 200", r.StatusCode)
+	}
+	// A stale proof does not confirm.
+	if r := h.signedCall(key, http.MethodPost, bindPath, bindRequest(key, time.Now().Add(-time.Hour))); r.StatusCode != http.StatusConflict {
+		t.Fatalf("confirming with a stale proof: %d, want 409", r.StatusCode)
 	}
 }
 

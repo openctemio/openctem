@@ -311,7 +311,10 @@ to a key-bound identity by itself, so the whole fleet reaches signed requests
   makes its key in `<state dir>/identity/` (0600 in 0700), writes it before
   the call, binds, and from then on signs; an identity in the state directory
   wins over a configured `API_KEY`. If the answer is lost, the next start
-  finds the stored key and signs with it.
+  binds the same key again or, its API key already retired, sends the same
+  request signed by that key: the platform answers `200` with the identity
+  and changes nothing (a key-bound sensor can only confirm its own active
+  key, never bind another).
 
 Threat model of the bind (rows 18 to 21 in §6): no privilege is gained
 (same sensor, tenant and grant); a replayed request is useless once the API
