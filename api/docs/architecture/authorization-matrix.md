@@ -980,6 +980,26 @@ gated (none adds a way in).
 `/health` and `/ready` remain public. Configure the scraper's bearer token to
 match `METRICS_TOKEN`.
 
+## Pentest campaign roles
+
+Inside the pentest module, campaign membership decides who sees a campaign
+(non-members get 404; admins see every campaign). Each member has one role:
+
+| Role | Reads | Writes |
+|---|---|---|
+| lead | everything in the campaign | campaign, team, status, findings, retests, reports |
+| tester | everything in the campaign | creates findings; edits, changes status of and retests own or assigned findings; evidence on those |
+| reviewer | everything in the campaign | status, edits and retests on any finding (no delete) |
+| observer | everything in the campaign | nothing |
+| client | the campaign, its team and its **published** findings (never draft or in review) | nothing |
+
+A client gets no campaign-wide read: no stats or finding counts (they
+include unpublished work), no exports, no reports, no campaign attachments
+and no report-writing (MCP) tools. Every surface that lists or reads pentest
+findings (campaign list, the pentest findings list, the generic findings
+list and groups, single-finding reads, retests, evidence) applies the same
+rule in SQL or in `ResolveCampaignRoleForFinding`.
+
 ## Organization access policy (RFC-025)
 
 Two per-organization policies (`Security.AllowedDomains`, `Security.IPWhitelist`,
