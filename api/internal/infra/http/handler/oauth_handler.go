@@ -174,7 +174,7 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		req.RedirectURI = h.oauthConfig.FrontendCallbackURL
 	}
 
-	result, err := h.oauthService.HandleCallback(r.Context(), auth.CallbackInput{
+	result, err := h.oauthService.HandleCallback(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), auth.CallbackInput{
 		Provider:    oauthProvider,
 		Code:        req.Code,
 		State:       req.State,

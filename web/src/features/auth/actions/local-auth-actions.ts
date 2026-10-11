@@ -10,7 +10,7 @@
 
 'use server'
 
-import { cookies, headers } from 'next/headers'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { env } from '@/lib/env'
@@ -18,6 +18,7 @@ import { validateRedirectUrl } from '@/lib/redirect'
 import { setServerCookie, removeServerCookie } from '@/lib/cookies-server'
 import { devLog } from '@/lib/logger'
 import { authEndpoints, userEndpoints } from '@/lib/api/endpoints'
+import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 
 import type { AuthSuccessResponse, AuthErrorResponse } from '../schemas/auth.schema'
 
@@ -202,27 +203,6 @@ function extractRefreshFromSetCookie(response: Response): string | undefined {
     }
   }
   return undefined
-}
-
-/**
- * The browser's User-Agent and address, forwarded so the session the API
- * creates shows the real device in My account → Sessions (and in the audit
- * log) instead of this server. The API only believes X-Forwarded-For when
- * this server is in its SERVER_TRUSTED_PROXIES.
- */
-async function browserContextHeaders(): Promise<Record<string, string>> {
-  try {
-    const h = await headers()
-    const out: Record<string, string> = {}
-    const ua = h.get('user-agent')
-    if (ua) out['User-Agent'] = ua
-    const fwd = h.get('x-forwarded-for') || h.get('x-real-ip')
-    if (fwd) out['X-Forwarded-For'] = fwd
-    return out
-  } catch {
-    // Outside a request (should not happen in a server action).
-    return {}
-  }
 }
 
 async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
