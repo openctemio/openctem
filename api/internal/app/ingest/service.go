@@ -249,6 +249,12 @@ func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	s.findingProcessor.SetFindingCreatedCallback(callback)
 }
 
+// SetAssetsObservedCallback sets the callback for every asset an ingest
+// wrote, with the report's tool and observation time (asset freshness).
+func (s *Service) SetAssetsObservedCallback(callback AssetsObservedCallback) {
+	s.assetProcessor.SetAssetsObservedCallback(callback)
+}
+
 // SetAssetsDiscoveredCallback sets the callback for assets an ingest newly
 // created (not merged, not manually created). It drives the asset_discovered
 // workflow trigger and the new-internet-facing-asset notification.

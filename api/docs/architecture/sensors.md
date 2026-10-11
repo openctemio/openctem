@@ -123,7 +123,7 @@ claim predicate and claim semantics stay in one place.
 | Field | Type | Meaning |
 |---|---|---|
 | `pending_jobs` | int | Commands this sensor could claim right now, capped at 100. Exactly what the poll would offer: pinned to the sensor or unpinned, pending, not expired, not scheduled for later, zone claim predicate (`zoneClaimPredicate`, incl. the tool match), capability gate. `> 0` ⇒ poll now. Not computed for platform sensors (no tenant poll). |
-| `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting or while a command the sensor claimed was canceled within the last lease period (so it hears `cancel_command_ids` within seconds), 30 s idle, 120 s when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than half of the offline distance (45 s: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter; RFC-035 D2). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
+| `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting or while a command the sensor claimed was canceled within the last lease period (so it hears `cancel_command_ids` within seconds), 30 s idle, the maximum interval when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than the derived maximum `min(offline distance / 2, SENSOR_COMMAND_LEASE / 3)` (45 s with the defaults: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter, RFC-035 D2; and a third of the lease, so a sensor holding a command renews its lease at least twice before it runs out, RFC-074). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
 | `actions` | []string | Typed directives from a closed set: `pause`, `resume`, `drain`, `rotate_key`, `update`. Rung today: `pause` (sensor disabled by an admin), `rotate_key` (the presented key expires within `SENSOR_KEY_RENEW_BEFORE`, default half of `SENSOR_KEY_TTL`). `resume`, `drain`, `update` are reserved. There is no free-form or shell verb (RFC-023 §10.4 R-4); a sensor ignores a value it does not know. |
 | `config_version` | string | 16 hex chars, opaque. A digest of what the platform governs about the sensor: capabilities, tools, max concurrent jobs, execution mode, operator config, the presented key's expiry and the assigned scan zones with each zone's last change. Heartbeat metrics and `last_seen_at` are not part of it (both rewrite `sensors.updated_at` on every heartbeat, which is why `updated_at` cannot be the source). |
 
@@ -180,9 +180,9 @@ every poll reads.
 ### Configuration
 
 `SENSOR_HEARTBEAT_INTERVAL` (30s), `SENSOR_HEARTBEAT_BUSY_INTERVAL` (5s),
-`SENSOR_HEARTBEAT_LOADED_INTERVAL` (2m), `SENSOR_HEARTBEAT_MIN_INTERVAL` (5s),
-`SENSOR_HEARTBEAT_MAX_INTERVAL` (5m, further capped at half of
-`WORKER_HEARTBEAT_TIMEOUT`), `SENSOR_HEARTBEAT_SLOW_QUERY` (250ms),
+`SENSOR_HEARTBEAT_MIN_INTERVAL` (5s), `SENSOR_HEARTBEAT_MAX_INTERVAL` (5m, can
+only lower the derived maximum below), `SENSOR_HEARTBEAT_SLOW_QUERY` (250ms; a
+slower doorbell query advises the maximum interval),
 `SENSOR_KEY_RENEW_BEFORE` (default half of `SENSOR_KEY_TTL`, or 24h).
 `SENSOR_KEY_TTL` defaults to 90 days (RFC-032 Phase 0; `0` turns expiry
 off): a renewed key expires after it, so `rotate_key` rings 45 days before.
@@ -665,8 +665,10 @@ bytes again answer `200`, different bytes `409 report-conflict`.
 ### Edge chain (before any handler)
 
 `middleware/ingest_v2.go`, in this order: per-tenant rate (the ingest
-budget shared with v1), per-sensor rate and per-tenant in-flight cap (`429`);
-`Content-Type` (`415` + `Accept`); `Content-Encoding` gzip/zstd, one coding
+budget shared with v1), per-sensor rate and per-tenant in-flight cap (`429`,
+with a `Retry-After` of the refused bucket's refill time plus up to 50 %
+jitter, at least 1 s and at most 5 min, so refused sensors spread their
+retries); `Content-Type` (`415` + `Accept`); `Content-Encoding` gzip/zstd, one coding
 (`415` + `Accept-Encoding`); `Content-Length` required and at most 16 MiB
 (`411`/`413`, before any byte is read); `Content-Digest` (RFC 9530, sha-256 or
 sha-512, over the bytes **as sent**) present (`400 digest-required`) and

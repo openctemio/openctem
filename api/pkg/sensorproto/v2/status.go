@@ -266,6 +266,9 @@ const (
 	// signer's keys in "signed_jobs". A command the signer did not sign is
 	// not handed out.
 	FeatureSignedJobs = "signed_jobs"
+	// FeatureKeyBind: a bearer-key sensor may bind its own Ed25519 signing
+	// key at POST /identity/bind (RFC-052 §4.8) and become key-bound.
+	FeatureKeyBind = "key_bind"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
@@ -327,6 +330,13 @@ type TransportV3 struct {
 	// GRPCEndpoint is host:port of the gRPC (mTLS) binding; absent when
 	// only the HTTPS binding is served.
 	GRPCEndpoint string `json:"grpc_endpoint,omitempty"`
+	// GRPCALPNEndpoint is host:port of the gRPC binding for a client that
+	// offers the sensor ALPN id ("openctem-sensor/3") next to h2: the
+	// gateway routes such a connection to the mTLS listener on the
+	// platform's own port. Set whenever the binding is advertised; equal
+	// to GRPCEndpoint when that is set too. Clients that do not offer the
+	// id read GRPCEndpoint only.
+	GRPCALPNEndpoint string `json:"grpc_alpn_endpoint,omitempty"`
 }
 
 // NewHello builds the hello document for the given limits. Results are always
