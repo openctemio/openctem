@@ -31,8 +31,38 @@ services:
   # ---------------------------------------------------------------------------
   # Gateway: the only published service
   # ---------------------------------------------------------------------------
+  # Gives the gateway's volumes to its user (uid 1000) before it starts:
+  # volumes written by an older gateway that ran as root hold root-owned files,
+  # and Docker creates a missing ./ca as root. Offline, runs and exits on every
+  # `up` (a no-op once the owner is right); only CHOWN, plus DAC_READ_SEARCH
+  # to walk the gateway's own 0700 directories.
+  gateway-init:
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION}}
+    user: "0:0"
+    entrypoint: ["chown", "-R", "1000:1000", "/data", "/config", "/ca"]
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_READ_SEARCH]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${OPENCTEM_CA_EXPORT_DIR:-./ca}:/ca
+      - gateway-data:/data
+      - gateway-config:/config
+    restart: "no"
+    logging: *default-logging
+
+  # The gateway image: Caddy with the standard and layer4 modules, built with
+  # the release's Go toolchain (api/deploy/gateway/Dockerfile). Runs as uid
+  # 1000; binds 443 (and 80 with the redirect overlay) as non-root through
+  # the namespaced sysctl below, so no-new-privileges stays on and it holds
+  # no capability.
   gateway:
-    image: caddy:${CADDY_VERSION:-2.11.4-alpine}
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION}}
+    user: "1000:1000"
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    cap_drop: [ALL]
     entrypoint: ["/bin/sh", "/etc/caddy/entrypoint.sh"]
     ports:
       - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_HTTPS_PORT:-443}:443"
@@ -61,6 +91,8 @@ services:
       timeout: 5s
       retries: 3
     depends_on:
+      gateway-init:
+        condition: service_completed_successfully
       api:
         condition: service_healthy
       web:
