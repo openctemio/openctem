@@ -24,6 +24,7 @@ import type { VerifiedDomain } from '../types/verified-domain.types'
 import { DomainJITDialog, jitLabel } from './domain-jit-dialog'
 import { DnsInstructions } from './dns-instructions'
 import { VerifiedDomainStatusBadge } from './verified-domain-status-badge'
+import { useTranslation } from '@/context/i18n-provider'
 
 function DomainActions({
   tenantId,
@@ -34,6 +35,7 @@ function DomainActions({
   domain: VerifiedDomain
   onChanged: () => void
 }) {
+  const { t } = useTranslation()
   const [dnsOpen, setDnsOpen] = useState(false)
   const [jitOpen, setJitOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -125,9 +127,14 @@ function DomainActions({
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         destructive
-        title={`Remove ${domain.domain}?`}
-        desc="This domain will no longer gate SSO auto-join. You can add and re-verify it again later."
-        confirmText="Remove"
+        title={t('confirm.verifiedDomain.removeTitle', 'Remove the domain {domain}?', {
+          domain: domain.domain,
+        })}
+        desc={t(
+          'confirm.verifiedDomain.removeDesc',
+          'It no longer gates SSO auto-join. You can add and verify it again later.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         isLoading={isDeleting}
         handleConfirm={handleDelete}
       />

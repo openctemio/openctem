@@ -63,6 +63,7 @@ import {
   useDeleteServiceAccountKey,
   type ServiceAccount,
 } from '@/features/service-accounts/api/use-service-accounts'
+import { useTranslation } from '@/context/i18n-provider'
 
 const MAX_NAME = 100
 const MAX_DESCRIPTION = 500
@@ -147,6 +148,7 @@ function AccountKeysSheet({
   account: ServiceAccount
   onOpenChange: (o: boolean) => void
 }) {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useServiceAccountKeys(account.id)
   const { trigger: createKey, isMutating: creating } = useCreateServiceAccountKey(account.id)
   const { trigger: deleteKey, isMutating: deleting } = useDeleteServiceAccountKey(account.id)
@@ -218,8 +220,14 @@ function AccountKeysSheet({
                       <Button
                         variant="ghost"
                         size="icon"
-                        title="Delete key"
-                        aria-label={`Delete key ${k.name}`}
+                        title={t('confirm.delete', 'Delete')}
+                        aria-label={t(
+                          'confirm.serviceAccount.deleteKeyLabel',
+                          'Delete key {name}',
+                          {
+                            name: k.name,
+                          }
+                        )}
                         className="text-destructive hover:text-destructive shrink-0"
                         onClick={() => setPendingDelete({ id: k.id, name: k.name })}
                       >
@@ -247,11 +255,17 @@ function AccountKeysSheet({
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => !o && setPendingDelete(null)}
-        title={`Delete ${pendingDelete?.name ?? 'key'}?`}
-        desc="The integration using this key loses access immediately. This cannot be undone."
-        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        title={t('confirm.serviceAccount.deleteKeyTitle', 'Delete the key {name}?', {
+          name: pendingDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.serviceAccount.deleteKeyDesc',
+          'The integration using this key loses access at once. This cannot be undone.'
+        )}
+        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
         destructive
         isLoading={deleting}
+        typeToConfirm={pendingDelete?.name}
         handleConfirm={() => void handleDelete()}
       />
     </>
@@ -265,6 +279,7 @@ function AccountRowActions({
   account: ServiceAccount
   onKeys: (a: ServiceAccount) => void
 }) {
+  const { t } = useTranslation()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const { trigger: del, isMutating: deleting } = useDeleteServiceAccount()
 
@@ -295,8 +310,10 @@ function AccountRowActions({
         <Button
           variant="ghost"
           size="icon"
-          title="Delete"
-          aria-label={`Delete ${account.name}`}
+          title={t('confirm.delete', 'Delete')}
+          aria-label={t('confirm.serviceAccount.deleteLabel', 'Delete {name}', {
+            name: account.name,
+          })}
           className="text-destructive hover:text-destructive"
           onClick={() => setDeleteOpen(true)}
         >
@@ -306,11 +323,17 @@ function AccountRowActions({
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={`Delete ${account.name}?`}
-        desc="Its roles, team memberships and API keys are removed at once; every integration using its keys stops working. This cannot be undone."
-        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        title={t('confirm.serviceAccount.deleteTitle', 'Delete the service account {name}?', {
+          name: account.name,
+        })}
+        desc={t(
+          'confirm.serviceAccount.deleteDesc',
+          'Its roles, team memberships and API keys are removed at once, and every integration using its keys stops working. This cannot be undone.'
+        )}
+        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
         destructive
         isLoading={deleting}
+        typeToConfirm={account.name}
         handleConfirm={() => void handleDelete()}
       />
     </div>

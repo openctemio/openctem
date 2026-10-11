@@ -36,6 +36,7 @@ import {
 } from '@/features/api-keys/components/generate-key-dialog'
 import type { APIKey } from '@/features/api-keys/types/api-key.types'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 
 function isExpired(k: APIKey): boolean {
   return !!k.expires_at && new Date(k.expires_at).getTime() < Date.now()
@@ -66,6 +67,7 @@ function StatusBadge({ k }: { k: APIKey }) {
 // ─────────────────────────────────────────────────────────
 
 function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
+  const { t } = useTranslation()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [revokeOpen, setRevokeOpen] = useState(false)
   const { trigger: revoke, isMutating: revoking } = useRevokeApiKey()
@@ -101,7 +103,8 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
             size="icon"
             onClick={() => setRevokeOpen(true)}
             disabled={revoking}
-            title="Revoke"
+            title={t('confirm.revoke', 'Revoke')}
+            aria-label={t('confirm.apiKey.revokeLabel', 'Revoke {name}', { name: k.name })}
           >
             <Ban className="h-4 w-4 text-warning" />
           </Button>
@@ -112,7 +115,8 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
           variant="ghost"
           size="icon"
           onClick={() => setDeleteOpen(true)}
-          title="Delete"
+          title={t('confirm.delete', 'Delete')}
+          aria-label={t('confirm.apiKey.deleteLabel', 'Delete {name}', { name: k.name })}
           className="text-destructive hover:text-destructive"
         >
           <Trash2 className="h-4 w-4" />
@@ -121,21 +125,29 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
-        title={`Revoke ${k.name}?`}
-        desc="Any client using this key stops working immediately. A revoked key cannot be re-enabled."
-        confirmText={revoking ? 'Revoking...' : 'Revoke'}
+        title={t('confirm.apiKey.revokeTitle', 'Revoke the API key {name}?', { name: k.name })}
+        desc={t(
+          'confirm.apiKey.revokeDesc',
+          'Every client using this key stops working at once. A revoked key cannot be re-enabled.'
+        )}
+        confirmText={revoking ? t('confirm.revoking', 'Revoking…') : t('confirm.revoke', 'Revoke')}
         destructive
         isLoading={revoking}
+        typeToConfirm={k.name}
         handleConfirm={() => void handleRevoke()}
       />
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={`Delete ${k.name}?`}
-        desc="Any client using this key will immediately lose access. This cannot be undone."
-        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        title={t('confirm.apiKey.deleteTitle', 'Delete the API key {name}?', { name: k.name })}
+        desc={t(
+          'confirm.apiKey.deleteDesc',
+          'Every client using this key loses access at once, and the key leaves the list. This cannot be undone.'
+        )}
+        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
         destructive
         isLoading={deleting}
+        typeToConfirm={k.name}
         handleConfirm={() => void handleDelete()}
       />
     </div>
