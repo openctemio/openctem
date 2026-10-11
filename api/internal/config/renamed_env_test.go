@@ -42,3 +42,17 @@ func TestLoad_RefusesRetiredEnvName(t *testing.T) {
 		t.Fatalf("Load with AGENT_LB_CPU_WEIGHT set: err = %v, want a refusal naming SENSOR_LB_CPU_WEIGHT", err)
 	}
 }
+
+// Knobs that switched nothing are refused too, each with what to do instead:
+// a deployment file that sets them misleads whoever reads it.
+func TestRejectRetiredEnv_DeadKnobsSayRemove(t *testing.T) {
+	for _, name := range []string{"APP_DEBUG", "GRPC_PORT", "LOG_SKIP_HEALTH", "AI_MAX_CONCURRENT_JOBS", "AUTH_ALLOW_REGISTRATION"} {
+		err := rejectRetiredEnv(fakeEnv{name: "false"}.lookup)
+		if err == nil {
+			t.Fatalf("%s set: want a refusal", name)
+		}
+		if !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "remove it") {
+			t.Errorf("%s: error %q does not name it and say to remove it", name, err)
+		}
+	}
+}

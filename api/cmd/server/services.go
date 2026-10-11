@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"time"
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
@@ -2510,9 +2509,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
-	if os.Getenv("AUTH_ALLOW_REGISTRATION") != "" {
-		log.Warn("AUTH_ALLOW_REGISTRATION is retired and ignored: who may sign up is the sign-up policy (Console > System > Sign-up)")
-	}
 	// Plans and limits: self-service organizations are Free.
 	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the

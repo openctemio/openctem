@@ -27,7 +27,6 @@ const (
 type Config struct {
 	App          AppConfig
 	Server       ServerConfig
-	GRPC         GRPCConfig
 	Database     DatabaseConfig
 	Redis        RedisConfig
 	Log          LogConfig
@@ -269,10 +268,9 @@ type StorageConfig struct {
 
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name  string
-	Env   string
-	Debug bool
-	URL   string // Public app URL (used as fallback for sensor config base URL)
+	Name string
+	Env  string
+	URL  string // Public app URL (used as fallback for sensor config base URL)
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
@@ -465,11 +463,6 @@ type ServerConfig struct {
 // TLSEnabled reports whether the API listener terminates TLS itself.
 func (c *ServerConfig) TLSEnabled() bool { return c.TLSCertFile != "" }
 
-// GRPCConfig holds gRPC server configuration.
-type GRPCConfig struct {
-	Port int
-}
-
 // DatabaseConfig holds database configuration.
 type DatabaseConfig struct {
 	Host            string
@@ -524,8 +517,7 @@ type LogConfig struct {
 	ErrorSamplingRate float64 // Sample rate for errors, 0.0-1.0 (default: 1.0 = 100%)
 
 	// HTTP logging configuration
-	SkipHealthLogs     bool // Skip logging health check endpoints (default: true in prod)
-	SlowRequestSeconds int  // Log requests slower than this as warnings (default: 5)
+	SlowRequestSeconds int // Log requests slower than this as warnings (default: 5)
 }
 
 // AuthProvider represents the authentication provider type.
@@ -1136,7 +1128,6 @@ type AITriageConfig struct {
 	GeminiAPIKey     string // Platform's Google Gemini API key
 
 	// Rate Limiting
-	MaxConcurrentJobs int // Max concurrent AI triage jobs
 	RateLimitRPM      int // Rate limit per minute
 	TimeoutSeconds    int // Timeout for AI API calls
 	MaxTokens         int // Max tokens per request
@@ -1222,7 +1213,6 @@ func Load() (*Config, error) {
 		App: AppConfig{
 			Name:  getEnv("APP_NAME", "openctem"),
 			Env:   appEnv(),
-			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
 			URL:   getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
@@ -1286,9 +1276,6 @@ func Load() (*Config, error) {
 			TLSCertFile:           getEnv("SERVER_TLS_CERT_FILE", ""),
 			TLSKeyFile:            getEnv("SERVER_TLS_KEY_FILE", ""),
 		},
-		GRPC: GRPCConfig{
-			Port: getEnvInt("GRPC_PORT", 9090),
-		},
 		Database: DatabaseConfig{
 			Host:            getEnv("DB_HOST", "localhost"),
 			Port:            getEnvInt("DB_PORT", 5432),
@@ -1330,7 +1317,6 @@ func Load() (*Config, error) {
 			SamplingThreshold:  getEnvInt("LOG_SAMPLING_THRESHOLD", 100),    // First 100 identical logs/sec
 			SamplingRate:       getEnvFloat("LOG_SAMPLING_RATE", 0.1),       // Then 10%
 			ErrorSamplingRate:  getEnvFloat("LOG_ERROR_SAMPLING_RATE", 1.0), // Always log errors
-			SkipHealthLogs:     getEnvBool("LOG_SKIP_HEALTH", true),         // Skip health endpoints
 			SlowRequestSeconds: getEnvInt("LOG_SLOW_REQUEST_SECONDS", 5),    // Warn on slow requests
 		},
 		Auth: AuthConfig{
@@ -1524,7 +1510,6 @@ func Load() (*Config, error) {
 			AnthropicAPIKey:             getEnv("ANTHROPIC_API_KEY", ""),
 			OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 			GeminiAPIKey:                getEnv("GEMINI_API_KEY", ""),
-			MaxConcurrentJobs:           getEnvInt("AI_MAX_CONCURRENT_JOBS", 10),
 			RateLimitRPM:                getEnvInt("AI_RATE_LIMIT_RPM", 60),
 			TimeoutSeconds:              getEnvInt("AI_TIMEOUT_SECONDS", 30),
 			MaxTokens:                   getEnvInt("AI_MAX_TOKENS", 4096),
@@ -2092,9 +2077,6 @@ func (c *Config) validateProductionSecurity() error {
 	if !c.RateLimit.Enabled {
 		return fmt.Errorf("rate limiting must be enabled in production")
 	}
-	if c.App.Debug {
-		return fmt.Errorf("debug mode must be disabled in production")
-	}
 	if c.Log.Level == "debug" {
 		return fmt.Errorf("log level should not be 'debug' in production")
 	}
@@ -2190,31 +2172,37 @@ func defaultCookieSecure(appEnv string) bool {
 // DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.
 const DefaultSensorConfigTemplatesDir = "configs/sensor-templates"
 
-// retiredEnv lists the pre-sensor environment variable names. They are no
-// longer read. Startup refuses to run while one is set: silently ignoring,
-// say, AGENT_KEY_TTL would turn short-lived sensor keys back into
-// non-expiring ones without the operator noticing.
-var retiredEnv = []struct{ Old, New string }{
-	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR"},
-	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL"},
-	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL"},
-	{"AGENT_LB_JOB_WEIGHT", "SENSOR_LB_JOB_WEIGHT"},
-	{"AGENT_LB_CPU_WEIGHT", "SENSOR_LB_CPU_WEIGHT"},
-	{"AGENT_LB_MEMORY_WEIGHT", "SENSOR_LB_MEMORY_WEIGHT"},
-	{"AGENT_LB_DISK_IO_WEIGHT", "SENSOR_LB_DISK_IO_WEIGHT"},
-	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT"},
-	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS"},
-	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS"},
+// retiredEnv lists environment variables the API no longer reads. Startup
+// refuses to run while one is set, with a hint: silently ignoring, say,
+// AGENT_KEY_TTL would turn short-lived sensor keys back into non-expiring
+// ones without the operator noticing, and a knob that does nothing misleads
+// whoever reads the deployment file.
+var retiredEnv = []struct{ Old, Hint string }{
+	{"AGENT_CONFIG_TEMPLATES_DIR", "rename it to SENSOR_CONFIG_TEMPLATES_DIR"},
+	{"AGENT_PUBLIC_API_URL", "rename it to SENSOR_PUBLIC_API_URL"},
+	{"AGENT_KEY_TTL", "rename it to SENSOR_KEY_TTL"},
+	{"AGENT_LB_JOB_WEIGHT", "rename it to SENSOR_LB_JOB_WEIGHT"},
+	{"AGENT_LB_CPU_WEIGHT", "rename it to SENSOR_LB_CPU_WEIGHT"},
+	{"AGENT_LB_MEMORY_WEIGHT", "rename it to SENSOR_LB_MEMORY_WEIGHT"},
+	{"AGENT_LB_DISK_IO_WEIGHT", "rename it to SENSOR_LB_DISK_IO_WEIGHT"},
+	{"AGENT_LB_NETWORK_WEIGHT", "rename it to SENSOR_LB_NETWORK_WEIGHT"},
+	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "rename it to SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS"},
+	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "rename it to SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS"},
 	// Sensor protocol v3 picks its bindings itself; off is the only switch.
-	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off"},
+	{"SENSOR_TRANSPORT_V3_ENABLED", "rename it to SENSOR_TRANSPORT_V3=auto|off"},
+	{"APP_DEBUG", "remove it: it switched nothing on (use LOG_LEVEL=debug outside production)"},
+	{"GRPC_PORT", "remove it: nothing listened on it; sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
+	{"LOG_SKIP_HEALTH", "remove it: health, readiness and metrics requests are never written to the request log"},
+	{"AI_MAX_CONCURRENT_JOBS", "remove it: it limited nothing; AI triage jobs run on the background job queue"},
+	{"AUTH_ALLOW_REGISTRATION", "remove it: who may sign up is the sign-up policy (Console > System > Sign-up)"},
 }
 
-// rejectRetiredEnv fails when any retired name is set, naming its replacement.
+// rejectRetiredEnv fails when any retired name is set, with what to do instead.
 func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 	var bad []string
 	for _, r := range retiredEnv {
 		if _, ok := lookup(r.Old); ok {
-			bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
+			bad = append(bad, fmt.Sprintf("%s (%s)", r.Old, r.Hint))
 		}
 	}
 	if len(bad) > 0 {
