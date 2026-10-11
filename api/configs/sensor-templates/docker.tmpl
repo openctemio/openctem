@@ -44,11 +44,11 @@ sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
   --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache \
-  -e API_URL={{shellQuote .BaseURL}} \
+  -e SENSOR_API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
-  -e API_KEY={{shellQuote .APIKey}} \
+  -e SENSOR_API_KEY={{shellQuote .APIKey}} \
 {{- else}}
-  -e API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
+  -e SENSOR_API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
 {{- end}}
 {{- with toolList .Sensor.EffectiveTools}}
   -e SENSOR_TOOLS={{.}} \
@@ -73,11 +73,11 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 # {{if .CACert}}2. {{end}}Run one scan of the current directory and send the results (CI or a
 # shell). Arguments after the image replace the default command.
 docker run --rm \
-  -e API_URL={{shellQuote .BaseURL}} \
+  -e SENSOR_API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
-  -e API_KEY={{shellQuote .APIKey}} \
+  -e SENSOR_API_KEY={{shellQuote .APIKey}} \
 {{- else}}
-  -e API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
+  -e SENSOR_API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
 {{- end}}
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
