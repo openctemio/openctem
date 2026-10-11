@@ -58,6 +58,11 @@ type AssetProcessor struct {
 	// assetsExposedCallback receives EXISTING assets a re-scan turned
 	// internet-facing (nil = disabled). Drives the newly-exposed notification.
 	assetsExposedCallback AssetsDiscoveredCallback
+
+	// assetsObservedCallback receives every asset THIS ingest wrote (created
+	// or updated) with the report's tool and observation time, for the
+	// freshness of their attribute classes (docs/architecture/asset-freshness.md).
+	assetsObservedCallback AssetsObservedCallback
 }
 
 // AssetsDiscoveredCallback is invoked once per ingest batch with the assets the
@@ -66,6 +71,15 @@ type AssetProcessor struct {
 // announced exactly once. Implementations must not block: ingest calls it
 // inline.
 type AssetsDiscoveredCallback func(ctx context.Context, tenantID shared.ID, assets []*asset.Asset)
+
+// AssetsObservedCallback is invoked once per ingest batch with the assets
+// the batch wrote, the report's tool name and when the tool observed them.
+type AssetsObservedCallback func(ctx context.Context, tenantID shared.ID, tool string, observedAt time.Time, assets []*asset.Asset)
+
+// SetAssetsObservedCallback wires the consumer of written assets.
+func (p *AssetProcessor) SetAssetsObservedCallback(cb AssetsObservedCallback) {
+	p.assetsObservedCallback = cb
+}
 
 // SetAssetsDiscoveredCallback wires the consumer of newly-created assets.
 func (p *AssetProcessor) SetAssetsDiscoveredCallback(cb AssetsDiscoveredCallback) {
@@ -861,6 +875,12 @@ func (p *AssetProcessor) processBatch(
 	}
 	if p.assetsExposedCallback != nil && len(exposedPersisted) > 0 {
 		p.assetsExposedCallback(ctx, tenantID, exposedPersisted)
+	}
+	if p.assetsObservedCallback != nil && source != "" && len(discovered)+len(updateAssets) > 0 {
+		written := make([]*asset.Asset, 0, len(discovered)+len(updateAssets))
+		written = append(written, discovered...)
+		written = append(written, updateAssets...)
+		p.assetsObservedCallback(ctx, tenantID, source, observedAt, written)
 	}
 
 	return assetMap, nil

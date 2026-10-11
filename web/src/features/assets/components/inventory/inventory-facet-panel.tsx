@@ -25,6 +25,7 @@
 import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/context/i18n-provider'
 import { FacetOption, FacetPanel, FacetSection } from '@/features/shared'
 import {
   staleBeforeISO,
@@ -295,8 +296,10 @@ function SignalsSection({
   filters: InventoryFilters
   onChange: (next: InventoryFilters) => void
 }) {
+  const { t } = useTranslation()
   const patch = (p: Partial<InventoryFilters>) => onChange({ ...filters, ...p, page: 1 })
   const selectedCount =
+    (filters.freshness ? 1 : 0) +
     (filters.isCrownJewel !== undefined ? 1 : 0) +
     (filters.hasFindings !== undefined ? 1 : 0) +
     (filters.lastSeenBefore ? 1 : 0) +
@@ -342,6 +345,16 @@ function SignalsSection({
           onCheckedChange={() => patch({ lastSeenAfter: undefined })}
         />
       )}
+      <FacetOption
+        label={t('assetFreshness.filter.stale', 'Stale data')}
+        checked={filters.freshness === 'stale'}
+        onCheckedChange={(on) => patch({ freshness: on ? 'stale' : undefined })}
+      />
+      <FacetOption
+        label={t('assetFreshness.filter.never', 'Never enriched')}
+        checked={filters.freshness === 'never'}
+        onCheckedChange={(on) => patch({ freshness: on ? 'never' : undefined })}
+      />
     </FacetSection>
   )
 }
