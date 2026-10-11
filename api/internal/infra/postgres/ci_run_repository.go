@@ -535,15 +535,27 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 	return out, rows.Err()
 }
 
-// SaveVerdict stores the run's verdict.
+// SaveVerdict stores the run's verdict. The first verdict is final: a run
+// that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
 func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
-		evaluated_at = $5, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
+		evaluated_at = $5, updated_at = NOW() WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
 		tenantID.String(), runID.String(), verdict, detail, at)
 	if err != nil {
 		return err
 	}
-	return requireOneRow(res, cirun.ErrRunNotFound)
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		var exists bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM ci_runs WHERE tenant_id = $1 AND id = $2)`,
+			tenantID.String(), runID.String()).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return cirun.ErrRunEvaluated
+		}
+		return cirun.ErrRunNotFound
+	}
+	return nil
 }
 
 // ------------------------------------------------------------- policies ---
