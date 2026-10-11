@@ -91,6 +91,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-073](RFC-073-scan-approval-governance.md) | Scan approval governance (approve scans, not scope entries) | Accepted (owner decision 2026-10-10); P0 in progress |
 | [RFC-074](RFC-074-adaptive-sensor-control.md) | Adaptive sensor control (measured values instead of configured numbers) | Proposed (2026-10-11) |
 | [RFC-075](RFC-075-asset-freshness.md) | Asset freshness and automatic enrichment | Proposed (2026-10-11); P0 in implementation |
+| [RFC-076](RFC-076-pentest-report-templates.md) | Pentest report templates | Proposed (2026-10-11); first slice implemented (upload, check, preview with sample data, DOCX rendering of a campaign) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
