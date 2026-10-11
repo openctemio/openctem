@@ -216,9 +216,9 @@ jobs:
       - name: Gateway Routing (production compose renders)
         working-directory: api/deploy
         run: |
-          cp .env.example .env
-          sed -i -e 's/^DB_PASSWORD=.*/DB_PASSWORD=x/' -e 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=x/' \
-            -e 's/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=x/' -e 's/^APP_ENCRYPTION_KEY=.*/APP_ENCRYPTION_KEY=x/' .env
+          # The first-start path: setup.sh writes .env (host name + generated secrets).
+          ./setup.sh ctem.example.com
+          test "$(stat -c %a .env)" = 600
           docker compose config -q
           docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.plain-http.yml config -q

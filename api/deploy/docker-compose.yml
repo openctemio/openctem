@@ -6,7 +6,7 @@
 # SCIM and MCP all use https://<OPENCTEM_HOSTNAME>. Routing and TLS modes:
 # gateway/Caddyfile. Guide: docs "Exposing OpenCTEM: one HTTPS port".
 #
-#   cp .env.example .env    # set OPENCTEM_HOSTNAME, OPENCTEM_TLS_MODE, secrets
+#   ./setup.sh ctem.example.com   # writes .env: host name + generated secrets
 #   docker compose up -d
 #
 # Optional overlays:
@@ -85,7 +85,7 @@ services:
   # identical copies during the transition window and are the only names that
   # hold v0.8.0 and earlier. Set UI_IMAGE / API_IMAGE to switch.
   web:
-    image: ${UI_IMAGE:-ghcr.io/openctemio/ui}:${UI_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is required, e.g. v0.8.0}}
+    image: ${UI_IMAGE:-ghcr.io/openctemio/ui}:${UI_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
     expose:
       - "3000"
     environment:
@@ -174,7 +174,7 @@ services:
   # Database migrations (one-shot, before the API), as the schema owner
   # ---------------------------------------------------------------------------
   migrate:
-    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION}}
+    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
     command:
       - "-path=/migrations"
       - "-database"
@@ -196,7 +196,7 @@ services:
   # API (Go): internal only
   # ---------------------------------------------------------------------------
   api:
-    image: ${API_IMAGE:-ghcr.io/openctemio/api}:${API_VERSION:-${OPENCTEM_VERSION}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
     expose:
       - "8080"
     environment:
