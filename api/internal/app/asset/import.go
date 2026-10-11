@@ -15,8 +15,9 @@ import (
 
 // AssetImportService handles bulk asset import from various formats.
 type AssetImportService struct {
-	assetRepo assetdom.Repository
-	logger    *logger.Logger
+	assetRepo   assetdom.Repository
+	logger      *logger.Logger
+	createdHook CreatedAssetsHook
 }
 
 // NewAssetImportService creates a new AssetImportService.
@@ -43,6 +44,7 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
+	var created []*assetdom.Asset
 	csvReader := csv.NewReader(reader)
 	header, err := csvReader.Read()
 	if err != nil {
@@ -141,6 +143,10 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 			continue
 		}
 		result.AssetsCreated++
+		created = append(created, a)
+	}
+	if s.createdHook != nil && len(created) > 0 {
+		s.createdHook(ctx, tid, created)
 	}
 
 	s.logger.Info("CSV asset import completed",

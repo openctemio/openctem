@@ -102,6 +102,9 @@ var assetMergeRefs = []mergeRef{
 	// a class wins; a class only a merged asset observed moves.
 	{table: "asset_attribute_freshness", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"class"}}}},
+	// One enrichment request per asset (RFC-075): the kept asset's request wins.
+	{table: "asset_enrichment_requests", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",

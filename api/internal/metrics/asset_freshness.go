@@ -26,4 +26,32 @@ var (
 			Help: "Ingest batches whose asset freshness could not be recorded",
 		},
 	)
+
+	// AssetEnrichmentRequestsTotal counts enrichment requests opened, by reason.
+	AssetEnrichmentRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_asset_enrichment_requests_total",
+			Help: "Automatic asset enrichment requests opened, by reason",
+		},
+		[]string{"reason"},
+	)
+
+	// AssetEnrichmentDispatchedTotal counts assets sent to an enrichment run, by profile.
+	AssetEnrichmentDispatchedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_asset_enrichment_dispatched_total",
+			Help: "Assets sent to an automatic enrichment run, by profile",
+		},
+		[]string{"profile"},
+	)
+
+	// AssetEnrichmentSkippedTotal counts requests not dispatched, by reason:
+	// disabled, budget, no_profile, refused, failed, request_error.
+	AssetEnrichmentSkippedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_asset_enrichment_skipped_total",
+			Help: "Automatic asset enrichment requests not dispatched, by reason",
+		},
+		[]string{"reason"},
+	)
 )
