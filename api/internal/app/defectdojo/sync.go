@@ -114,12 +114,14 @@ func (s *SyncService) SyncTenant(ctx context.Context, tenantID shared.ID) (*Sync
 	// is partial (report already marks it) so the import never auto-resolves
 	// native findings.
 	agt := &sensor.Sensor{TenantID: &tenantID, Status: sensor.SensorStatusActive}
+	intgID := intg.ID()
 	out, err := s.ingester.Ingest(ctx, agt, ingest.Input{
 		Report:       report,
 		CoverageType: ingest.CoverageTypePartial,
 		// The tenant's DefectDojo connection: an integration for attribute
 		// reconciliation (RFC-069).
-		Options: ingest.Options{SourceKind: asset.SourceKindIntegration, SourceName: "defectdojo"},
+		// Its inventory may be put in scope (RFC-054 §14.8).
+		Options: ingest.Options{SourceKind: asset.SourceKindIntegration, SourceName: "defectdojo", IntegrationID: &intgID},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("defectdojo ingest: %w", err)

@@ -108,6 +108,9 @@ type Service struct {
 	// of a command finished (step_outputs.go). Nil-safe.
 	stepOutputs     StepOutputRecorder
 	commandIngested CommandIngestedHook
+	// connectorInventory is told what a connector sync wrote
+	// (connector_inventory.go).
+	connectorInventory ConnectorInventoryHook
 
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
@@ -539,6 +542,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 	// What a workflow step's report wrote, for the stages chained after it.
 	s.recordStepOutputs(ctx, tenantID, binding, scope)
+	// What a connector sync wrote, for its scope entries (RFC-054 §14.8).
+	s.recordConnectorInventory(ctx, tenantID, binding, opts, scope)
 
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,
 	// TLS certificates) into the Exposure Register. Best-effort — a failure here

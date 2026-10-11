@@ -86,6 +86,17 @@ controller then marks it `expired`.
   `CreateTargets` (origin `manual`), in the Off and On modes while
   `confirm_adds_to_scope` is on. Without a recent step-up nothing is added
   and the response lists the pending entries.
+- **Address suggestions** (RFC-054 §14.7). `GET /scope/suggestions/addresses`
+  lists the public addresses in-scope names resolve to (`resolves_to`),
+  without shared ones (edge/CDN provider, three or more registrable domains),
+  narrowed to the caller's data scope; the client adds them with the bulk
+  route. A name entry still never authorizes an address by itself.
+- **Connector inventory** (RFC-054 §14.8). A connector sync's report (bound
+  to its `connector_sync` command, or a trusted ingest naming the
+  integration) hands the assets it wrote to
+  `scope.Service.CoverConnectorAssets`, which adds their exact entries while
+  the integration's `inventory_in_scope` switch is on (default), as a
+  system decision through `CreateTargets`.
 - **One authority: scope entries** (RFC-054; migration
   `001262`). Root-domain seeds were folded into permanent `*.<domain>`
   entries and `/api/v1/easm/seeds` is gone; a verified domain, of any

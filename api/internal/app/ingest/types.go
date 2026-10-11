@@ -125,6 +125,10 @@ type Options struct {
 	// a trusted binding may set them; every sensor and CI report is a scan.
 	SourceKind asset.SourceKind
 	SourceName string
+	// IntegrationID names the connector a trusted server-side ingest syncs
+	// (its inventory may be put in scope, RFC-054 §14.8). Ignored for any
+	// other binding.
+	IntegrationID *shared.ID
 	// SourceRun is the import, sync run or feed sequence of a server-side
 	// ingest (trusted binding only; informational).
 	SourceRun string

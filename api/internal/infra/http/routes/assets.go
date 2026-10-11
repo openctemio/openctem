@@ -225,6 +225,9 @@ func registerScopeRoutes(
 
 		// Check scope endpoint
 		r.POST("/check", h.CheckScope, middleware.Require(permission.ScopeRead))
+		// Addresses behind in-scope names, to add in one click (RFC-054
+		// §14.7): for those who add entries, narrowed to their data scope.
+		r.GET("/suggestions/addresses", h.SuggestAddresses, middleware.Require(permission.ScopeWrite))
 
 		// Scope settings (RFC-054 §6.3). Changing them widens or narrows the
 		// friction on widening: approvers only, with step-up.
