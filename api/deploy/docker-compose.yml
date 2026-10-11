@@ -346,6 +346,26 @@ services:
       - ssl_cert_file=/tls/server.crt
       - -c
       - ssl_key_file=/tls/postgres.key
+      # Memory and planner settings sized for a host with 8 GB (the Small
+      # size in docs install/sizing): PostgreSQL's built-in defaults
+      # (128 MB shared_buffers, random_page_cost 4 for spinning disks) make
+      # the tenant-wide aggregates read from disk and spill sorts. Scale the
+      # PG_* values with the host: shared_buffers about 25% of RAM,
+      # effective_cache_size about 70%.
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-3GB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-16MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - random_page_cost=${PG_RANDOM_PAGE_COST:-1.1}
+      - -c
+      - max_wal_size=${PG_MAX_WAL_SIZE:-2GB}
+    # Parallel queries share memory through /dev/shm (64 MB by default).
+    shm_size: ${PG_SHM_SIZE:-256m}
     environment:
       # The superuser exists for initdb and the db-roles job. With
       # least-privilege roles it is DB_SUPERUSER, separate from the API's
