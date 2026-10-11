@@ -372,6 +372,7 @@ const OPEN_FINDINGS_FOR_TASKS: FindingApiFilters = {
 // ─── Main Component ──────────────────────────────────────────────────
 
 export default function RemediationPage() {
+  const { t } = useTranslation()
   const router = useRouter()
 
   const {
@@ -1386,14 +1387,14 @@ export default function RemediationPage() {
       <ConfirmDialog
         open={!!deleteTask}
         onOpenChange={() => setDeleteTask(null)}
-        title="Delete task"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{deleteTask?.title}&quot;? This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.remediationTask.deleteTitle', 'Delete the task "{name}"?', {
+          name: deleteTask?.title ?? '',
+        })}
+        desc={t(
+          'confirm.remediationTask.deleteDesc',
+          'The task is deleted. Its linked findings are not changed. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />

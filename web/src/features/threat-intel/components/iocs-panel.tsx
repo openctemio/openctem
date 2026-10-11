@@ -73,6 +73,7 @@ import {
   type IOCSource,
   type CreateIOCInput,
 } from '../api/use-iocs-api'
+import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
 
@@ -589,6 +590,7 @@ function DeleteIOCConfirm({
   onOpenChange: (open: boolean) => void
   onDeleted: () => void
 }) {
+  const { t } = useTranslation()
   const { trigger } = useDeleteIOC(ioc?.id ?? '')
   const [deleting, setDeleting] = useState(false)
 
@@ -610,13 +612,14 @@ function DeleteIOCConfirm({
     <ConfirmDialog
       open={!!ioc}
       onOpenChange={onOpenChange}
-      title="Delete indicator?"
-      desc={
-        ioc
-          ? `"${ioc.value}" will be deactivated. Match history is preserved for the audit trail.`
-          : ''
-      }
-      confirmText={deleting ? 'Deleting...' : 'Delete'}
+      title={t('confirm.ioc.deleteTitle', 'Delete the indicator "{value}"?', {
+        value: ioc?.value ?? '',
+      })}
+      desc={t(
+        'confirm.ioc.deleteDesc',
+        'It is deactivated and stops matching. Its match history is kept for the audit trail.'
+      )}
+      confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
       destructive
       handleConfirm={handleConfirm}
     />
