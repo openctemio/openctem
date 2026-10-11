@@ -7,6 +7,8 @@
   "lookalikes.added": "Watching {domain}",
   "lookalikes.certs": "{count} certificates",
   "lookalikes.counts": "{registered} registered of {checked} checked ({candidates} candidates)",
+  "lookalikes.ct.description": "Registered lookalikes of your domains are looked up in crt.sh to see whether they hold certificates. Turn this off to keep those names private; lookalikes are then checked through DNS only.",
+  "lookalikes.ct.title": "Certificate checks of lookalike domains",
   "lookalikes.dismissed": "Marked as not a threat",
   "lookalikes.domain": "Root domain",
   "lookalikes.domainPlaceholder": "example.com",

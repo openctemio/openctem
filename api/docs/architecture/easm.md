@@ -437,7 +437,8 @@ EASM alert writer; a lapsed one is resolved. Triage: accept (ours or benign),
 false positive (not a threat), resolve (taken down). Controller
 `easm-lookalikes` (hourly; registered names daily, others weekly, bounded per
 tenant). Routes: `/api/v1/easm/lookalikes/watches` (scope permissions,
-audited).
+audited). The organization can turn the crt.sh queries off
+(`lookalike_ct_enabled` on `/api/v1/easm/settings`; fail closed).
 
 ## 4f. Review queue reachable, honest counts (built, P0-12)
 
