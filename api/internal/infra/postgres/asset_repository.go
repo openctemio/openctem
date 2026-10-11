@@ -668,6 +668,54 @@ func (r *AssetRepository) List(
 	return pagination.NewResult(assets, total, page), nil
 }
 
+// ListAfterID returns up to limit assets matching filter with an id above
+// afterID (all when afterID is empty), in id order, without a total count.
+// Background jobs that read every asset of a kind page with it: keyset
+// paging costs the same for the last page as for the first, where
+// LIMIT/OFFSET plus a COUNT per page grows with the tenant (quadratic over a
+// full read) and can skip or repeat rows inserted meanwhile.
+func (r *AssetRepository) ListAfterID(ctx context.Context, filter asset.Filter, afterID string, limit int) ([]*asset.Asset, error) {
+	if filter.TenantID == nil || *filter.TenantID == "" {
+		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	whereClause, args := r.buildWhereClause(filter)
+	if afterID != "" {
+		args = append(args, afterID)
+		cond := fmt.Sprintf("a.id > $%d", len(args))
+		if whereClause != "" {
+			whereClause += " AND " + cond
+		} else {
+			whereClause = cond
+		}
+	}
+	query := r.selectQuery()
+	if whereClause != "" {
+		query += " WHERE " + whereClause
+	}
+	query += fmt.Sprintf(" ORDER BY a.id LIMIT %d", limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query assets: %w", err)
+	}
+	defer rows.Close()
+	var out []*asset.Asset
+	for rows.Next() {
+		a, err := r.scanAssetFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate assets: %w", err)
+	}
+	return out, nil
+}
+
 // Count returns the total number of assets matching the filter.
 func (r *AssetRepository) Count(ctx context.Context, filter asset.Filter) (int64, error) {
 	query := `SELECT COUNT(*) FROM assets a`
