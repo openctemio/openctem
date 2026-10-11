@@ -196,13 +196,9 @@ func run() int {
 	}
 	log.Info("services initialized")
 
-	// P0-2: Jira webhook preflight. In production, refuse to start when
-	// any tenant has a connected Jira integration but the HMAC secret is
-	// missing — otherwise inbound webhooks would start silently 401'ing.
-	if err := checkJiraWebhookPreflight(ctx, cfg, db.DB, log); err != nil {
-		log.Error("jira webhook preflight failed", "error", err)
-		return 1
-	}
+	// Warn about connected Jira integrations without their own webhook
+	// secret: their inbound deliveries are refused until one is set.
+	warnJiraIntegrationsWithoutSecret(ctx, db.DB, log)
 
 	// Initialize auth services if local auth is supported
 	if cfg.Auth.Provider.SupportsLocal() {

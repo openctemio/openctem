@@ -43,7 +43,6 @@ type Config struct {
 	AITriage     AITriageConfig
 	SensorConfig SensorConfigConfig
 	Storage      StorageConfig
-	Webhooks     WebhooksConfig
 	Ingest       IngestConfig
 	Metrics      MetricsConfig
 
@@ -237,16 +236,6 @@ type IngestConfig struct {
 
 // AsyncEnabled reports whether async ingest mode is on.
 func (c IngestConfig) AsyncEnabled() bool { return c.Mode == "async" }
-
-// WebhooksConfig holds shared secrets for incoming webhook HMAC verification (F-1).
-// These are platform-wide fallbacks; per-integration secrets can be layered on
-// top via the integration repository when that abstraction is added.
-type WebhooksConfig struct {
-	// JiraSecret is the HMAC-SHA256 secret used to verify inbound Jira webhooks
-	// at POST /api/v1/webhooks/incoming/jira. REQUIRED — if empty, the endpoint
-	// rejects all requests (fail closed).
-	JiraSecret string
-}
 
 // StorageConfig holds file attachment storage settings.
 // Default: local filesystem at ./data/attachments.
@@ -1471,11 +1460,6 @@ func Load() (*Config, error) {
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
 		},
-		Webhooks: WebhooksConfig{
-			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
-			// middleware fails closed if empty.
-			JiraSecret: getEnv("JIRA_WEBHOOK_SECRET", ""),
-		},
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant:   getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
@@ -2209,12 +2193,28 @@ var retiredEnv = []struct{ Old, New string }{
 	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off"},
 }
 
-// rejectRetiredEnv fails when any retired name is set, naming its replacement.
+// removedEnv lists settings that were removed without a replacement
+// variable. Startup refuses to run while one is set, saying what to do
+// instead, so an operator never believes a removed setting still applies.
+var removedEnv = []struct{ Name, Instead string }{
+	// A platform-wide Jira webhook secret verified a delivery for any
+	// ?tenant=: whoever held it could forge Jira events for every
+	// organization. Each organization's Jira integration has its own secret.
+	{"JIRA_WEBHOOK_SECRET", "unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate"},
+}
+
+// rejectRetiredEnv fails when any retired or removed name is set, naming
+// its replacement or what to do instead.
 func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 	var bad []string
 	for _, r := range retiredEnv {
 		if _, ok := lookup(r.Old); ok {
 			bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
+		}
+	}
+	for _, r := range removedEnv {
+		if _, ok := lookup(r.Name); ok {
+			bad = append(bad, fmt.Sprintf("%s (removed: %s)", r.Name, r.Instead))
 		}
 	}
 	if len(bad) > 0 {
