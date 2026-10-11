@@ -61,7 +61,7 @@ describe('Operations: sensor connection', () => {
     expect(note).toHaveTextContent('Reason code: foreign_certificate')
     expect(screen.getByRole('link', { name: 'How sensors connect' })).toHaveAttribute(
       'href',
-      'https://docs.openctem.io/sensors/transport/#on-the-platform'
+      'https://docs.openctem.io/sensors/transport/#what-the-platform-offers'
     )
     expect(note.className).not.toMatch(/warning|destructive/)
   })
