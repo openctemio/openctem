@@ -23,11 +23,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation } from '@/context/i18n-provider'
 import { RelativeTime } from '@/features/shared'
 import type { EASMSettings } from '@/lib/api/generated'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions, Permission } from '@/lib/permissions'
-import { runEASMSweep, saveEASMSettings, useEASMSettings } from '../hooks/use-easm-settings'
+import {
+  runEASMSweep,
+  saveEASMSettings,
+  useEASMSettings,
+  type EASMSettingsInput,
+} from '../hooks/use-easm-settings'
 
 /** Interval choices in hours; 0 is the platform default. */
 export const EASM_INTERVALS = [0, 6, 12, 24, 48, 168]
@@ -48,6 +54,7 @@ function inputOf(s: EASMSettings) {
 }
 
 export function EASMMonitoringCard() {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canSettings = can(Permission.SettingsWrite)
   const canRun = can(Permission.ScopeWrite)
@@ -62,7 +69,7 @@ export function EASMMonitoringCard() {
 
   if (!enabled || isLoading || !settings) return null
 
-  const save = async (change: Partial<ReturnType<typeof inputOf>>) => {
+  const save = async (change: Partial<EASMSettingsInput>) => {
     setBusy(true)
     try {
       const next = await saveEASMSettings({ ...inputOf(settings), ...change })
@@ -181,6 +188,37 @@ export function EASMMonitoringCard() {
             disabled={!canSettings || busy || !settings.dns_checks_enabled}
             onChange={(h) => void save({ dns_interval_hours: h })}
           />
+        </section>
+
+        <section
+          className="space-y-3 md:col-span-2"
+          aria-label={t('assetFreshness.settings.title', 'Automatic enrichment')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-enrichment" className="font-medium">
+              {t('assetFreshness.settings.title', 'Automatic enrichment')}
+            </Label>
+            <Switch
+              id="easm-enrichment"
+              checked={!!settings.enrichment_enabled}
+              disabled={!canSettings || busy || !settings.enrichment_available}
+              onCheckedChange={(on) => void save({ enrichment_enabled: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'assetFreshness.settings.description',
+              'Every new asset in your scope is enriched at once: DNS records, domain registration and the network owner of its addresses. Only public lookups are used; nothing is sent to your hosts.'
+            )}
+          </p>
+          {!settings.enrichment_available && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'assetFreshness.settings.unavailable',
+                'Turned off for the whole platform by the operator.'
+              )}
+            </p>
+          )}
         </section>
       </CardContent>
     </Card>
