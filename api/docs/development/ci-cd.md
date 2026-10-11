@@ -283,6 +283,24 @@ All images go to GHCR, are multi-arch (linux/amd64 + linux/arm64), are built on 
 manifest list per tag, signed with cosign (keyless) and given an SPDX SBOM that
 is attached to the GitHub Release.
 
+Before the push, each image also passes the **image guard**
+(`.github/scripts/image-guard.sh`), which the merge queue runs on every image
+build too (`allinone-ci.yml`):
+
+- its unpacked size stays under the component's budget (set about 15% above
+  its size; raising one needs the reason in the commit message), so a stray
+  `chown -R`, a duplicated binary or a toolchain left in the runtime stage
+  fails instead of shipping;
+- it runs as a non-root user (the gateway is the one listed exception, for
+  its root-owned volumes);
+- no file is setuid or setgid;
+- no OS package has a HIGH or CRITICAL advisory with a fix (trivy). Advisories
+  in application dependencies are printed as warnings; govulncheck and
+  `npm audit` gate those in API and Web CI.
+
+The guard reads the filesystem with `docker export`, never a shell inside the
+image, so images without a shell are checked the same way.
+
 | Image | Built from | Contents |
 |-------|-----------|----------|
 | `ghcr.io/openctemio/openctem-api` | `api/Dockerfile` (`production` target) | API server, port 8080 |
