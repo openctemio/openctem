@@ -158,8 +158,8 @@ describe('EditSensorDialog', () => {
     const { dialog } = renderDialog()
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }))
 
-    const confirm = screen.getByRole('alertdialog', { name: 'Revoke sensor access' })
-    const go = within(confirm).getByRole('button', { name: 'Revoke access' })
+    const confirm = screen.getByRole('alertdialog', { name: 'Revoke the sensor sensor-docker-01?' })
+    const go = within(confirm).getByRole('button', { name: 'Revoke' })
     expect(go).toBeDisabled()
     await user.type(within(confirm).getByRole('textbox'), 'sensor-docker')
     expect(go).toBeDisabled()
@@ -169,9 +169,9 @@ describe('EditSensorDialog', () => {
     expect(api.revoke).not.toHaveBeenCalled()
 
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }))
-    const again = screen.getByRole('alertdialog', { name: 'Revoke sensor access' })
+    const again = screen.getByRole('alertdialog', { name: 'Revoke the sensor sensor-docker-01?' })
     await user.type(within(again).getByRole('textbox'), 'sensor-docker-01')
-    await user.click(within(again).getByRole('button', { name: 'Revoke access' }))
+    await user.click(within(again).getByRole('button', { name: 'Revoke' }))
     expect(api.revoke).toHaveBeenCalledWith('s1')
   })
 
@@ -179,8 +179,8 @@ describe('EditSensorDialog', () => {
     const user = userEvent.setup()
     const { dialog } = renderDialog()
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
-    const confirm = screen.getByRole('alertdialog', { name: 'Delete sensor' })
-    expect(within(confirm).getByRole('button', { name: 'Delete sensor' })).toBeDisabled()
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete the sensor sensor-docker-01?' })
+    expect(within(confirm).getByRole('button', { name: 'Delete' })).toBeDisabled()
   })
 
   it('hides the danger zone without the delete permission', () => {
@@ -207,7 +207,7 @@ describe('EditSensorDialog', () => {
     await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), 'renamed')
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
-    const confirm = screen.getByRole('alertdialog', { name: 'Discard changes?' })
+    const confirm = screen.getByRole('alertdialog', { name: 'Discard your changes?' })
     expect(onOpenChange).not.toHaveBeenCalled()
     await user.click(within(confirm).getByRole('button', { name: 'Discard' }))
     expect(onOpenChange).toHaveBeenCalledWith(false)
