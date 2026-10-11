@@ -50,6 +50,12 @@ type Claims struct {
 	// one.
 	PullRequest string
 	SHA         string
+	// OwnerName and OwnerID name the organization or namespace the
+	// repository lives in and its immutable id (GitHub repository_owner and
+	// repository_owner_id, GitLab namespace_path and namespace_id). A trust
+	// configuration pins the id at the first admitted exchange.
+	OwnerName string
+	OwnerID   string
 	// CommitVerified: SHA comes from the signed token. False when the
 	// provider signs no commit and SHA is the job's own report (Hints); such
 	// a commit never matches a break-glass override.
@@ -278,6 +284,8 @@ func ParseGitHubClaims(m map[string]any) Claims {
 		RefType:        str(m, "ref_type"),
 		SHA:            strings.ToLower(str(m, "sha")),
 		Actor:          str(m, "actor"),
+		OwnerName:      strings.ToLower(str(m, "repository_owner")),
+		OwnerID:        str(m, "repository_owner_id"),
 		RunID:          str(m, "run_id"),
 		RunAttempt:     str(m, "run_attempt"),
 		JobID:          str(m, "check_run_id"),
@@ -309,6 +317,8 @@ func ParseGitLabClaims(m map[string]any) Claims {
 		JTI:            str(m, "jti"),
 		Repository:     strings.ToLower(str(m, "project_path")),
 		RepositoryID:   str(m, "project_id"),
+		OwnerName:      strings.ToLower(str(m, "namespace_path")),
+		OwnerID:        str(m, "namespace_id"),
 		RefType:        str(m, "ref_type"),
 		RefProtected:   str(m, "ref_protected") == "true",
 		SHA:            strings.ToLower(str(m, "sha")),
