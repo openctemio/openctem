@@ -33,7 +33,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { bulkTypeToConfirm, ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { toast } from 'sonner'
 import {
   Search,
@@ -351,6 +352,8 @@ function ConfigurationsTab() {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+  const [bulkDisableConfirmOpen, setBulkDisableConfirmOpen] = useState(false)
+  const { t } = useTranslation()
   const [configToDelete, setConfigToDelete] = useState<ScanConfig | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false)
@@ -928,7 +931,7 @@ function ConfigurationsTab() {
             variant="ghost"
             size="sm"
             disabled={isBulkOperating}
-            onClick={() => runBulk(bulkDisable, 'Failed to disable selected scans')}
+            onClick={() => setBulkDisableConfirmOpen(true)}
           >
             <XCircle className="me-2 h-4 w-4" />
             Disable
@@ -974,19 +977,50 @@ function ConfigurationsTab() {
       <ConfirmDialog
         open={bulkDeleteConfirmOpen}
         onOpenChange={setBulkDeleteConfirmOpen}
-        title={`Delete ${selectedIds.length} scan configuration${selectedIds.length === 1 ? '' : 's'}`}
-        desc={
-          <>
-            The selected configurations and their schedules are deleted. Past runs and findings
-            stay. This action cannot be undone.
-          </>
+        title={
+          selectedIds.length === 1
+            ? t('confirm.scan.bulkDeleteTitleOne', 'Delete 1 scan?')
+            : t('confirm.scan.bulkDeleteTitle', 'Delete {count} scans?', {
+                count: selectedIds.length,
+              })
         }
-        confirmText={isBulkDeleting ? 'Deleting...' : 'Delete'}
+        desc={t(
+          'confirm.scan.bulkDeleteDesc',
+          'The selected scans and their schedules are deleted. Past runs and findings stay. This cannot be undone.'
+        )}
+        confirmText={
+          isBulkDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
         destructive
         isLoading={isBulkDeleting}
+        typeToConfirm={bulkTypeToConfirm(selectedIds.length)}
         handleConfirm={async () => {
           await runBulk(bulkDelete, 'Failed to delete selected scans')
           setBulkDeleteConfirmOpen(false)
+        }}
+      />
+
+      {/* Bulk disable: the selected scans stop running until activated again. */}
+      <ConfirmDialog
+        open={bulkDisableConfirmOpen}
+        onOpenChange={setBulkDisableConfirmOpen}
+        title={
+          selectedIds.length === 1
+            ? t('confirm.scan.bulkDisableTitleOne', 'Disable 1 scan?')
+            : t('confirm.scan.bulkDisableTitle', 'Disable {count} scans?', {
+                count: selectedIds.length,
+              })
+        }
+        desc={t(
+          'confirm.scan.bulkDisableDesc',
+          'The selected scans stop running on their schedules and cannot be started until you activate them again. Their history stays.'
+        )}
+        confirmText={t('confirm.disable', 'Disable')}
+        destructive
+        isLoading={isDisabling}
+        handleConfirm={async () => {
+          await runBulk(bulkDisable, 'Failed to disable selected scans')
+          setBulkDisableConfirmOpen(false)
         }}
       />
 
@@ -994,14 +1028,16 @@ function ConfigurationsTab() {
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
-        title="Delete scan configuration"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{configToDelete?.name}&quot;? This action cannot
-            be undone and will remove all associated run history.
-          </>
+        title={t('confirm.scan.deleteTitle', 'Delete scan "{name}"?', {
+          name: configToDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.scan.deleteDesc',
+          'The scan and its schedule are deleted. Past runs and findings stay. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
         }
-        confirmText={isDeleting ? 'Deleting...' : 'Delete'}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleConfirmDelete}
