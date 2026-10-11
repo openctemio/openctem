@@ -44,6 +44,7 @@ import {
   useAccessRequests,
   type AccessRequestStatusFilter,
 } from '../api/use-access-requests'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** "Acme Corp" -> "acme-corp" (lowercase letters, digits, hyphens). */
 export function slugFromCompany(name: string): string {
@@ -188,6 +189,7 @@ function ApproveDialog({
  * admins approve or reject.
  */
 export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
+  const { t } = useTranslation()
   const [status, setStatus] = useState<AccessRequestStatusFilter>('')
   const { data, error, isLoading, mutate } = useAccessRequests(status)
   const [approving, setApproving] = useState<AccessRequest | null>(null)
@@ -316,16 +318,24 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
       <ConfirmDialog
         open={!!rejecting}
         onOpenChange={(o) => !o && !busy && setRejecting(null)}
-        title="Reject this request?"
+        title={t('confirm.accessRequest.rejectTitle', 'Reject the request from {email}?', {
+          email: rejecting?.email ?? '',
+        })}
         desc={
           rejecting?.confirmed
-            ? `${rejecting?.email} gets a short email saying the request was not approved.`
-            : 'The requester never confirmed the email, so no email is sent.'
+            ? t(
+                'confirm.accessRequest.rejectDesc',
+                'They get a short email saying the request was not approved.'
+              )
+            : t(
+                'confirm.accessRequest.rejectUnconfirmedDesc',
+                'The requester never confirmed the email, so no email is sent.'
+              )
         }
         destructive
         isLoading={busy}
         handleConfirm={() => void reject()}
-        confirmText="Reject"
+        confirmText={t('confirm.reject', 'Reject')}
       />
     </div>
   )

@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { deletePlatformIdP, savePlatformIdP } from '../api/use-platform-idp'
 import { adminErrorMessage } from './totp-step-form'
 import type { PlatformIdP, PlatformIdPInput } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** Splits a comma- or space-separated list. */
 export function parseList(raw: string): string[] {
@@ -85,6 +86,7 @@ export function PlatformIdPForm({
   hasBreakGlass: boolean
   onSaved: () => void
 }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState<FormState>(() => toForm(idp))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -373,9 +375,12 @@ export function PlatformIdPForm({
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title="Remove the identity provider?"
-        desc="Administrators sign in with their password and the console code again. Their IdP bindings are kept for the same issuer."
-        confirmText="Remove"
+        title={t('confirm.platformIdp.removeTitle', 'Remove the identity provider?')}
+        desc={t(
+          'confirm.platformIdp.removeDesc',
+          'Administrators sign in with their password and the console code again. Their IdP bindings are kept for the same issuer.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         isLoading={busy}
         handleConfirm={() => void remove()}
@@ -383,9 +388,12 @@ export function PlatformIdPForm({
       <ConfirmDialog
         open={confirmRequire}
         onOpenChange={setConfirmRequire}
-        title="Require the identity provider?"
-        desc="Administrators who are not break-glass accounts can no longer use their password for the console, and those in the console with a password are signed out now (you too, if you signed in with a password)."
-        confirmText="Require it"
+        title={t('confirm.platformIdp.requireTitle', 'Require the identity provider?')}
+        desc={t(
+          'confirm.platformIdp.requireDesc',
+          'Administrators who are not break-glass accounts can no longer use their password for the console, and those in the console with a password are signed out now (you too, if you signed in with a password).'
+        )}
+        confirmText={t('confirm.platformIdp.require', 'Require it')}
         destructive
         isLoading={busy}
         handleConfirm={() => void save()}
