@@ -46,6 +46,7 @@ import type { ActivityActor, ActivityCommentItem, ActivityEventItem, ActivityTon
 import { collapsedLabel, dayLabel } from '../lib/activity-feed'
 import { QUICK_REACTIONS, type ReactionViewer } from '../lib/reactions'
 import { ReactionPicker, ReactionPills } from './comment-reactions'
+import { useTranslation } from '@/context/i18n-provider'
 
 const TONE: Record<ActivityTone, string> = {
   muted: 'bg-muted text-muted-foreground',
@@ -234,6 +235,7 @@ export function CommentCard({
   onDiscard,
   className,
 }: CommentCardProps) {
+  const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.body)
   const [saving, setSaving] = useState(false)
@@ -527,9 +529,12 @@ export function CommentCard({
         <ConfirmDialog
           open={confirmDelete}
           onOpenChange={setConfirmDelete}
-          title="Delete this comment?"
-          desc="This permanently deletes the comment."
-          confirmText="Delete"
+          title={t('confirm.comment.deleteTitle', 'Delete this comment?')}
+          desc={t(
+            'confirm.comment.deleteDesc',
+            'The comment is permanently deleted for everyone. This cannot be undone.'
+          )}
+          confirmText={t('confirm.delete', 'Delete')}
           destructive
           handleConfirm={() => {
             setConfirmDelete(false)

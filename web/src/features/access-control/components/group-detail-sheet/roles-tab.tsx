@@ -26,6 +26,7 @@ import { EmptyState, ErrorState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { bindGroupRole, unbindGroupRole, useGroupRoles } from '../../api/use-group-roles'
 import { useRoles } from '../../api/use-roles'
+import { useTranslation } from '@/context/i18n-provider'
 
 export function RolesTab({
   groupId,
@@ -38,6 +39,7 @@ export function RolesTab({
   canUnbind: boolean
   onChanged?: () => void
 }) {
+  const { t } = useTranslation()
   const { roles: bound, error, isLoading, mutate } = useGroupRoles(groupId)
   const { roles: allRoles } = useRoles({ skip: !canBind })
   const [selected, setSelected] = useState('')
@@ -181,9 +183,14 @@ export function RolesTab({
       <ConfirmDialog
         open={!!toRemove}
         onOpenChange={(o) => !o && setToRemove(null)}
-        title={`Remove ${toRemove?.name ?? 'role'} from the team?`}
-        desc="Members who hold it only through this team lose its permissions at once."
-        confirmText={busy ? 'Removing...' : 'Remove'}
+        title={t('confirm.team.removeRoleTitle', 'Remove the role {name} from the team?', {
+          name: toRemove?.name ?? '',
+        })}
+        desc={t(
+          'confirm.team.removeRoleDesc',
+          'Members who hold it only through this team lose its permissions at once.'
+        )}
+        confirmText={busy ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')}
         destructive
         isLoading={busy}
         handleConfirm={() => void handleUnbind()}

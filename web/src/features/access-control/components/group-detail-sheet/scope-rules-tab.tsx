@@ -52,12 +52,15 @@ import { Can } from '@/lib/permissions'
 import { useGroupChannel } from '@/hooks/use-websocket'
 import type { ScopeChangeEventData } from '@/lib/websocket/types'
 import { ScopeRuleDialog } from './scope-rule-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ScopeRulesTabProps {
   groupId: string | null
 }
 
 export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
+  const { t } = useTranslation()
   const { scopeRules, isLoading, isError, error, mutate } = useScopeRules(groupId)
   const { createScopeRule, isCreating } = useCreateScopeRule(groupId)
   const { reconcileGroup, isReconciling } = useReconcileGroup(groupId)
@@ -338,30 +341,23 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       />
 
       {/* Delete Confirmation */}
-      <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Delete Scope Rule</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &quot;{deleteConfirm?.name}&quot;? Auto-assigned
-              assets from this rule will be removed from the team.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteConfirm(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
-              {isDeleting ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+        destructive
+        title={t('confirm.scopeRule.deleteTitle', 'Delete the scope rule "{name}"?', {
+          name: deleteConfirm?.name ?? '',
+        })}
+        desc={t(
+          'confirm.scopeRule.deleteDesc',
+          'Assets this rule assigned to the team automatically are removed from it, and the team loses access to them unless another grant covers them. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
+        isLoading={isDeleting}
+        handleConfirm={handleDelete}
+      />
 
       {/* Preview Dialog */}
       <Dialog

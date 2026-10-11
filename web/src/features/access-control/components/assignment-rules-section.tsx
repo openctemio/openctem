@@ -61,6 +61,8 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { fetcherWithOptions } from '@/lib/api/client'
 import { Can } from '@/lib/permissions'
 import { SEVERITY_LEVELS } from '@/lib/severity'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 type FilterType = 'all' | 'active' | 'inactive'
 
@@ -110,6 +112,7 @@ interface SectionProps {
 
 /** The Assignment rules tab of /settings/teams (moved from its own page; content unchanged). */
 export function AssignmentRulesSection({ header }: SectionProps) {
+  const { t } = useTranslation()
   // API Hooks
   const { assignmentRules, isLoading, isError, mutate: mutateRules } = useAssignmentRules()
   const { createAssignmentRule, isCreating } = useCreateAssignmentRule()
@@ -614,37 +617,26 @@ export function AssignmentRulesSection({ header }: SectionProps) {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Delete assignment rule</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &quot;{ruleToDelete?.name}&quot;? This action cannot
-              be undone.
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setDeleteDialogOpen(false)
-                setRuleToDelete(null)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteRule} disabled={isDeleting}>
-              {isDeleting ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) setRuleToDelete(null)
+        }}
+        destructive
+        title={t('confirm.assignmentRule.deleteTitle', 'Delete the assignment rule "{name}"?', {
+          name: ruleToDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.assignmentRule.deleteDesc',
+          'New findings are no longer routed by it. Findings it already assigned keep their owner. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
+        isLoading={isDeleting}
+        handleConfirm={handleDeleteRule}
+      />
     </>
   )
 }
