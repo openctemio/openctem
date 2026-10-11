@@ -248,7 +248,6 @@ R6 PATCH /api/v1/tenants/{tenant}/settings/risk-scoring
 R6 PATCH /api/v1/tenants/{tenant}/settings/security
 R6 POST /api/v1/tenants/{tenant}/invitations
 R6 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
-R6 POST /api/v1/tenants/{tenant}/members
 R6 POST /api/v1/tenants/{tenant}/members/{userId}/reactivate
 R6 POST /api/v1/tenants/{tenant}/members/{userId}/suspend
 R6 POST /api/v1/tenants/{tenant}/settings/asset-lifecycle/dry-run
@@ -303,7 +302,6 @@ R9 PATCH /api/v1/tenants/{tenant}/settings/risk-scoring
 R9 PATCH /api/v1/tenants/{tenant}/settings/security
 R9 POST /api/v1/tenants/{tenant}/invitations
 R9 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
-R9 POST /api/v1/tenants/{tenant}/members
 R9 POST /api/v1/tenants/{tenant}/members/{userId}/reactivate
 R9 POST /api/v1/tenants/{tenant}/members/{userId}/suspend
 R9 POST /api/v1/tenants/{tenant}/settings/asset-lifecycle/dry-run
