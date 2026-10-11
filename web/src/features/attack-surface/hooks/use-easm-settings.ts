@@ -35,6 +35,8 @@ export interface EASMSettingsInput {
   dns_interval_hours: number
   /** Automatic passive enrichment of new assets; omitted keeps the stored value. */
   enrichment_enabled?: boolean
+  /** Ask crt.sh about lookalike candidates (RFC-083); omitted keeps the stored value. */
+  lookalike_ct_enabled?: boolean
 }
 
 /** PUT /api/v1/easm/settings (settings:write, audited). */

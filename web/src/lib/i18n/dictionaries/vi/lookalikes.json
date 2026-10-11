@@ -7,6 +7,8 @@
   "lookalikes.added": "Đang theo dõi {domain}",
   "lookalikes.certs": "{count} chứng chỉ",
   "lookalikes.counts": "{registered} đã đăng ký / {checked} đã kiểm tra ({candidates} ứng viên)",
+  "lookalikes.ct.description": "Các tên miền giả mạo đã đăng ký được tra cứu trên crt.sh để biết chúng có chứng chỉ hay không. Tắt tính năng này để giữ kín các tên đó; khi đó tên miền giả mạo chỉ được kiểm tra qua DNS.",
+  "lookalikes.ct.title": "Kiểm tra chứng chỉ của tên miền giả mạo",
   "lookalikes.dismissed": "Đã đánh dấu là không phải mối đe dọa",
   "lookalikes.domain": "Tên miền gốc",
   "lookalikes.domainPlaceholder": "example.com",

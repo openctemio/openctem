@@ -12,6 +12,7 @@ import (
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/lookalike"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 type fakeLookalikeStore struct {
@@ -278,5 +279,45 @@ func TestCrtShCounter(t *testing.T) {
 	guarded.base, guarded.wait = srv.URL+"/", 0
 	if _, err := guarded.CountCerts(context.Background(), "example.net"); err == nil {
 		t.Fatal("the guarded client reached a loopback server")
+	}
+}
+
+type lookalikeSettings struct {
+	off bool
+	err error
+}
+
+func (s lookalikeSettings) GetEASMSettings(context.Context, string) (*tenant.EASMSettings, error) {
+	return &tenant.EASMSettings{LookalikeCTDisabled: s.off}, s.err
+}
+
+type countingCT struct{ calls *int }
+
+func (c countingCT) CountCerts(context.Context, string) (int, error) {
+	*c.calls++
+	return 1, nil
+}
+
+// The organization's opt-out (and an unreadable setting) sends no name to
+// crt.sh; the DNS checks still run.
+func TestLookalikeCTOptOut(t *testing.T) {
+	ctx := context.Background()
+	tid := shared.NewID()
+	for _, st := range []lookalikeSettings{{off: true}, {err: errors.New("db down")}} {
+		calls := 0
+		store := newFakeLookalikeStore()
+		zone := &fakeZone{registered: map[string]bool{"example.net": true}}
+		ex := &fakeLookalikeExposures{}
+		svc := NewLookalikeService(store, zone, countingCT{&calls}, ex, nil, nil)
+		svc.SetSettings(st)
+		if _, err := svc.CreateWatch(ctx, tid, nil, "example.com", []string{"tld"}, 30); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.RunTenant(ctx, tid); err != nil {
+			t.Fatal(err)
+		}
+		if calls != 0 || len(ex.events) != 1 {
+			t.Fatalf("%+v: crt.sh called %d times, %d exposures", st, calls, len(ex.events))
+		}
 	}
 }

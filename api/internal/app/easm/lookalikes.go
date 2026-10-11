@@ -17,6 +17,7 @@ import (
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/lookalike"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -81,8 +82,35 @@ type LookalikeService struct {
 	ct        CTCounter
 	exposures LookalikeExposures
 	resolver  LookalikeResolver
+	settings  LookalikeSettings
 	log       *logger.Logger
 	now       func() time.Time
+}
+
+// LookalikeSettings reads the organization's attack-surface settings, where
+// the switch for Certificate Transparency queries lives.
+type LookalikeSettings interface {
+	GetEASMSettings(ctx context.Context, tenantID string) (*tenant.EASMSettings, error)
+}
+
+// SetSettings wires the organization's CT switch. Without it CT is queried.
+func (s *LookalikeService) SetSettings(st LookalikeSettings) { s.settings = st }
+
+// ctAllowed reports whether the organization lets lookalike names be sent to
+// crt.sh. An unreadable setting answers no (fail closed).
+func (s *LookalikeService) ctAllowed(ctx context.Context, tenantID shared.ID) bool {
+	if s.ct == nil {
+		return false
+	}
+	if s.settings == nil {
+		return true
+	}
+	es, err := s.settings.GetEASMSettings(ctx, tenantID.String())
+	if err != nil {
+		s.log.Warn("lookalike settings unreadable; CT skipped", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return false
+	}
+	return !es.LookalikeCTDisabled
 }
 
 // NewLookalikeService creates the service. dns, ct, exposures and resolver
@@ -241,6 +269,9 @@ func (s *LookalikeService) RunTenant(ctx context.Context, tenantID shared.ID) (i
 		return 0, err
 	}
 	checked, ctBudget := 0, lookalikeCTPerTenant
+	if !s.ctAllowed(ctx, tenantID) {
+		ctBudget = 0
+	}
 	for i := range watches {
 		w := &watches[i]
 		if !w.Enabled || checked >= lookalikeChecksPerTenant {
@@ -283,7 +314,7 @@ func (s *LookalikeService) checkWatch(ctx context.Context, tenantID shared.ID, w
 			continue
 		}
 		ctChecked := false
-		if o.Registered && s.ct != nil && *ctBudget > 0 && (c.CTCheckedAt == nil || s.now().Sub(*c.CTCheckedAt) > lookalikeCTEvery) {
+		if o.Registered && *ctBudget > 0 && (c.CTCheckedAt == nil || s.now().Sub(*c.CTCheckedAt) > lookalikeCTEvery) {
 			*ctBudget--
 			if n, err := s.ct.CountCerts(ctx, c.Domain); err == nil {
 				o.CTCerts, ctChecked = n, true

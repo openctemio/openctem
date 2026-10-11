@@ -1164,6 +1164,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	} else {
 		s.EASMLookalikes = easmapp.NewLookalikeService(repos.EASMLookalike, lookalikeDNS, easmapp.NewCrtSh(), easmExposures, repos.EASMDNS,
 			log.With("service", "easm-lookalikes"))
+		s.EASMLookalikes.SetSettings(s.Tenant) // per-organization opt-out of crt.sh queries
 	}
 	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
 	s.CredentialImport = integration.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)

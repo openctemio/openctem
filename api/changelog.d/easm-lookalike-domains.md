@@ -13,3 +13,5 @@
   exposures, and triaged as ours or benign, not a threat, or taken down. One
   that stops resolving is resolved.
 - `/api/v1/easm/lookalikes/watches` (scope permissions, audited).
+- The organization can turn the crt.sh queries for lookalikes off on the
+  monitoring card (`lookalike_ct_enabled`, on by default); DNS checks continue.

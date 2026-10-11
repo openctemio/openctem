@@ -77,3 +77,26 @@ func TestEASMLookalikeHandler(t *testing.T) {
 		t.Fatalf("list: %d %s", w.Code, w.Body.String())
 	}
 }
+
+// crt.sh queries for lookalikes are on by default; the switch turns them
+// off and an omitted field keeps the stored value.
+func TestEASMSettingsLookalikeCT(t *testing.T) {
+	tenantID := shared.NewID()
+	store := &fakeEASMSettingsStore{}
+	h := NewEASMSettingsHandler(store, nil, &fakeSweeper{}, EASMPlatform{}, &settingsAudit{}, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+	if !strings.Contains(w.Body.String(), `"lookalike_ct_enabled":true`) {
+		t.Fatalf("default: %s", w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true,"lookalike_ct_enabled":false}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || !store.es.LookalikeCTDisabled {
+		t.Fatalf("off: %d %+v", w.Code, store.es)
+	}
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true}`, tenantID, "u1"))
+	if !store.es.LookalikeCTDisabled {
+		t.Fatal("omitted field turned CT back on")
+	}
+}
