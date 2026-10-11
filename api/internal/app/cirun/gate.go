@@ -11,6 +11,7 @@ import (
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // EvaluateInput is what the runner tells the gate about its own run.
@@ -18,15 +19,21 @@ type EvaluateInput struct {
 	// ScanFailures counts scanners that failed to run or to report. Any
 	// failure fails the gate (fail closed).
 	ScanFailures int
-	ClientIP     string
-	UserAgent    string
+	// RepoPolicy is the repository's .openctem.yml (nil without one).
+	RepoPolicy *cirun.RepoPolicy
+	ClientIP   string
+	UserAgent  string
 }
 
 // Verdict is a gate verdict with its links.
 type Verdict struct {
 	RunID string `json:"run_id"`
 	cirun.GateVerdict
-	Links VerdictLinks `json:"links"`
+	// RepoFile says what happened to the repository's .openctem.yml:
+	// "applied" (it tightened the policy), "ignored" (the organization's
+	// policy does not allow repository files), or empty (none sent).
+	RepoFile string       `json:"repo_file,omitempty"`
+	Links    VerdictLinks `json:"links"`
 }
 
 // VerdictLinks point to the run and its findings in the web console.
@@ -73,6 +80,19 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	if err != nil {
 		return nil, err
 	}
+	repoFile := ""
+	if in.RepoPolicy != nil {
+		if err := in.RepoPolicy.Validate(s.now().UTC()); err != nil {
+			return nil, err
+		}
+		if policy.AllowRepoPolicy {
+			policy = policy.Tighten(in.RepoPolicy)
+			repoFile = "applied"
+			s.requestRepoExceptions(ctx, run, in.RepoPolicy.Exceptions)
+		} else {
+			repoFile = "ignored"
+		}
+	}
 	findings, err := s.repo.RunFindings(ctx, run.TenantID, run.ID, run.RepositoryAssetID)
 	if err != nil {
 		return nil, fmt.Errorf("load run findings: %w", err)
@@ -96,7 +116,7 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 		DefaultBranch: run.IsDefaultBranch,
 		Override:      override, Now: now, FindingURL: s.findingURL,
 	})
-	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, Links: VerdictLinks{
+	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, RepoFile: repoFile, Links: VerdictLinks{
 		Run:      s.webURL(RunPath(run.ID)),
 		Findings: s.webURL(gateFindingsPath(run)),
 	}}
@@ -276,4 +296,29 @@ func (s *Service) BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints
 	}
 	out.BaseBranchKnown = true
 	return out, nil
+}
+
+// requestRepoExceptions turns a repository file's exceptions into pending
+// suppression requests on the run's repository, from a non-fork
+// default-branch run of a verified commit only (the file there was reviewed
+// and merged). Duplicates of an open request are skipped. Audited; best
+// effort: a failure is logged and never changes the verdict.
+func (s *Service) requestRepoExceptions(ctx context.Context, run *cirun.Run, exceptions []cirun.RepoException) {
+	if len(exceptions) == 0 || !run.IsDefaultBranch || run.Fork || !run.CommitVerified {
+		return
+	}
+	created, err := s.repo.RequestRepoExceptions(ctx, run.TenantID, run.RepositoryAssetID, run.Repository, exceptions)
+	if err != nil {
+		s.log.Warn("repository exceptions not requested", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	if created == 0 {
+		return
+	}
+	actor := Actor{Email: ciActor(cirun.Claims{Provider: run.Provider, Actor: run.Actor})}
+	s.logAudit(ctx, run.TenantID, actor, auditapp.NewSuccessEvent(auditdom.ActionCIRepoExceptionsRequested, auditdom.ResourceTypeCIRun, run.ID.String()).
+		WithResourceName(run.Repository).
+		WithMessage(fmt.Sprintf("%s requested %d suppression(s) from .openctem.yml at %s (pending approval)", run.Repository, created, shortSHA(run.CommitSHA))).
+		WithMetadata("requested", created).
+		WithMetadata("commit_sha", run.CommitSHA))
 }

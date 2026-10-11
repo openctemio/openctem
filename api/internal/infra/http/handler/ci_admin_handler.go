@@ -189,15 +189,18 @@ type CIGatePolicyResponse struct {
 	FailOnKEV       bool     `json:"fail_on_kev"`
 	EPSSThreshold   *float64 `json:"epss_threshold,omitempty"`
 	// Modes: block, comment or monitor per capability and per rule id.
-	Modes     cirun.PolicyModes `json:"modes"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	Modes cirun.PolicyModes `json:"modes"`
+	// AllowRepoPolicy: repositories' .openctem.yml may tighten the gate and
+	// request exceptions.
+	AllowRepoPolicy bool      `json:"allow_repo_policy"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 func toCIPolicyResponse(p *cirun.GatePolicy) CIGatePolicyResponse {
 	out := CIGatePolicyResponse{ID: p.ID.String(), ScopeType: p.ScopeType, Enabled: p.Enabled, Mode: p.Mode,
 		FailOnSeverity: p.FailOnSeverity, NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV,
-		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, AllowRepoPolicy: p.AllowRepoPolicy, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
 	if p.ScopeID != nil {
 		out.ScopeID = p.ScopeID.String()
 	}
@@ -225,6 +228,9 @@ type CIGatePolicyRequest struct {
 	// {"sast": "comment"}, "rules": {"<rule id>": "monitor"}}. A new secret
 	// always blocks whatever the modes say.
 	Modes *cirun.PolicyModes `json:"modes,omitempty"`
+	// AllowRepoPolicy allows (default) or forbids repositories'
+	// .openctem.yml; any applicable policy forbidding it wins.
+	AllowRepoPolicy *bool `json:"allow_repo_policy,omitempty"`
 }
 
 // CIGateOverrideResponse is a break-glass override.
@@ -604,7 +610,7 @@ func (h *CIAdminHandler) ListGatePolicies(w http.ResponseWriter, r *http.Request
 func (req CIGatePolicyRequest) input() (cirunapp.GatePolicyInput, error) {
 	in := cirunapp.GatePolicyInput{ScopeType: req.ScopeType, Enabled: req.Enabled, Mode: req.Mode,
 		FailOnSeverity: req.FailOnSeverity, NewFindingsOnly: req.NewFindingsOnly, FailOnKEV: req.FailOnKEV,
-		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes}
+		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes, AllowRepoPolicy: req.AllowRepoPolicy}
 	if req.ScopeID != "" {
 		id, err := shared.IDFromString(req.ScopeID)
 		if err != nil {

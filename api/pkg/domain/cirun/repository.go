@@ -130,6 +130,10 @@ type PipelineRepository interface {
 	// on the repository asset of that name: a name the token does not sign
 	// stays with the first repository id that used it.
 	RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider Provider, issuer, repositoryName, externalRepoID string) (bool, error)
+	// RequestRepoExceptions stores a repository file's exceptions as pending
+	// suppression rules on the repository asset, skipping any already open,
+	// and returns how many it created.
+	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []RepoException) (int, error)
 	// UpsertPipeline finds the pipeline with p's key (adopting a backfilled
 	// legacy row of the same repository asset and workflow path) or creates
 	// it within the caps (ErrPipelineCap). An existing pipeline takes p's

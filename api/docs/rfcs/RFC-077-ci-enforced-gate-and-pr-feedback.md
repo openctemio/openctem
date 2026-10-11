@@ -72,6 +72,15 @@ CI job ── openctem-ci scan ──▶ POST /ci/runs/{id}/results ─┐
   path, reason, expiry). A requested exception becomes a pending suppression
   rule and applies only after approval through the existing suppression
   workflow. An organization can forbid the file.
+  Implemented: the runner sends the file's gate part as `repo_policy` with
+  `POST /ci/runs/{id}/evaluate`; values apply only when stricter (severity
+  threshold, `new_findings_only: false`, `fail_on_kev: true`, a lower EPSS
+  threshold, `block_rules`); an invalid file is refused (400); exceptions
+  (`rule_id`, optional `path`, `reason`, `expires` within 90 days) become
+  pending `accepted_risk` suppression rules on the repository, from non-fork
+  default-branch runs of a verified commit only, once each; a policy with
+  `allow_repo_policy: false` makes the platform ignore files (the verdict
+  says `repo_file: ignored`).
 - **G-9** Pre-existing committed secrets: a **new** secret always fails; a
   secret already open on the base branch fails default-branch runs and is a
   `comment` on pull requests, so one historic secret does not block every

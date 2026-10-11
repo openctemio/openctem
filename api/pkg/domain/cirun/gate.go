@@ -76,18 +76,21 @@ type GatePolicy struct {
 	// (0..1); nil disables it.
 	EPSSThreshold *float64
 	// Modes sets block, comment or monitor per capability and rule.
-	Modes     PolicyModes
-	CreatedBy *shared.ID
-	UpdatedBy *shared.ID
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Modes PolicyModes
+	// AllowRepoPolicy lets a repository's .openctem.yml tighten the gate and
+	// request exceptions (default true; any policy saying no wins).
+	AllowRepoPolicy bool
+	CreatedBy       *shared.ID
+	UpdatedBy       *shared.ID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // DefaultGatePolicy is the built-in policy: new findings of high severity
 // or above, or on the KEV list, fail; secrets always fail.
 func DefaultGatePolicy() GatePolicy {
 	return GatePolicy{ScopeType: ScopeDefault, Enabled: true, Mode: ModeEnforce, FailOnSeverity: "high",
-		NewFindingsOnly: true, FailOnKEV: true}
+		NewFindingsOnly: true, FailOnKEV: true, AllowRepoPolicy: true}
 }
 
 // Validate checks a policy. Every error wraps shared.ErrValidation.
@@ -144,6 +147,7 @@ func Strictest(ps []GatePolicy) GatePolicy {
 			out.EPSSThreshold = &v
 		}
 		out.Modes = strictestModes(out.Modes, p.Modes)
+		out.AllowRepoPolicy = out.AllowRepoPolicy && p.AllowRepoPolicy
 	}
 	return out
 }
