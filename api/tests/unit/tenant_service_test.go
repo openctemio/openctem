@@ -2604,10 +2604,9 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 	}
 }
 
-// boolPtr / intPtr are pointer-literal helpers for building partial-update
-// inputs in tests. strPtr lives in asset_service_test.go (same package).
+// boolPtr is a pointer-literal helper for building partial-update inputs in
+// tests. strPtr lives in asset_service_test.go (same package).
 func boolPtr(b bool) *bool { return &b }
-func intPtr(i int) *int    { return &i }
 
 // TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy guards the SCIM/system
 // provisioning path: AddMember called with a zero inviter must produce a
