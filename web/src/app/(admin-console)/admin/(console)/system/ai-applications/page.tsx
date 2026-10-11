@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, ErrorState, PageHeader } from '@/features/shared'
@@ -35,12 +37,15 @@ export default function AiApplicationsPage() {
   const me = useAdmin()
   const { data, error, isLoading, mutate } = useMcpClients()
   const [busy, setBusy] = useState<string | null>(null)
+  const [pendingBlock, setPendingBlock] = useState<AdminMcpClient | null>(null)
+  const { t } = useTranslation()
   const canBlock = adminCan(me.role, 'ops_admin')
 
   const toggle = async (c: AdminMcpClient) => {
     setBusy(c.id)
     try {
       await setMcpClientBlocked(c.id, !c.blocked)
+      setPendingBlock(null)
       toast.success(c.blocked ? `${c.name} unblocked` : `${c.name} blocked everywhere`)
       await mutate()
     } catch {
@@ -101,7 +106,8 @@ export default function AiApplicationsPage() {
                         size="sm"
                         className="shrink-0"
                         disabled={busy === c.id}
-                        onClick={() => void toggle(c)}
+                        // Unblocking is safe at once; blocking cuts every organization off.
+                        onClick={() => (c.blocked ? void toggle(c) : setPendingBlock(c))}
                       >
                         {busy === c.id ? (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
@@ -120,6 +126,21 @@ export default function AiApplicationsPage() {
           </Card>
         )}
       </div>
+      <ConfirmDialog
+        open={pendingBlock !== null}
+        onOpenChange={(o) => !o && setPendingBlock(null)}
+        destructive
+        title={t('confirm.mcpClient.blockTitle', 'Block {name} everywhere?', {
+          name: pendingBlock?.name ?? '',
+        })}
+        desc={t(
+          'confirm.mcpClient.blockDesc',
+          'Every organization on this deployment loses the use of this application at once: its tokens stop working and it cannot be authorized again until you unblock it.'
+        )}
+        confirmText={t('confirm.mcpClient.block', 'Block')}
+        isLoading={busy !== null}
+        handleConfirm={() => (pendingBlock ? toggle(pendingBlock) : undefined)}
+      />
     </Main>
   )
 }

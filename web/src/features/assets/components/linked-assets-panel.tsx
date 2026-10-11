@@ -5,6 +5,8 @@ import Link from '@/components/link'
 import { toast } from 'sonner'
 import { Box, Link2, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DetailSheetFooter, EmptyState, ErrorState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -64,6 +66,8 @@ export function LinkedAssetsPanel({
 }: LinkedAssetsPanelProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [pendingUnlink, setPendingUnlink] = useState<LinkedAssetItem | null>(null)
+  const { t } = useTranslation()
   const linkedIds = useMemo(() => new Set((items ?? []).map((i) => i.id)), [items])
   const count = total ?? items?.length ?? 0
 
@@ -71,6 +75,7 @@ export function LinkedAssetsPanel({
     setRemoving(item.id)
     try {
       await onUnlink(item.id)
+      setPendingUnlink(null)
       toast.success(`${item.name} unlinked from ${targetName}`)
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to unlink the asset'))
@@ -133,9 +138,11 @@ export function LinkedAssetsPanel({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 shrink-0"
-                  aria-label={`Unlink ${item.name}`}
+                  aria-label={t('confirm.linkedAsset.unlinkLabel', 'Unlink {name}', {
+                    name: item.name,
+                  })}
                   disabled={removing !== null}
-                  onClick={() => unlink(item)}
+                  onClick={() => setPendingUnlink(item)}
                 >
                   {removing === item.id ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -168,6 +175,24 @@ export function LinkedAssetsPanel({
       >
         {linkFields}
       </LinkAssetsDialog>
+
+      <ConfirmDialog
+        open={pendingUnlink !== null}
+        onOpenChange={(open) => !open && setPendingUnlink(null)}
+        destructive
+        title={t('confirm.linkedAsset.unlinkTitle', 'Unlink {name} from {target}?', {
+          name: pendingUnlink?.name ?? '',
+          target: targetName,
+        })}
+        desc={t(
+          'confirm.linkedAsset.unlinkDesc',
+          'The asset no longer takes its business context (and criticality) from {target}. The asset itself is not changed, and you can link it again later.',
+          { target: targetName }
+        )}
+        confirmText={t('confirm.unlink', 'Unlink')}
+        isLoading={removing !== null}
+        handleConfirm={() => (pendingUnlink ? unlink(pendingUnlink) : undefined)}
+      />
     </div>
   )
 }

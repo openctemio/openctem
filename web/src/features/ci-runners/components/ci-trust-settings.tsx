@@ -44,6 +44,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -133,6 +134,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
   const [editing, setEditing] = useState<CITrustConfig | 'new' | null>(null)
   const [snippetOf, setSnippetOf] = useState<CITrustConfig | null>(null)
   const [deleting, setDeleting] = useState<CITrustConfig | null>(null)
+  const { t } = useTranslation()
   const configs = data?.data ?? []
 
   if (error)
@@ -223,9 +225,14 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        title="Delete CI trust"
-        desc={`Pipelines admitted by "${deleting?.name ?? ''}" can no longer send results. Tokens already issued expire within 15 minutes.`}
-        confirmText="Delete"
+        title={t('confirm.ciTrust.deleteTitle', 'Delete the CI trust "{name}"?', {
+          name: deleting?.name ?? '',
+        })}
+        desc={t(
+          'confirm.ciTrust.deleteDesc',
+          'Pipelines it admits can no longer send results. Tokens already issued expire within 15 minutes. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={() => {
           const target = deleting
@@ -644,6 +651,8 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
   const { trigger: remove } = useDeleteGatePolicy()
   const [editing, setEditing] = useState<CIGatePolicy | null>(null)
   const [adding, setAdding] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<CIGatePolicy | null>(null)
+  const { t } = useTranslation()
   const policies = data?.data ?? []
   const tenantPolicy = policies.find((p) => p.scope_type === 'tenant')
   const others = policies.filter((p) => p.scope_type !== 'tenant')
@@ -714,15 +723,10 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
                   reason={NO_WRITE}
                   variant="ghost"
                   size="sm"
-                  aria-label="Delete policy"
-                  onClick={async () => {
-                    try {
-                      await remove(p.id ?? '')
-                      void mutate()
-                    } catch (e) {
-                      toast.error(getErrorMessage(e))
-                    }
-                  }}
+                  aria-label={t('confirm.gatePolicy.deleteLabel', 'Delete the policy for {scope}', {
+                    scope: policyScope(p),
+                  })}
+                  onClick={() => setPendingDelete(p)}
                 >
                   <Trash2 className="size-4" aria-hidden />
                 </GatedButton>
@@ -748,6 +752,29 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
           }}
         />
       )}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => !o && setPendingDelete(null)}
+        destructive
+        title={t('confirm.gatePolicy.deleteTitle', 'Delete the gate policy for {scope}?', {
+          scope: pendingDelete ? policyScope(pendingDelete) : '',
+        })}
+        desc={t(
+          'confirm.gatePolicy.deleteDesc',
+          'Pipelines in this scope fall back to the organization policy from their next run. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
+        handleConfirm={async () => {
+          if (!pendingDelete) return
+          try {
+            await remove(pendingDelete.id ?? '')
+            setPendingDelete(null)
+            void mutate()
+          } catch (e) {
+            toast.error(getErrorMessage(e))
+          }
+        }}
+      />
     </div>
   )
 }
@@ -929,6 +956,8 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
   const { trigger: create, isMutating } = useCreateGateOverride()
   const { trigger: revoke } = useRevokeGateOverride()
   const [open, setOpen] = useState(false)
+  const [pendingRevoke, setPendingRevoke] = useState<{ id: string; sha: string } | null>(null)
+  const { t } = useTranslation()
   const [assetId, setAssetId] = useState('')
   const [sha, setSha] = useState('')
   const [reason, setReason] = useState('')
@@ -991,17 +1020,9 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                   reason="Only owners and administrators can revoke an override"
                   variant="outline"
                   size="sm"
-                  onClick={async () => {
-                    try {
-                      await revoke(o.id ?? '')
-                      toast.success('Override revoked')
-                      void mutate()
-                    } catch (e) {
-                      toast.error(getErrorMessage(e))
-                    }
-                  }}
+                  onClick={() => setPendingRevoke({ id: o.id ?? '', sha: shortSHA(o.commit_sha) })}
                 >
-                  Revoke
+                  {t('confirm.revoke', 'Revoke')}
                 </GatedButton>
               )}
             </CardContent>
@@ -1081,6 +1102,30 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        onOpenChange={(o) => !o && setPendingRevoke(null)}
+        destructive
+        title={t('confirm.gateOverride.revokeTitle', 'Revoke the override for commit {sha}?', {
+          sha: pendingRevoke?.sha ?? '',
+        })}
+        desc={t(
+          'confirm.gateOverride.revokeDesc',
+          'The commit is checked against the gate again from its next pipeline run, and fails it if its findings still do. A revoked override cannot be restored; create a new one if needed.'
+        )}
+        confirmText={t('confirm.revoke', 'Revoke')}
+        handleConfirm={async () => {
+          if (!pendingRevoke) return
+          try {
+            await revoke(pendingRevoke.id)
+            toast.success('Override revoked')
+            setPendingRevoke(null)
+            void mutate()
+          } catch (e) {
+            toast.error(getErrorMessage(e))
+          }
+        }}
+      />
     </div>
   )
 }
