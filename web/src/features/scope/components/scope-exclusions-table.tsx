@@ -15,9 +15,11 @@
 
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
+import { useRouter } from 'next/navigation'
 import {
   Ban,
   FlaskConical,
+  Inbox,
   Power,
   PowerOff,
   Route,
@@ -81,8 +83,12 @@ const EXCLUSION_STATUS: Record<string, { label: string; tone: PillTone; hint: st
   expired: { label: 'Ended', tone: 'muted', hint: 'Its end date passed: scans may reach it.' },
 }
 
-/** Statuses the Out of scope tab lists (pending: Approvals; the API takes at most three). */
-const OUT_STATUSES = ['active', 'inactive', 'expired']
+/**
+ * Statuses the Out of scope tab lists: every exclusion, pending and rejected
+ * ones too (with their pill), so one is never invisible; pending ones are
+ * decided on the Approvals tab.
+ */
+const OUT_STATUSES = ['active', 'pending', 'inactive', 'expired', 'rejected']
 
 interface ScopeExclusionsTableProps {
   query: ScopeListQuery
@@ -102,6 +108,7 @@ export function ScopeExclusionsTable({
   const { t } = useTranslation()
   const canApproveExclusions = useHasPermission(Permission.ScopeExclusionsApprove)
   const canWrite = useHasPermission(Permission.ScopeWrite)
+  const router = useRouter()
   const { data: settings } = useScopeSettingsApi()
   // Lifting needs the approval permission only in Strict (unknown: Strict).
   const needsReview = settings?.approval_policy?.entries_need_approval ?? true
@@ -156,6 +163,23 @@ export function ScopeExclusionsTable({
               'scope.exclusion.liftNeedsWrite',
               'Lifting an exclusion needs the scope write permission.'
             ),
+      })
+    } else if (x.status === 'pending' && needsReview) {
+      out.push({
+        label: t('scope.existing.openApprovals', 'Open approvals'),
+        icon: Inbox,
+        onClick: () => router.push('/scope?tab=approvals'),
+      })
+    } else if (x.status === 'pending') {
+      out.push({
+        label: t('scope.existing.putInEffect', 'Put in effect'),
+        icon: Power,
+        onClick: () =>
+          void act(
+            () => setScopeExclusionActive(id, true),
+            t('scope.existing.done', '{pattern} updated', { pattern: x.pattern ?? '' })
+          ),
+        permission: Permission.ScopeWrite,
       })
     } else if (x.status === 'inactive') {
       out.push({

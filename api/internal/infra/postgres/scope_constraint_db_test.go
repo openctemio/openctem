@@ -51,10 +51,10 @@ func TestScopeEntryConstraints_DB(t *testing.T) {
 		t.Fatalf("read back: %+v", got.Constraint())
 	}
 	// The manual "already exists" check is about the unlimited entry only.
-	if ok, err := repo.ExistsByPattern(ctx, other, scope.TargetTypeDomain, "api.limits.example"); err != nil || ok {
-		t.Fatalf("another tenant sees the entry: %v %v", ok, err)
+	if ex, err := repo.FindByPattern(ctx, other, scope.TargetTypeDomain, "api.limits.example"); err != nil || ex != nil {
+		t.Fatalf("another tenant sees the entry: %v %v", ex, err)
 	}
-	if ok, _ := repo.ExistsByPattern(ctx, tenant, scope.TargetTypeDomain, "api.limits.example"); !ok {
+	if ex, _ := repo.FindByPattern(ctx, tenant, scope.TargetTypeDomain, "api.limits.example"); ex == nil {
 		t.Fatal("unlimited entry not found")
 	}
 	if _, err := repo.GetByID(ctx, other, a.ID()); !errors.Is(err, scope.ErrTargetNotFound) {

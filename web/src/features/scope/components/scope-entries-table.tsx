@@ -8,12 +8,22 @@
  * the deepest probe it allows, why it exists and who added it. There is no
  * inline toggle (SC5): status changes are labelled actions in the row menu,
  * and a widening action says it may need approval. Pending entries are
- * decided on the Approvals tab.
+ * listed with their pill and decided on the Approvals tab; where approvals
+ * are no longer required a leftover pending entry can be put in effect.
  */
 
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { CalendarClock, Pencil, Power, PowerOff, Search as SearchIcon, Trash2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import {
+  CalendarClock,
+  Inbox,
+  Pencil,
+  Power,
+  PowerOff,
+  Search as SearchIcon,
+  Trash2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import {
@@ -65,11 +75,19 @@ import {
 
 export const SCOPE_PAGE_SIZES = [10, 20, 30, 50, 100]
 
-/** Statuses the In scope tab lists (pending ones live on Approvals). */
-// The API takes at most three statuses per list call; rejected requests are
-// reached through the status filter.
-export const IN_SCOPE_DEFAULT: ScopeEntryStatus[] = ['active', 'expired', 'inactive']
-export const IN_SCOPE_STATUSES: ScopeEntryStatus[] = ['active', 'expired', 'inactive', 'rejected']
+/**
+ * Statuses the In scope tab lists. Every live entry is listed, pending ones
+ * too (with their pill), so an entry is never invisible; they are decided on
+ * the Approvals tab. Rejected requests are reached through the status filter.
+ */
+export const IN_SCOPE_DEFAULT: ScopeEntryStatus[] = ['active', 'pending', 'expired', 'inactive']
+export const IN_SCOPE_STATUSES: ScopeEntryStatus[] = [
+  'active',
+  'pending',
+  'expired',
+  'inactive',
+  'rejected',
+]
 
 export interface ScopeListQuery {
   search: string
@@ -101,8 +119,11 @@ export function ScopeEntriesTable({
 }: ScopeEntriesTableProps) {
   const { t } = useTranslation()
   const canApprove = useHasPermission(Permission.ScopeApprove)
+  const router = useRouter()
   const { data: settings } = useScopeSettingsApi()
   const renewDays = settings?.one_off_max_days ?? 7
+  // Unknown (still loading) counts as Strict.
+  const needsApproval = settings?.approval_policy?.entries_need_approval ?? true
   const kind = scopeKindOf(query.kind)
 
   const { data, isLoading } = useScopeTargetsApi({
@@ -147,6 +168,26 @@ export function ScopeEntriesTable({
         icon: PowerOff,
         onClick: () =>
           void act(() => setScopeTargetActive(id, false), `${e.pattern} deactivated`, 'Failed'),
+        permission: Permission.ScopeWrite,
+      })
+    }
+    if (st === 'pending' && needsApproval) {
+      out.push({
+        label: t('scope.existing.openApprovals', 'Open approvals'),
+        icon: Inbox,
+        onClick: () => router.push('/scope?tab=approvals'),
+      })
+    }
+    if (st === 'pending' && !needsApproval) {
+      out.push({
+        label: t('scope.existing.putInEffect', 'Put in effect'),
+        icon: Power,
+        onClick: () =>
+          void act(
+            () => setScopeTargetActive(id, true),
+            t('scope.existing.done', '{pattern} updated', { pattern: e.pattern ?? '' }),
+            t('scope.existing.failed', 'The change was not saved.')
+          ),
         permission: Permission.ScopeWrite,
       })
     }
