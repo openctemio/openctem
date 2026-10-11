@@ -91,6 +91,9 @@ services:
     environment:
       NODE_ENV: production
       BACKEND_API_URL: http://api:8080
+      # The public origin, for the Content-Security-Policy (same value as the
+      # API's APP_URL).
+      NEXT_PUBLIC_APP_URL: ${OPENCTEM_PUBLIC_URL:-https://${OPENCTEM_HOSTNAME}}
       # Browsers always see HTTPS (the gateway, or your TLS proxy in `http` mode).
       SECURE_COOKIES: "true"
       # The gateway overwrites X-Real-IP / X-Forwarded-For, so pass them on to

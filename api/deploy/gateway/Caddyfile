@@ -151,7 +151,7 @@ import planes.caddy
 	@token_no_session {
 		path /api/*
 		header Authorization "Bearer *"
-		not header Cookie *{$AUTH_COOKIE_NAME:auth_token}=*
+		not header Cookie *auth_token=*
 	}
 	handle @token_no_session {
 		import to_api
