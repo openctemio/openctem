@@ -14,10 +14,14 @@ import (
 type SensorTransportGRPC struct {
 	// State: advertised (the self-probe passes; sensors use gRPC), pending
 	// (first probe running), unavailable (see Reason).
-	State     string     `json:"state"`
-	Endpoint  string     `json:"endpoint,omitempty"`
-	Reason    string     `json:"reason,omitempty"`
-	CheckedAt *time.Time `json:"checked_at,omitempty"`
+	State    string `json:"state"`
+	Endpoint string `json:"endpoint,omitempty"`
+	// RequiresALPN: the endpoint is reached through the gateway's ALPN
+	// routing on the platform's own port; only sensors that offer the
+	// sensor ALPN id use it, older ones stay on the HTTPS binding.
+	RequiresALPN bool       `json:"requires_alpn,omitempty"`
+	Reason       string     `json:"reason,omitempty"`
+	CheckedAt    *time.Time `json:"checked_at,omitempty"`
 }
 
 // SensorTransportStatus is GET /sensors/transport.
