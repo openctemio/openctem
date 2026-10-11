@@ -326,3 +326,14 @@ func TestRepositoryFromURL(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnerIDClaims(t *testing.T) {
+	gh := ParseClaims(ProviderGitHub, map[string]any{"repository": "Acme/api", "repository_owner": "Acme", "repository_owner_id": "42"})
+	if gh.OwnerName != "acme" || gh.OwnerID != "42" {
+		t.Fatalf("github owner = %q %q", gh.OwnerName, gh.OwnerID)
+	}
+	gl := ParseClaims(ProviderGitLab, map[string]any{"project_path": "grp/sub/p", "namespace_path": "Grp/Sub", "namespace_id": "9"})
+	if gl.OwnerName != "grp/sub" || gl.OwnerID != "9" {
+		t.Fatalf("gitlab namespace = %q %q", gl.OwnerName, gl.OwnerID)
+	}
+}
