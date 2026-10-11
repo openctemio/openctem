@@ -267,8 +267,8 @@ func registerVulnerabilityRoutes(
 		r.PATCH("/{id}/classify", h.ClassifyFinding, middleware.Require(permission.FindingsSeverity))
 		r.PATCH("/{id}/severity", h.UpdateFindingSeverity, middleware.Require(permission.FindingsSeverity))
 
-		// Triage and verification
-		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsTriage))
+		// Triage and verification. Confirming a finding is a status change
+		// (PATCH /{id}/status): one gate per action.
 		// Mark duplicate (RFC-043 §9): a triage decision that folds the finding
 		// in the body into this one; merging with an approval disposition
 		// also needs findings:approve (checked in the service).
