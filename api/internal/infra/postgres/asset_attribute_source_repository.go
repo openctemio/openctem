@@ -300,11 +300,12 @@ func recordChangeEvent(ctx context.Context, tx *sql.Tx, ev asset.ChangeEvent, no
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE asset_change_events
 			   SET at = $4, new_value = $5, flap_count = flap_count + 1,
-			       source_kind = $6, source_name = $7, source_run = $8, actor_id = $9, reason = $10
+			       source_kind = $6, source_name = $7, source_run = $8, actor_id = $9, reason = $10,
+			       added = $11, removed = $12
 			 WHERE tenant_id = $1 AND at = $2 AND id = $3`,
 			ev.TenantID.String(), latest.At, latest.ID.String(), at, clipStr(ev.New, 500),
 			string(ev.SourceKind), clipStr(ev.SourceName, asset.MaxSourceNameLength), clipStr(ev.SourceRun, 100),
-			actor, string(ev.Reason)); err != nil {
+			actor, string(ev.Reason), nullTextArray(ev.Added), nullTextArray(ev.Removed)); err != nil {
 			return fmt.Errorf("coalesce change event: %w", err)
 		}
 		return nil

@@ -48,6 +48,9 @@ func TestCommandTierFor(t *testing.T) {
 		// unverified (T2), catalog-routed name or not.
 		{"unknown tool claims builtin", Job{Tool: "acme-builtin"}, builtinContract("T0", "sast.code@1"), TierIntrusive},
 		{"catalog tool the sensor does not ship claims builtin", Job{Tool: "zap"}, builtinContract("T0", "dast.web@1"), TierIntrusive},
+		// The passive lookups are built in and T0 with their contract.
+		{"rdap lookup", Job{Tool: "rdap", Capability: "lookup.rdap@1"}, builtinContract("T0", "lookup.rdap@1"), TierPassive},
+		{"asn lookup", Job{Tool: "asn", Capability: "lookup.asn@1"}, builtinContract("T0", "lookup.asn@1"), TierPassive},
 		// Out-of-band callbacks stay intrusive whatever the contract says.
 		{"interactsh", Job{Tool: "nuclei", Interactsh: true}, builtinContract("T1", "vuln.templates@1"), TierIntrusive},
 	}

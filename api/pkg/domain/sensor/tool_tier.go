@@ -40,7 +40,7 @@ const (
 var builtinTools = map[string]bool{
 	"betterleaks": true, "codeql": true, "dnsx": true, "httpx": true, "katana": true,
 	"naabu": true, "nuclei": true, "nuclei-validate": true, "semgrep": true,
-	"subfinder": true, "trivy": true, "file-import": true,
+	"subfinder": true, "trivy": true, "file-import": true, "rdap": true, "asn": true,
 }
 
 // IsBuiltinTool reports whether name is a tool the platform knows a

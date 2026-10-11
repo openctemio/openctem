@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -321,66 +320,6 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 // subscriptions, background jobs); see datascope.MembershipAdminLookup.
 func membershipAdminLookup(tenants tenant.Repository) datascope.AdminLookup {
 	return datascope.MembershipAdminLookup(tenants)
-}
-
-// moduleBundleStore adapts the tenant repository to module.BundleStore, storing
-// a tenant's product-bundle subscription in its settings JSON. Read on the
-// module-resolution path (cached by the gate); written on subscribe.
-type moduleBundleStore struct {
-	tenants tenant.Repository
-	db      *sql.DB
-}
-
-func (a moduleBundleStore) GetSubscribedBundles(ctx context.Context, tenantID string) ([]string, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, err
-	}
-	t, err := a.tenants.GetByID(ctx, tid)
-	if err != nil {
-		return nil, err
-	}
-	return t.TypedSettings().SubscribedBundles, nil
-}
-
-// SetSubscribedBundles writes ONLY the subscribed_bundles key inside the tenant
-// settings JSONB — never a read-modify-write of the whole blob. This avoids a
-// lost-update clobber: a concurrent write to any other settings field (AI
-// config, branding, risk weights, …) can't wipe the subscription, and vice
-// versa. Empty selection removes the key entirely (= no subscription = all on).
-func (a moduleBundleStore) SetSubscribedBundles(ctx context.Context, tenantID string, bundleIDs []string) error {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return err
-	}
-
-	var result sql.Result
-	if len(bundleIDs) == 0 {
-		result, err = a.db.ExecContext(ctx,
-			`UPDATE tenants
-			 SET settings = COALESCE(settings, '{}'::jsonb) - 'subscribed_bundles',
-			     updated_at = now()
-			 WHERE id = $1`,
-			tid.String())
-	} else {
-		payload, mErr := json.Marshal(bundleIDs)
-		if mErr != nil {
-			return fmt.Errorf("marshal subscribed bundles: %w", mErr)
-		}
-		result, err = a.db.ExecContext(ctx,
-			`UPDATE tenants
-			 SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{subscribed_bundles}', $2::jsonb, true),
-			     updated_at = now()
-			 WHERE id = $1`,
-			tid.String(), payload)
-	}
-	if err != nil {
-		return fmt.Errorf("update subscribed bundles: %w", err)
-	}
-	if rows, rErr := result.RowsAffected(); rErr == nil && rows == 0 {
-		return fmt.Errorf("%w: tenant %s", shared.ErrNotFound, tid.String())
-	}
-	return nil
 }
 
 // pentestTenantMemberAdapter adapts the tenant repository to
@@ -1843,9 +1782,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			s.CertMonitor.SetScopeJoin(s.ScopeJoin)
 		}
 	}
-	// Open ports a port scan no longer sees are closed (research/22 P0-6).
 	s.Ingest.SetEvidenceStore(s.Evidence)
-	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
@@ -1855,7 +1792,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
-	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset attribute values (RFC-069)
+	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset values and sets, incl. open ports (RFC-069)
 	// Inventory vulnerability matching (RFC-066): told by ingest when an
 	// organization's software changes; findings go through the same
 	// priority and SLA enrichment as ingested ones.
@@ -1983,6 +1920,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails, cfg.Scope.ActiveProof == config.ScopeProofAll)
+	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
+	// the limits of port- and path-limited targets.
+	s.Command.SetScopeLimits(s.ActiveGate)
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
@@ -2411,9 +2351,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Module = module.NewModuleService(repos.Module, log)
 	s.Module.SetTenantModuleRepo(repos.TenantModule)
 	s.Module.SetAuditService(s.Audit)
-	// Product-bundle subscription: resolves the enabled-module baseline live from
-	// the tenant's chosen bundles (empty = every module on, backward-compatible).
-	s.Module.SetBundleStore(moduleBundleStore{tenants: repos.Tenant, db: deps.DB})
+	// Module entitlements (RFC-064): the plan to module map and the platform
+	// grants decide what an organization may switch on; a change refreshes
+	// the module state everywhere.
+	if s.Entitlement != nil {
+		s.Entitlement.SetModuleRepository(repos.Plan)
+		s.Module.SetEntitlements(s.Entitlement)
+		s.Entitlement.SetModulesChangeNotifier(s.Module.NotifyEntitlementChange)
+	}
 	// Per-tenant module-config version counter (Redis-backed). Used
 	// for ETag generation on module-list endpoints and as the cache-
 	// key suffix in any future Redis payload cache. Bumped on every

@@ -70,7 +70,7 @@ func DeliveryPayload(payload json.RawMessage) json.RawMessage {
 
 // signJob returns a copy of c with its delivery payload and the signer's
 // envelope for sensorID, or ErrJobNotSigned.
-func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Command) (*commanddom.Command, error) {
+func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Command, limits bool) (*commanddom.Command, error) {
 	payload := DeliveryPayload(c.Payload)
 	now := s.now().UTC()
 	expires := now.Add(jobsign.MaxTTL)
@@ -89,6 +89,17 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 			"command_id", c.ID.String(), "sensor_id", sensorID)
 		return nil, fmt.Errorf("%w: %w", ErrJobNotSigned, err)
 	}
+	var lims []jobsign.Limit
+	if limits {
+		// The sensor enforces scope limits: the statement carries those of
+		// the targets only limited entries cover (the signer checks each
+		// against its ledger).
+		if lims, err = s.statementLimits(ctx, c, targets); err != nil {
+			s.logger.Warn("scope limits not computed; command not handed to the sensor",
+				"command_id", c.ID.String(), "sensor_id", sensorID, "error", err)
+			return nil, fmt.Errorf("%w: scope limits: %w", ErrJobNotSigned, err)
+		}
+	}
 	st := jobsign.Statement{
 		Kind:          jobsign.Kind,
 		TenantID:      c.TenantID.String(),
@@ -99,6 +110,7 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 		PayloadSHA256: jobsign.PayloadDigest(payload),
 		Targets:       targets,
 		Templates:     templates,
+		Limits:        lims,
 		LeaseEpoch:    c.LeaseEpoch,
 		IssuedAt:      now,
 		ExpiresAt:     expires,
@@ -139,6 +151,7 @@ func (s *Service) signClaimed(ctx context.Context, tenantID shared.ID, sensorID 
 	}
 	out := cmds[:0:0]
 	down := false
+	limits := s.enforcesLimitsFor(ctx, tenantID, sensorID)
 	for _, c := range cmds {
 		if down {
 			// The signer did not answer for an earlier command: the rest
@@ -147,7 +160,7 @@ func (s *Service) signClaimed(ctx context.Context, tenantID shared.ID, sensorID 
 			s.unclaim(ctx, tenantID, c.ID, sensorID, pinned[c.ID])
 			continue
 		}
-		signed, err := s.signJob(ctx, sensorID, c)
+		signed, err := s.signJob(ctx, sensorID, c, limits)
 		if err != nil {
 			down = !errors.Is(err, ErrJobRefused)
 			s.unclaim(ctx, tenantID, c.ID, sensorID, pinned[c.ID])

@@ -38,6 +38,53 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
                 ],
               },
               {
+                id: 'starter-passive',
+                name: 'Passive discovery',
+                description: 'Subdomains from passive sources, then DNS.',
+                is_system_template: true,
+                tags: ['starter', 'discovery', 'passive'],
+                steps: [
+                  {
+                    id: 'pd1',
+                    step_key: 'subdomains',
+                    name: 'Passive subdomains',
+                    tool: '',
+                    capabilities: ['discover.subdomains'],
+                  },
+                  {
+                    id: 'pd2',
+                    step_key: 'dns',
+                    name: 'Passive DNS',
+                    tool: '',
+                    capabilities: ['resolve.dns'],
+                    depends_on: ['subdomains'],
+                  },
+                ],
+              },
+              {
+                id: 'starter-probe',
+                name: 'Probe new assets',
+                description: 'Ports and HTTP.',
+                is_system_template: true,
+                tags: ['starter', 'discovery', 'continuous'],
+                steps: [
+                  {
+                    id: 'pn1',
+                    step_key: 'ports',
+                    name: 'Port scan',
+                    tool: '',
+                    capabilities: ['scan.ports'],
+                  },
+                  {
+                    id: 'pn2',
+                    step_key: 'http',
+                    name: 'HTTP probe',
+                    tool: '',
+                    capabilities: ['probe.http'],
+                  },
+                ],
+              },
+              {
                 id: 'starter-code',
                 name: 'Code / CI',
                 description: 'Scan repositories.',
@@ -104,7 +151,12 @@ vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
 
 vi.mock('@/lib/api/tool-hooks', () => ({
   useTools: () => ({
-    data: { items: [{ id: 't1', name: 'trivy', display_name: 'Trivy', is_active: true }] },
+    data: {
+      items: [
+        { id: 't1', name: 'trivy', display_name: 'Trivy', is_active: true },
+        { id: 't2', name: 'httpx', display_name: 'httpx', is_active: true },
+      ],
+    },
     isLoading: false,
   }),
   // Availability unknown: nothing is disabled.
@@ -259,5 +311,72 @@ describe('BasicInfoStep', () => {
     expect(options.findIndex((o) => o.includes('External discovery'))).toBeLessThan(
       options.findIndex((o) => o.includes('Network sweep'))
     )
+  })
+
+  describe('intensity (RFC-071)', () => {
+    it('asks the intensity first, before what to run', () => {
+      render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} />)
+      const intensity = screen.getByRole('group', { name: 'Intensity' })
+      const what = screen.getByRole('group', { name: 'What to run' })
+      expect(
+        intensity.compareDocumentPosition(what) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+      expect(screen.getByRole('radio', { name: 'Active' })).toBeChecked()
+    })
+
+    it('turns off the workflows above a passive scan, with why', () => {
+      render(
+        <BasicInfoStep data={{ ...DEFAULT_NEW_SCAN, intensity: 'passive' }} onChange={vi.fn()} />
+      )
+      expect(screen.getByRole('radio', { name: 'Discover' })).toBeDisabled()
+      expect(screen.getByRole('radio', { name: 'Passive discovery' })).toBeEnabled()
+      expect(screen.getAllByText(/above this scan's intensity/).length).toBeGreaterThan(0)
+    })
+
+    it('offers only scanners within the intensity', async () => {
+      render(
+        <BasicInfoStep data={{ ...DEFAULT_NEW_SCAN, intensity: 'passive' }} onChange={vi.fn()} />
+      )
+      await userEvent.click(screen.getByRole('combobox', { name: 'Scanner' }))
+      expect(screen.getByRole('option', { name: /Trivy/ })).toBeInTheDocument()
+      expect(screen.queryByRole('option', { name: /httpx/ })).toBeNull()
+    })
+
+    it('a lower intensity drops a workflow above it', async () => {
+      const onChange = vi.fn()
+      render(
+        <BasicInfoStep
+          data={{ ...DEFAULT_NEW_SCAN, mode: 'workflow', workflowId: 'starter-discover' }}
+          onChange={onChange}
+        />
+      )
+      await userEvent.click(screen.getByRole('radio', { name: 'Passive' }))
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ intensity: 'passive', workflowId: undefined })
+      )
+    })
+
+    it('a passive discovery starter defaults the scan to passive', async () => {
+      const onChange = vi.fn()
+      render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={onChange} />)
+      await userEvent.click(screen.getByRole('radio', { name: 'Passive discovery' }))
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ workflowId: 'starter-passive', intensity: 'passive' })
+      )
+    })
+
+    it('continuous discovery saves the passive scan with the probing workflow alongside', async () => {
+      const onChange = vi.fn()
+      render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={onChange} />)
+      await userEvent.click(screen.getByRole('radio', { name: 'Continuous discovery' }))
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          mode: 'workflow',
+          workflowId: 'starter-passive',
+          continuousProbeWorkflowId: 'starter-probe',
+          intensity: 'passive',
+        })
+      )
+    })
   })
 })

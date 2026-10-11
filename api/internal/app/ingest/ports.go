@@ -15,10 +15,12 @@ package ingest
 //     scanner reported gets a `resolves_to` edge to the address when the
 //     tenant already has that name as a domain or subdomain asset (a sensor
 //     report never creates a name here);
-//   - a port the same kind of scan saw open last time and not this time is
-//     closed: its asset goes inactive with a "disappeared" history entry and
-//     its port_open exposure is resolved (PortReconciler). A port that comes
-//     back is recovered by the normal ingest path.
+//   - a port is closed only when the port scan that found it open scans the
+//     same range of the address again without it (per-source set
+//     reconciliation, attribute_sets.go, RFC-069): its asset goes inactive
+//     with a "disappeared" history entry and its port_open exposure is
+//     resolved. A partial scan never closes a port outside its range. A
+//     port that comes back is reopened.
 //
 // Architecture: docs/architecture/easm.md.
 
@@ -27,7 +29,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/capability"
@@ -189,44 +190,17 @@ func expandOpenPorts(report *ctis.Report) int {
 	return added
 }
 
-// OpenPortAsset is one open_port asset of a host the tenant already has.
-type OpenPortAsset struct {
-	ID   shared.ID
-	Name string
-}
-
-// PortReconciler reads and closes a tenant's open_port assets
-// (*postgres.EASMPortRepository). Every call is tenant-scoped.
-type PortReconciler interface {
-	// ActiveOpenPorts returns the tenant's active open_port assets of the
-	// given hosts, by host.
-	ActiveOpenPorts(ctx context.Context, tenantID shared.ID, hosts []string) (map[string][]OpenPortAsset, error)
-	// ClosePorts marks the tenant's open_port assets inactive, records a
-	// "disappeared" history entry for each and resolves their active
-	// port_open exposures, in one transaction. It returns the ids it closed.
-	// A port seen open at or after seenBefore (by a newer report that
-	// arrived first) is not closed.
-	ClosePorts(ctx context.Context, tenantID shared.ID, ids []shared.ID, seenBefore time.Time, reason string) ([]shared.ID, error)
-	// ReopenPorts marks the tenant's inactive open_port assets with the given
-	// names active again with a "recovered" history entry.
-	ReopenPorts(ctx context.Context, tenantID shared.ID, names []string, reason string) ([]shared.ID, error)
-}
-
-// SetPortReconciler wires port-closed detection (nil: ports are only ever
-// added).
-func (p *AssetProcessor) SetPortReconciler(r PortReconciler) { p.ports = r }
-
 // portHost is one address of the report and the ports seen open on it now.
 type portHost struct {
 	host, hostname string
 	ports          map[string]bool // port asset keys (portKey)
 }
 
-// surfacePorts links the report's addresses to their ports and names, and
-// closes the ports a port scan no longer sees. mayChange says whether the
-// report may change an existing asset (RFC-040 §5.3); only such a report
-// closes an address's ports. Best effort: the assets are stored; a failure
-// here is logged.
+// surfacePorts links the report's addresses to their ports and names.
+// Which ports stay open is decided per source by set reconciliation
+// (attribute_sets.go): a port closes when the port scan that found it scans
+// the same range of the address again without it. Best effort: the assets
+// are stored; a failure here is logged.
 func (p *AssetProcessor) surfacePorts(ctx context.Context, tenantID shared.ID, report *ctis.Report,
 	existingMap map[string]*asset.Asset, mayChange func(shared.ID) bool,
 ) {
@@ -250,60 +224,6 @@ func (p *AssetProcessor) surfacePorts(ctx context.Context, tenantID shared.ID, r
 		return
 	}
 	p.linkPorts(ctx, tenantID, hosts, existingMap)
-
-	if p.ports == nil || !isPortScanReport(report) {
-		return
-	}
-	names := make([]string, 0, len(hosts))
-	seenNow := map[string]map[string]bool{}
-	for _, h := range hosts {
-		names = append(names, h.host)
-		seenNow[h.host] = h.ports
-	}
-	known, err := p.ports.ActiveOpenPorts(ctx, tenantID, names)
-	if err != nil {
-		p.logger.Warn("ingest: open ports not reconciled", "tenant_id", tenantID.String(), "error", err)
-		return
-	}
-	var reopen []string
-	for _, h := range hosts {
-		if ipAsset, ok := existingMap[h.host]; ok && (mayChange == nil || mayChange(ipAsset.ID())) {
-			for k := range h.ports {
-				reopen = append(reopen, k)
-			}
-		}
-	}
-	if len(reopen) > 0 {
-		if back, err := p.ports.ReopenPorts(ctx, tenantID, reopen, "port open again: seen by the latest port scan"); err != nil {
-			p.logger.Warn("ingest: reopened ports not recorded", "tenant_id", tenantID.String(), "error", err)
-		} else if len(back) > 0 {
-			p.logger.Info("ingest: ports open again", "tenant_id", tenantID.String(), "count", len(back))
-		}
-	}
-	var closed []shared.ID
-	for host, list := range known {
-		ipAsset, ok := existingMap[host]
-		if !ok || (mayChange != nil && !mayChange(ipAsset.ID())) {
-			continue
-		}
-		for _, pa := range list {
-			if !seenNow[host][portKey(pa.Name)] {
-				closed = append(closed, pa.ID)
-			}
-		}
-	}
-	if len(closed) == 0 {
-		return
-	}
-	// Only ports last seen before this report's own observation: a delayed
-	// older scan never closes a port a newer one saw open.
-	done, err := p.ports.ClosePorts(ctx, tenantID, closed, reportObservedAt(report, time.Now()),
-		"port closed: not seen open by the latest port scan")
-	if err != nil {
-		p.logger.Warn("ingest: closed ports not recorded", "tenant_id", tenantID.String(), "error", err)
-		return
-	}
-	p.logger.Info("ingest: ports closed", "tenant_id", tenantID.String(), "count", len(done))
 }
 
 // linkPorts creates address → port `exposes` edges and host name → address

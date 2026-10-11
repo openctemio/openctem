@@ -40,7 +40,7 @@ func TestIngest_PortsSurfaced(t *testing.T) {
 		svc.SetAssetExposureProjector(exposurebridge.NewAssetBridge(
 			postgres.NewAnnouncingExposureRepository(db, postgres.NewEASMAlerter(db)),
 			postgres.NewExposureStateHistoryRepository(db), logger.NewNop()))
-		svc.SetPortReconciler(postgres.NewEASMPortRepository(db))
+		wireSetReconciliation(svc, db)
 		return svc
 	}
 	svc := newSvc()
