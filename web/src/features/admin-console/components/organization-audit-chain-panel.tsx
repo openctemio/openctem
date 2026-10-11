@@ -40,6 +40,7 @@ import {
   rebaselineAuditChain,
   useAuditChainStatus,
 } from '../api/use-admin-audit-chain'
+import { useTranslation } from '@/context/i18n-provider'
 
 const CLASS_LABEL: Record<AuditChainClass, string> = {
   verifies: 'Verifies',
@@ -93,6 +94,7 @@ export function OrganizationAuditChainPanel({
   orgName,
   canRebaseline,
 }: OrganizationAuditChainPanelProps) {
+  const { t } = useTranslation()
   const { data, error, isLoading, isValidating, mutate } = useAuditChainStatus(tenantId)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
@@ -336,18 +338,23 @@ export function OrganizationAuditChainPanel({
           if (!busy) setConfirmOpen(open)
         }}
         destructive
-        title="Rebaseline the audit chain?"
+        title={t('confirm.auditChain.rebaselineTitle', 'Rebaseline the audit chain of {org}?', {
+          org: orgName ?? '',
+        })}
         desc={
           <div className="space-y-2">
             <p>
-              This re-signs all {total} entries of {orgName}&apos;s audit chain from the current
-              audit log. The {explained} explained {explained === 1 ? 'break' : 'breaks'} will
-              verify afterwards, and so would any edit made before now: it is irreversible.
+              {t(
+                'confirm.auditChain.rebaselineDesc',
+                'This re-signs all {total} entries of the audit chain from the current audit log. The {explained} explained breaks will verify afterwards, and so would any edit made before now: it is irreversible.',
+                { total, explained }
+              )}
             </p>
             <p>
-              The server checks the chain again and refuses if anything is unexplained or the chain
-              changed since this review. The action is recorded in the organization&apos;s audit log
-              and the platform audit log.
+              {t(
+                'confirm.auditChain.rebaselineCheck',
+                'The server checks the chain again and refuses if anything is unexplained or the chain changed since this review. The action is recorded in the organization audit log and the platform audit log.'
+              )}
             </p>
           </div>
         }
@@ -356,10 +363,10 @@ export function OrganizationAuditChainPanel({
           busy ? (
             <>
               <Loader2 className="me-1.5 size-4 animate-spin" />
-              Rebaselining
+              {t('confirm.auditChain.rebaselining', 'Rebaselining…')}
             </>
           ) : (
-            'Rebaseline'
+            t('confirm.auditChain.rebaseline', 'Rebaseline')
           )
         }
         isLoading={busy}
@@ -368,7 +375,7 @@ export function OrganizationAuditChainPanel({
       >
         <div className="space-y-2">
           <Label htmlFor={codeId} className="font-normal">
-            Code from your authenticator
+            {t('confirm.auditChain.code', 'Code from your authenticator')}
           </Label>
           <Input
             id={codeId}
