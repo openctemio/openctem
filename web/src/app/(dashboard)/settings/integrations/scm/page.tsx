@@ -51,6 +51,7 @@ import {
 } from '@/features/repositories/hooks/use-repositories'
 import type { SCMConnection } from '@/features/repositories/types/repository.types'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Only a problem (error) is coloured; the other states stay neutral.
 const STATUS_CONFIG: Record<
@@ -91,6 +92,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 }
 
 export default function SCMConnectionsPage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -441,14 +443,14 @@ export default function SCMConnectionsPage() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete SCM connection"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedConnection?.name}</strong>? This will
-            not delete the imported repositories, but you won&apos;t be able to sync them anymore.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.scm.deleteTitle', 'Delete the SCM connection "{name}"?', {
+          name: selectedConnection?.name ?? '',
+        })}
+        desc={t(
+          'confirm.scm.deleteDesc',
+          'Imported repositories stay, but they can no longer be synced through this connection. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={() => void handleDelete()}
       />
