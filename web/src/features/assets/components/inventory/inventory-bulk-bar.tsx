@@ -26,7 +26,7 @@ import {
   Check,
   Trash2,
 } from 'lucide-react'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { bulkTypeToConfirm, ConfirmDialog } from '@/components/confirm-dialog'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { bulkDeleteAssetsSafely, reportBulkDelete } from '../../lib/safe-delete'
 import { bulkActionsFor } from '../../lib/type-actions'
@@ -78,6 +78,7 @@ import {
   type UpdateAssetInput,
 } from '../../types/asset.types'
 import { ASSET_CRITICALITY_LEVELS } from '@/lib/criticality'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface BulkBarProps {
   selected: Asset[]
@@ -133,6 +134,7 @@ interface MembersResponse {
 }
 
 export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBarProps) {
+  const { t } = useTranslation()
   const count = selected.length
   const [dialog, setDialog] = useState<null | 'owner' | 'criticality' | 'tag'>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -374,11 +376,19 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={`Delete ${count} asset${count === 1 ? '' : 's'}?`}
-        desc="They leave every list. An asset that has findings is not deleted: archive it instead to keep the finding history."
-        confirmText={busy ? 'Deleting...' : 'Delete'}
+        title={
+          count === 1
+            ? t('confirm.asset.bulkDeleteTitleOne', 'Delete 1 asset?')
+            : t('confirm.asset.bulkDeleteTitle', 'Delete {count} assets?', { count })
+        }
+        desc={t(
+          'confirm.asset.bulkDeleteDesc',
+          'They leave every list. An asset that has findings is not deleted: archive it instead to keep the finding history.'
+        )}
+        confirmText={busy ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
         destructive
         isLoading={busy}
+        typeToConfirm={bulkTypeToConfirm(count)}
         handleConfirm={() => void deleteSelected()}
       />
 

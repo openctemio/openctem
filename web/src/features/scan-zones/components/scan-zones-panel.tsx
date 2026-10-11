@@ -26,6 +26,7 @@ import { ScanZoneDialog } from './scan-zone-dialog'
 import { ScanZoneTable } from './scan-zone-table'
 import { ZoneCoverageCard } from './zone-coverage-card'
 import { ZoneSensorsDialog } from './zone-sensors-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ScanZonesPanelProps {
   /** Controlled from the page header's "Add zone" button. */
@@ -38,6 +39,7 @@ interface ScanZonesPanelProps {
  * ranges and sensors, and how much of the inventory they cover.
  */
 export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPanelProps) {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useScanZones()
   const { data: coverage, mutate: mutateCoverage } = useScanZoneCoverage()
   const { byId: sensorsById } = useZoneSensors()
@@ -218,14 +220,14 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
             setDeleteError(null)
           }
         }}
-        title="Delete scan zone"
-        desc={
-          <>
-            Delete <strong>{deleteZone?.name}</strong>? Its ranges stop routing scans: private
-            targets in them will not be scanned until another zone holds them.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.scanZone.deleteTitle', 'Delete the scan zone {name}?', {
+          name: deleteZone?.name ?? '',
+        })}
+        desc={t(
+          'confirm.scanZone.deleteDesc',
+          'Its ranges stop routing scans: private targets in them are not scanned until another zone holds them. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={deleting}
         handleConfirm={handleDelete}

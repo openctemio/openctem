@@ -40,11 +40,13 @@ import {
 } from '@/lib/api/scan-profile-hooks'
 import type { ScanProfile } from '@/lib/api/scan-profile-types'
 import { INTENSITY_OPTIONS } from '../schemas/scan-profile-schema'
+import { useTranslation } from '@/context/i18n-provider'
 
 const getIntensityLabel = (intensity: string) =>
   INTENSITY_OPTIONS.find((i) => i.value === intensity)?.label || intensity
 
 export function ScanProfilesSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [presetDialogOpen, setPresetDialogOpen] = useState(false)
@@ -333,14 +335,14 @@ export function ScanProfilesSection() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Scan Profile"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedProfile?.name}</strong>? This action
-            cannot be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.scanProfile.deleteTitle', 'Delete the scan profile {name}?', {
+          name: selectedProfile?.name ?? '',
+        })}
+        desc={t(
+          'confirm.scanProfile.deleteDesc',
+          'It can no longer be chosen for scans. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}

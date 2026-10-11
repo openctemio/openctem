@@ -51,6 +51,7 @@ import type { PriorityClass } from '@/features/findings/types/finding.types'
 import { DryRunDialog, type DryRunRule } from './dry-run-dialog'
 import { SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
 import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
+import { useTranslation } from '@/context/i18n-provider'
 
 type FieldKey =
   | 'is_in_kev'
@@ -165,6 +166,7 @@ const emptyForm: FormState = {
 }
 
 export default function PriorityRulesPage() {
+  const { t } = useTranslation()
   const mayRiskScoring = useHasPermission(Permission.TeamUpdate)
   const riskScoringOn = useModuleEnabled('risk_scoring')
   const canSeeRiskScoring = mayRiskScoring && riskScoringOn
@@ -815,14 +817,14 @@ export default function PriorityRulesPage() {
       <ConfirmDialog
         open={!!deletingRule}
         onOpenChange={(open) => !open && setDeletingRule(null)}
-        title="Delete priority rule?"
-        desc={
-          <>
-            This will permanently delete &quot;{deletingRule?.name}&quot;. This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.priorityRule.deleteTitle', 'Delete the priority rule "{name}"?', {
+          name: deletingRule?.name ?? '',
+        })}
+        desc={t(
+          'confirm.priorityRule.deleteDesc',
+          'Findings it matched are no longer prioritized by it; the other rules still apply. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={() => void handleDelete()}
       />

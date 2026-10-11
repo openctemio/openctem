@@ -53,6 +53,7 @@ import {
   PageHeader,
   type MetricStripItem,
 } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 
 type TypeFilter = 'all' | 'builtin' | 'custom'
 
@@ -60,6 +61,7 @@ type TypeFilter = 'all' | 'builtin' | 'custom'
 const CATALOG_STATUSES: ToolAvailabilityStatus[] = ['no_sensor', 'disabled']
 
 export function ToolsSection() {
+  const { t } = useTranslation()
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [detailName, setDetailName] = useState<string | null>(null)
@@ -409,14 +411,14 @@ export function ToolsSection() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete tool"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{deletingTool?.display_name}</strong>? This
-            action cannot be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.tool.deleteTitle', 'Delete the tool {name}?', {
+          name: deletingTool?.display_name ?? '',
+        })}
+        desc={t(
+          'confirm.tool.deleteDesc',
+          'It leaves the tool list and can no longer be chosen for scans. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}

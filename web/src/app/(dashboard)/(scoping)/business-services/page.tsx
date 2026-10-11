@@ -55,6 +55,7 @@ import {
   RATED_CRITICALITY_LEVELS,
   type RatedCriticality,
 } from '@/lib/criticality'
+import { useTranslation } from '@/context/i18n-provider'
 
 type Criticality = RatedCriticality
 
@@ -117,6 +118,7 @@ const emptyForm: FormState = {
 }
 
 export default function BusinessServicesPage() {
+  const { t } = useTranslation()
   const { data, mutate, isLoading, error } = useSWR<ListResponse>(
     '/api/v1/business-services',
     (url: string) => get<ListResponse>(url)
@@ -680,14 +682,14 @@ export default function BusinessServicesPage() {
       <ConfirmDialog
         open={!!deletingService}
         onOpenChange={(open) => !open && setDeletingService(null)}
-        title="Delete business service?"
-        desc={
-          <>
-            This will permanently delete &quot;{deletingService?.name}&quot;. This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.businessService.deleteTitle', 'Delete the business service "{name}"?', {
+          name: deletingService?.name ?? '',
+        })}
+        desc={t(
+          'confirm.businessService.deleteDesc',
+          'Its asset links are removed, so those assets no longer take business context from it. The assets themselves stay. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />
