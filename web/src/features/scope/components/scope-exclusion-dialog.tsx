@@ -2,9 +2,11 @@
 
 /**
  * Put something out of scope (RFC-054 §6.2): an exclusion scans never touch,
- * even inside an in-scope entry. A new exclusion waits for another approver
- * (the requester cannot approve their own), so a single account cannot hide
- * a system from scans unnoticed. Kind is detected from the pattern; `*.x`
+ * even inside an in-scope entry. In the Strict scan approval mode a new
+ * exclusion waits for another approver (the requester cannot approve their
+ * own), so a single account cannot hide a system from scans unnoticed; in Off
+ * and On it applies at once and is audited (RFC-073 §6). The dialog follows
+ * the organization's setting and the status the API returns. Kind is detected from the pattern; `*.x`
  * covers x and every name below it, as for entries.
  *
  * "Only a path" turns it into a web rule (RFC-056 §5): the hosts stay in
@@ -30,7 +32,11 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { createScopeExclusion, invalidateScopeCache } from '../api/use-scope-api'
+import {
+  createScopeExclusion,
+  invalidateScopeCache,
+  useScopeSettingsApi,
+} from '../api/use-scope-api'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { coversText } from '../lib/scope-entry'
 import {
@@ -63,6 +69,9 @@ interface ScopeExclusionDialogProps {
 export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialogProps) {
   const { t } = useTranslation()
   const id = useId()
+  const { data: settings } = useScopeSettingsApi(open)
+  // Exclusions need review only in Strict scan approval; unknown counts as yes.
+  const needsReview = settings?.approval_policy?.entries_need_approval ?? true
   const [what, setWhat] = useState('')
   const [override, setOverride] = useState<ScopeKind | null>(null)
   const [reason, setReason] = useState('')
@@ -130,11 +139,16 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
       const label = pathOnly ? `${pattern || '*'}${pathPrefix.trim()}` : pattern
       toast.success(
         ex?.status === 'active'
-          ? `${label} is out of scope`
-          : `${label} waits for another approver`,
+          ? t('scope.exclusion.toastActive', '{label} is out of scope', { label })
+          : t('scope.exclusion.toastPending', '{label} waits for another approver', { label }),
         ex?.status === 'active'
           ? undefined
-          : { description: 'Scans keep reaching it until the exclusion is approved.' }
+          : {
+              description: t(
+                'scope.exclusion.toastPendingHint',
+                'Scans keep reaching it until the exclusion is approved.'
+              ),
+            }
       )
       onOpenChange(false)
     } catch (err) {
@@ -319,7 +333,15 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
               <p className="text-xs text-muted-foreground">Empty: until someone lifts it.</p>
             </div>
             <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-              Another approver must approve it before scans start skipping it.
+              {needsReview
+                ? t(
+                    'scope.exclusion.outcomeReview',
+                    'Another approver must approve it before scans start skipping it.'
+                  )
+                : t(
+                    'scope.exclusion.outcomeNow',
+                    'It applies at once: scans skip it. It is kept in the audit log, and anyone who manages scope can lift it later.'
+                  )}
             </p>
           </form>
         </DialogBody>
@@ -329,7 +351,9 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
           </Button>
           <Button type="submit" form={id} disabled={saving}>
             {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Request exclusion
+            {needsReview
+              ? t('scope.exclusion.submitRequest', 'Request exclusion')
+              : t('scope.exclusion.submitAdd', 'Add exclusion')}
           </Button>
         </DialogFooter>
       </DialogContent>

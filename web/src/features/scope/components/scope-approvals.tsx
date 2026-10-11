@@ -221,16 +221,28 @@ export function ScopeApprovals() {
         <ScopeAttestations />
         <EmptyState
           icon={CheckCheck}
-          title="No changes wait for approval"
+          title={t('scope.approvals.emptyTitle', 'No changes wait for approval')}
           description={
             settings?.approval_policy?.entries_need_approval === false
               ? t(
                   'scope.approvals.noneNeeded',
                   'Scope entries need no approval while scan approval is not Strict: changes that widen scope take effect at once.'
                 )
-              : n > 0
-                ? `Your organization requires ${n} ${n === 1 ? 'approval' : 'approvals'} for changes that widen scope (Scope policy).`
-                : 'Changes that widen scope take effect at once in your organization (Scope policy).'
+              : n > 1
+                ? t(
+                    'scope.approvals.requiredN',
+                    'Your organization requires {n} approvals for changes that widen scope (Scope policy).',
+                    { n }
+                  )
+                : n === 1
+                  ? t(
+                      'scope.approvals.required1',
+                      'Your organization requires 1 approval for changes that widen scope (Scope policy).'
+                    )
+                  : t(
+                      'scope.approvals.immediate',
+                      'Changes that widen scope take effect at once in your organization (Scope policy).'
+                    )
           }
         />
       </div>
@@ -243,6 +255,17 @@ export function ScopeApprovals() {
   return (
     <div className="space-y-3">
       <ScopeAttestations />
+      {settings?.approval_policy?.entries_need_approval === false && (
+        <p
+          className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+          data-testid="approvals-left-over"
+        >
+          {t(
+            'scope.approvals.leftOver',
+            'Scope changes need no approval while scan approval is not Strict. These were submitted earlier and still wait: approve or reject them, or their requester can remove them and add them again.'
+          )}
+        </p>
+      )}
       {decidable.length > 1 && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Checkbox

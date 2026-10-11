@@ -33,10 +33,10 @@ func TestScopeApprovalPolicy_ModesByTier(t *testing.T) {
 		settings  tenant.ScopeSettings
 		admins    int
 		t1, t2    int
-		requested int // a member's request
+		requested int // a member's entry (scope:write, no approve): 0 = in effect at once
 	}{
-		{"off", scangov.ModeOff, tenant.ScopeSettings{WideningApprovals: &two}, 3, 0, 0, 1},
-		{"on", scangov.ModeOn, tenant.ScopeSettings{WideningApprovals: &two}, 3, 0, 0, 1},
+		{"off", scangov.ModeOff, tenant.ScopeSettings{WideningApprovals: &two}, 3, 0, 0, 0},
+		{"on", scangov.ModeOn, tenant.ScopeSettings{WideningApprovals: &two}, 3, 0, 0, 0},
 		{"strict, one admin", scangov.ModeStrict, tenant.ScopeSettings{}, 1, 0, 1, 1},
 		{"strict, two admins", scangov.ModeStrict, tenant.ScopeSettings{}, 2, 1, 1, 1},
 		{"strict ignores 0 with two admins", scangov.ModeStrict, tenant.ScopeSettings{WideningApprovals: &zero}, 2, 1, 1, 1},
@@ -67,8 +67,8 @@ func TestScopeApprovalPolicy_ModesByTier(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if req.ApprovalsRequired() != c.requested || !req.IsPending() {
-				t.Fatalf("member request: approvals %d status %s, want %d and pending", req.ApprovalsRequired(), req.Status(), c.requested)
+			if req.ApprovalsRequired() != c.requested || req.IsPending() != (c.requested > 0) {
+				t.Fatalf("member entry: approvals %d status %s, want %d", req.ApprovalsRequired(), req.Status(), c.requested)
 			}
 		})
 	}

@@ -3,7 +3,9 @@
 /**
  * Scope › Out of scope: the exclusions (RFC-054 §6.2). An exclusion always
  * wins over an entry. Lifting one (deactivate, remove) widens scope, so it
- * needs the exclusion-approve permission and step-up, and the menu says so;
+ * needs step-up and, in the Strict scan approval mode, the exclusion-approve
+ * permission (in Off and On scope:write is enough, RFC-073 §6); the menu
+ * says so;
  * putting one back narrows and applies at once. Pending exclusions are
  * decided on the Approvals tab.
  *
@@ -41,6 +43,7 @@ import {
   invalidateScopeCache,
   setScopeExclusionActive,
   useScopeExclusionsApi,
+  useScopeSettingsApi,
 } from '../api/use-scope-api'
 import type { ApiScopeExclusion } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
@@ -97,7 +100,12 @@ export function ScopeExclusionsTable({
   onPagination,
 }: ScopeExclusionsTableProps) {
   const { t } = useTranslation()
-  const canLift = useHasPermission(Permission.ScopeExclusionsApprove)
+  const canApproveExclusions = useHasPermission(Permission.ScopeExclusionsApprove)
+  const canWrite = useHasPermission(Permission.ScopeWrite)
+  const { data: settings } = useScopeSettingsApi()
+  // Lifting needs the approval permission only in Strict (unknown: Strict).
+  const needsReview = settings?.approval_policy?.entries_need_approval ?? true
+  const canLift = canApproveExclusions || (!needsReview && canWrite)
   const kind = scopeKindOf(query.kind)
   const { data, isLoading } = useScopeExclusionsApi({
     search: query.search || undefined,
@@ -129,7 +137,7 @@ export function ScopeExclusionsTable({
         label: 'Testing mode…',
         icon: FlaskConical,
         onClick: () => setTesting(x as PathExclusion),
-        disabled: !canLift,
+        disabled: !canApproveExclusions,
         disabledReason: 'Changing how a path may be tested needs the exclusion approve permission.',
       })
     }
@@ -139,8 +147,15 @@ export function ScopeExclusionsTable({
         icon: PowerOff,
         onClick: () => void act(() => setScopeExclusionActive(id, false), `${x.pattern} lifted`),
         disabled: !canLift,
-        disabledReason:
-          'Lifting an exclusion widens scope: it needs the exclusion approve permission.',
+        disabledReason: needsReview
+          ? t(
+              'scope.exclusion.liftNeedsApprover',
+              'Lifting an exclusion widens scope: it needs the exclusion approve permission.'
+            )
+          : t(
+              'scope.exclusion.liftNeedsWrite',
+              'Lifting an exclusion needs the scope write permission.'
+            ),
       })
     } else if (x.status === 'inactive') {
       out.push({
@@ -158,9 +173,11 @@ export function ScopeExclusionsTable({
       destructive: true,
       separatorBefore: out.length > 0,
       permission: Permission.ScopeDelete,
-      disabled: x.status === 'active' && !canLift,
-      disabledReason:
-        'Removing an exclusion in effect widens scope: it needs the exclusion approve permission.',
+      disabled: x.status === 'active' && needsReview && !canApproveExclusions,
+      disabledReason: t(
+        'scope.exclusion.removeNeedsApprover',
+        'Removing an exclusion in effect widens scope: it needs the exclusion approve permission.'
+      ),
     })
     return out
   }
