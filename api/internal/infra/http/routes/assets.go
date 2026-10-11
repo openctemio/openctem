@@ -60,6 +60,8 @@ func registerAssetRoutes(
 		r.PUT("/{id}/attribute-sources/{attribute}/lock", h.LockAttribute, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{id}/attribute-sources/{attribute}/lock", h.ReleaseAttributeLock, middleware.Require(permission.AssetsWrite))
 		r.GET("/{id}/changes", h.ListAssetChanges, middleware.Require(permission.AssetsRead))
+		// When each attribute class was last observed (RFC-075).
+		r.GET("/{id}/freshness", h.GetFreshness, middleware.Require(permission.AssetsRead))
 
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))
