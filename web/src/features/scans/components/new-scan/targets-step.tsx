@@ -26,6 +26,7 @@ import { AssetSource, type PickedAsset } from '../target-picker/asset-source'
 import { GroupSource } from '../target-picker/group-source'
 import { PasteSource } from '../target-picker/paste-source'
 import { SelectionSummary, type SelectionChip } from '../target-picker/selection-summary'
+import { scopeCheckTier } from '../../lib/scan-intensity'
 
 interface TargetsStepProps {
   data: NewScanFormData
@@ -260,6 +261,7 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
         invalidCount={pasted.invalid.length}
         sensorPreference={sensorPreference}
         scannerName={data.mode === 'single' ? data.scannerName : undefined}
+        tier={scopeCheckTier(data)}
       />
     </div>
   )

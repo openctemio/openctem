@@ -19,6 +19,8 @@ func TestToolNetwork(t *testing.T) {
 	cases := map[string]Network{
 		"subfinder": NetworkEgressProxy,
 		"dnsx":      NetworkResolver,
+		"rdap":      NetworkEgressProxy,
+		"asn":       NetworkEgressProxy,
 		"semgrep":   NetworkVendor,
 		"trivy":     NetworkVendor,
 		"naabu":     NetworkTargets,
@@ -62,5 +64,40 @@ func TestIntensityTier(t *testing.T) {
 		if got := IntensityTier(c.tool, c.caps, c.config); got != c.want {
 			t.Errorf("%s: IntensityTier = %s, want %s", c.name, got, c.want)
 		}
+	}
+}
+
+// The passive lookups: T0, third-party sources only, run by the sensor's
+// rdap and asn tools as capability jobs, with their standard params mapped;
+// a lookup step counts as passive whatever its settings.
+func TestLookupStages(t *testing.T) {
+	for key, tool := range map[Key]string{LookupRDAP: "rdap", LookupASN: "asn"} {
+		s, ok := Lookup(key)
+		if !ok {
+			t.Fatalf("%s not in the catalog", key)
+		}
+		if s.Tier != TierPassive || s.NetworkOf() != NetworkEgressProxy || s.DefaultTool() != tool || !TakesCapabilityJobs(s, tool) {
+			t.Fatalf("%s: tier %s network %s tool %s", key, s.Tier, s.NetworkOf(), s.DefaultTool())
+		}
+		if got := IntensityTier(tool, []string{string(key)}, map[string]any{"resolvers": []any{"192.0.2.53"}}); got != TierPassive {
+			t.Fatalf("%s step counts at %s", key, got)
+		}
+		if got := ProbeTier(tool); got != TierPassive {
+			t.Fatalf("%s probes at %s", tool, got)
+		}
+	}
+	asn, _ := Lookup(LookupASN)
+	if !asn.Accepts(tIP) || !asn.Accepts(tNetwork) || asn.Accepts(tDomain) || !asn.Produces(tNetwork) {
+		t.Fatal("lookup.asn ports")
+	}
+	rdap, _ := Lookup(LookupRDAP)
+	if !rdap.Accepts(tDomain) || rdap.Accepts(tSubdomain) || rdap.Produces(tIP) {
+		t.Fatal("lookup.rdap ports")
+	}
+	if miss := UnsupportedParams(asn, "asn", map[string]any{"include_announced": true, "max_ranges": 10}); len(miss) != 0 {
+		t.Fatalf("asn params refused: %v", miss)
+	}
+	if miss := UnsupportedParams(rdap, "rdap", map[string]any{"follow_registrar": false}); len(miss) != 0 {
+		t.Fatalf("rdap params refused: %v", miss)
 	}
 }

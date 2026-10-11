@@ -32,6 +32,8 @@ type Key string
 const (
 	DiscoverSubdomains Key = "discover.subdomains"
 	ResolveDNS         Key = "resolve.dns"
+	LookupRDAP         Key = "lookup.rdap"
+	LookupASN          Key = "lookup.asn"
 	ScanPorts          Key = "scan.ports"
 	ProbeHTTP          Key = "probe.http"
 	CrawlWeb           Key = "crawl.web"
@@ -207,6 +209,28 @@ var catalog = []Stage{
 		},
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 		Legacy: []string{"dns"},
+	},
+	{
+		Key: LookupRDAP, Name: "Domain registration lookup",
+		Description: "Registrar, registrant organization, name servers and registration dates of a root domain, from the RDAP service of its registry.",
+		Inputs:      []asset.TypeRef{tDomain},
+		Outputs:     []asset.TypeRef{tDomain},
+		Tier:        TierPassive,
+		Implementations: []Implementation{
+			{Tool: "rdap", Default: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+	},
+	{
+		Key: LookupASN, Name: "Network ownership lookup",
+		Description: "Origin autonomous system, holder and announced range of an address or network, from public routing data.",
+		Inputs:      []asset.TypeRef{tIP, tNetwork},
+		Outputs:     []asset.TypeRef{tIP, tNetwork},
+		Tier:        TierPassive,
+		Implementations: []Implementation{
+			{Tool: "asn", Default: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
 		Key: ScanPorts, Name: "Port scan",

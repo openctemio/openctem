@@ -21,6 +21,7 @@ const (
 	ReasonBadDigest      = "bad_payload_digest"
 	ReasonBadTargets     = "bad_targets"
 	ReasonBadTemplates   = "bad_templates"
+	ReasonBadLimits      = "bad_limits"
 	ReasonBadLeaseEpoch  = "bad_lease_epoch"
 	ReasonClockSkew      = "clock_skew"
 	ReasonBadExpiry      = "bad_expiry"
@@ -88,6 +89,12 @@ func validate(raw []byte, now time.Time) (*jobsign.Statement, *refusal) {
 	}
 	if r := validateTargets(st.Targets, present["targets"]); r != nil {
 		return st, r
+	}
+	if len(st.Limits) == 0 && !absent(present["limits"]) {
+		return st, refuse(http.StatusBadRequest, ReasonBadLimits, "limits must be left out when the job has none")
+	}
+	if err := jobsign.ValidateLimits(st.Limits, st.Targets); err != nil {
+		return st, refuse(http.StatusBadRequest, ReasonBadLimits, "%v", err)
 	}
 	if r := validateTemplates(st.Templates, present["templates"]); r != nil {
 		return st, r

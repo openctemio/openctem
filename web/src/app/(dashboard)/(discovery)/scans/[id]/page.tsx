@@ -7,6 +7,7 @@
  * drawer, and the numbers the same formulas (lib/format, lib/run-display).
  */
 
+import { IntensityBadge, IntensityLabel } from '@/features/scans/components/intensity-badge'
 import { useMemo, useState } from 'react'
 import { useSWRConfig } from 'swr'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -511,6 +512,9 @@ export default function ScanDetailPage() {
             <DetailSection title="Execution">
               <DetailFieldGrid>
                 <DetailField label="Scan type">{SCAN_TYPE_LABELS[config.scan_type]}</DetailField>
+                <DetailField label={<IntensityLabel />}>
+                  <IntensityBadge intensity={config.intensity} />
+                </DetailField>
                 <DetailField label="Sensor preference">
                   {SENSOR_PREFERENCE_LABELS[config.sensor_preference]}
                 </DetailField>
