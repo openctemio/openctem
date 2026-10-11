@@ -51,4 +51,9 @@ ENV XDG_CONFIG_HOME=/config \
     XDG_DATA_HOME=/data
 EXPOSE 80 443 443/udp 2019
 WORKDIR /srv
+# Root, as in the Caddy image this replaces: operators' existing gateway-data
+# and gateway-config volumes hold root-owned files, so a non-root gateway
+# needs a one-time ownership change of those volumes first (it binds 443
+# through the file capability above, not through root).
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
