@@ -208,6 +208,7 @@ export function RegisterForm({
   return (
     <Form {...form}>
       <form
+        method="post"
         onSubmit={form.handleSubmit(onSubmit)}
         className={cn('grid gap-3', className)}
         {...props}

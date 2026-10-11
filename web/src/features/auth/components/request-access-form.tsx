@@ -95,7 +95,7 @@ export function RequestAccessForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="space-y-4" noValidate>
+        <form method="post" onSubmit={onSubmit} className="space-y-4" noValidate>
           <div className="space-y-2">
             <Label htmlFor="ra-company">{t('auth.requestAccess.company', 'Company')}</Label>
             <Input
