@@ -48,6 +48,9 @@ type FeedProvenance struct {
 	DatasetCommit    string    `json:"dataset_commit,omitempty"`
 	OriginalPlatform string    `json:"original_platform,omitempty"`
 	OriginalURL      string    `json:"original_url,omitempty"`
+	// LastChanged is when the record last changed at its source: the
+	// observation time of the program targets ingested from it.
+	LastChanged time.Time `json:"last_changed,omitzero"`
 }
 
 // Feed program status.

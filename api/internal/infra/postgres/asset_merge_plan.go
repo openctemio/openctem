@@ -115,6 +115,9 @@ var assetMergeRefs = []mergeRef{
 	// assignment pass derives system tags and program_only again.
 	{table: "asset_program_links", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"program_id"}}}},
+	// A program target (RFC-065 §16.8) follows the asset the same way.
+	{table: "bounty_program_target_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"program_id"}}}},
 	{table: "business_service_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"service_id", "dependency_type"}}}},
 	{table: "compensating_control_assets", column: "asset_id", idCol: "ctid",
