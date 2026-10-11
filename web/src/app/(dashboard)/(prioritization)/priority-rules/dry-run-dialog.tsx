@@ -33,6 +33,7 @@ import { PriorityClassBadge } from '@/features/findings/components/priority-clas
 import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
 import { AlertTriangle, ArrowRight, FlaskConical, ListChecks } from 'lucide-react'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 type FieldKey =
   | 'is_in_kev'
@@ -204,6 +205,7 @@ function LoadingState() {
 }
 
 function ResultView({ result, targetClass }: { result: DryRunResult; targetClass: PriorityClass }) {
+  const { t } = useTranslation()
   const { evaluated, matched, capped, cap, sample, would_be_distribution } = result
 
   // Nothing to evaluate — no open findings were in scope at all.
@@ -298,8 +300,10 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
       </div>
 
       <p className="text-muted-foreground border-t pt-3 text-xs">
-        Dry run is a preview only. To actually change priorities, save the rule and trigger a
-        reclassification sweep from the Cycles page (admin).
+        {t(
+          'prioritization.dryRun.previewNote',
+          'A preview only. Saving the rule reclassifies the matching findings.'
+        )}
       </p>
     </>
   )
