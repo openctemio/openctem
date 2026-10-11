@@ -2257,6 +2257,49 @@ func (s *TenantService) UpdateLicensePolicySettings(
 	return &after, nil
 }
 
+// GetCycleSettings returns the organization's CTEM cycle policy. The zero
+// value (coverage SLO advisory) is the default.
+func (s *TenantService) GetCycleSettings(ctx context.Context, tenantID string) (*tenantdom.CycleSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	cs := t.TypedSettings().Cycles
+	return &cs, nil
+}
+
+// UpdateCycleSettings replaces the organization's CTEM cycle policy and audits
+// the before/after values.
+func (s *TenantService) UpdateCycleSettings(
+	ctx context.Context,
+	tenantID string,
+	cs tenantdom.CycleSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.CycleSettings, error) {
+	var before tenantdom.CycleSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionCycles, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Cycles
+		return t.UpdateCycleSettings(cs)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantCyclePolicyUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Cycles)).
+		WithMessage("CTEM cycle policy updated").
+		WithMetadata("enforce_coverage_slo", cs.EnforceCoverageSLO)
+	s.logAudit(ctx, actx, event)
+
+	out := t.TypedSettings().Cycles
+	return &out, nil
+}
+
 // GetEvidenceSettings returns the tenant's finding-evidence settings. The
 // zero value means the defaults.
 func (s *TenantService) GetEvidenceSettings(ctx context.Context, tenantID string) (*tenantdom.EvidenceSettings, error) {
