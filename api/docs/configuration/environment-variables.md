@@ -53,7 +53,7 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `DB_MAX_IDLE_CONNS` | int | `5` |  |  | Maximum idle connections kept in the pool. |
 | `DB_MAX_OPEN_CONNS` | int | `25` |  |  | Maximum open connections in the API's pool. |
 | `DB_NAME` | string | `openctem` |  |  | Database name. |
-| `DB_PASSWORD` | string | `secret` | yes | yes | Password of `DB_USER`. Always set it; the default exists for local development only. |
+| `DB_PASSWORD` | string | empty | yes | yes | Password of `DB_USER`. Required outside `APP_ENV=development`; there is no default. |
 | `DB_PORT` | int | `5432` |  |  | PostgreSQL port. |
 | `DB_SSLMODE` | string | `disable` | production |  | libpq `sslmode`. Production refuses `disable`: use `require`, `verify-ca` or `verify-full`. |
 | `DB_USER` | string | `openctem` | yes |  | Role the API connects as. With the least-privilege layout this is the DML-only role (`openctem_app`). |
@@ -98,7 +98,6 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `APP_ALLOW_PLAINTEXT_CREDENTIALS` | bool | `false` |  |  | Only with `APP_ENV=development`: `true` lets the API start without `APP_ENCRYPTION_KEY` and store credentials in plaintext. Never use it for real data; every other environment refuses to start without a key. |
 | `APP_ENCRYPTION_KEY` | string | empty | yes | yes | AES-256-GCM key for stored credentials (integration tokens, SMTP passwords, identity-provider secrets). 32 raw, 64 hex or 44 base64 characters: `openssl rand -hex 32`. Required unless `APP_ENV=development`. Back it up with the database: without it the stored credentials cannot be decrypted. |
 | `APP_ENCRYPTION_KEY_FORMAT` | string | empty |  |  | `raw`, `hex` or `base64`. Detected from the key length when unset. |
 | `APP_ENCRYPTION_KEY_PREVIOUS` | list | empty |  | yes | Comma-separated earlier keys, only while a key rotation is in progress. Values encrypted under them stay readable. Remove them when the rotation is finished. |
@@ -116,7 +115,7 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `AUTH_COOKIE_SECURE` | bool | `true` | production |  | `Secure` flag on session cookies. Must be `true` in production. |
 | `AUTH_EMAIL_VERIFICATION_DURATION` | duration | `24h` |  |  | Lifetime of an email verification link. |
 | `AUTH_JWT_ISSUER` | string | `api` |  |  | `iss` claim of issued tokens. |
-| `AUTH_JWT_SECRET` | string | empty | yes | yes | HMAC secret that signs session tokens. Required with `local` or `hybrid`; at least 32 characters, 64 in production: `openssl rand -hex 64`. Changing it signs every user out. |
+| `AUTH_JWT_SECRET` | string | empty |  | yes | HMAC secret that signs session tokens. Unset: derived from `APP_ENCRYPTION_KEY` (HKDF, 64 bytes), so rotating the encryption key also signs every user out; set it (at least 64 characters in production: `openssl rand -hex 64`) to rotate the two independently. Changing it signs every user out. |
 | `AUTH_LOCKOUT_DURATION` | duration | `15m` |  |  | How long a locked account stays locked. |
 | `AUTH_MAX_ACTIVE_SESSIONS` | int | `10` |  |  | Concurrent sessions per user. |
 | `AUTH_MAX_LOGIN_ATTEMPTS` | int | `5` |  |  | Failed sign-ins before the account is locked. |
@@ -169,7 +168,7 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `OAUTH_MICROSOFT_ENABLED` | bool | `false` |  |  | Offer Microsoft sign-in. |
 | `OAUTH_MICROSOFT_SCOPES` | list | `openid,email,profile,User.Read` |  |  | Requested scopes. |
 | `OAUTH_STATE_DURATION` | duration | `10m` |  |  | Lifetime of an OAuth `state` token. |
-| `OAUTH_STATE_SECRET` | string | empty | production | yes | Secret that signs the OAuth `state` parameter. Required in production when a social-login provider is enabled. |
+| `OAUTH_STATE_SECRET` | string | empty |  | yes | Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. |
 | `SSO_ALLOWED_REDIRECT_URIS` | list | `derived` |  |  | Comma-separated exact-match allow-list for the `redirect_uri` of the per-organization SSO flow: origins (`https://ctem.example.com`) or origin-plus-path prefixes ending in `/`. Unset: derived from `CORS_ALLOWED_ORIGINS`, `OAUTH_FRONTEND_CALLBACK_URL` and `SMTP_BASE_URL`. |
 | `SSO_ENTRA_ALLOWED_DOMAINS` | list | `empty (any)` |  |  | Comma-separated email domains the fallback accepts. |
 | `SSO_ENTRA_ALLOWED_TENANTS` | list | `empty (none)` |  |  | Comma-separated organization slugs allowed to use the fallback. Empty disables it for every organization. |
@@ -534,3 +533,4 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
 | `AI_MAX_CONCURRENT_JOBS` | unset it; it limited nothing, AI triage jobs run on the background job queue |
 | `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > System > Sign-up) |
+| `APP_ALLOW_PLAINTEXT_CREDENTIALS` | unset it; credentials are always encrypted (development uses the key in api/.env.example) |
