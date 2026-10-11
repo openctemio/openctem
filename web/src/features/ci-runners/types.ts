@@ -58,3 +58,10 @@ export type CICapabilityCoverage = S['internal_infra_http_handler.CICapabilityCo
 export type CICapability = 'sast' | 'sca' | 'secrets' | 'iac'
 export type CICoverageState = 'fresh' | 'stale' | 'never'
 export type CICoverageFilter = '' | 'gap' | 'uncovered' | 'covered'
+
+/** Code-host apps that post the CI gate check and pull request comments (RFC-077). */
+export type SCMAppList = S['internal_infra_http_handler.SCMAppListResponse']
+export type SCMAppInstallation = S['internal_infra_http_handler.SCMAppInstallationResponse']
+export type SCMGitLabConnection = S['internal_infra_http_handler.SCMGitLabConnectionResponse']
+export type SCMGitLabConnectRequest = S['internal_infra_http_handler.SCMGitLabConnectRequest']
+export type SCMCompleteGitHubRequest = S['internal_infra_http_handler.SCMAppCompleteGitHubRequest']

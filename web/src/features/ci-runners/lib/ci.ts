@@ -342,6 +342,7 @@ export const REASON_LABEL: Record<string, string> = {
   scan_failure: 'Scan failure',
   override: 'Break-glass',
   no_baseline: 'No baseline',
+  secret_pre_existing: 'Secret already on the default branch',
 }
 
 export const SEVERITY_OPTIONS = ['critical', 'high', 'medium', 'low', 'none'] as const
