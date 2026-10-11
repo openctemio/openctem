@@ -1289,6 +1289,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	if s.SLA != nil {
+		s.Pentest.SetSLACalculator(s.SLA) // deadline from the org SLA policy when a finding is published
+	}
 	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
 	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
 	// Cross-tenant guard: reject adding a campaign member from another tenant.
