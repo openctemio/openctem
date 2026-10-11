@@ -42,17 +42,8 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -612,6 +603,8 @@ export default function UsersPage() {
   const [isSuspending, setIsSuspending] = useState(false)
   // Reset-2FA confirmation: the member awaiting confirmation.
   const [resetMfaMember, setResetMfaMember] = useState<MemberWithUser | null>(null)
+  const [pendingCancelInvite, setPendingCancelInvite] = useState<Invitation | null>(null)
+  const { t } = useTranslation()
   const [isResettingMfa, setIsResettingMfa] = useState(false)
   // Offboarding wizard (RFC-050): the member being offboarded. Offboarding
   // strips every access source and asks for a new owner of their work.
@@ -988,6 +981,7 @@ export default function UsersPage() {
         method: 'DELETE',
       })
       toast.success('Invitation cancelled')
+      setPendingCancelInvite(null)
       refreshData()
     } catch {
       toast.error('Failed to cancel invitation')
@@ -1089,7 +1083,7 @@ export default function UsersPage() {
               destructive: true,
               separatorBefore: true,
               route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}',
-              onClick: () => cancelInvite(row.original),
+              onClick: () => setPendingCancelInvite(row.original),
             },
           ]}
         />
@@ -1427,107 +1421,83 @@ export default function UsersPage() {
       )}
 
       {/* Reset 2FA Confirmation Dialog */}
-      <AlertDialog
+      <ConfirmDialog
         open={!!resetMfaMember}
         onOpenChange={(open) => {
           if (!open && !isResettingMfa) setResetMfaMember(null)
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset two-factor authentication?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {resetMfaMember && (
-                <>
-                  <span className="font-medium text-foreground">
-                    {resetMfaMember.name || resetMfaMember.email}
-                  </span>{' '}
-                  will be signed out everywhere and can sign in with their password alone until they
-                  set up two-factor authentication again (required at their next sign-in if this
-                  organization requires it). Use this only after confirming their identity. They are
-                  notified by email, and the reset is recorded in the audit log.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isResettingMfa}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
-                void handleConfirmResetMfa()
-              }}
-              disabled={isResettingMfa}
-              className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20"
-            >
-              {isResettingMfa ? (
-                <>
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  Resetting...
-                </>
-              ) : (
-                <>
-                  <ShieldOff className="me-2 h-4 w-4" />
-                  Reset 2FA
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        destructive
+        title={t('confirm.member.resetMfaTitle', 'Reset two-factor authentication for {name}?', {
+          name: resetMfaMember ? resetMfaMember.name || resetMfaMember.email : '',
+        })}
+        desc={t(
+          'confirm.member.resetMfaDesc',
+          'They are signed out everywhere and can sign in with their password alone until they set up two-factor authentication again (required at their next sign-in if this organization requires it). Use this only after confirming their identity. They are notified by email, and the reset is recorded in the audit log.'
+        )}
+        confirmText={
+          isResettingMfa ? (
+            <>
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+              {t('confirm.member.resettingMfa', 'Resetting…')}
+            </>
+          ) : (
+            <>
+              <ShieldOff className="me-2 h-4 w-4" />
+              {t('confirm.member.resetMfa', 'Reset 2FA')}
+            </>
+          )
+        }
+        isLoading={isResettingMfa}
+        handleConfirm={() => handleConfirmResetMfa()}
+      />
 
       {/* Suspend Member Confirmation Dialog */}
-      <AlertDialog
+      <ConfirmDialog
         open={!!suspendConfirmMember}
         onOpenChange={(open) => {
           if (!open && !isSuspending) setSuspendConfirmMember(null)
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disable member?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {suspendConfirmMember && (
-                <>
-                  <span className="font-medium text-foreground">
-                    {suspendConfirmMember.name || suspendConfirmMember.email}
-                  </span>{' '}
-                  immediately loses access: sessions end, API keys are suspended, and the scans,
-                  report schedules and workflows they own are paused. Their access groups, grants
-                  and ownership are kept as they are, so you can re-enable them later. To end access
-                  for good, offboard them instead.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSuspending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                // Prevent default close so we can keep the dialog open
-                // while the request is in flight; close happens in the
-                // handler on success.
-                e.preventDefault()
-                void handleConfirmSuspend()
-              }}
-              disabled={isSuspending}
-              className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20"
-            >
-              {isSuspending ? (
-                <>
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  Disabling...
-                </>
-              ) : (
-                <>
-                  <Ban className="me-2 h-4 w-4" />
-                  Disable
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        destructive
+        title={t('confirm.member.disableTitle', 'Disable {name}?', {
+          name: suspendConfirmMember ? suspendConfirmMember.name || suspendConfirmMember.email : '',
+        })}
+        desc={t(
+          'confirm.member.disableDesc',
+          'They lose access at once: sessions end, API keys are suspended, and the scans, report schedules and workflows they own are paused. Their access groups, grants and ownership are kept, so you can re-enable them later. To end access for good, offboard them instead.'
+        )}
+        confirmText={
+          isSuspending ? (
+            <>
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+              {t('confirm.disabling', 'Disabling…')}
+            </>
+          ) : (
+            <>
+              <Ban className="me-2 h-4 w-4" />
+              {t('confirm.disable', 'Disable')}
+            </>
+          )
+        }
+        isLoading={isSuspending}
+        handleConfirm={() => handleConfirmSuspend()}
+      />
+
+      {/* Cancel invitation: the link in the email stops working. */}
+      <ConfirmDialog
+        open={!!pendingCancelInvite}
+        onOpenChange={(open) => !open && setPendingCancelInvite(null)}
+        destructive
+        title={t('confirm.member.cancelInviteTitle', 'Cancel the invitation to {email}?', {
+          email: pendingCancelInvite?.email ?? '',
+        })}
+        desc={t(
+          'confirm.member.cancelInviteDesc',
+          'The link in the invitation email stops working. You can invite this address again later.'
+        )}
+        cancelBtnText={t('confirm.member.keepInvite', 'Keep invitation')}
+        confirmText={t('confirm.member.cancelInvite', 'Cancel invitation')}
+        handleConfirm={() => (pendingCancelInvite ? cancelInvite(pendingCancelInvite) : undefined)}
+      />
 
       {/* Offboarding wizard (RFC-050) */}
       <OffboardMemberDialog
@@ -1545,37 +1515,29 @@ export default function UsersPage() {
         onOpenChange={(open) => {
           if (!open && !isErasing) setEraseConfirmMember(null)
         }}
-        title="Erase personal data?"
-        desc={
-          <>
-            {eraseConfirmMember && (
-              <>
-                The name and email of{' '}
-                <span className="font-medium text-foreground">
-                  {eraseConfirmMember.name || eraseConfirmMember.email}
-                </span>{' '}
-                are replaced with an anonymous label everywhere, and their credentials are cleared.
-                Findings, comments and audit history stay, attributed to the anonymous label. This
-                cannot be undone.
-              </>
-            )}
-          </>
-        }
+        title={t('confirm.member.eraseTitle', 'Erase the personal data of {name}?', {
+          name: eraseConfirmMember ? eraseConfirmMember.name || eraseConfirmMember.email : '',
+        })}
+        desc={t(
+          'confirm.member.eraseDesc',
+          'Their name and email are replaced with an anonymous label everywhere, and their credentials are cleared. Findings, comments and audit history stay, attributed to the anonymous label. This cannot be undone.'
+        )}
         confirmText={
           isErasing ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Erasing...
+              {t('confirm.member.erasing', 'Erasing…')}
             </>
           ) : (
             <>
               <Eraser className="me-2 h-4 w-4" />
-              Erase
+              {t('confirm.member.erase', 'Erase')}
             </>
           )
         }
         destructive
         isLoading={isErasing}
+        typeToConfirm={eraseConfirmMember?.email || undefined}
         handleConfirm={() => void handleConfirmErase()}
       />
     </MemberRolesContext.Provider>

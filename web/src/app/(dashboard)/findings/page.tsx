@@ -454,6 +454,7 @@ function FindingsContent() {
   // parses as a one-item list, so old links keep working; 'all' is ignored.
   const [severityParam, setSeverityParam] = useUrlFilterList('severity')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
   const [findingToDelete, setFindingToDelete] = useState<Finding | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -2148,7 +2149,7 @@ function FindingsContent() {
 
                 {/* Resolving needs findings:verify; the API refuses it otherwise. */}
                 {hasPermission(Permission.FindingsVerify) && (
-                  <DropdownMenuItem onClick={() => handleBulkStatusChange('resolved')}>
+                  <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
                     Resolved
                   </DropdownMenuItem>
                 )}
@@ -2254,20 +2255,45 @@ function FindingsContent() {
         }}
       />
 
+      {/* Bulk resolve: closes every selected finding at once. */}
+      <ConfirmDialog
+        open={bulkResolveOpen}
+        onOpenChange={setBulkResolveOpen}
+        title={
+          selectedFindingIds.length === 1
+            ? t('confirm.finding.bulkResolveTitleOne', 'Resolve 1 finding?')
+            : t('confirm.finding.bulkResolveTitle', 'Resolve {count} findings?', {
+                count: selectedFindingIds.length,
+              })
+        }
+        desc={t(
+          'confirm.finding.bulkResolveDesc',
+          'The selected findings are closed as resolved and leave the open work queues and SLA tracking.'
+        )}
+        confirmText={t('confirm.finding.resolve', 'Resolve')}
+        handleConfirm={async () => {
+          await handleBulkStatusChange('resolved')
+          setBulkResolveOpen(false)
+        }}
+      />
+
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Finding?"
-        desc="This will permanently delete this finding. This action cannot be undone."
+        title={t('confirm.finding.deleteTitle', 'Delete this finding?')}
+        desc={t(
+          'confirm.finding.deleteDesc',
+          'The finding is permanently deleted with its comments, activity and evidence. This cannot be undone.'
+        )}
         confirmText={
           isDeleting ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Deleting...
+              {t('confirm.deleting', 'Deleting…')}
             </>
           ) : (
-            'Delete'
+            t('confirm.delete', 'Delete')
           )
         }
         destructive
