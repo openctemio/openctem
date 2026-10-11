@@ -27,6 +27,31 @@ PentestService.buildReportInput(...)  ──►  report.ReportInput
 | `format` | `html` \| `pdf` | `html` |
 | `classification` | `public`/`internal`/`confidential`/`restricted` | `internal` |
 | `watermark` | text (≤50 chars) | — |
+| `report_type` | `executive_summary` \| `technical_report` \| `finding_report` \| `compliance_report` \| `remediation_report` \| `retest_report` | `technical_report` |
+| `include_poc` | `true` \| `false` | `true` |
+| `include_unpublished` | `true` \| `false` | `false` |
+| `statuses` | comma list of finding statuses | published statuses |
+| `severities` | comma list of severities | all |
+
+## What a report contains
+
+The same options are stored on a report created with
+`POST /api/v1/pentest/campaigns/{id}/reports` (`options` object, same keys)
+and apply when it is downloaded.
+
+- **Published findings only by default.** `draft`, `in_review`,
+  `false_positive` and `duplicate` findings are left out: drafts and findings
+  under peer review are not results yet, false positives and duplicates are
+  not findings of the target. `include_unpublished=true` includes every
+  status; `statuses` lists exactly which statuses to include.
+- `severities` keeps only those severities. Unknown statuses or severities are
+  refused (400), so a typo never produces a silently different report.
+- Findings are ordered most severe first, then by CVSS score, then oldest
+  first. The summary counts describe the findings in the report, never the
+  campaign's unpublished ones.
+- `include_poc=false` leaves proofs of concept out (for client-facing copies).
+- Retest results are listed only for findings the report includes.
+- A campaign above 2,000 findings is refused; narrow by severity or status.
 
 `format=pdf` returns `application/pdf` (`Content-Disposition: attachment;
 filename="pentest-report.pdf"`). The classification and watermark render in the
@@ -40,9 +65,10 @@ badge, title, CVSS/CWE/CVE/OWASP meta, description, numbered repro steps,
 business/technical impact, remediation, PoC when `include_poc`, targets,
 references). Pagination is automatic (`SetAutoPageBreak`).
 
-Text is mapped to the core-font cp1252 charset via fpdf's unicode translator —
-characters outside it are dropped rather than mojibake'd. Embedding a Unicode
-TTF for full multilingual coverage is a future enhancement.
+Text is set in DejaVu Sans, embedded in the binary (`pkg/report/fonts`, license
+`LICENSE-DejaVu.txt`) and subset into each PDF, so every language a finding is
+written in renders, Vietnamese included. The core PDF fonts (cp1252 only) are
+not used.
 
 ## Code map
 

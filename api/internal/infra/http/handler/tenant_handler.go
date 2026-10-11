@@ -274,12 +274,6 @@ type UpdateTenantRequest struct {
 	LogoURL     *string `json:"logo_url" validate:"omitempty,url,max=500"`
 }
 
-// AddMemberRequest represents the request to add a member.
-type AddMemberRequest struct {
-	UserID string `json:"user_id" validate:"required"`
-	Role   string `json:"role" validate:"required,oneof=admin member viewer"`
-}
-
 // UpdateMemberRoleRequest represents the request to update a member's role.
 type UpdateMemberRoleRequest struct {
 	Role string `json:"role" validate:"required,oneof=admin member viewer"`
@@ -951,55 +945,6 @@ func (h *TenantHandler) GetMemberStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
-}
-
-// AddMember handles POST /api/v1/tenants/{tenant}/members
-func (h *TenantHandler) AddMember(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-
-	inviterID := middleware.GetLocalUserID(r.Context())
-	if inviterID.IsZero() {
-		apierror.Unauthorized("Authentication required").WriteJSON(w)
-		return
-	}
-
-	var req AddMemberRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	// Parse user ID as UUID
-	userID, err := shared.IDFromString(req.UserID)
-	if err != nil {
-		apierror.BadRequest("Invalid user ID format").WriteJSON(w)
-		return
-	}
-
-	input := tenantapp.AddMemberInput{
-		UserID: userID,
-		Role:   req.Role,
-	}
-
-	actx := h.buildAuditContext(r)
-	membership, err := h.service.AddMember(r.Context(), tenantID.String(), input, inviterID, actx)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(toMemberResponse(membership))
 }
 
 // UpdateMemberRole handles PATCH /api/v1/tenants/{tenant}/members/{memberId}
