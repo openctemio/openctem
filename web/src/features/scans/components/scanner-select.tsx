@@ -22,6 +22,8 @@ import {
 import { useToolAvailability, useTools } from '@/lib/api/tool-hooks'
 import type { Tool, ToolAvailabilityItem } from '@/lib/api/tool-types'
 import { availabilityByName, toolUnavailableReason } from '@/features/tools/lib/availability'
+import type { ScanIntensity } from '@/lib/api/scan-types'
+import { fitsIntensity, toolTier } from '../lib/scan-intensity'
 
 /**
  * Tools a scan may name: active and not an asset collector. A connector (the
@@ -74,6 +76,11 @@ interface ScannerSelectProps {
   allowConnectors?: boolean
   /** The scan's zone: availability is judged on that zone's sensors. */
   zoneId?: string | null
+  /**
+   * The scan's intensity (RFC-071): only scanners that probe within it are
+   * offered (the API refuses the others).
+   */
+  intensity?: ScanIntensity
 }
 
 export function ScannerSelect({
@@ -83,9 +90,22 @@ export function ScannerSelect({
   disabled,
   allowConnectors = false,
   zoneId,
+  intensity,
 }: ScannerSelectProps) {
   const { t } = useTranslation()
-  const { options, availability, isLoading, error } = useScannerOptions(allowConnectors, zoneId)
+  const {
+    options: allOptions,
+    availability,
+    isLoading,
+    error,
+  } = useScannerOptions(allowConnectors, zoneId)
+  const options = useMemo(
+    () =>
+      intensity
+        ? allOptions.filter((tool) => fitsIntensity(toolTier(tool.name), intensity))
+        : allOptions,
+    [allOptions, intensity]
+  )
   // Keep a configuration's scanner selectable even if the registry no longer
   // lists it (disabled since), so opening Edit does not silently blank it.
   const known = options.some((tool) => tool.name === value)

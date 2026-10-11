@@ -24,6 +24,8 @@ func TestPresetPipelines_UseShippedTools(t *testing.T) {
 	shipped := map[string]bool{
 		"semgrep": true, "betterleaks": true, "trivy": true, "nuclei": true,
 		"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
+		// The passive lookups, compiled into the sensor.
+		"rdap": true, "asn": true,
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT pt.name, ps.step_key, COALESCE(ps.tool, ''), COALESCE(ps.capabilities, '{}'),

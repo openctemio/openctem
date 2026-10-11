@@ -199,7 +199,6 @@ GET /api/v1/tenants/{}/settings
 GET /api/v1/tenants/{}/settings/asset-identity
 GET /api/v1/tenants/{}/settings/asset-lifecycle
 GET /api/v1/tenants/{}/settings/modules
-GET /api/v1/tenants/{}/settings/modules/bundles
 GET /api/v1/tenants/{}/settings/modules/graph
 GET /api/v1/tenants/{}/settings/modules/presets
 GET /api/v1/tenants/{}/settings/pentest
@@ -354,7 +353,6 @@ POST /api/v1/tenants/{}/members
 POST /api/v1/tenants/{}/members/{}/reactivate
 POST /api/v1/tenants/{}/members/{}/suspend
 POST /api/v1/tenants/{}/settings/asset-lifecycle/dry-run
-POST /api/v1/tenants/{}/settings/modules/bundles
 POST /api/v1/tenants/{}/settings/modules/presets/{}/apply
 POST /api/v1/tenants/{}/settings/modules/presets/{}/preview
 POST /api/v1/tenants/{}/settings/modules/reset

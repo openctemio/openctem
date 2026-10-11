@@ -1,0 +1,14 @@
+- id: template_sources
+  const: ModuleTemplateSources
+  slug: "template-sources"
+  name: Template Sources
+  description: Upstream git sources that templates are synced from
+  icon: Database
+  category: settings
+  order: 11
+  user_facing: true
+  permission: "scans:templates:read"
+  depends:
+    - {id: scanner_templates, kind: hard, reason: "sources feed the template catalogue"}
+  routes:
+    - "/api/v1/template-sources"

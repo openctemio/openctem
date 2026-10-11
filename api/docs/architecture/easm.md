@@ -389,15 +389,20 @@ the ports it found open (`technical.ip_address.ports`). Ingest
 3. lets the exposure bridge project each port to `port_open` (and services
    to `service_detected`). New recon exposures are announced through the
    outbox in the same transaction (`AnnouncingExposureRepository`, §4c);
-4. for a port-scan report that may change the address (RFC-040 §5.3), closes
-   the address's active `open_port` assets the scan no longer lists: status
-   `inactive`, a `disappeared` history entry (metadata `port_closed`) and
-   the `port_open`/`service_detected` exposures resolved, in one transaction
-   (`postgres.EASMPortRepository`). A port seen again is set active with a
-   `recovered` entry (metadata `port_opened`) and its exposure reactivated
-   (a reactivation is not announced again). Limits: a scan that finds
-   no open port reports no address, so "all ports closed" is not detected;
-   closed is judged against the previous port scan of any of these tools.
+4. for a report that may change the address (RFC-040 §5.3), records the
+   ports as its source's observation of the address's `open_ports` set
+   (RFC-069 §13, [asset-attribute-reconciliation.md](./asset-attribute-reconciliation.md)).
+   A port closes only when the port scan that found it scans the same range
+   of the address again without it (an explicit port list or `full` covers
+   those ports; a top-N or default scan covers only what the same setting
+   found), and no other trusted source still reports it within its TTL:
+   status `inactive`, a `disappeared` history entry (metadata
+   `port_closed`) and the `port_open`/`service_detected` exposures resolved,
+   in the reconciliation transaction. A port reported again is set active
+   with a `recovered` entry (metadata `port_opened`) and its exposure
+   reactivated (a reactivation is not announced again). Limits: a scan that
+   finds no open port reports no address, so "all ports closed" is not
+   detected.
 ## 4g. Honest numbers (built, P0-13)
 
 - `GET /easm/summary` counts only exposure types something writes today

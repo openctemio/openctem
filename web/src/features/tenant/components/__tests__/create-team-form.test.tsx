@@ -10,7 +10,7 @@ vi.mock('../../api', () => ({
   useCreateTenant: () => ({ trigger: mockTrigger, isMutating: false }),
 }))
 
-const mockSubscribe = vi.fn()
+const mockApply = vi.fn()
 const PRESETS = [
   {
     id: 'asm',
@@ -22,10 +22,20 @@ const PRESETS = [
     recommended_for: [],
     module_count: 20,
   },
+  {
+    id: 'vm_essentials',
+    name: 'Vulnerability Management',
+    description: 'Scan and fix',
+    target_persona: 'VM team',
+    icon: 'Bug',
+    key_outcomes: ['Fix what matters'],
+    recommended_for: [],
+    module_count: 15,
+  },
 ]
 vi.mock('@/features/organization/api/use-tenant-modules', () => ({
   useModulePresetsPublic: () => ({ presets: PRESETS, isLoading: false, isError: false }),
-  subscribeBundlesRequest: (...args: unknown[]) => mockSubscribe(...args),
+  applyPresetRequest: (...args: unknown[]) => mockApply(...args),
 }))
 
 vi.mock('@/features/auth/actions/local-auth-actions', () => ({
@@ -57,14 +67,14 @@ async function fillAndSubmit() {
   await userEvent.click(screen.getByRole('button', { name: /create team/i }))
 }
 
-describe('CreateTeamForm — bundle selection', () => {
-  it('shows the optional Products picker with the public catalog', () => {
+describe('CreateTeamForm — starting set', () => {
+  it('shows the optional starting-set picker with the public catalog', () => {
     render(<CreateTeamForm isFirstTeam={false} showCancel={false} />)
-    expect(screen.getByText('Products')).toBeInTheDocument()
+    expect(screen.getByText('Starting set')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /attack surface management/i })).toBeInTheDocument()
   })
 
-  it('subscribes to the chosen bundle after the tenant is created', async () => {
+  it('applies the chosen preset after the organization is created', async () => {
     mockTrigger.mockResolvedValueOnce({ id: 'tenant-123', name: 'Acme Corp' })
     render(<CreateTeamForm isFirstTeam={false} showCancel={false} />)
 
@@ -72,22 +82,34 @@ describe('CreateTeamForm — bundle selection', () => {
     await fillAndSubmit()
 
     await waitFor(() => expect(mockTrigger).toHaveBeenCalled())
-    await waitFor(() => expect(mockSubscribe).toHaveBeenCalledWith('tenant-123', ['asm']))
+    await waitFor(() => expect(mockApply).toHaveBeenCalledWith('tenant-123', 'asm'))
   })
 
-  it('does NOT subscribe when no bundle is picked (default = full platform)', async () => {
+  it('keeps one starting set: picking another replaces the first', async () => {
+    mockTrigger.mockResolvedValueOnce({ id: 'tenant-123', name: 'Acme Corp' })
+    render(<CreateTeamForm isFirstTeam={false} showCancel={false} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /attack surface management/i }))
+    await userEvent.click(screen.getByRole('button', { name: /vulnerability management/i }))
+    await fillAndSubmit()
+
+    await waitFor(() => expect(mockApply).toHaveBeenCalledTimes(1))
+    expect(mockApply).toHaveBeenCalledWith('tenant-123', 'vm_essentials')
+  })
+
+  it('applies nothing when no preset is picked (every module the plan includes)', async () => {
     mockTrigger.mockResolvedValueOnce({ id: 'tenant-123', name: 'Acme Corp' })
     render(<CreateTeamForm isFirstTeam={false} showCancel={false} />)
 
     await fillAndSubmit()
 
     await waitFor(() => expect(mockTrigger).toHaveBeenCalled())
-    expect(mockSubscribe).not.toHaveBeenCalled()
+    expect(mockApply).not.toHaveBeenCalled()
   })
 
-  it('still completes team creation when bundle subscription fails', async () => {
+  it('still completes team creation when the preset cannot be applied', async () => {
     mockTrigger.mockResolvedValueOnce({ id: 'tenant-123', name: 'Acme Corp' })
-    mockSubscribe.mockRejectedValueOnce(new Error('403'))
+    mockApply.mockRejectedValueOnce(new Error('403'))
     render(<CreateTeamForm isFirstTeam={false} showCancel={false} />)
 
     await userEvent.click(screen.getByRole('button', { name: /attack surface management/i }))

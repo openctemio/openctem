@@ -19,6 +19,8 @@ platform data: a tenant, a sensor or a report cannot widen it.
 |---|---|---|---|
 | `discover.subdomains` | domain → domain, subdomain | T0 | subfinder |
 | `resolve.dns` | domain, subdomain → domain, subdomain, ip_address (`resolves_to`, `cname_of`) | T0 | dnsx |
+| `lookup.rdap` | domain → domain (registrar, registrant organization, name servers, dates) | T0 | rdap |
+| `lookup.asn` | ip_address, network → ip_address, network (origin AS, holder, announced range) | T0 | asn |
 | `scan.ports` | domain, subdomain, ip_address, host → ip_address, host, open_port | T1 | naabu |
 | `probe.http` | names, addresses, open_port, http_service → http_service, certificate, ip_address | T1 | httpx |
 | `crawl.web` | http_service, discovered_url, website → discovered_url | T1 | katana |

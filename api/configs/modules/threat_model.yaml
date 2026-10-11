@@ -1,0 +1,17 @@
+- id: threat_model
+  const: ModuleThreatModel
+  slug: "threat-model"
+  name: Threat Model
+  description: Continuous threat modelling derived from the asset graph and findings
+  icon: Crosshair
+  category: scoping
+  order: 13
+  user_facing: true
+  permission: "assets:read"
+  depends:
+    - {id: assets, kind: hard, reason: "threat models are derived from the asset graph"}
+    - {id: findings, kind: soft, reason: "threat-model coverage reflects findings on in-scope assets"}
+  routes:
+    - "/api/v1/threat-models"
+  jobs:
+    - ThreatModelRefreshController

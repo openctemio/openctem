@@ -35,6 +35,8 @@ interface SelectionSummaryProps {
   sensorPreference?: 'auto' | 'tenant' | 'platform'
   /** A single check: the scope check runs at this scanner's tier. */
   scannerName?: string
+  /** A workflow: the scope check runs at the scan intensity's tier (RFC-071). */
+  tier?: 0 | 1 | 2
 }
 
 export function SelectionSummary({
@@ -44,6 +46,7 @@ export function SelectionSummary({
   invalidCount,
   sensorPreference,
   scannerName,
+  tier,
 }: SelectionSummaryProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -52,6 +55,7 @@ export function SelectionSummary({
   const check = useScopeCheck(list, {
     sensor_preference: sensorPreference,
     scanner_name: scannerName || undefined,
+    tier,
   })
   const results = check.results ?? []
   const refused = results.filter((r) => !r.allowed).length

@@ -6,6 +6,7 @@ api_spec_operations
 api_specs
 asset_access_grants
 asset_attribute_sources
+asset_attribute_set_elements
 asset_attributions
 asset_change_events
 asset_dedup_review
@@ -171,6 +172,8 @@ tenant_identity_providers
 tenant_idle_lifecycle
 tenant_invitations
 tenant_members
+tenant_module_grace
+tenant_module_grants
 tenant_modules
 tenant_plan_overrides
 tenant_plans

@@ -1,0 +1,14 @@
+- id: compensating_controls
+  const: ModuleCompensatingControls
+  slug: "compensating-controls"
+  name: Compensating Controls
+  description: "Controls that reduce finding severity (WAF, EDR, IPS, …)"
+  icon: ShieldCheck
+  category: validation
+  order: 33
+  user_facing: true
+  permission: "ctem:compensating_controls:read"
+  depends:
+    - {id: findings, kind: hard, reason: "compensating controls reduce severity of findings"}
+  routes:
+    - "/api/v1/compensating-controls"

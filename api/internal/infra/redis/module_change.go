@@ -31,12 +31,15 @@ const moduleChangeQueue = 256
 // (*middleware.ModuleGate).
 type ModuleCacheInvalidator interface {
 	Invalidate(tenantID string)
+	InvalidateAll()
 }
 
 type moduleChange struct {
 	// Origin is the publishing replica; it already dropped its own cache.
 	Origin   string `json:"o"`
-	TenantID string `json:"t"`
+	TenantID string `json:"t,omitempty"`
+	// All drops every tenant (a plan to module mapping change).
+	All bool `json:"all,omitempty"`
 }
 
 // ModuleChangeBus invalidates the local module cache and every other
@@ -69,6 +72,17 @@ func (b *ModuleChangeBus) Invalidate(tenantID string) {
 	b.local.Invalidate(tenantID)
 	select {
 	case b.queue <- moduleChange{Origin: b.origin, TenantID: tenantID}:
+	default:
+		b.log.Debug("module change dropped: publish queue full")
+	}
+}
+
+// InvalidateAll drops every tenant's cached module state here and on every
+// other replica (a plan to module mapping change). It never blocks.
+func (b *ModuleChangeBus) InvalidateAll() {
+	b.local.InvalidateAll()
+	select {
+	case b.queue <- moduleChange{Origin: b.origin, All: true}:
 	default:
 		b.log.Debug("module change dropped: publish queue full")
 	}
@@ -131,6 +145,10 @@ func (b *ModuleChangeBus) deliver(payload string) {
 	}
 	var c moduleChange
 	if json.Unmarshal([]byte(payload), &c) != nil || c.Origin == b.origin {
+		return
+	}
+	if c.All {
+		b.local.InvalidateAll()
 		return
 	}
 	if _, err := shared.IDFromString(c.TenantID); err != nil {

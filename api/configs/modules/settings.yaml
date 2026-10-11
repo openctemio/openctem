@@ -1,0 +1,11 @@
+- id: settings
+  const: ModuleSettings
+  slug: settings
+  name: Settings
+  description: "General workspace settings, Risk Scoring, and Module configuration"
+  icon: Settings
+  category: settings
+  order: 65
+  core: true
+  user_facing: true
+  permission: "settings:read"

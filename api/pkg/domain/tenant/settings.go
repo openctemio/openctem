@@ -45,13 +45,6 @@ type Settings struct {
 	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
 	// ScanGovernance is scan approval governance (RFC-073).
 	ScanGovernance ScanGovernanceSettings `json:"scan_governance,omitempty"`
-
-	// SubscribedBundles is the set of product-bundle IDs the tenant runs
-	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
-	// backward-compatible default). When non-empty, the module service
-	// resolves the enabled set live as the union of these bundles (+core+
-	// mandatory+deps), with per-module tenant_modules overrides layered on top.
-	SubscribedBundles []string `json:"subscribed_bundles,omitempty"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.
