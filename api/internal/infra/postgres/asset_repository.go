@@ -1068,21 +1068,34 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, fmt.Sprintf("a.exposure IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
-	// Tags filter
+	// Tags filter. System tags (derived from program links) filter like
+	// tags; a non-owner matches only the tags of programs not hidden from
+	// them (RFC-065 §15.3), so neither including nor excluding a hidden
+	// program's tag says anything about which assets it covers.
+	var tagViewerArg string
+	if filter.ProgramTagViewer != nil && (len(filter.Tags) > 0 || len(filter.ExcludeTags) > 0) {
+		tagViewerArg = fmt.Sprintf("$%d::uuid", argIndex)
+		args = append(args, filter.ProgramTagViewer.String())
+		argIndex++
+	}
 	if len(filter.Tags) > 0 {
-		// System tags (derived from program links) filter like tags; a
-		// non-owner matches only the tags of programs not hidden from them
-		// (RFC-065 §15.3).
-		if filter.ProgramTagViewer == nil {
-			conditions = append(conditions, fmt.Sprintf("(a.tags && $%d OR a.system_tags && $%d)", argIndex, argIndex))
-			args = append(args, pq.Array(filter.Tags))
-			argIndex++
-		} else {
-			conditions = append(conditions, fmt.Sprintf("(a.tags && $%d OR (a.system_tags && $%d AND %s))", argIndex, argIndex,
-				visibleProgramLinkSQL("a.id", "a.tenant_id", fmt.Sprintf("$%d::uuid", argIndex+1), fmt.Sprintf("AND t = ANY($%d)", argIndex))))
-			args = append(args, pq.Array(filter.Tags), filter.ProgramTagViewer.String())
-			argIndex += 2
+		arr := fmt.Sprintf("$%d::text[]", argIndex)
+		args = append(args, pq.Array(filter.Tags))
+		argIndex++
+		// The overlap test uses the GIN indexes on tags and system_tags; for
+		// "all" it is the index prefilter and the NOT EXISTS checks each tag.
+		cond := assetHasAnyTagSQL(arr, tagViewerArg)
+		if filter.TagsMatchAll {
+			cond = fmt.Sprintf("(%s AND NOT EXISTS (SELECT 1 FROM unnest(%s) AS want(tag) WHERE NOT %s))",
+				cond, arr, assetHasTagSQL("want.tag", tagViewerArg))
 		}
+		conditions = append(conditions, cond)
+	}
+	if len(filter.ExcludeTags) > 0 {
+		arr := fmt.Sprintf("$%d::text[]", argIndex)
+		args = append(args, pq.Array(filter.ExcludeTags))
+		argIndex++
+		conditions = append(conditions, fmt.Sprintf("NOT COALESCE(%s, FALSE)", assetHasAnyTagSQL(arr, tagViewerArg)))
 	}
 
 	// Full-text search across name, description, and aliases (RFC-001)
@@ -1966,11 +1979,54 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 	return created, updated, persistedIDs, nil
 }
 
-// ListDistinctTags returns distinct tags across the assets of a tenant that
-// access admits. Supports prefix filtering for autocomplete and a limit for
-// result size.
-func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, access asset.AccessScope, prefix string, types []string, limit int) ([]string, error) {
-	query := `SELECT DISTINCT tag FROM assets a, unnest(a.tags) AS tag WHERE a.deleted_at IS NULL AND a.tenant_id = $1`
+// assetHasAnyTagSQL is the condition "asset a carries a tag of array arr"
+// (a SQL text[] expression), counting the system tags; with viewerArg (a
+// uuid placeholder) only the system tags of programs not hidden from that
+// user count.
+func assetHasAnyTagSQL(arr, viewerArg string) string {
+	if viewerArg == "" {
+		return fmt.Sprintf("(a.tags && %s OR a.system_tags && %s)", arr, arr)
+	}
+	return fmt.Sprintf("(a.tags && %s OR (a.system_tags && %s AND %s))", arr, arr,
+		visibleProgramLinkSQL("a.id", "a.tenant_id", viewerArg, "AND t = ANY("+arr+")"))
+}
+
+// assetHasTagSQL is the condition "asset a carries tag tag" (a SQL text
+// expression), with the same system tag rule as assetHasAnyTagSQL.
+func assetHasTagSQL(tag, viewerArg string) string {
+	if viewerArg == "" {
+		return fmt.Sprintf("(%s = ANY(a.tags) OR %s = ANY(a.system_tags))", tag, tag)
+	}
+	return fmt.Sprintf("(%s = ANY(a.tags) OR (%s = ANY(a.system_tags) AND %s))", tag, tag,
+		visibleProgramLinkSQL("a.id", "a.tenant_id", viewerArg, "AND t = "+tag))
+}
+
+// ListDistinctTags returns the tags of the assets of a tenant that access
+// admits, most used first (ties by name), and, with q.IncludeSystem, the
+// system tags the caller may see. Prefix and search narrow both lists.
+func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, access asset.AccessScope, q asset.TagListQuery) (asset.TagList, error) {
+	out := asset.TagList{Tags: []string{}}
+	tags, err := r.countedTags(ctx, tenantID, access, q, "a.tags")
+	if err != nil {
+		return out, fmt.Errorf("failed to list distinct tags: %w", err)
+	}
+	out.Tags = tags
+	if !q.IncludeSystem {
+		return out, nil
+	}
+	sys, err := r.countedTags(ctx, tenantID, access, q, "a.system_tags")
+	if err != nil {
+		return out, fmt.Errorf("failed to list system tags: %w", err)
+	}
+	out.SystemTags = sys
+	return out, nil
+}
+
+// countedTags lists the values of the array column col over the tenant's
+// assets that access admits, most used first. For the system tags with a
+// q.ProgramTagViewer, only those of programs not hidden from that user.
+func (r *AssetRepository) countedTags(ctx context.Context, tenantID shared.ID, access asset.AccessScope, q asset.TagListQuery, col string) ([]string, error) {
+	query := `SELECT tag FROM assets a CROSS JOIN LATERAL unnest(` + col + `) AS tag WHERE a.deleted_at IS NULL AND a.tenant_id = $1`
 	args := []any{tenantID.String()}
 	argIdx := 2
 
@@ -1982,23 +2038,34 @@ func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.
 		args = append(args, scopeArgs...)
 		argIdx += len(scopeArgs)
 	}
-
-	if len(types) > 0 {
-		query += fmt.Sprintf(` AND asset_type = ANY($%d)`, argIdx)
-		args = append(args, pq.Array(types))
+	if len(q.Types) > 0 {
+		query += fmt.Sprintf(` AND a.asset_type = ANY($%d)`, argIdx)
+		args = append(args, pq.Array(q.Types))
 		argIdx++
 	}
-
-	if prefix != "" {
+	if q.Prefix != "" {
 		query += fmt.Sprintf(` AND tag ILIKE $%d`, argIdx)
-		args = append(args, escapeLikePattern(prefix)+"%")
+		args = append(args, escapeLikePattern(q.Prefix)+"%")
+		argIdx++
 	}
-
-	query += fmt.Sprintf(` ORDER BY tag LIMIT %d`, limit)
+	if q.Search != "" {
+		query += fmt.Sprintf(` AND tag ILIKE $%d`, argIdx)
+		args = append(args, wrapLikePattern(q.Search))
+		argIdx++
+	}
+	if col == "a.system_tags" && q.ProgramTagViewer != nil {
+		query += " AND " + visibleProgramLinkSQL("a.id", "a.tenant_id", fmt.Sprintf("$%d::uuid", argIdx), "AND t = tag")
+		args = append(args, q.ProgramTagViewer.String())
+	}
+	limit := q.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query += fmt.Sprintf(` GROUP BY tag ORDER BY count(*) DESC, tag LIMIT %d`, limit)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list distinct tags: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -2006,16 +2073,11 @@ func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.
 	for rows.Next() {
 		var tag string
 		if err := rows.Scan(&tag); err != nil {
-			return nil, fmt.Errorf("failed to scan tag: %w", err)
+			return nil, err
 		}
 		tags = append(tags, tag)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate tags: %w", err)
-	}
-
-	return tags, nil
+	return tags, rows.Err()
 }
 
 // UpdateFindingCounts updates finding counts for multiple assets in batch.
