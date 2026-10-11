@@ -2,7 +2,10 @@
 
 Design: [RFC-072](../rfcs/RFC-072-chunked-feed-transfer.md). Code: sdk-go
 `pkg/transfer` (fetcher) and `pkg/transfer/bundle` (format, writer,
-consumer).
+consumer), one Go module of their own, `github.com/openctemio/sdk-go/pkg/transfer`
+(tags `pkg/transfer/vX.Y.Z`). The api requires that module only, never the
+whole SDK, so SDK releases and their dependency graph do not reach the api.
+The fetcher has no default HTTP client: the api passes `httpsec.SafeHTTPClient`.
 
 Large data crosses the platform boundary in two directions, each through one
 code path:
