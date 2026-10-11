@@ -452,7 +452,18 @@ type ServerConfig struct {
 	// X-Forwarded-For is absent (see httpsec.ClientIP).
 	// Configure via SERVER_TRUSTED_PROXIES (comma-separated CIDRs).
 	TrustedProxies []string
+	// TLSCertFile and TLSKeyFile (SERVER_TLS_CERT_FILE, SERVER_TLS_KEY_FILE:
+	// PEM paths, full chain first) make the API listener terminate TLS
+	// itself, for an API exposed without a TLS proxy in front. A connection
+	// that offers the sensor ALPN id is then served by the sensor gRPC
+	// binding on the same port (RFC-059 §5.1). Both empty (the default):
+	// plain HTTP behind a proxy that terminates TLS.
+	TLSCertFile string
+	TLSKeyFile  string
 }
+
+// TLSEnabled reports whether the API listener terminates TLS itself.
+func (c *ServerConfig) TLSEnabled() bool { return c.TLSCertFile != "" }
 
 // GRPCConfig holds gRPC server configuration.
 type GRPCConfig struct {
@@ -1272,6 +1283,8 @@ func Load() (*Config, error) {
 			SessionTimeoutMinutes: getEnvInt("SESSION_TIMEOUT_MINUTES", 30),    // 30 minutes default
 			MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 1000),  // 1000 concurrent requests default
 			TrustedProxies:        getEnvSlice("SERVER_TRUSTED_PROXIES", nil),
+			TLSCertFile:           getEnv("SERVER_TLS_CERT_FILE", ""),
+			TLSKeyFile:            getEnv("SERVER_TLS_KEY_FILE", ""),
 		},
 		GRPC: GRPCConfig{
 			Port: getEnvInt("GRPC_PORT", 9090),
@@ -1610,6 +1623,9 @@ func (c *Config) validateStorage() error {
 
 // validateBasic validates basic configuration regardless of environment.
 func (c *Config) validateBasic() error {
+	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
+		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
+	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
 		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
