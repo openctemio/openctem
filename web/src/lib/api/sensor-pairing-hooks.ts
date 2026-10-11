@@ -126,3 +126,28 @@ export function setSensorIdentityPolicy(
 ): Promise<SensorIdentityPolicy> {
   return put<SensorIdentityPolicy>(SENSOR_IDENTITY_POLICY_PATH, policy)
 }
+
+/** The platform's sensor protocol v3 bindings (api RFC-059 T15). */
+export interface SensorTransportStatus {
+  /** auto: v3 served; off: every sensor on protocol v2. */
+  mode: 'auto' | 'off'
+  https_path?: string
+  grpc: {
+    /** advertised: sensors use gRPC; pending: first probe; unavailable: see reason. */
+    state: 'advertised' | 'pending' | 'unavailable'
+    endpoint?: string
+    reason?: string
+    checked_at?: string
+  }
+}
+
+export const SENSOR_TRANSPORT_PATH = '/api/v1/sensors/transport'
+
+export function useSensorTransportStatus(enabled = true) {
+  const { currentTenant } = useTenant()
+  return useSWR<SensorTransportStatus>(
+    currentTenant && enabled ? SENSOR_TRANSPORT_PATH : null,
+    (url: string) => get<SensorTransportStatus>(url),
+    { revalidateOnFocus: false, shouldRetryOnError: false, refreshInterval: 60_000 }
+  )
+}
