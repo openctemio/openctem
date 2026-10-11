@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,4 +68,43 @@ func TestLogoutHandler_CookieTokenNeedsCSRF(t *testing.T) {
 	if !deps.sessionRepo.sessions[sid].IsActive() {
 		t.Fatal("nothing may be revoked")
 	}
+}
+
+// Signing out with only the refresh token ends the session. The web used to
+// call the API sign-out with the access token alone; after 15 idle minutes
+// that cookie is gone, the call was skipped, and the session and its refresh
+// chain stayed valid for days after the user "signed out".
+func TestAuthService_LogoutByRefreshToken(t *testing.T) {
+	t.Run("ends the session of a valid refresh token", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		rt, sid := loginPassword(t, svc, deps, "idle@example.com")
+
+		if err := svc.LogoutByRefreshToken(context.Background(), rt); err != nil {
+			t.Fatalf("LogoutByRefreshToken: %v", err)
+		}
+		sess := deps.sessionRepo.sessions[sid]
+		if sess == nil || sess.IsActive() {
+			t.Fatal("the session must be revoked")
+		}
+		if deps.rtRepo.revokeBySessionCalls != 1 {
+			t.Fatalf("its refresh tokens must be revoked, got %d RevokeBySessionID calls", deps.rtRepo.revokeBySessionCalls)
+		}
+	})
+
+	t.Run("a forged or unknown token ends nothing", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		_, sid := loginPassword(t, svc, deps, "other@example.com")
+
+		for _, tok := range []string{"not-a-jwt", ""} {
+			if err := svc.LogoutByRefreshToken(context.Background(), tok); err != nil {
+				t.Fatalf("token %q: expected nil, got %v", tok, err)
+			}
+		}
+		if !deps.sessionRepo.sessions[sid].IsActive() {
+			t.Fatal("another user's session must stay active")
+		}
+		if deps.rtRepo.revokeBySessionCalls != 0 {
+			t.Fatalf("nothing may be revoked, got %d calls", deps.rtRepo.revokeBySessionCalls)
+		}
+	})
 }
