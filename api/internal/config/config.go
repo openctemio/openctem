@@ -920,6 +920,14 @@ type SensorConfig struct {
 	// CERT_MONITOR_MAX_DOMAINS_PER_RUN, default 50.
 	CertMonitorMaxDomainsPerRun int
 
+	// AssetEnrichmentEnabled runs automatic passive enrichment of new assets
+	// for the platform (each tenant may still turn it off).
+	// ASSET_ENRICHMENT_ENABLED, default true.
+	AssetEnrichmentEnabled bool
+	// AssetEnrichmentDailyBudget caps the assets one tenant sends to
+	// enrichment runs per 24 h. ASSET_ENRICHMENT_DAILY_BUDGET, default 2000.
+	AssetEnrichmentDailyBudget int
+
 	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
 	// (free tier), when crt.sh still fails after its retries. Set
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
@@ -1376,6 +1384,8 @@ func Load() (*Config, error) {
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+			AssetEnrichmentEnabled:      getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
+			AssetEnrichmentDailyBudget:  getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
 			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),

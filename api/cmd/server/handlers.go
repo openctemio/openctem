@@ -1112,10 +1112,11 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		sweeper = svc.EASMSweep
 	}
 	platform := handler.EASMPlatform{
-		CTAvailable:   cfg.Worker.CertMonitorEnabled,
-		DNSAvailable:  svc.EASMDNS != nil,
-		CTDefaultHrs:  int(cfg.Worker.CertMonitorInterval.Hours()),
-		DNSDefaultHrs: int(cfg.Worker.EASMDNSInterval.Hours()),
+		CTAvailable:         cfg.Worker.CertMonitorEnabled,
+		DNSAvailable:        svc.EASMDNS != nil,
+		EnrichmentAvailable: cfg.Worker.AssetEnrichmentEnabled,
+		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),
+		DNSDefaultHrs:       int(cfg.Worker.EASMDNSInterval.Hours()),
 	}
 	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log)
 }
