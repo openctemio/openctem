@@ -412,18 +412,22 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	previousClass := finding.PriorityClass()
 	finding.SetPriorityClassification(classification.Class, classification.Reason)
 
-	// Log audit entry
-	entry := PriorityAuditEntry{
-		TenantID:      tenantID,
-		FindingID:     finding.ID(),
-		PreviousClass: previousClass,
-		NewClass:      classification.Class,
-		Reason:        classification.Reason,
-		Source:        classification.Source,
-		RuleID:        classification.RuleID,
-	}
-	if err := s.auditRepo.LogChange(ctx, entry); err != nil {
-		s.logger.Warn("failed to log priority audit", "finding_id", finding.ID(), "error", err)
+	// Log audit entry, only when the class moved: the reclassification sweep
+	// re-confirms the same class for nearly every finding, and an entry per
+	// re-confirmation buried the transitions (as the batch path already does).
+	if previousClass == nil || *previousClass != classification.Class {
+		entry := PriorityAuditEntry{
+			TenantID:      tenantID,
+			FindingID:     finding.ID(),
+			PreviousClass: previousClass,
+			NewClass:      classification.Class,
+			Reason:        classification.Reason,
+			Source:        classification.Source,
+			RuleID:        classification.RuleID,
+		}
+		if err := s.auditRepo.LogChange(ctx, entry); err != nil {
+			s.logger.Warn("failed to log priority audit", "finding_id", finding.ID(), "error", err)
+		}
 	}
 
 	// O1: mark exit from Prioritization. Transition vs no-transition

@@ -1748,6 +1748,38 @@ func (r *FindingRepository) ExistsByFingerprint(ctx context.Context, tenantID sh
 	return exists, nil
 }
 
+// ListOpenFindingAssetIDs returns the distinct assets that have at least one
+// open (not closed) finding in the tenant, in one query. The whole-tenant
+// reclassification sweep uses it instead of paging every open finding.
+func (r *FindingRepository) ListOpenFindingAssetIDs(ctx context.Context, tenantID shared.ID) ([]shared.ID, error) {
+	closed := vulnerability.ClosedFindingStatuses()
+	statuses := make([]string, len(closed))
+	for i, st := range closed {
+		statuses[i] = string(st)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT asset_id FROM findings
+		WHERE tenant_id = $1 AND asset_id IS NOT NULL AND status <> ALL($2::text[])`,
+		tenantID.String(), pq.Array(statuses))
+	if err != nil {
+		return nil, fmt.Errorf("list open finding assets: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan asset id: %w", err)
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse asset id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // CheckFingerprintsExist checks which fingerprints already exist in the database.
 // Returns a map of fingerprint -> exists boolean.
 func (r *FindingRepository) CheckFingerprintsExist(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error) {
