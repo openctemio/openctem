@@ -100,13 +100,13 @@ func (m *mockTargetRepo) Count(_ context.Context, _ scopedom.TargetFilter) (int6
 	return int64(len(m.targets)), nil
 }
 
-func (m *mockTargetRepo) ExistsByPattern(_ context.Context, tenantID shared.ID, targetType scopedom.TargetType, pattern string) (bool, error) {
+func (m *mockTargetRepo) FindByPattern(_ context.Context, tenantID shared.ID, targetType scopedom.TargetType, pattern string) (*scopedom.Existing, error) {
 	for _, t := range m.targets {
 		if t.TenantID() == tenantID && t.TargetType() == targetType && t.Pattern() == pattern {
-			return true, nil
+			return &scopedom.Existing{ID: t.ID(), Status: t.Status()}, nil
 		}
 	}
-	return false, nil
+	return nil, nil
 }
 
 type mockExclusionRepo struct {
@@ -184,6 +184,15 @@ func (m *mockExclusionRepo) Count(_ context.Context, _ scopedom.ExclusionFilter)
 
 func (m *mockExclusionRepo) ExpireOld(_ context.Context) error {
 	return nil
+}
+
+func (m *mockExclusionRepo) FindByPattern(_ context.Context, tenantID shared.ID, exclusionType scopedom.ExclusionType, pattern string) (*scopedom.Existing, error) {
+	for _, e := range m.exclusions {
+		if e.TenantID() == tenantID && e.ExclusionType() == exclusionType && e.Pattern() == pattern {
+			return &scopedom.Existing{ID: e.ID(), Status: e.Status()}, nil
+		}
+	}
+	return nil, nil
 }
 
 // Minimal mock for asset.Repository - only used by coverage calculation.
@@ -891,7 +900,7 @@ func TestScopeServiceExclusion_RejectedNeverApplies(t *testing.T) {
 			return err
 		},
 		"activate": func() error {
-			_, err := svc.ActivateExclusion(ctx, id, tid)
+			_, err := svc.ActivateExclusion(ctx, id, tid, "")
 			return err
 		},
 		"deactivate": func() error {
@@ -956,7 +965,7 @@ func TestScopeServiceActivateDeactivateExclusion(t *testing.T) {
 	er.exclusions[exc.ID().String()] = exc
 
 	t.Run("PendingCannotBeActivated", func(t *testing.T) {
-		_, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), tenantID.String())
+		_, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), tenantID.String(), "")
 		if !errors.Is(err, scopedom.ErrExclusionNotApproved) {
 			t.Fatalf("activate pending: got %v, want ErrExclusionNotApproved", err)
 		}
@@ -980,7 +989,7 @@ func TestScopeServiceActivateDeactivateExclusion(t *testing.T) {
 	})
 
 	t.Run("Activate", func(t *testing.T) {
-		result, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), tenantID.String())
+		result, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), tenantID.String(), "")
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1253,7 +1262,7 @@ func TestScopeServiceCheckPatternOverlaps(t *testing.T) {
 		target, _ := scopedom.NewTarget(tenantID, scopedom.TargetTypeDomain, "example.com", "", "user1")
 		tr.targets[target.ID().String()] = target
 
-		// Exact same pattern should be ignored (handled by ExistsByPattern separately)
+		// Exact same pattern should be ignored (handled by FindByPattern separately)
 		warnings, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "domain", "example.com")
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
@@ -1459,7 +1468,7 @@ func TestScopeServiceActivateExclusionTenantIsolation(t *testing.T) {
 		exc.Deactivate()
 		er.exclusions[exc.ID().String()] = exc
 
-		_, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), shared.NewID().String())
+		_, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), shared.NewID().String(), "")
 		if !errors.Is(err, shared.ErrNotFound) {
 			t.Errorf("expected ErrNotFound, got: %v", err)
 		}

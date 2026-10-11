@@ -584,6 +584,15 @@ func writeScopeEntryError(w http.ResponseWriter, err error) bool {
 	if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
 		return true
 	}
+	// A duplicate names the caller's own existing row (the lookup is
+	// tenant-scoped), so the client can open, approve or reactivate it.
+	var dup *scopedom.DuplicateError
+	if errors.As(err, &dup) {
+		apierror.New(http.StatusConflict, apierror.Code(dup.Code()), dup.Message()).
+			WithDetails(ScopeDuplicateDetails{ID: dup.Existing.ID.String(), Status: dup.Existing.Status.String()}).
+			WriteJSON(w)
+		return true
+	}
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code == "" {
 		return false
@@ -603,6 +612,13 @@ func writeScopeEntryError(w http.ResponseWriter, err error) bool {
 	}
 	apierror.New(status, apierror.Code(de.Code), de.Message).WriteJSON(w)
 	return true
+}
+
+// ScopeDuplicateDetails is the details of a SCOPE_ENTRY_EXISTS or
+// SCOPE_EXCLUSION_EXISTS conflict: the caller's existing row.
+type ScopeDuplicateDetails struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 // scopeActor is the caller as a scope actor.
@@ -1372,7 +1388,7 @@ func (h *ScopeHandler) ActivateExclusion(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	exclusion, err := h.service.ActivateExclusion(r.Context(), exclusionID, tenantID)
+	exclusion, err := h.service.ActivateExclusion(r.Context(), exclusionID, tenantID, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return

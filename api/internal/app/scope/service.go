@@ -3,6 +3,7 @@ package scope
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -128,13 +129,8 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		return nil, err
 	}
 
-	// Check if pattern already exists
-	exists, err := s.targetRepo.ExistsByPattern(ctx, tenantID, targetType, input.Pattern)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check target existence: %w", err)
-	}
-	if exists {
-		return nil, scopedom.ErrTargetAlreadyExists
+	if err := s.targetDuplicate(ctx, tenantID, targetType, input.Pattern); err != nil {
+		return nil, err
 	}
 
 	g := scopedom.DefaultGuardrails()
@@ -187,6 +183,12 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		}
 		return nil
 	}); err != nil {
+		// A concurrent create won the unique key: name the row it made.
+		if errors.Is(err, scopedom.ErrTargetAlreadyExists) {
+			if dup := s.targetDuplicate(ctx, tenantID, targetType, input.Pattern); dup != nil {
+				return nil, dup
+			}
+		}
 		return nil, err
 	}
 
@@ -201,6 +203,32 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	}
 	s.logger.Info("scope target created", "id", target.ID().String(), "pattern", logSafe(input.Pattern), "status", target.Status().String())
 	return target, nil
+}
+
+// targetDuplicate refuses a new entry whose pattern the tenant already has
+// (no port or protocol limit), naming the existing entry so the caller can
+// act on it. The lookup is the tenant's own rows only.
+func (s *Service) targetDuplicate(ctx context.Context, tenantID shared.ID, targetType scopedom.TargetType, pattern string) error {
+	existing, err := s.targetRepo.FindByPattern(ctx, tenantID, targetType, pattern)
+	if err != nil {
+		return fmt.Errorf("failed to check target existence: %w", err)
+	}
+	if existing != nil {
+		return scopedom.NewTargetDuplicate(*existing)
+	}
+	return nil
+}
+
+// exclusionDuplicate is targetDuplicate for exclusions.
+func (s *Service) exclusionDuplicate(ctx context.Context, tenantID shared.ID, exclusionType scopedom.ExclusionType, pattern string) error {
+	existing, err := s.exclusionRepo.FindByPattern(ctx, tenantID, exclusionType, pattern)
+	if err != nil {
+		return fmt.Errorf("failed to check exclusion existence: %w", err)
+	}
+	if existing != nil {
+		return scopedom.NewExclusionDuplicate(*existing)
+	}
+	return nil
 }
 
 // GetTarget retrieves a scope target by tenant ID and ID.
@@ -447,7 +475,7 @@ func (s *Service) DeleteTarget(ctx context.Context, targetID string, tenantID st
 type ListTargetsInput struct {
 	TenantID    string   `validate:"omitempty,uuid"`
 	TargetTypes []string `validate:"max=20"`
-	Statuses    []string `validate:"max=3"`
+	Statuses    []string `validate:"max=5"`
 	Tags        []string `validate:"max=20,dive,max=50"`
 	Search      string   `validate:"max=255"`
 	Page        int      `validate:"min=0"`
@@ -543,11 +571,17 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 		return nil, scopedom.ErrEntryRejected
 	case target.Status() == scopedom.StatusExpired || target.ExpiredAt(now):
 		return nil, scopedom.ErrEntryExpired
-	case target.Status() == scopedom.StatusActive || target.IsPending():
+	case target.Status() == scopedom.StatusActive:
 		return target, nil // nothing to widen
 	case target.IsProgramEntry():
 		return nil, scopedom.ErrProgramManaged
+	case target.IsPending() && s.entriesNeedApproval(ctx, parsedTenantID):
+		return target, nil // it waits for its approvals
 	}
+	// A pending entry left from a time the organization required approvals
+	// (it no longer does, RFC-073 §6) is put into effect like a new entry:
+	// the caller's scope:write and step-up, no second person. Nothing puts
+	// it into effect without a person asking.
 	before := ledgerEntryOf(target, now)
 	if err := s.widenEntry(ctx, target, actor, now); err != nil {
 		return nil, err
@@ -666,6 +700,9 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 	if err != nil {
 		return nil, err
 	}
+	if err := s.exclusionDuplicate(ctx, tenantID, exclusionType, exclusion.Pattern()); err != nil {
+		return nil, err
+	}
 	exclusion.SetWeb(web)
 	exclusion.SetOrigin(input.Origin)
 	// In Off and On (RFC-073 §6) the creator's scope:write is enough: the
@@ -683,6 +720,12 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 		}
 		return nil
 	}); err != nil {
+		// A concurrent create won the unique key: name the row it made.
+		if errors.Is(err, scopedom.ErrExclusionAlreadyExists) {
+			if dup := s.exclusionDuplicate(ctx, tenantID, exclusionType, exclusion.Pattern()); dup != nil {
+				return nil, dup
+			}
+		}
 		return nil, err
 	}
 
@@ -799,7 +842,7 @@ func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenan
 type ListExclusionsInput struct {
 	TenantID       string   `validate:"omitempty,uuid"`
 	ExclusionTypes []string `validate:"max=20"`
-	Statuses       []string `validate:"max=3"`
+	Statuses       []string `validate:"max=5"`
 	IsApproved     *bool
 	Search         string `validate:"max=255"`
 	Page           int    `validate:"min=0"`
@@ -918,8 +961,11 @@ func (s *Service) RejectExclusion(ctx context.Context, exclusionID string, tenan
 	return exclusion, nil
 }
 
-// ActivateExclusion puts an approved scope exclusion back into effect.
-func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, tenantID string) (*scopedom.Exclusion, error) {
+// ActivateExclusion puts an approved scope exclusion back into effect. A
+// pending exclusion left from a time the organization required approvals
+// (it no longer does, RFC-073 §6) takes effect as a new one would, recorded
+// as approved by the caller (by).
+func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, tenantID string, by string) (*scopedom.Exclusion, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -935,7 +981,11 @@ func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, ten
 	}
 
 	before := ledgerExclusionOf(exclusion, time.Now())
-	if err := exclusion.Activate(); err != nil {
+	if exclusion.IsPending() && !exclusion.IsApproved() && !s.entriesNeedApproval(ctx, parsedTenantID) {
+		if err := exclusion.TakeEffect(by); err != nil {
+			return nil, err
+		}
+	} else if err := exclusion.Activate(); err != nil {
 		return nil, err
 	}
 
@@ -1311,7 +1361,7 @@ func (s *Service) CheckPatternOverlaps(ctx context.Context, tenantID string, tar
 		}
 
 		if existing.Pattern() == pattern {
-			continue // Exact duplicate handled by ExistsByPattern check
+			continue // Exact duplicate handled by FindByPattern check
 		}
 
 		// Check bidirectional: does the new pattern match the existing one, or vice versa?

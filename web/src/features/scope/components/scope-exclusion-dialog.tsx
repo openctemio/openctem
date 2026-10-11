@@ -37,7 +37,8 @@ import {
   invalidateScopeCache,
   useScopeSettingsApi,
 } from '../api/use-scope-api'
-import { scopeErrorMessage } from '../lib/scope-codes'
+import { scopeDuplicateOf, scopeErrorMessage, type ScopeDuplicate } from '../lib/scope-codes'
+import { ScopeExistingNotice } from './scope-existing-notice'
 import { coversText } from '../lib/scope-entry'
 import {
   HTTP_METHODS,
@@ -64,9 +65,15 @@ export function daysFromNow(n: number, now: number = Date.now()): string {
 interface ScopeExclusionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Opens an existing exclusion on this page (the duplicate notice's Show it). */
+  onShowExisting?: (href: string) => void
 }
 
-export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialogProps) {
+export function ScopeExclusionDialog({
+  open,
+  onOpenChange,
+  onShowExisting,
+}: ScopeExclusionDialogProps) {
   const { t } = useTranslation()
   const id = useId()
   const { data: settings } = useScopeSettingsApi(open)
@@ -80,6 +87,8 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
   const [pathPrefix, setPathPrefix] = useState('')
   const [methods, setMethods] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  // The organization already has this pattern: which row, for the pattern sent.
+  const [dup, setDup] = useState<{ row: ScopeDuplicate; pattern: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -92,6 +101,7 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
     setReason('')
     setDays('')
     setError(null)
+    setDup(null)
   }, [open])
 
   const detected = detectScopeKind(what)
@@ -152,6 +162,11 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
       )
       onOpenChange(false)
     } catch (err) {
+      const row = scopeDuplicateOf(err)
+      if (row) {
+        setDup({ row, pattern })
+        return
+      }
       setError(scopeErrorMessage(t, err, 'Could not add the exclusion.'))
     } finally {
       setSaving(false)
@@ -178,6 +193,21 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </div>
+            )}
+            {dup && dup.pattern === pattern && (
+              <ScopeExistingNotice
+                dup={dup.row}
+                pattern={dup.pattern}
+                onDone={() => onOpenChange(false)}
+                onShow={
+                  onShowExisting
+                    ? (href) => {
+                        onOpenChange(false)
+                        onShowExisting(href)
+                      }
+                    : undefined
+                }
+              />
             )}
             <div className="space-y-2">
               <Label htmlFor={`${id}-what`}>What</Label>
