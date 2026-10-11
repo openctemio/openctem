@@ -65,6 +65,13 @@ entries' `max_tier` apply and the signer checks both. Operators who want
 recorded approvals for every organization set the signer floors and force
 Strict.
 
+Rows left pending from a time an organization was in Strict are put into
+effect by the `scope-pending-settle` controller once its mode is Off or On
+(`scope.Service.SettleLegacyPending`, hourly): each row goes through
+`commitEntry` / `commitExclusion`, so the signer accepts the widening before
+the database holds it, and each is audited with actor `system`. Strict
+organizations keep theirs.
+
 The ledger holds each organization's tier ceilings (on or off) so it is
 never wider than the database and never refuses what the database allows:
 

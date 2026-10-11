@@ -225,13 +225,36 @@ outside every entry is still refused, exclusions still apply, intrusive
 and the scan's intensity and approval rules decide how hard it probes.
 The entry form shows the tier only in Strict.
 
-Migrating existing entries: nothing is rewritten. Entries and exclusions
-already in effect stay; one pending approval stays pending (a pending entry
-widens scanning and a pending exclusion could hide an asset, so neither is
-activated silently) and is approved or rejected on the Approvals tab as
-before, or its requester removes it and adds it again, which in Off and On
-takes effect at once. The Approvals tab says why such left-over rows still
-wait. New changes in Off and On take effect at once.
+Left-over pending rows (amended 2026-10-11, owner decision: approvals of
+scope changes are removed outside Strict). An entry or exclusion still
+pending in an organization whose mode is Off or On (created before this
+RFC, or before the organization left Strict) is put into effect by the
+`scope-pending-settle` controller (hourly, `scope.Service.SettleLegacyPending`):
+one row at a time through the ledger hook of §7 (`commitEntry` /
+`commitExclusion`, so the signer accepts each widening before it is saved,
+which a SQL migration could not do), audited as a system decision
+(`scope_target.activated` / `scope_exclusion.activated`, actor `system`,
+reason `approvals_not_required`), with one notification to the
+organization's administrators. An entry keeps its requester as creator; an
+exclusion is recorded as approved by `system`. Strict organizations, and
+any organization whose mode cannot be read, keep their pending rows. Until
+the job runs, activating such a pending entry or exclusion (`POST
+/scope/{targets,exclusions}/{id}/activate`, scope:write, step-up for an
+entry) puts it into effect as a new one would. No create path produces a
+pending row outside Strict. The Approvals tab and the "Waiting for
+approval" strip item show only while the organization requires approvals or
+something still waits; the In scope and Out of scope lists show every row,
+pending ones with their pill, so no row is invisible.
+
+Duplicates. Adding an entry or exclusion whose pattern the organization
+already has answers `409 SCOPE_ENTRY_EXISTS` / `SCOPE_EXCLUSION_EXISTS` with
+`details: {id, status}` of the existing row (status effective: an active row
+past its expiry reads `expired`). The lookup is the caller's tenant only, so
+the answer never names another organization's row. A review-rule preview
+returns the same code and `existing` in its refusal. The add dialogs say
+what the existing row is and offer the action that fits its status:
+approve or put in effect a pending one, activate an inactive one, renew an
+expired entry, or open a rejected one to remove it.
 
 ## 7. Signer ledger (amends RFC-040 §11.5)
 
