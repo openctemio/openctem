@@ -188,5 +188,10 @@
   "sensors.posture.pin.caFile": "Private CA file",
   "sensors.posture.pin.none": "System trust store only",
   "sensors.posture.network.enforced": "Confined",
-  "sensors.posture.network.unenforced": "Not confined"
+  "sensors.posture.network.unenforced": "Not confined",
+  "sensors.keyBindPolicy.label": "Require approval of sensor keys",
+  "sensors.keyBindPolicy.description": "Off (default): a sensor with an API key replaces it with a signing key it makes itself, once and audited; its API key then stops working. On: such a sensor keeps its API key until an administrator re-pairs it. Turning it off needs the permission to widen sensor grants.",
+  "sensors.keyBindPolicy.requiredToast": "Sensor keys now need an administrator to re-pair the sensor",
+  "sensors.keyBindPolicy.allowedToast": "Sensors may replace their API key with their own signing key",
+  "sensors.keyBindPolicy.error": "Could not change the sensor key policy"
 }
