@@ -32,6 +32,9 @@ const MaxRunReports = 200
 const MaxPipelineRunsPerHour = 300
 
 // ErrRunReportCap refuses a report beyond MaxRunReports.
+// ErrRunEvaluated: the run already has its verdict; the first verdict is final.
+var ErrRunEvaluated = fmt.Errorf("%w: the CI run already has a verdict", shared.ErrConflict)
+
 var ErrRunReportCap = fmt.Errorf("%w: a CI run accepts at most %d reports", shared.ErrConflict, MaxRunReports)
 
 // Run statuses.
