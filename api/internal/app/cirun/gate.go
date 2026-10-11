@@ -3,6 +3,7 @@ package cirun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -69,6 +70,11 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	if in.ScanFailures < 0 {
 		in.ScanFailures = 0
 	}
+	// The first verdict is final: asking again returns it unchanged, so a job
+	// cannot turn a stored failure into a pass by evaluating again.
+	if run.Status == cirun.StatusEvaluated {
+		return s.storedVerdict(ctx, run)
+	}
 	policy, source, err := s.ResolvePolicy(ctx, run.TenantID, run.RepositoryAssetID)
 	if err != nil {
 		return nil, err
@@ -96,22 +102,43 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 		Override: override, Now: now, FindingURL: s.findingURL,
 	})
 	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, Links: VerdictLinks{
-		Run:      s.webURL("/ci-runners/" + run.ID.String()),
+		Run:      s.webURL(RunPath(run.ID)),
 		Findings: s.webURL(gateFindingsPath(run)),
 	}}
 	detail, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
+	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now); err != nil {
+		if errors.Is(err, cirun.ErrRunEvaluated) {
+			// Another job of the run was judged first.
+			return s.storedVerdict(ctx, run)
+		}
+		return nil, fmt.Errorf("save verdict: %w", err)
+	}
 	if err := s.repo.RecordRunOutcome(ctx, run.TenantID, run.ID, in.ScanFailures); err != nil {
 		return nil, fmt.Errorf("save run outcome: %w", err)
-	}
-	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now); err != nil {
-		return nil, fmt.Errorf("save verdict: %w", err)
 	}
 	s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	s.auditVerdict(ctx, run, in, v)
 	return v, nil
+}
+
+// RunPath is the console page of a CI run: the runs view of the CI/CD page
+// with the run open.
+func RunPath(id shared.ID) string { return "/ci-cd?view=runs&run=" + id.String() }
+
+// storedVerdict returns the verdict a run already has.
+func (s *Service) storedVerdict(ctx context.Context, run *cirun.Run) (*Verdict, error) {
+	stored, err := s.repo.GetRun(ctx, run.TenantID, run.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load run: %w", err)
+	}
+	var v Verdict
+	if len(stored.VerdictDetail) == 0 || json.Unmarshal(stored.VerdictDetail, &v) != nil {
+		return nil, fmt.Errorf("%w: the run's stored verdict cannot be read", cirun.ErrRunEvaluated)
+	}
+	return &v, nil
 }
 
 // gateFindingsPath is the findings list the verdict links to: the
@@ -213,7 +240,7 @@ func (s *Service) auditVerdict(ctx context.Context, run *cirun.Run, in EvaluateI
 			Title: "CI break-glass used: " + run.Repository,
 			Body: fmt.Sprintf("Break-glass let %s at %s pass the CI gate with %d blocking finding(s).",
 				run.Repository, shortSHA(run.CommitSHA), v.Summary.Blocking),
-			URL: "/ci-runners/" + run.ID.String(), Aggregate: "ci_gate_override", AggregateID: oid,
+			URL: RunPath(run.ID), Aggregate: "ci_gate_override", AggregateID: oid,
 			Metadata: map[string]any{"action": "used", "repository": run.Repository, "commit_sha": run.CommitSHA,
 				"run_id": run.ID.String(), "blocking": v.Summary.Blocking},
 		}))

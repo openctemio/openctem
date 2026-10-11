@@ -416,11 +416,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:             vulnHandler,
-		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
-		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingActions:            findingActionsHandler,
-		FindingRetest:             handler.NewFindingRetestHandler(svc.Retest, log),
+		Vulnerability:    vulnHandler,
+		RemediationGroup: handler.NewRemediationGroupHandler(svc.RemediationGroup),
+		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		FindingActions:   findingActionsHandler,
+		FindingRetest: func() *handler.FindingRetestHandler {
+			h := handler.NewFindingRetestHandler(svc.Retest, log)
+			if svc.Pentest != nil {
+				h.SetManualRetestSource(svc.Pentest) // pentest testers' retests join the history
+			}
+			return h
+		}(),
 		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
@@ -486,7 +492,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
 		Capability:   handler.NewCapabilityHandler(svc.Capability, v, log),
 		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
-		CI:           handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
 		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
@@ -501,6 +506,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Pentest: func() *handler.PentestHandler {
 			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
 			h.SetImportService(finding.NewFindingImportService(repos.Finding, log))
+			h.SetAuditService(svc.Audit)
 			return h
 		}(),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,

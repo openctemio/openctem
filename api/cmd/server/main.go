@@ -98,6 +98,13 @@ func run() int {
 
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
+	// A wide trusted-proxy range lets any host in it set the client IP the
+	// API believes; it should name the gateway and the web server only.
+	for _, w := range cfg.WideTrustedProxies() {
+		log.Warn("SECURITY: a trusted-proxy range covers more than 16 addresses; every host in it can set the client IP (rate limits, audit, IP allowlists)",
+			"setting", w, "remediation", "list only the gateway's and the web server's addresses")
+	}
+
 	if httpsec.AllowPrivate() {
 		log.Warn("outbound requests may reach every private network range (" + httpsec.EnvAllowPrivate + "=1, development only)")
 	}
