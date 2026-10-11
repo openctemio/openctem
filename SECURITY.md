@@ -42,9 +42,9 @@ released software.
 ## Acknowledgements and rewards
 
 This is a vulnerability disclosure programme without monetary rewards. Unless
-you prefer otherwise, we credit you on the
-[security acknowledgements](https://docs.openctem.io/security/acknowledgements/)
-page, in the security advisory and in the release notes of the fixed version.
+you prefer otherwise, we credit you on the security acknowledgements page of
+the documentation, in the security advisory and in the release notes of the
+fixed version.
 **Bug bounty: coming soon** — a programme with rewards is planned; until it
 starts, no report is eligible for a reward.
 
