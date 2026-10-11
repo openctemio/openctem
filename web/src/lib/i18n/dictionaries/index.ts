@@ -26,6 +26,7 @@ import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_nav from './en/nav.json'
 import en_org from './en/org.json'
+import en_pentestCampaigns from './en/pentestCampaigns.json'
 import en_plan from './en/plan.json'
 import en_prioritization from './en/prioritization.json'
 import en_programs from './en/programs.json'
@@ -57,6 +58,7 @@ import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_nav from './vi/nav.json'
 import vi_org from './vi/org.json'
+import vi_pentestCampaigns from './vi/pentestCampaigns.json'
 import vi_plan from './vi/plan.json'
 import vi_prioritization from './vi/prioritization.json'
 import vi_programs from './vi/programs.json'
@@ -93,6 +95,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   licensePolicy: en_licensePolicy,
   nav: en_nav,
   org: en_org,
+  pentestCampaigns: en_pentestCampaigns,
   plan: en_plan,
   prioritization: en_prioritization,
   programs: en_programs,
@@ -127,6 +130,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   licensePolicy: vi_licensePolicy,
   nav: vi_nav,
   org: vi_org,
+  pentestCampaigns: vi_pentestCampaigns,
   plan: vi_plan,
   prioritization: vi_prioritization,
   programs: vi_programs,
