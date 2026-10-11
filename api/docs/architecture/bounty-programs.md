@@ -189,6 +189,36 @@ bounty eligibility, maximum severity, environment, testing instructions
 `published_by_platform`, `inferred`). Enforcement of the limits:
 [active-probe-gate.md](active-probe-gate.md#port--and-path-limited-entries-rfc-065-168).
 
+## Program targets as assets
+
+Each time a program's scope is applied (import, re-import, follow, feed
+reconcile, sync, pause, end), `bountyprogram.Service.assign` first hands its
+items to `programtarget.Ingester`, which builds one CTIS report and sends it
+through the standard ingest for the program's tenant:
+
+| Item | Asset |
+|---|---|
+| name, `*.name` | `domain` (a wildcard: its base name) |
+| address, CIDR or range | `ip_address`, `network` |
+| `host:port[/proto]` | the host asset and a `service` asset per listed port |
+| URL with a path (`api` when the program says so) | `web_application` / `api` |
+| mobile app, source repository | `mobile_app`, `repository` (no entry: never scanned) |
+| executable, hardware, smart contract, AI model, other | none (a program target only) |
+
+The ingest is a trusted binding with source kind `feed` (followed public
+programs) or `import` (files and pastes), so dedup, attribute
+reconciliation (the program states its network targets as public) and the
+change timeline apply unchanged, and an identical re-import is a replay
+(no event). The report opens no exposure (`NoExposureProjection`) and,
+coming from no port scanner, closes no port; the organization's scope
+exclusions still drop matching new assets. The asset ids it names are
+recorded in `bounty_program_target_assets` (tenant-composite keys, cascade
+with the program and the asset, moved by an asset merge), and the program
+assignment pass counts them as the program's targets next to what its
+entries cover, so a mobile app is a program asset (link, system tags,
+program-only, the program group's data scope) without any entry. An ended
+program keeps no targets; the assets stay the tenant's.
+
 ### Chunked bundles (format v2)
 
 When the source offers bundle format v2 (a `latest.v2.dsse.json` pointer in
