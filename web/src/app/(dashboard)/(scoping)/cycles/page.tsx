@@ -23,7 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, RefreshCw, CalendarClock, Lightbulb } from 'lucide-react'
 import { get, post } from '@/lib/api/client'
 import { toast } from 'sonner'
-import { summarizeEvaluation, type CtemCycle } from '@/features/cycles'
+import { CyclePolicyCard, summarizeEvaluation, type CtemCycle } from '@/features/cycles'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
 
 interface PaginatedResponse {
@@ -208,6 +208,10 @@ export default function CtemCyclesPage() {
             New cycle
           </Button>
         </PageHeader>
+
+        <div className="mt-4">
+          <CyclePolicyCard />
+        </div>
 
         {/* CTEM operating rhythm — a lightweight, always-visible reminder of
             the prescribed cadence. Checkpoints are anchored to real dates: the
