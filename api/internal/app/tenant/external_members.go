@@ -47,6 +47,13 @@ type DomainOwnerLookup interface {
 // organization directly: they join by accepting an invitation.
 var ErrExternalNeedsInvitation = fmt.Errorf("%w: people outside your organization join by accepting an invitation; invite them instead", shared.ErrValidation)
 
+// ErrDirectAddNeedsVerifiedDomain refuses adding an existing account, or
+// creating one, directly when the address is not on an email domain the
+// organization has verified: without a verified domain the organization has
+// not shown that the address is one of its own people, so it invites them
+// and they consent by accepting.
+var ErrDirectAddNeedsVerifiedDomain = fmt.Errorf("%w: people are added or created directly only on an email domain your organization has verified; invite them instead", shared.ErrValidation)
+
 // ErrExternalViewerOnly refuses an invitation that gives an external invitee
 // more than the viewer role.
 var ErrExternalViewerOnly = fmt.Errorf("%w: people outside your organization join as viewers; change their role after they join", shared.ErrValidation)
@@ -110,6 +117,28 @@ func (c *AddressClassifier) Classify(ctx context.Context, tenantID shared.ID, em
 		out.Kind = tenantdom.MemberKindInternal
 	}
 	return out, nil
+}
+
+// HeldBy reports whether email is on a domain organization tenantID has
+// verified. A consumer mail domain never is. Fail closed: a lookup error is
+// returned, never a guess.
+func (c *AddressClassifier) HeldBy(ctx context.Context, tenantID shared.ID, email string) (bool, error) {
+	at := strings.LastIndex(email, "@")
+	if at < 0 || at == len(email)-1 {
+		return false, fmt.Errorf("%w: invalid email address", shared.ErrValidation)
+	}
+	domain := strings.ToLower(strings.TrimSpace(email[at+1:]))
+	if emaildomain.IsConsumer(domain) {
+		return false, nil
+	}
+	if c == nil || c.owners == nil {
+		return false, errors.New("address classifier not configured")
+	}
+	owner, ok, err := c.owners.OwnerOfDomain(ctx, domain)
+	if err != nil {
+		return false, fmt.Errorf("look up the domain holder: %w", err)
+	}
+	return ok && owner == tenantID, nil
 }
 
 // SetAddressClassifier wires external-member classification. Without it every
