@@ -854,7 +854,7 @@ type SensorTransportV3Config struct {
 	Mode string
 	// PublicHost is host[:port] sensors dial for the gRPC binding
 	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443 for a dedicated
-	// sensor host name, or 192.168.1.10:8444 for a port of its own). Empty:
+	// sensor host name, or 192.0.2.10:8444 for a port of its own). Empty:
 	// the platform's public URL host and port (SensorPublicHost), reached
 	// through the gateway's ALPN routing; advertised only while the
 	// self-probe passes either way.
