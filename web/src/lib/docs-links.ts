@@ -23,6 +23,6 @@ export const DOCS = {
     scannerContent: 'https://docs.openctem.io/scanning/tools/#scanner-content',
   },
   sensors: {
-    transportPlatform: 'https://docs.openctem.io/sensors/transport/#on-the-platform',
+    transportPlatform: 'https://docs.openctem.io/sensors/transport/#what-the-platform-offers',
   },
 } as const
