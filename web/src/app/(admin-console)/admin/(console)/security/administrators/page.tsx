@@ -30,6 +30,7 @@ import {
   CreateAdminDialog,
 } from '@/features/admin-console/components/create-admin-dialog'
 import { adminCan, type AdminRole, type AdminUserRecord } from '@/features/admin-console/types'
+import { useTranslation } from '@/context/i18n-provider'
 
 const roleLabel = (r: AdminRole) => ADMIN_ROLE_OPTIONS.find((o) => o.value === r)?.label ?? r
 
@@ -71,6 +72,7 @@ function BreakGlassTested({ a }: { a: AdminUserRecord }) {
 }
 
 export default function AdministratorsPage() {
+  const { t } = useTranslation()
   const me = useAdmin()
   const isSuper = adminCan(me.role, 'super_admin')
   const { data, error, isLoading, mutate } = useAdminUsers(1, isSuper)
@@ -234,24 +236,94 @@ export default function AdministratorsPage() {
     )
   }
 
-  const desc =
-    pending?.kind === 'reset'
-      ? `${pending.admin.email} will be signed out of the console and must set up two-step verification again the next time they open it. Use this when they lose their authenticator. Their password is their account's and is reset from the sign-in page.`
-      : pending?.kind === 'toggle'
-        ? pending.admin.is_active
-          ? `${pending.admin.email} will no longer be able to open the console.`
-          : `${pending.admin.email} will be able to sign in again.`
-        : pending?.kind === 'role'
-          ? `${pending.admin.email} becomes ${roleLabel(pending.role)}.`
-          : pending?.kind === 'breakglass'
-            ? pending.admin.is_break_glass
-              ? `${pending.admin.email} becomes a normal administrator: it can be bound to the identity provider and is subject to "require IdP".`
-              : `${pending.admin.email} becomes a local emergency-access account: never bound to the identity provider, allowed to use its password when the IdP is required, and every sign-in alerts all administrators.`
-            : pending?.kind === 'test'
-              ? `Records ${pending.admin.email}'s last sign-in as its periodic test. Confirm only if that sign-in was a planned test, not an emergency or an unexpected use.`
-              : pending?.kind === 'unbind'
-                ? `${pending.admin.email} is signed out of the console. Their next identity-provider sign-in binds them again by verified email.`
-                : ''
+  // Title, consequence and a confirm button that repeats the verb, per action.
+  const copy = (() => {
+    if (!pending) return { title: '', desc: '', confirm: '' }
+    const email = pending.admin.email
+    switch (pending.kind) {
+      case 'reset':
+        return {
+          title: t('confirm.admin.resetTitle', 'Reset two-step verification for {email}?', {
+            email,
+          }),
+          desc: t(
+            'confirm.admin.resetDesc',
+            "They are signed out of the console and must set up two-step verification again the next time they open it. Use this when they lose their authenticator. Their password is their account's and is reset from the sign-in page."
+          ),
+          confirm: t('confirm.admin.reset', 'Reset'),
+        }
+      case 'toggle':
+        return pending.admin.is_active
+          ? {
+              title: t('confirm.admin.deactivateTitle', 'Deactivate the administrator {email}?', {
+                email,
+              }),
+              desc: t('confirm.admin.deactivateDesc', 'They can no longer open the console.'),
+              confirm: t('confirm.admin.deactivate', 'Deactivate'),
+            }
+          : {
+              title: t('confirm.admin.reactivateTitle', 'Reactivate the administrator {email}?', {
+                email,
+              }),
+              desc: t('confirm.admin.reactivateDesc', 'They can sign in again.'),
+              confirm: t('confirm.admin.reactivate', 'Reactivate'),
+            }
+      case 'role':
+        return {
+          title: t('confirm.admin.roleTitle', 'Change the role of {email}?', { email }),
+          desc: t('confirm.admin.roleDesc', 'They become {role}.', {
+            role: roleLabel(pending.role),
+          }),
+          confirm: t('confirm.admin.role', 'Change role'),
+        }
+      case 'breakglass':
+        return pending.admin.is_break_glass
+          ? {
+              title: t('confirm.admin.unmarkTitle', 'Unmark {email} as break-glass?', { email }),
+              desc: t(
+                'confirm.admin.unmarkDesc',
+                'It becomes a normal administrator: it can be bound to the identity provider and is subject to "require IdP".'
+              ),
+              confirm: t('confirm.admin.unmark', 'Unmark'),
+            }
+          : {
+              title: t('confirm.admin.markTitle', 'Mark {email} as break-glass?', { email }),
+              desc: t(
+                'confirm.admin.markDesc',
+                'It becomes a local emergency-access account: never bound to the identity provider, allowed to use its password when the IdP is required, and every sign-in alerts all administrators.'
+              ),
+              confirm: t('confirm.admin.mark', 'Mark as break-glass'),
+            }
+      case 'test':
+        return {
+          title: t('confirm.admin.testTitle', 'Record the break-glass test for {email}?', {
+            email,
+          }),
+          desc: t(
+            'confirm.admin.testDesc',
+            'Records its last sign-in as its periodic test. Confirm only if that sign-in was a planned test, not an emergency or an unexpected use.'
+          ),
+          confirm: t('confirm.admin.test', 'Record test'),
+        }
+      case 'unbind':
+        return {
+          title: t(
+            'confirm.admin.unbindTitle',
+            'Remove the identity provider binding of {email}?',
+            {
+              email,
+            }
+          ),
+          desc: t(
+            'confirm.admin.unbindDesc',
+            'They are signed out of the console. Their next identity-provider sign-in binds them again by verified email.'
+          ),
+          confirm: t('confirm.remove', 'Remove'),
+        }
+      default:
+        return { title: '', desc: '', confirm: '' }
+    }
+  })()
 
   return (
     <Main>
@@ -280,25 +352,9 @@ export default function AdministratorsPage() {
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(open) => !open && setPending(null)}
-        title={
-          pending?.kind === 'reset'
-            ? 'Reset two-step verification?'
-            : pending?.kind === 'toggle'
-              ? pending.admin.is_active
-                ? 'Deactivate administrator?'
-                : 'Reactivate administrator?'
-              : pending?.kind === 'breakglass'
-                ? pending.admin.is_break_glass
-                  ? 'Unmark break-glass?'
-                  : 'Mark as break-glass?'
-                : pending?.kind === 'test'
-                  ? 'Confirm break-glass test?'
-                  : pending?.kind === 'unbind'
-                    ? 'Remove identity provider binding?'
-                    : 'Change role?'
-        }
-        desc={desc}
-        confirmText="Confirm"
+        title={copy.title}
+        desc={copy.desc}
+        confirmText={copy.confirm}
         destructive={
           pending?.kind === 'reset' ||
           pending?.kind === 'unbind' ||
