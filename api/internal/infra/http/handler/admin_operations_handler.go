@@ -31,7 +31,12 @@ type AdminOperationsHandler struct {
 	sdkMin    string
 	now       func() time.Time
 	logger    *logger.Logger
+	// transport reports the sensor protocol v3 bindings (SetSensorTransport).
+	transport func() SensorTransportStatus
 }
+
+// SetSensorTransport sets how the page reads the sensor transport status.
+func (h *AdminOperationsHandler) SetSensorTransport(f func() SensorTransportStatus) { h.transport = f }
 
 // NewAdminOperationsHandler creates the handler. pingRedis may be nil (no
 // Redis configured); gatherer nil uses the default registry.
@@ -121,7 +126,10 @@ type AdminOperationsResponse struct {
 	Sensors     []AdminOpsSensorGroup `json:"sensors"`
 	SDKMin      string                `json:"sdk_min_version,omitempty"`
 	Controllers []AdminOpsController  `json:"controllers"`
-	CheckedAt   time.Time             `json:"checked_at"`
+	// SensorTransport: how sensors reach this installation (protocol v3
+	// bindings and the gRPC self-probe). Absent when not wired.
+	SensorTransport *SensorTransportStatus `json:"sensor_transport,omitempty"`
+	CheckedAt       time.Time              `json:"checked_at"`
 }
 
 func timed(ctx context.Context, f func(context.Context) error) (float64, error) {
@@ -133,7 +141,7 @@ func timed(ctx context.Context, f func(context.Context) error) (float64, error) 
 // Get handles GET /api/v1/admin/operations.
 //
 // @Summary      Installation health (platform admin)
-// @Description  Build and schema, database (latency, pool), Redis, work queues, active sensors by kind/health/SDK, background controllers' last run. Any admin role; no tenant content.
+// @Description  Build and schema, database (latency, pool), Redis, work queues, active sensors by kind/health/SDK, background controllers' last run, the sensor transport status. Any admin role; no tenant content.
 // @Tags         Admin
 // @Produce      json
 // @Success      200  {object}  AdminOperationsResponse
@@ -190,6 +198,10 @@ func (h *AdminOperationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out.Controllers = controllersFrom(h.gatherer)
+	if h.transport != nil {
+		st := h.transport()
+		out.SensorTransport = &st
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
