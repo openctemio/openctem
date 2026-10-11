@@ -277,7 +277,10 @@ fi
 # protocol v2 signature (it ends in "QUIT") and the untouched ClientHello.
 docker run -d --name "$run-mtls" --network "$net" --network-alias mtls --entrypoint sh "$image" -c \
 	'i=0; while :; do i=$((i+1)); nc -l -p 8443 -w 3 >"/tmp/conn.$i" 2>/dev/null; done' >/dev/null
+# Run as api/deploy/docker-compose.yml runs it: non-root, no capability,
+# no-new-privileges, ports below 1024 opened by the namespaced sysctl.
 docker run -d --name "$run-gwl4" --network "$net" \
+	--cap-drop ALL --security-opt no-new-privileges:true --sysctl net.ipv4.ip_unprivileged_port_start=0 \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
 	-e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=sensors.gateway.test -e SENSOR_MTLS_UPSTREAM=mtls:8443 \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
