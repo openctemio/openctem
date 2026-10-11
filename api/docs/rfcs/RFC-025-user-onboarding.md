@@ -74,6 +74,12 @@ So a person gets an account in exactly one of these ways:
   instead"): attaching an existing account needs its owner's consent, and
   creating over it would let an administrator seize it.
 - Refuses an email outside `Security.AllowedDomains` (400) and the owner role.
+- Refuses an email that is not on an email domain the organization has
+  verified (400, "invite them instead"). The account is email-verified on the
+  administrator's word and its set-password link can come back to that
+  administrator (or travel through the organization's own SMTP relay), so only
+  the holder of the domain may vouch for the address; otherwise any
+  organization could take an address ahead of its real holder.
 - Same anti-escalation as invitations (a non-admin caller may grant only roles
   whose permissions they hold).
 - Creates a local account **without a password** (`NewProvisionedLocalUser`,
