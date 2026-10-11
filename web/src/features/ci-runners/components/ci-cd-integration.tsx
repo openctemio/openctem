@@ -17,6 +17,7 @@ import { DOCS } from '@/lib/docs-links'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { CIPipelinesPanel } from './ci-pipelines-panel'
 import { CITrustSettings } from './ci-trust-settings'
+import { useTranslation } from '@/context/i18n-provider'
 
 export type CICDTab = 'pipelines' | 'setup'
 
@@ -26,14 +27,18 @@ export function cicdTab(raw: string): CICDTab {
 }
 
 export function CICDIntegration() {
+  const { t } = useTranslation()
   const [tabParam, setTabParam] = useUrlFilter('tab', 'pipelines')
   const tab = cicdTab(tabParam)
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="CI/CD integration"
-        description="Scan every repository in its own pipeline: CI jobs (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket, CircleCI, Jenkins) send their results with the identity their CI provider gives them, no stored secret, and the platform decides which builds fail."
+        title={t('scans.ci.title', 'CI/CD integration')}
+        description={t(
+          'scans.ci.description',
+          'CI jobs send scan results with their CI provider’s identity, so no secret is stored in CI.'
+        )}
       >
         <Button asChild variant="outline" size="sm">
           <SafeExternalLink href={DOCS.ci.githubActions}>

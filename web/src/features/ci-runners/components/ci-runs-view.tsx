@@ -44,6 +44,7 @@ import {
 import { useCIRun, useCIRuns } from '../api/use-ci'
 import { PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
 import type { CIRun, CIVerdictFilter } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
 
 export function VerdictBadge({ verdict, wouldFail }: { verdict?: string; wouldFail?: boolean }) {
   if (verdict === 'fail') return <Badge variant="destructive">Fail</Badge>
@@ -91,6 +92,7 @@ export function CIRunsView({
   initialRunId = null,
   toolbarStart,
 }: CIRunsViewProps) {
+  const { t } = useTranslation()
   const list = useListParams({ filters: { verdict: '' } })
   const { page, setPage } = list
   const verdict = asVerdict(list.filters.verdict)
@@ -103,8 +105,11 @@ export function CIRunsView({
     <div className="space-y-4">
       {!embedded && (
         <PageHeader
-          title="CI runs"
-          description="Runs of CI pipelines that sent results with their CI provider's identity. Each run belongs to a pipeline and a repository and is judged by the CI gate."
+          title={t('scans.ci.runsTitle', 'CI runs')}
+          description={t(
+            'scans.ci.runsDescription',
+            'Runs of CI pipelines that sent results, each judged by the CI gate.'
+          )}
         >
           <Button asChild variant="outline" size="sm">
             <Link href="/ci-cd?tab=setup">CI trust and gate</Link>
@@ -145,8 +150,11 @@ export function CIRunsView({
       ) : runs.length === 0 ? (
         <EmptyState
           icon={Workflow}
-          title="No CI runs yet"
-          description="Add a CI trust configuration, then run the sensor in a GitHub Actions or GitLab CI job: it exchanges the job's OIDC token for a short-lived upload token, so no secret is stored in CI."
+          title={t('scans.ci.noRunsTitle', 'No CI runs yet')}
+          description={t(
+            'scans.ci.noRuns',
+            'Add a CI trust configuration, then run the sensor in a CI job.'
+          )}
           action={
             <Button asChild size="sm">
               <Link href="/ci-cd?tab=setup">Set up CI trust</Link>

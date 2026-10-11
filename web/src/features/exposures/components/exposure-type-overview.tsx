@@ -33,6 +33,7 @@ import { EmptyState, SeverityBadge, type Severity } from '@/features/shared'
 import { SEVERITY_CHART_COLORS, SEVERITY_ORDER, type SeverityLevel } from '@/lib/severity-colors'
 import { findingsHrefForSources } from './exposures-section'
 import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
+import { useTranslation } from '@/context/i18n-provider'
 
 export const SEVERITY_LABELS: Record<SeverityLevel, string> = SHARED_SEVERITY_LABELS
 
@@ -108,14 +109,20 @@ export function TypeBreakdownUnavailable({
   noun: [string, string]
   sources: readonly string[]
 }) {
+  const { t } = useTranslation()
   return (
     <EmptyState
       icon={icon}
       title={`${total.toLocaleString()} ${total === 1 ? noun[0] : noun[1]}`}
-      description="The severity and status breakdown for this type needs a newer API version. The findings list shows them in full."
+      description={t(
+        'findings.typeOverview.breakdownUnavailable',
+        'The breakdown for this type is not available here. The findings list shows it in full.'
+      )}
       action={
         <Button asChild variant="outline" size="sm">
-          <Link href={findingsHrefForSources(sources)}>View in findings</Link>
+          <Link href={findingsHrefForSources(sources)}>
+            {t('findings.typeOverview.viewInFindings', 'View in findings')}
+          </Link>
         </Button>
       }
     />
