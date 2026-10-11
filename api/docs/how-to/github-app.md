@@ -118,6 +118,10 @@ an installation:
 - one summary comment on the pull request, updated in place by later runs of
   the same pipeline.
 
+When a default-branch commit comes from a merged pull request whose last
+gate verdict was not a pass, the notification `ci.ungated_merge` is sent
+(Settings > Notifications): the merge did not wait for the gate.
+
 Posting runs in the background (every 15 seconds, retried up to five times);
 it never changes a verdict.
 

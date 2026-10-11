@@ -17,10 +17,14 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/google/uuid"
+
+	"github.com/openctemio/openctem/api/internal/app/outbox"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -41,6 +45,7 @@ type GitHubPoster interface {
 	CreateCheckRun(ctx context.Context, installationID int64, owner, repo string, c githubapp.CheckRun) error
 	GetPullRequest(ctx context.Context, installationID int64, owner, repo string, number int) (*githubapp.PullRequest, error)
 	UpsertIssueComment(ctx context.Context, installationID int64, owner, repo string, number int, marker, body string) error
+	PullRequestsForCommit(ctx context.Context, installationID int64, owner, repo, sha string) ([]githubapp.PullRequest, error)
 }
 
 // InstallationFinder finds the tenant's installation on an account.
@@ -52,6 +57,9 @@ type InstallationFinder interface {
 type DecorationRepository interface {
 	ClaimDecorations(ctx context.Context, limit int) ([]cirun.Run, error)
 	FinishDecoration(ctx context.Context, tenantID, runID shared.ID, state, detail string) error
+	// PullRequestPassed reports whether the last evaluated run of a pull
+	// request on the repository passed the gate.
+	PullRequestPassed(ctx context.Context, tenantID, assetID shared.ID, pullRequest string) (bool, error)
 }
 
 // GitLabClients opens the tenant's GitLab connection for a project
@@ -62,6 +70,7 @@ type GitLabClients interface {
 
 // DecorationJob posts queued verdicts.
 type DecorationJob struct {
+	notifier Notifier
 	gitlab   GitLabClients
 	repo     DecorationRepository
 	installs InstallationFinder
@@ -78,6 +87,9 @@ func NewDecorationJob(repo DecorationRepository, installs InstallationFinder, gi
 	return &DecorationJob{repo: repo, installs: installs, github: github, webBase: strings.TrimRight(webBase, "/"),
 		log: log.With("job", "ci-decoration")}
 }
+
+// SetNotifier enables the ungated-merge alert.
+func (j *DecorationJob) SetNotifier(n Notifier) { j.notifier = n }
 
 // SetGitLab enables posting GitLab commit statuses and merge request notes.
 func (j *DecorationJob) SetGitLab(g GitLabClients) { j.gitlab = g }
@@ -166,6 +178,9 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 	if err := j.github.CreateCheckRun(ctx, inst.InstallationID, owner, repo, buildCheckRun(run, &v, sha, runURL)); err != nil {
 		return outcome(err, "post the check run")
 	}
+	if prNumber == 0 && run.IsDefaultBranch && !run.Fork {
+		j.checkUngatedMerge(ctx, run, inst.InstallationID, owner, repo, sha)
+	}
 	if prNumber > 0 {
 		marker := commentMarker(run)
 		if err := j.github.UpsertIssueComment(ctx, inst.InstallationID, owner, repo, prNumber, marker,
@@ -174,6 +189,45 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 		}
 	}
 	return cirun.DecorationPosted, ""
+}
+
+// checkUngatedMerge alerts when the default-branch commit came from a merged
+// pull request whose last gate verdict was not a pass (or that was never
+// judged): the merge did not wait for the gate. Best effort: a lookup error
+// is logged and the decoration goes on.
+func (j *DecorationJob) checkUngatedMerge(ctx context.Context, run *cirun.Run, installationID int64, owner, repo, sha string) {
+	if j.notifier == nil {
+		return
+	}
+	prs, err := j.github.PullRequestsForCommit(ctx, installationID, owner, repo, sha)
+	if err != nil {
+		j.log.Warn("ungated-merge check skipped", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	for _, pr := range prs {
+		if pr.MergedAt == nil || *pr.MergedAt == "" || !strings.EqualFold(pr.Base.Ref, run.Branch) {
+			continue
+		}
+		passed, err := j.repo.PullRequestPassed(ctx, run.TenantID, run.RepositoryAssetID, strconv.Itoa(pr.Number))
+		if err != nil {
+			j.log.Warn("ungated-merge check failed", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
+			return
+		}
+		if passed {
+			continue
+		}
+		aggID, _ := uuid.Parse(run.ID.String())
+		if err := j.notifier.Enqueue(ctx, outbox.EnqueueParams{TenantID: run.TenantID,
+			EventType: string(integration.EventTypeCIUngatedMerge), AggregateType: "ci_run", AggregateID: &aggID,
+			Title: fmt.Sprintf("Merged without a passing CI gate: %s #%d", run.Repository, pr.Number),
+			Body: fmt.Sprintf("Pull request #%d of %s was merged into %s at %s, and its last OpenCTEM gate verdict was not a pass. Require the OpenCTEM gate check in branch protection.",
+				pr.Number, run.Repository, plain(run.Branch, 100), shortSHA(sha)),
+			Severity: "high", URL: RunPath(run.ID),
+			Metadata: map[string]any{"repository": run.Repository, "pull_request": pr.Number, "commit_sha": sha,
+				"repository_asset_id": run.RepositoryAssetID.String()}}); err != nil {
+			j.log.Warn("ungated-merge alert not enqueued", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
+		}
+	}
 }
 
 // decorateGitLab sets the "OpenCTEM gate" commit status and one merge
