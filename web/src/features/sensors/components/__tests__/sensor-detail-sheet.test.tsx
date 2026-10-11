@@ -67,6 +67,13 @@ vi.mock('../sensor-install-snippets', () => ({
 import { SensorDetailSheet } from '../sensor-detail-sheet'
 import { TEST_SENSOR_KEY_PREFIX } from '@/test/sensor-keys'
 
+// Radix Tooltip measures itself; jsdom has no ResizeObserver.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+
 const now = Date.now()
 const sensor: Sensor = {
   id: 's1',
@@ -483,8 +490,53 @@ describe('SensorDetailSheet', () => {
         },
       },
     })
-    expect(screen.getByTestId('sensor-transport')).toHaveTextContent(
-      'Transport: HTTPS (fallback) (http2_refused)'
+    const line = screen.getByTestId('sensor-transport')
+    expect(line).toHaveTextContent(
+      'Transport: HTTPS · Something on the network path speaks only HTTP/1.1.'
+    )
+    expect(line).not.toHaveTextContent('fallback')
+    expect(line).not.toHaveTextContent('http2_refused')
+  })
+
+  it('explains a platform that did not answer, with the code in the tooltip', async () => {
+    open({
+      sensor: {
+        ...sensor,
+        protocol: {
+          version: 3,
+          user_agent: 'openctem-sdk-go/0.31.0',
+          seen_at: '',
+          deprecated: false,
+          binding: 'grpc',
+          fallback_reason: 'platform_unreachable',
+        },
+      },
+    })
+    const reason = screen.getByTestId('sensor-transport-reason')
+    expect(screen.getByTestId('sensor-transport')).toHaveTextContent('Transport: gRPC, mutual TLS')
+    expect(reason).toHaveTextContent('The platform did not answer the last check')
+    await userEvent.hover(reason)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Reason code: platform_unreachable'
+    )
+  })
+
+  it('shows an unknown reason in plain words, not the bare code', () => {
+    open({
+      sensor: {
+        ...sensor,
+        protocol: {
+          version: 3,
+          user_agent: '',
+          seen_at: '',
+          deprecated: false,
+          binding: 'https',
+          fallback_reason: 'something_new',
+        },
+      },
+    })
+    expect(screen.getByTestId('sensor-transport-reason')).toHaveTextContent(
+      'The sensor reported another reason.'
     )
   })
 
