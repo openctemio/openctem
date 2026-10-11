@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -99,6 +100,8 @@ type AssetService struct {
 	attrTenants ReconciliationSettingsReader
 	changes     assetdom.ChangeEventRepository
 	attrLister  AttributeSourceLister
+	// Freshness of attribute classes. Optional: nil serves no observation.
+	freshness freshdom.Repository
 	// Background re-resolution after a precedence change, per tenant.
 	reresolving    sync.Map
 	reresolveAgain sync.Map
@@ -1312,6 +1315,9 @@ type ListAssetsInput struct {
 	// ProgramAssets: only (bug-bounty program assets) or exclude (leave
 	// out program-only assets), RFC-065 §16.5.
 	ProgramAssets string `validate:"omitempty,oneof=only exclude"`
+	// Freshness: stale (an attribute class past its TTL) or never (a passive
+	// class that applies was never observed); docs/architecture/asset-freshness.md.
+	Freshness string `validate:"omitempty,oneof=stale never"`
 
 	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page    int    `validate:"min=0"`
@@ -1473,6 +1479,7 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		filter.CoveredByScopeTarget = &id
 	}
 	filter.ProgramAssets = input.ProgramAssets
+	filter.Freshness = input.Freshness
 	if len(input.DataClassifications) > 0 {
 		filter = filter.WithDataClassifications(input.DataClassifications...)
 	}

@@ -591,6 +591,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        min_risk_score  query   int     false  "Minimum risk score (0-100)"
 // @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
 // @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
+// @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
 // @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
 // @Param        sub_type      query     string  false  "Filter by sub_type"
 // @Param        business_unit_ids     query string false "Filter by business unit membership (comma-separated UUIDs)"
@@ -664,6 +665,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Attribution:          parseQueryArray(query.Get("attribution")),
 		CoveredBy:            query.Get("covered_by"),
 		ProgramAssets:        query.Get("program_assets"),
+		Freshness:            query.Get("freshness"),
 		Sort:                 query.Get("sort"),
 		Page:                 paging.Page,
 		PerPage:              paging.PerPage,
