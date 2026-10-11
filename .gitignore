@@ -42,4 +42,9 @@ __pycache__/
 
 # scratch output from local test runs
 /*.out
-/pk.txt
+/*.txt
+/*.log
+/api/*.txt
+/api/*.out
+/web/*.txt
+/web/*.out
