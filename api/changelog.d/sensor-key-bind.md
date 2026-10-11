@@ -1,0 +1,5 @@
+### Security: bearer-key sensors move to a key-bound identity by themselves
+
+- `POST /api/v2/sensor/identity/bind` (hello feature `key_bind`): a sensor authenticated by its API key binds an Ed25519 key it generated, with a proof of possession. In one transaction the sensor becomes key-bound, the key becomes its active signing key and every API key of the sensor is retired (one way). Its tenant, grant, trust level and zones are unchanged. Audited at high severity (`sensor.key_bound`, `sensor.key_bind_refused`) and shown on the sensor's timeline (`key_bound`); the route takes the per-sensor key renewal budget.
+- Organization policy `key_bind_requires_approval` (`GET/PUT /api/v1/sensors/identity-policy`, a switch under Organization settings), default off. On: self-binding is refused and an administrator re-pairs such sensors. Turning it off needs `sensors:grant:widen` and a recent sign-in. A field left out of the `PUT` body is now unchanged.
+- Migration `001971_sensor_key_bind_policy` adds `tenants.sensor_key_bind_requires_approval` (constant default, no rewrite).

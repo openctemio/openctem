@@ -188,5 +188,10 @@
   "sensors.posture.pin.caFile": "Tệp CA riêng",
   "sensors.posture.pin.none": "Chỉ kho tin cậy của hệ thống",
   "sensors.posture.network.enforced": "Đã giới hạn",
-  "sensors.posture.network.unenforced": "Không giới hạn"
+  "sensors.posture.network.unenforced": "Không giới hạn",
+  "sensors.keyBindPolicy.label": "Yêu cầu phê duyệt khóa của sensor",
+  "sensors.keyBindPolicy.description": "Tắt (mặc định): sensor dùng API key sẽ thay nó bằng khóa ký do chính sensor tạo, một lần và có ghi nhật ký kiểm toán; sau đó API key không còn dùng được. Bật: sensor đó giữ API key cho đến khi quản trị viên ghép nối lại. Tắt tùy chọn này cần quyền mở rộng quyền hạn của sensor.",
+  "sensors.keyBindPolicy.requiredToast": "Khóa của sensor giờ cần quản trị viên ghép nối lại sensor",
+  "sensors.keyBindPolicy.allowedToast": "Sensor có thể thay API key bằng khóa ký của chính nó",
+  "sensors.keyBindPolicy.error": "Không thể thay đổi chính sách khóa sensor"
 }

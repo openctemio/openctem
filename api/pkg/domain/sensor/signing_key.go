@@ -103,7 +103,27 @@ type SigningKeyRepository interface {
 	Revoke(ctx context.Context, tenantID, sensorID, keyID shared.ID, reason string, at time.Time) (bool, error)
 	// RevokeAllForSensor revokes every pending or active key of a sensor.
 	RevokeAllForSensor(ctx context.Context, tenantID, sensorID shared.ID, reason string, at time.Time) (int64, error)
+	// BindToBearerSensor makes a bearer-key sensor key-bound in one
+	// transaction: key becomes its active signing key and every API key of
+	// the sensor is retired (one way). ErrKeyBindConflict when the sensor is
+	// no longer an active bearer-key sensor of the tenant (a concurrent bind
+	// won, it was revoked) or the key was registered before.
+	BindToBearerSensor(ctx context.Context, key *SigningKey, at time.Time) (retiredAPIKeys int64, err error)
 }
+
+// KeyRevokedBound retires the API keys of a sensor that bound its own
+// signing key.
+const KeyRevokedBound = "bound_to_signing_key"
+
+// ErrKeyBindConflict: the sensor cannot bind (no longer a bearer-key
+// sensor, revoked, or the key is known).
+var ErrKeyBindConflict = shared.NewDomainError("KEY_BIND_CONFLICT",
+	"the sensor is not an active bearer-key sensor, or the key is already registered", shared.ErrConflict)
+
+// ErrKeyBindNeedsApproval: the organization requires an administrator to
+// approve a sensor's key (re-pair) instead of self-binding.
+var ErrKeyBindNeedsApproval = shared.NewDomainError("KEY_BIND_NEEDS_APPROVAL",
+	"this organization requires an administrator's approval: re-pair the sensor (pair -repair)", shared.ErrForbidden)
 
 // NonceStore remembers request nonces for the signature window.
 type NonceStore interface {
@@ -116,6 +136,10 @@ type NonceStore interface {
 type IdentityPolicyRepository interface {
 	BearerKeysAllowed(ctx context.Context, tenantID shared.ID) (bool, error)
 	SetBearerKeysAllowed(ctx context.Context, tenantID shared.ID, allowed bool) (changed bool, err error)
+	// KeyBindRequiresApproval: a bearer-key sensor may not bind its own
+	// signing key; it must be re-paired.
+	KeyBindRequiresApproval(ctx context.Context, tenantID shared.ID) (bool, error)
+	SetKeyBindRequiresApproval(ctx context.Context, tenantID shared.ID, required bool) (changed bool, err error)
 }
 
 // ErrBearerKeysDisabled refuses a bearer-key sensor in an organization that

@@ -17,6 +17,8 @@ const (
 	FingerprintsCheckPath = "/fingerprints/check"
 	BaselineDiffPath      = "/fingerprints/baseline-diff"
 	KeysPath              = "/keys"
+	// IdentityBindPath: a bearer-key sensor binds its own signing key.
+	IdentityBindPath = "/identity/bind"
 	// ManifestPath is the sensor manifest (RFC-033): PUT registers it.
 	ManifestPath = "/manifest"
 	// ConfigReportPath is the sensor config report (research/26): PUT
@@ -289,6 +291,25 @@ type BaselineDiffResponse struct {
 	NewFingerprints         []string `json:"new_fingerprints"`
 	PreExistingFingerprints []string `json:"pre_existing_fingerprints"`
 	BaseBranchScanned       bool     `json:"base_branch_scanned"`
+}
+
+// KeyBindRequest is POST /identity/bind: the sensor's new Ed25519 public
+// key and its proof of possession, a signature by that key of
+// "openctem-sensor-key-bind/v1\n<thumbprint>\n<issued_at>". Bytes are
+// base64url without padding.
+type KeyBindRequest struct {
+	PublicKey string `json:"public_key"`
+	IssuedAt  string `json:"issued_at"`
+	Proof     string `json:"proof"`
+}
+
+// KeyBindResponse answers a bind: the identity the sensor signs as from now
+// on (keyid = KeyID). Every API key of the sensor is retired.
+type KeyBindResponse struct {
+	SensorID string `json:"sensor_id"`
+	TenantID string `json:"tenant_id"`
+	Name     string `json:"name"`
+	KeyID    string `json:"key_id"`
 }
 
 // KeyResponse answers POST /keys with the new key, shown once.

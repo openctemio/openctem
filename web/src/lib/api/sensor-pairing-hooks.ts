@@ -57,6 +57,11 @@ export interface CreateExpectationRequest {
 export interface SensorIdentityPolicy {
   /** True: new sensors may still get a bearer key. False: pairing only. */
   bearer_keys_allowed: boolean
+  /**
+   * True: a bearer-key sensor may not bind its own signing key; an
+   * administrator re-pairs it. False (default): self-binding, audited.
+   */
+  key_bind_requires_approval?: boolean
 }
 
 export const SENSOR_PAIRINGS_PATH = '/api/v1/sensor-pairings'
@@ -122,7 +127,7 @@ export function useSensorIdentityPolicy(enabled = true) {
 }
 
 export function setSensorIdentityPolicy(
-  policy: SensorIdentityPolicy
+  policy: Partial<SensorIdentityPolicy>
 ): Promise<SensorIdentityPolicy> {
   return put<SensorIdentityPolicy>(SENSOR_IDENTITY_POLICY_PATH, policy)
 }
