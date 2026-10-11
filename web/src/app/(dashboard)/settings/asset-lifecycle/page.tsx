@@ -15,10 +15,12 @@ import {
 } from '@/features/asset-lifecycle'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
 
 const FORM_ID = 'asset-lifecycle-form'
 
 export default function AssetLifecycleSettingsPage() {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canRead = can(Permission.TeamUpdate)
   const { currentTenant } = useTenant()
@@ -32,8 +34,11 @@ export default function AssetLifecycleSettingsPage() {
   return (
     <Main>
       <PageHeader
-        title="Asset lifecycle"
-        description="Automatically move stale assets out of active inventory so operators can focus on fresh exposure."
+        title={t('settings.assetLifecycle.title', 'Asset lifecycle')}
+        description={t(
+          'settings.assetLifecycle.description',
+          'Mark assets as stale when no scan or integration has seen them for a while.'
+        )}
       >
         {formReady && (
           <>
@@ -67,22 +72,21 @@ export default function AssetLifecycleSettingsPage() {
         {!canRead ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Insufficient permissions</AlertTitle>
+            <AlertTitle>{t('settings.noPermissionTitle', 'Insufficient permissions')}</AlertTitle>
             <AlertDescription>
-              You need the team:update permission to view or change asset lifecycle settings.
+              {t(
+                'settings.assetLifecycle.noPermission',
+                'Only owners and administrators view or change asset lifecycle settings.'
+              )}
             </AlertDescription>
           </Alert>
         ) : error ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Failed to load settings</AlertTitle>
+            <AlertTitle>{t('settings.loadFailed', 'Failed to load settings')}</AlertTitle>
             <AlertDescription>
-              <p>
-                If the problem persists the lifecycle endpoint may not be available on this
-                environment.
-              </p>
               <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-                Retry
+                {t('common.retry', 'Retry')}
               </Button>
             </AlertDescription>
           </Alert>

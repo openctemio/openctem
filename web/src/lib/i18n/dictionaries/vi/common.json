@@ -7,5 +7,6 @@
   "common.noData": "Không có dữ liệu",
   "common.rowsExported": "Đã xuất {count} dòng",
   "common.save": "Lưu",
-  "common.search": "Tìm kiếm"
+  "common.search": "Tìm kiếm",
+  "common.retry": "Thử lại"
 }

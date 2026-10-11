@@ -37,6 +37,7 @@ import { revokeOrgConnection, useOrgConnections } from '@/features/mcp-oauth/api
 import { ConnectionsList } from '@/features/mcp-oauth/components/connections-list'
 import { McpPolicyCard } from '@/features/mcp-oauth/components/mcp-policy-card'
 import { OrgClientsCard } from '@/features/mcp-oauth/components/org-clients-card'
+import { useTranslation } from '@/context/i18n-provider'
 
 // A minted MCP key carries exactly the read scopes below — nothing more. The
 // user picks the key's purpose so it maps to what the server's MCP tools/prompts
@@ -99,6 +100,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 }
 
 export default function MCPConnectPage() {
+  const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [preset, setPreset] = useState<PresetId>('general')
   const [name, setName] = useState(KEY_PRESETS.general.defaultName)
@@ -180,8 +182,11 @@ export default function MCPConnectPage() {
   return (
     <Main>
       <PageHeader
-        title="AI access (MCP)"
-        description="Connect Claude (Desktop, Code, or any MCP client) to this tenant's CTEM data — read-only."
+        title={t('settings.mcp.title', 'AI access (MCP)')}
+        description={t(
+          'settings.mcp.description',
+          'Connect Claude or another MCP client to this organization’s data, read-only.'
+        )}
       >
         <Can route="POST /api/v1/api-keys">
           <Button size="sm" onClick={() => setDialogOpen(true)}>
@@ -345,8 +350,10 @@ export default function MCPConnectPage() {
             <div className="border-primary/40 bg-primary/5 flex items-start gap-2 rounded-md border p-3">
               <Sparkles className="text-primary mt-0.5 h-4 w-4 shrink-0" />
               <p className="text-muted-foreground">
-                Evidence blobs are <strong>never</strong> exposed to the AI — the tools return only
-                counts, so raw proof and attachments stay inside OpenCTEM.
+                {t(
+                  'settings.mcp.evidenceNote',
+                  'Evidence files and attachments are never sent to the AI: the tools return only counts.'
+                )}
               </p>
             </div>
           </CardContent>
