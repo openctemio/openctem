@@ -60,6 +60,7 @@ import { cn } from '@/lib/utils'
 import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
 import { AddNotificationDialog } from '@/features/notifications/components/add-notification-dialog'
 import { EditNotificationDialog } from '@/features/notifications/components/edit-notification-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Only a problem (error) is coloured; the other states stay neutral.
 const STATUS_CONFIG: Record<
@@ -151,6 +152,7 @@ function summarizeEventTypes(
 }
 
 export default function NotificationIntegrationsPage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -633,14 +635,18 @@ export default function NotificationIntegrationsPage() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete notification channel"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedIntegration?.name}</strong>? You will
-            no longer receive notifications through this channel.
-          </>
-        }
-        confirmText="Delete"
+        title={t(
+          'confirm.notificationChannel.deleteTitle',
+          'Delete the notification channel "{name}"?',
+          {
+            name: selectedIntegration?.name ?? '',
+          }
+        )}
+        desc={t(
+          'confirm.notificationChannel.deleteDesc',
+          'Notifications stop going to this channel at once, and rules that send to it lose this destination. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={() => void handleDelete()}
       />

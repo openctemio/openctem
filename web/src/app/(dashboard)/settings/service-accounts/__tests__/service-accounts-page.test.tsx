@@ -115,7 +115,11 @@ describe('ServiceAccountsPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete SIEM export' }))
     expect(mockDeleteAccount).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+    // Deleting a service account cuts off its integrations: type its name first.
+    const confirm = screen.getByRole('button', { name: /^delete$/i })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(screen.getByRole('textbox'), 'SIEM export')
+    await userEvent.click(confirm)
     expect(mockDeleteAccount).toHaveBeenCalledWith('sa1')
   })
 

@@ -38,6 +38,7 @@ import {
   PageHeader,
   StackedCell,
 } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 
 const META = (i: Integration, k: string): string => {
   const v = i.metadata?.[k]
@@ -55,6 +56,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function SIEMIntegrationPage() {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useNotificationIntegrationsApi()
   const { trigger: createIntegration, isMutating: creating } = useCreateNotificationIntegrationApi()
 
@@ -318,9 +320,14 @@ export default function SIEMIntegrationPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete SIEM integration"
-        desc={`Stop forwarding events to "${deleteTarget?.name ?? ''}"? This cannot be undone.`}
-        confirmText="Delete"
+        title={t('confirm.siem.deleteTitle', 'Delete the SIEM integration "{name}"?', {
+          name: deleteTarget?.name ?? '',
+        })}
+        desc={t(
+          'confirm.siem.deleteDesc',
+          'Events stop being forwarded to it at once and its settings are deleted. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={deleting}
         handleConfirm={() => void handleDelete()}

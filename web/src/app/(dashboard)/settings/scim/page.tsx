@@ -42,6 +42,7 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { toast } from 'sonner'
 import { usePermissions } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
 
 function isActive(t: ScimToken): boolean {
   return t.status === 'active'
@@ -216,6 +217,8 @@ function TokenActionsCell({
   canRevoke: boolean
 }) {
   const [revokeOpen, setRevokeOpen] = useState(false)
+  // `t` is the token here, so the translator is `tr`.
+  const { t: tr } = useTranslation()
   const { trigger: revoke, isMutating: revoking } = useRevokeScimToken()
 
   async function handleRevoke() {
@@ -238,8 +241,8 @@ function TokenActionsCell({
           allowed={canRevoke}
           reason={SCIM_OWNER_ONLY_REASON}
           onClick={() => setRevokeOpen(true)}
-          title={canRevoke ? 'Revoke' : undefined}
-          aria-label={`Revoke ${t.name}`}
+          title={canRevoke ? tr('confirm.revoke', 'Revoke') : undefined}
+          aria-label={tr('confirm.scimToken.revokeLabel', 'Revoke {name}', { name: t.name })}
           className="text-destructive hover:text-destructive"
         >
           <Ban className="h-4 w-4" />
@@ -248,11 +251,19 @@ function TokenActionsCell({
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
-        title={`Revoke ${t.name}?`}
-        desc="Your identity provider will immediately lose access to SCIM provisioning with this token. This cannot be undone."
-        confirmText={revoking ? 'Revoking...' : 'Revoke'}
+        title={tr('confirm.scimToken.revokeTitle', 'Revoke the SCIM token {name}?', {
+          name: t.name,
+        })}
+        desc={tr(
+          'confirm.scimToken.revokeDesc',
+          'Your identity provider loses access to SCIM provisioning with this token at once. This cannot be undone.'
+        )}
+        confirmText={
+          revoking ? tr('confirm.revoking', 'Revoking…') : tr('confirm.revoke', 'Revoke')
+        }
         destructive
         isLoading={revoking}
+        typeToConfirm={t.name}
         handleConfirm={() => void handleRevoke()}
       />
     </div>

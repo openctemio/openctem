@@ -12,6 +12,7 @@ import { del } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { removeCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * Organization › General › Danger zone: delete the organization.
@@ -26,6 +27,7 @@ import { env } from '@/lib/env'
  * or to onboarding when there is none.
  */
 export function DeleteOrganization() {
+  const { t } = useTranslation()
   const { currentTenant, tenants, switchTeam, loadTenants } = useTenant()
   const { isOwner } = usePermissions()
   const [open, setOpen] = useState(false)
@@ -90,10 +92,17 @@ export function DeleteOrganization() {
         open={open}
         onOpenChange={setOpen}
         destructive
-        title={`Delete ${name}?`}
-        desc="This deletes the organization and all of its data for every member. It cannot be undone."
+        title={t('confirm.org.deleteTitle', 'Delete the organization {name}?', {
+          name: name ?? '',
+        })}
+        desc={t(
+          'confirm.org.deleteDesc',
+          'The organization and all of its data are deleted for every member: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone.'
+        )}
         typeToConfirm={name}
-        confirmText={busy ? 'Deleting…' : 'Delete organization'}
+        confirmText={
+          busy ? t('confirm.deleting', 'Deleting…') : t('confirm.org.delete', 'Delete organization')
+        }
         isLoading={busy}
         handleConfirm={handleDelete}
       />

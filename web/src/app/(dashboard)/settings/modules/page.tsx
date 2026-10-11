@@ -51,6 +51,7 @@ import type {
   ModuleToggle,
   ToggleIssue,
 } from '@/features/organization/api/use-tenant-modules'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Details payload nested under ApiClientError.details when the backend
 // rejects a toggle because of the dependency graph. Shape mirrors
@@ -108,6 +109,7 @@ const PAGE_DESCRIPTION =
   'Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.'
 
 export default function ModuleManagementPage() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id
 
@@ -639,9 +641,13 @@ export default function ModuleManagementPage() {
       <ConfirmDialog
         open={showResetDialog}
         onOpenChange={setShowResetDialog}
-        title="Remove your module changes"
-        desc="This removes every module you turned on or off by hand: every module your plan includes is on again. Your changes cannot be restored."
-        confirmText="Remove changes"
+        title={t('confirm.modules.resetTitle', 'Remove your module changes?')}
+        desc={t(
+          'confirm.modules.resetDesc',
+          'Every module you turned on or off by hand goes back to the plan default: every module your plan includes is on again. Your changes cannot be restored.'
+        )}
+        confirmText={t('confirm.modules.reset', 'Remove changes')}
+        destructive
         isLoading={isResetting}
         handleConfirm={() => void handleReset()}
       />

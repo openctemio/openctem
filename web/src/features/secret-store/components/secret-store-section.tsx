@@ -50,6 +50,7 @@ import {
   isCredentialExpiringSoon,
   formatLastUsed,
 } from '@/lib/api/secret-store-types'
+import { useTranslation } from '@/context/i18n-provider'
 
 const CREDENTIAL_TYPE_ICONS: Record<CredentialType, React.ElementType> = {
   api_key: Key,
@@ -84,6 +85,7 @@ function CredentialStatusBadge({ credential }: { credential: SecretStoreCredenti
 }
 
 export function SecretStoreSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -284,17 +286,17 @@ export function SecretStoreSection() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete credential"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedCredential?.name}</strong>? Template
-            sources using this credential will no longer be able to authenticate. This action cannot
-            be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.credential.deleteTitle', 'Delete the credential {name}?', {
+          name: selectedCredential?.name ?? '',
+        })}
+        desc={t(
+          'confirm.credential.deleteDesc',
+          'Template sources that use it can no longer authenticate. The secret cannot be recovered. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
+        typeToConfirm={selectedCredential?.name}
         handleConfirm={handleDeleteConfirm}
       />
     </>

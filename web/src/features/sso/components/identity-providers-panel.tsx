@@ -37,6 +37,7 @@ import {
   type IdentityProvider,
   type SSOProviderType,
 } from '../types/sso.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface IdentityProvidersPanelProps {
   /** Organization being configured. */
@@ -60,6 +61,7 @@ export function IdentityProvidersPanel({
   canManage,
   onChanged,
 }: IdentityProvidersPanelProps) {
+  const { t } = useTranslation()
   // SSO Identity Providers state
   const { data: identityProviders, mutate: mutateIdPs } = useOrgIdentityProviders(tenantId)
   const { mutate: mutatePending } = usePendingSSOChanges(tenantId)
@@ -453,15 +455,14 @@ export function IdentityProvidersPanel({
       <ConfirmDialog
         open={!!ssoDeleteTarget}
         onOpenChange={(open) => !open && setSsoDeleteTarget(null)}
-        title="Remove Identity Provider"
-        desc={
-          <>
-            Are you sure you want to remove{' '}
-            {ssoDeleteTarget ? getProviderLabel(ssoDeleteTarget.provider) : ''}? Users will no
-            longer be able to sign in using this provider. This action cannot be undone.
-          </>
-        }
-        confirmText="Remove"
+        title={t('confirm.idp.removeTitle', 'Remove the identity provider {name}?', {
+          name: ssoDeleteTarget ? getProviderLabel(ssoDeleteTarget.provider) : '',
+        })}
+        desc={t(
+          'confirm.idp.removeDesc',
+          'People can no longer sign in to this organization with it. Make sure they have another way to sign in first. This cannot be undone.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         handleConfirm={() => void handleDeleteSSO()}
       />
