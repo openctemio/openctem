@@ -281,7 +281,9 @@ All images go to GHCR, are multi-arch (linux/amd64 + linux/arm64), are built on 
 **native** runner per architecture and smoke-tested there (config arch, ELF
 `e_machine`, the binary executes) before anything is pushed, then merged into one
 manifest list per tag, signed with cosign (keyless) and given an SPDX SBOM that
-is attached to the GitHub Release.
+is attached to the GitHub Release, and a signed SLSA build provenance
+(`actions/attest-build-provenance`, stored in the registry next to the image;
+`gh attestation verify oci://<image>:<tag> --owner openctemio`).
 
 | Image | Built from | Contents |
 |-------|-----------|----------|
