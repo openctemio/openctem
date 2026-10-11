@@ -95,6 +95,7 @@ function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
 }
 
 function TemplateSourceBadge({ template }: { template: ScannerTemplate }) {
+  const { t } = useTranslation()
   const isManual = isManuallyUploadedTemplate(template)
   const syncSource = template.sync_source || (isManual ? 'manual' : undefined)
 
@@ -118,7 +119,7 @@ function TemplateSourceBadge({ template }: { template: ScannerTemplate }) {
       </TooltipTrigger>
       <TooltipContent>
         {isManual ? (
-          <p>Uploaded directly and stored in database</p>
+          <p>{t('scans.templates.uploaded', 'Uploaded here')}</p>
         ) : (
           <p>
             Synced from {config.label} source
@@ -532,8 +533,11 @@ export function ScannerTemplatesSection() {
   return (
     <>
       <PageHeader
-        title="Scanner templates"
-        description="Custom Nuclei, Semgrep and Betterleaks templates — uploaded here or synced from template sources, validated and versioned."
+        title={t('scans.templates.title', 'Scanner templates')}
+        description={t(
+          'scans.templates.description',
+          'Custom Nuclei, Semgrep and Betterleaks templates, uploaded here or synced from template sources.'
+        )}
       >
         <Can permission={Permission.ScannerTemplatesWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
