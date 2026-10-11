@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { compareVersions, schemaState, summarizeSensors } from '../lib/operations'
+import {
+  compareVersions,
+  schemaState,
+  sensorTransportView,
+  summarizeSensors,
+} from '../lib/operations'
 import { buildAttention } from '../lib/attention'
 import type { AdminOperations, AdminOverview } from '../types'
 
@@ -114,5 +119,78 @@ describe('attention links platform problems to Operations', () => {
       '/admin/operations',
       '/admin/operations',
     ])
+  })
+})
+
+describe('sensorTransportView', () => {
+  const probeReasons = [
+    'no_public_host',
+    'sensor_ca_unavailable',
+    'listener_failed',
+    'dns_failed',
+    'unreachable',
+    'foreign_certificate',
+    'handshake_failed',
+    'http2_refused',
+  ]
+
+  it('is absent when the API does not report it', () => {
+    expect(sensorTransportView(undefined)).toBeNull()
+  })
+
+  it('has nothing to say while gRPC is offered or the first probe runs', () => {
+    expect(
+      sensorTransportView({ mode: 'auto', grpc: { state: 'advertised', endpoint: 'h:443' } })
+    ).toEqual({ binding: 'grpc' })
+    expect(sensorTransportView({ mode: 'auto', grpc: { state: 'pending' } })).toEqual({
+      binding: 'pending',
+    })
+    expect(
+      sensorTransportView({ mode: 'auto', grpc: { state: 'unavailable', reason: 'probe_pending' } })
+    ).toEqual({ binding: 'pending' })
+  })
+
+  it('maps every probe reason to its own note and keeps the code', () => {
+    for (const reason of probeReasons) {
+      expect(sensorTransportView({ mode: 'auto', grpc: { state: 'unavailable', reason } })).toEqual(
+        { binding: 'https', noteKey: `admin.ops.transport.reason.${reason}`, reason }
+      )
+    }
+  })
+
+  it('falls back to a generic note for an unknown reason', () => {
+    expect(
+      sensorTransportView({ mode: 'auto', grpc: { state: 'unavailable', reason: 'new_reason' } })
+    ).toEqual({
+      binding: 'https',
+      noteKey: 'admin.ops.transport.reason.other',
+      reason: 'new_reason',
+    })
+  })
+
+  it('says protocol v3 is off when the API serves v2 only', () => {
+    expect(
+      sensorTransportView({ mode: 'off', grpc: { state: 'unavailable', reason: 'transport_off' } })
+    ).toEqual({
+      binding: 'off',
+      noteKey: 'admin.ops.transport.reason.transport_off',
+      reason: 'transport_off',
+    })
+  })
+
+  it('has every note in English and Vietnamese', async () => {
+    const en = (await import('@/lib/i18n/dictionaries/en/admin.json')).default as Record<
+      string,
+      string
+    >
+    const vi = (await import('@/lib/i18n/dictionaries/vi/admin.json')).default as Record<
+      string,
+      string
+    >
+    for (const r of [...probeReasons, 'transport_off', 'probe_pending', 'other']) {
+      const key = `admin.ops.transport.reason.${r}`
+      expect(en[key], key).toBeTruthy()
+      expect(vi[key], key).toBeTruthy()
+    }
   })
 })

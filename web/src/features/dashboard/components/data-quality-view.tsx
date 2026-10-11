@@ -44,6 +44,7 @@ import {
   Lock,
   type LucideIcon,
 } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
 // TYPES / CONSTANTS
@@ -172,6 +173,7 @@ function ScorecardSkeleton() {
 // ============================================
 
 export function DataQualityView() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
 
@@ -249,8 +251,11 @@ export function DataQualityView() {
   return (
     <Main>
       <PageHeader
-        title="Data quality"
-        description="Whether the inventory is owned, evidenced and fresh enough to prioritise on — the inputs the rest of the CTEM loop trusts."
+        title={t('insights.dataQuality.title', 'Data quality')}
+        description={t(
+          'insights.dataQuality.description',
+          'Whether the inventory is owned, evidenced and fresh enough to prioritise on.'
+        )}
       />
 
       <div className="mt-5">
