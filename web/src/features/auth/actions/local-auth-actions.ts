@@ -57,6 +57,8 @@ export interface RegisterInput {
   // backend can resolve the target tenant and apply that tenant's
   // email-verification rule (instead of the platform default).
   invitationToken?: string
+  /** Turnstile token when the server requires a CAPTCHA. */
+  captchaToken?: string
 }
 
 export interface TokenResponse {
@@ -287,6 +289,7 @@ export async function registerAction(
           // the URL — backend uses it to apply the inviting tenant's
           // email-verification rule instead of the platform default.
           ...(input.invitationToken ? { invitation_token: input.invitationToken } : {}),
+          ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
         }),
       }
     )
@@ -1231,11 +1234,13 @@ export async function submitAccessRequestAction(input: {
   company: string
   email: string
   note: string
+  captchaToken?: string
 }): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
   try {
+    const { captchaToken, ...rest } = input
     const data = await backendFetch<{ message: string }>(authEndpoints.accessRequests(), {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...rest, ...(captchaToken ? { captcha_token: captchaToken } : {}) }),
     })
     return { success: true, data: null, message: data.message }
   } catch (error) {
