@@ -28,7 +28,11 @@ func TestFindingImportChain_BodyLimitOverridesGlobal(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-	}), findingImportMiddlewares(rl))
+	}), []Middleware{ // the chain registerFindingImportRoutes declares
+		middleware.RequireAll(permission.FindingsWrite, permission.AssetsWrite, permission.AssetsImport),
+		rl.TenantMiddleware(),
+		middleware.BodyLimit(handler.MaxFindingImportBody),
+	})
 	h := middleware.BodyLimit(middleware.DefaultMaxBodySize)(inner) // the global limit
 
 	send := func(size int, perms []string) int {
