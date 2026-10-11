@@ -19,6 +19,7 @@ import {
   ArrowRight,
   GitBranch,
 } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================================
 // Map a scored asset onto the generic path-graph model. Attack-path
@@ -98,15 +99,19 @@ function LoadingSkeleton() {
 // ============================================================
 
 function NoRelationshipData() {
+  const { t } = useTranslation()
   return (
     <EmptyState
       icon={GitBranch}
-      title="No relationship data yet"
-      description="Attack path scoring requires asset relationships. Add relationships between your assets to see which internal assets are reachable from internet-facing entry points."
+      title={t('prioritization.noRelationships.title', 'No relationship data yet')}
+      description={t(
+        'prioritization.attackPaths.noRelationships',
+        'Add relationships between your assets to see which ones internet-facing entry points can reach.'
+      )}
       action={
         <Button size="sm" asChild>
           <Link href="/assets">
-            Go to assets
+            {t('prioritization.goToAssets', 'Go to assets')}
             <ArrowRight className="ms-2 h-4 w-4" />
           </Link>
         </Button>
@@ -120,6 +125,7 @@ function NoRelationshipData() {
 // ============================================================
 
 export default function AttackPathAnalysisPage() {
+  const { t } = useTranslation()
   const { scoring, isLoading } = useAttackPathScoring()
 
   const summary = scoring?.summary
@@ -150,8 +156,11 @@ export default function AttackPathAnalysisPage() {
   return (
     <Main>
       <PageHeader
-        title="Attack paths"
-        description="Assets ranked by how many public entry points reach them — fix the top ones to break the most paths."
+        title={t('prioritization.attackPaths.title', 'Attack paths')}
+        description={t(
+          'prioritization.attackPaths.description',
+          'Assets ranked by how many public entry points reach them.'
+        )}
       />
 
       {isLoading ? (
@@ -198,11 +207,17 @@ export default function AttackPathAnalysisPage() {
                 section heading rather than inside another card. */}
             <section className="space-y-3 lg:col-span-2">
               <div>
-                <h2 className="text-base font-semibold">Assets ranked by attack-path score</h2>
+                <h2 className="text-base font-semibold">
+                  {t(
+                    'prioritization.attackPaths.rankedTitle',
+                    'Assets ranked by attack-path score'
+                  )}
+                </h2>
                 <p className="text-sm text-muted-foreground">
-                  Score = reachable entry points x risk score x criticality weight. Hover to trace a
-                  path; click a node to open the asset&apos;s findings. Fixing the top-ranked assets
-                  breaks the most attack paths.
+                  {t(
+                    'prioritization.attackPaths.rankedHint',
+                    'Score = reachable entry points × risk score × criticality weight. Click a node to open its findings.'
+                  )}
                 </p>
               </div>
               <PathGraph

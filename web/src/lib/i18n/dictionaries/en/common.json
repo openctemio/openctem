@@ -7,5 +7,6 @@
   "common.noData": "No data",
   "common.rowsExported": "Exported {count} rows",
   "common.save": "Save",
-  "common.search": "Search"
+  "common.search": "Search",
+  "common.retry": "Retry"
 }

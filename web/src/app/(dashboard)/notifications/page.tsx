@@ -49,6 +49,7 @@ import {
 } from '@/features/notifications/lib/notification-types'
 import { safeHref } from '@/lib/safe-href'
 import { SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
+import { useTranslation } from '@/context/i18n-provider'
 
 const severityColors: Record<string, string> = { ...SEVERITY_TEXT_COLORS }
 
@@ -165,6 +166,7 @@ function NotificationRow({
 }
 
 export default function NotificationsPage() {
+  const { t } = useTranslation()
   // The list lives in the URL (one list convention): page, severity, read.
   const list = useListParams({
     defaultPageSize: PER_PAGE,
@@ -239,7 +241,7 @@ export default function NotificationsPage() {
   return (
     <Main>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <PageHeader title="Notifications" description="Manage your in-app notifications" />
+        <PageHeader title={t('settings.notifications.title', 'Notifications')} />
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
             <Button variant="outline" size="sm" onClick={handleMarkAllAsRead}>

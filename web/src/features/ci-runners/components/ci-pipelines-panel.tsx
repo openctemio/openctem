@@ -45,6 +45,7 @@ import { GateLabel, PipelineStatusBadge } from './ci-pipeline-cells'
 import { CIPipelineSheet } from './ci-pipeline-sheet'
 import { CICoverageView } from './ci-coverage-view'
 import { CIRunsView } from './ci-runs-view'
+import { useTranslation } from '@/context/i18n-provider'
 
 type RunnerView = 'pipelines' | 'runs' | 'coverage'
 
@@ -130,6 +131,7 @@ export interface CIPipelinesPanelProps {
 }
 
 export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
+  const { t } = useTranslation()
   const [viewParam, setView] = useUrlFilter('view', 'pipelines')
   const view: RunnerView =
     viewParam === 'runs' || viewParam === 'coverage' ? viewParam : 'pipelines'
@@ -271,8 +273,11 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
           </div>
           <EmptyState
             icon={Workflow}
-            title="No CI pipelines yet"
-            description="A CI pipeline shows up here after its first run: add a CI trust configuration, then run the sensor in a GitHub Actions or GitLab CI job. It proves who it is with the job's OIDC token, so no secret is stored in CI."
+            title={t('scans.ci.noPipelinesTitle', 'No CI pipelines yet')}
+            description={t(
+              'scans.ci.noPipelines',
+              'A pipeline appears after its first run. Add a CI trust configuration, then run the sensor in a CI job.'
+            )}
             action={
               <Button asChild size="sm">
                 <Link href="/ci-cd?tab=setup">Set up CI trust</Link>
