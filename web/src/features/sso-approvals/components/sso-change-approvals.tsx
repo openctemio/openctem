@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import { decideSSOChange, useSSOChanges, type SSOChange } from '../api/use-sso-changes'
+import { useTranslation } from '@/context/i18n-provider'
 
 const kindLabel: Record<SSOChange['kind'], string> = {
   saml_config: 'SAML configuration',
@@ -20,6 +21,7 @@ const kindLabel: Record<SSOChange['kind'], string> = {
 }
 
 function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () => void }) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const [confirm, setConfirm] = useState<'approve' | 'reject' | null>(null)
   const [busy, setBusy] = useState(false)
@@ -81,13 +83,27 @@ function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () =>
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(o) => !o && setConfirm(null)}
-        title={confirm === 'approve' ? 'Apply this SSO change?' : 'Reject this SSO change?'}
+        title={
+          confirm === 'approve'
+            ? t('confirm.ssoChange.approveTitle', 'Apply this SSO change?')
+            : t('confirm.ssoChange.rejectTitle', 'Reject this SSO change?')
+        }
         desc={
           confirm === 'approve'
-            ? 'It changes who can sign in to this organization. Approve only a change you expected and whose identity provider you recognize.'
-            : 'The proposed change is discarded; the current sign-in configuration stays as it is.'
+            ? t(
+                'confirm.ssoChange.approveDesc',
+                'It changes who can sign in to this organization. Approve only a change you expected and whose identity provider you recognize.'
+              )
+            : t(
+                'confirm.ssoChange.rejectDesc',
+                'The proposed change is discarded; the current sign-in configuration stays as it is.'
+              )
         }
-        confirmText={confirm === 'approve' ? 'Approve' : 'Reject'}
+        confirmText={
+          confirm === 'approve'
+            ? t('confirm.ssoChange.approve', 'Approve')
+            : t('confirm.reject', 'Reject')
+        }
         destructive={confirm === 'reject'}
         isLoading={busy}
         handleConfirm={() => confirm && void decide(confirm)}

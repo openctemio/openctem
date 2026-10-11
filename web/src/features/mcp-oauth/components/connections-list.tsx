@@ -4,16 +4,6 @@ import { useState } from 'react'
 import { Bot, Loader2, ShieldQuestion, Unplug } from 'lucide-react'
 import { toast } from 'sonner'
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -22,6 +12,8 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
 import { type McpConnection, scopeLabel } from '../api/connections'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ConnectionsListProps {
   connections: McpConnection[] | undefined
@@ -47,6 +39,7 @@ export function ConnectionsList({
   emptyTitle,
   emptyDescription,
 }: ConnectionsListProps) {
+  const { t } = useTranslation()
   const [pending, setPending] = useState<McpConnection | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -127,32 +120,26 @@ export function ConnectionsList({
         ))}
       </ul>
 
-      <AlertDialog
+      <ConfirmDialog
         open={pending !== null}
         onOpenChange={(open) => !open && !busy && setPending(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect {pending?.client_name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              It loses access at once. To use it again, connect it again from the application.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
-                void confirm()
-              }}
-              disabled={busy}
-            >
-              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-              Disconnect
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        destructive
+        title={t('confirm.mcpConnection.disconnectTitle', 'Disconnect {name}?', {
+          name: pending?.client_name ?? '',
+        })}
+        desc={t(
+          'confirm.mcpConnection.disconnectDesc',
+          'It loses access at once. To use it again, connect it again from the application.'
+        )}
+        confirmText={
+          <>
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
+            {t('confirm.mcpConnection.disconnect', 'Disconnect')}
+          </>
+        }
+        isLoading={busy}
+        handleConfirm={() => confirm()}
+      />
     </>
   )
 }
