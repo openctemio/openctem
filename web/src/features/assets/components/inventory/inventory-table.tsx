@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
+import { useTranslation } from '@/context/i18n-provider'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
 import { rowActionsFor } from '../../lib/type-actions'
@@ -135,6 +136,7 @@ export function InventoryTable({
   emptyDescription,
 }: InventoryTableProps) {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canWriteAssets = can(Permission.AssetsWrite)
   const canDeleteAssets = can(Permission.AssetsDelete)
@@ -365,7 +367,9 @@ export function InventoryTable({
             {
               id: 'scope',
               enableSorting: false,
-              header: ({ column }) => <DataTableColumnHeader column={column} title="Scope" />,
+              header: ({ column }) => (
+                <DataTableColumnHeader column={column} title={t('scope.check.column', 'Scope')} />
+              ),
               cell: ({ row }) => (
                 <ScopeCheckBadge
                   result={scopeResultFor(row.original.name)}
@@ -446,6 +450,7 @@ export function InventoryTable({
     scopeChecking,
     onEditAsset,
     onDeleteAsset,
+    t,
   ])
 
   return (
