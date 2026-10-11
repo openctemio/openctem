@@ -806,12 +806,12 @@ func (r *CIRunRepository) BusinessUnitExists(ctx context.Context, tenantID, id s
 
 // ------------------------------------------------------------ decoration ---
 
-// MarkDecorationPending queues a GitHub run's verdict for posting to the
-// code host (RFC-077 phase C). Other providers have nothing to post yet.
+// MarkDecorationPending queues a GitHub or GitLab run's verdict for posting
+// to the code host (RFC-077 phase C). Other providers have nothing to post.
 func (r *CIRunRepository) MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET decoration_state = 'pending', decoration_attempts = 0,
 			decoration_detail = '', decoration_updated_at = NOW()
-		WHERE tenant_id = $1 AND id = $2 AND provider = 'github' AND status = 'evaluated'`,
+		WHERE tenant_id = $1 AND id = $2 AND provider IN ('github', 'gitlab') AND status = 'evaluated'`,
 		tenantID.String(), runID.String())
 	return err
 }

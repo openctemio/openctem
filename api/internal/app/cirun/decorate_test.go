@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
+	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -157,5 +159,75 @@ func TestWarnModeIsNeutral(t *testing.T) {
 	v := &Verdict{GateVerdict: cirun.GateVerdict{Verdict: cirun.VerdictPass, WouldFail: true}}
 	if conclusion(v) != "neutral" {
 		t.Fatal(conclusion(v))
+	}
+}
+
+type fakeGitLabAPI struct {
+	mrSHA    string
+	statuses []string
+	notes    []string
+}
+
+func (f *fakeGitLabAPI) Token(context.Context) (*gitlabapi.TokenInfo, error)     { return nil, nil }
+func (f *fakeGitLabAPI) Group(context.Context, string) (*gitlabapi.Group, error) { return nil, nil }
+func (f *fakeGitLabAPI) GroupMember(context.Context, int64, int64) (bool, error) { return true, nil }
+func (f *fakeGitLabAPI) MergeRequest(context.Context, string, int) (*gitlabapi.MergeRequest, error) {
+	return &gitlabapi.MergeRequest{SHA: f.mrSHA}, nil
+}
+func (f *fakeGitLabAPI) SetCommitStatus(_ context.Context, project, sha, state, name, _, _ string) error {
+	f.statuses = append(f.statuses, project+"@"+sha+":"+state+":"+name)
+	return nil
+}
+func (f *fakeGitLabAPI) UpsertMergeRequestNote(_ context.Context, _ string, _ int, authorID int64, marker, body string) error {
+	f.notes = append(f.notes, marker)
+	return nil
+}
+
+type fakeGitLabClients struct {
+	tenant shared.ID
+	api    *fakeGitLabAPI
+}
+
+func (f fakeGitLabClients) GitLabClientFor(_ context.Context, tid shared.ID, host, project string) (scmappsvc.GitLabAPI, int64, error) {
+	if tid != f.tenant || host != "gitlab.example.com" || !strings.HasPrefix(project, "acme/") {
+		return nil, 0, scmapp.ErrNotFound
+	}
+	return f.api, 9, nil
+}
+
+func TestDecorateGitLab(t *testing.T) {
+	tenant := shared.NewID()
+	run := cirun.Run{ID: shared.NewID(), TenantID: tenant, Provider: cirun.ProviderGitLab, Repository: "gitlab.example.com/acme/api",
+		PullRequest: "3", CommitSHA: "abc", CommitVerified: true, VerdictDetail: failingVerdict(t)}
+	ctx := context.Background()
+	api := &fakeGitLabAPI{mrSHA: "abc"}
+	job := NewDecorationJob(nil, fakeInstalls{}, nil, "https://c", nil)
+	job.SetGitLab(fakeGitLabClients{tenant: tenant, api: api})
+	if st, d := job.decorate(ctx, &run); st != cirun.DecorationPosted || len(api.statuses) != 1 ||
+		api.statuses[0] != "acme/api@abc:failed:"+CheckName || len(api.notes) != 1 {
+		t.Fatalf("posted: %s %s %v %v", st, d, api.statuses, api.notes)
+	}
+	// The merge request moved on: nothing.
+	api2 := &fakeGitLabAPI{mrSHA: "def"}
+	job.SetGitLab(fakeGitLabClients{tenant: tenant, api: api2})
+	if st, _ := job.decorate(ctx, &run); st != cirun.DecorationSkipped || len(api2.statuses) != 0 {
+		t.Fatalf("stale merge request: %s", st)
+	}
+	// No connection for the group, or another tenant: skipped.
+	other := run
+	other.Repository = "gitlab.example.com/beta/api"
+	if st, _ := job.decorate(ctx, &other); st != cirun.DecorationSkipped {
+		t.Fatalf("other group: %s", st)
+	}
+	other = run
+	other.TenantID = shared.NewID()
+	if st, _ := job.decorate(ctx, &other); st != cirun.DecorationSkipped {
+		t.Fatalf("other tenant: %s", st)
+	}
+	// A GitHub run without a GitHub App is skipped, not failed.
+	gh := run
+	gh.Provider, gh.Repository = cirun.ProviderGitHub, "github.com/acme/api"
+	if st, _ := job.decorate(ctx, &gh); st != cirun.DecorationSkipped {
+		t.Fatalf("github without app: %s", st)
 	}
 }
