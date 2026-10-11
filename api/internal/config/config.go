@@ -1348,11 +1348,12 @@ func Load() (*Config, error) {
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
 			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
-			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),                          // Empty = current host
-			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"),                     // "strict", "lax", or "none"
-			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
-			RefreshTokenCookieName:    getEnv("AUTH_REFRESH_TOKEN_COOKIE_NAME", "refresh_token"), // Cookie name for refresh token
-			TenantCookieName:          getEnv("AUTH_TENANT_COOKIE_NAME", "app_tenant"),           // Cookie name for tenant
+			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),      // Empty = current host
+			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"), // "strict", "lax", or "none"
+			// Fixed names: the web console and the gateway use the same ones.
+			AccessTokenCookieName:  "auth_token",
+			RefreshTokenCookieName: "refresh_token",
+			TenantCookieName:       "app_tenant",
 			EntraSSO: EntraSSOConfig{
 				Enabled:        getEnvBool("SSO_ENTRA_ENABLED", false),
 				ClientID:       getEnv("SSO_ENTRA_CLIENT_ID", ""),
@@ -2214,6 +2215,11 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	// Cookie names are fixed: the API, the web console and the gateway must
+	// agree on them.
+	{"AUTH_ACCESS_TOKEN_COOKIE_NAME", "unset it; the session cookie is always auth_token"},
+	{"AUTH_REFRESH_TOKEN_COOKIE_NAME", "unset it; the refresh cookie is always refresh_token"},
+	{"AUTH_TENANT_COOKIE_NAME", "unset it; the organization cookie is always app_tenant"},
 }
 
 // rejectRetiredEnv fails when any retired or removed name is set, naming
