@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated) |
+| Status | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated; revised by the owner 2026-10-11: no enable flag, bindings chosen automatically, T15) |
 | Authors | Platform team |
 | Related | RFC-026 (v2 results), RFC-029 (v2 control plane), RFC-030 (leases), RFC-032 (enrollment, identity), RFC-035 (doorbell), RFC-040 (mutual distrust), RFC-052 (pairing, key-bound sensors), RFC-055 (tool contract) |
 | Code | `api/proto/openctem/sensor/v3/sensor.proto`, `api/pkg/sensorproto/v3` (generated), `api/internal/infra/sensortransport` (server), sdk-go `pkg/client` (client) |
@@ -29,8 +29,10 @@ Protocol v3 keeps that resource model and adds a second, stronger binding:
   heartbeat. The database lease stays the only source of truth.
 
 Both bindings are served by the same handlers, which run every call through
-the v2 handler chain. v2 stays fully supported; v3 is off until
-`SENSOR_TRANSPORT_V3_ENABLED=true`.
+the v2 handler chain. v2 stays fully supported. No operator switch turns a
+binding on: the HTTPS binding is always served, and the gRPC binding is
+advertised only while the platform's own probe reaches it (T15);
+`SENSOR_TRANSPORT_V3=off` is the emergency switch back to v2.
 
 ## 2. Motivation
 
@@ -59,7 +61,7 @@ mTLS the preferred path where the network allows it.
 | T2 | v3 binds the v2 resource model to RPCs: one RPC per v2 resource. The envelope is typed (ids, segment numbers, lease epochs, encodings, digests, entity tags, transport); documents whose schema another specification owns (heartbeat, commands, CTIS reports, manifest, config report, suppressions) travel as their JSON bytes, unchanged. The server serves each RPC by running it through the v2 handler chain in-process, so validation, limits, services and side effects are the same code, and one conformance suite covers both protocols. |
 | T3 | The control channel is a server stream (`Subscribe`) plus unary calls, on both bindings. A bidirectional stream does not work over HTTP/1.1, which the fallback must support; with server streaming both bindings have the same semantics. The stream carries the doorbell, never a job; jobs are claimed with `ClaimCommands`. |
 | T4 | Uploads are unary and resumable: `PutResult` sends a whole report or one segment, idempotent by report id + segment + Content-Digest (RFC-026); `GetResultStatus` tells what is missing after a disconnect. Logs are batched unary calls. Client streaming would not work over HTTP/1.1 and would add nothing to the exactly-once guarantee the segments already give. |
-| T5 | Two bindings, one handler: gRPC on the mTLS listener (`SENSOR_MTLS_LISTEN_ADDR`, default `:8443`, paths at the root); Connect (and gRPC, gRPC-Web) under `/api/v3/sensor/` on the API's normal listener, behind the RFC 9421 authenticator. Both are mounted only with `SENSOR_TRANSPORT_V3_ENABLED=true`. |
+| T5 | Two bindings, one handler: gRPC on the mTLS listener (`SENSOR_MTLS_LISTEN_ADDR`, default `:8443`, paths at the root); Connect (and gRPC, gRPC-Web) under `/api/v3/sensor/` on the API's normal listener, behind the RFC 9421 authenticator. Both are mounted unless `SENSOR_TRANSPORT_V3=off`. |
 | T6 | v3 requires a key-bound sensor (RFC-052). A bearer key is refused on v3; such sensors stay on v2 until they pair. |
 | T7 | The client certificate certifies the sensor's registered Ed25519 key. `IssueCertificate` takes no CSR: the caller proved possession by signing the request (HTTPS) or in the handshake (gRPC). Subject CN = sensor id, URI SAN `spiffe://openctem/tenant/<tenant id>/sensor/<sensor id>`, extended key usage clientAuth, lifetime `SENSOR_MTLS_CERT_TTL` (default 7 days, 1 hour to 30 days). The sensor renews at two thirds of the lifetime. Issuance is rate-limited per sensor and recorded on the sensor's timeline. |
 | T8 | Revocation needs no CRL: every handshake and every call resolves the certificate's key through the sensor's active keys and status (the same lookup as a signed v2 request) and checks that tenant and sensor in the certificate match the key's row. Results are cached at most 5 seconds. Streams re-check every 30 seconds and at once when the sensor's status changes. |
@@ -68,6 +70,7 @@ mTLS the preferred path where the network allows it.
 | T11 | No message names a tenant. The tenant and the sensor are those of the authenticated identity; a command or report id of another sensor or tenant answers NOT_FOUND. A tenant-less (platform) sensor is refused on v3 as on v2. |
 | T12 | Push fan-out: a hook in the command repository (a command becomes pending, a held one is cancelled, bulk re-queues) and the sensor status changes publish a wake (`{tenant_id, sensor_id?}`) on Redis channel `sensor:v3:wake`; every replica re-evaluates the doorbell for its streams of that tenant (jittered up to 250 ms). Without Redis each replica wakes its own streams and re-evaluates every 30 seconds. |
 | T13 | Fallback in the SDK: `SENSOR_TRANSPORT=auto|grpc|https|v2`. `auto` tries gRPC, then on a transport-level failure (dial or handshake failure, no HTTP/2, a stream reset by an intermediary, Unimplemented) the HTTPS binding, then v2 when the platform has no v3. It never falls back on an identity error (UNAUTHENTICATED, PERMISSION_DENIED from the platform). gRPC is probed again every 30 minutes. The heartbeat reports the binding and the fallback reason; the platform stores the binding it served and shows both per sensor. |
+| T15 | Automatic selection (owner revision 2026-10-11). The HTTPS binding is always served. The gRPC listener starts once the sensor CA loads and a public host is known (`SENSOR_PUBLIC_HOST`, else `sensors.<host>:<port>` of the platform URL when its host is a DNS name). A self-probe dials that host every minute (30 s while failing), TLS 1.3 with ALPN `h2`, verifying the server certificate against the sensor CA only; hello names the gRPC endpoint only while the probe passes. The state and reason are shown (`GET /api/v1/sensors/transport`, metrics, a log line per change). `SENSOR_TRANSPORT_V3=auto|off` replaces the enable flag; `off` sends every sensor back to v2. |
 | T14 | Same port 443 by SNI: the gateway passes TLS for `SENSOR_PUBLIC_HOST` through at layer 4 to the API's mTLS listener (with PROXY protocol v2, accepted only from `SENSOR_MTLS_TRUSTED_PROXIES`) and terminates every other host as today. A separate port is a configuration option. |
 
 ## 4. The service
@@ -131,6 +134,17 @@ never a job: the heartbeat still carries the doorbell.
 
 ## 7. Fallback
 
+The platform side decides first what it offers: the gRPC endpoint is in
+hello only while the self-probe (T15) reaches the mTLS listener through the
+public host. Only that listener holds a certificate from the sensor CA, so a
+gateway that terminates TLS for the name (no passthrough), a closed port, a
+name that does not resolve or a path without HTTP/2 fail the probe, with the
+reason `foreign_certificate`, `unreachable`, `dns_failed`, `handshake_failed`
+or `http2_refused`; no public host gives `no_public_host`, no CA
+`sensor_ca_unavailable`. Sensors are then offered the HTTPS binding only,
+and no sensor is sent to an endpoint that cannot work. The sensor side then
+falls back as follows when its own path differs from the platform's:
+
 | Situation | Sensor does | Reported reason |
 |---|---|---|
 | gRPC host unreachable, handshake fails, ALPN without h2, stream reset by a proxy, UNIMPLEMENTED | HTTPS binding; retries gRPC every 30 min | `grpc_unreachable`, `handshake_failed`, `http2_refused`, `stream_reset`, `grpc_unimplemented` |
@@ -162,8 +176,8 @@ by the v2 code it reuses.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SENSOR_TRANSPORT_V3_ENABLED` | `false` | Mount v3 (both bindings) |
-| `SENSOR_PUBLIC_HOST` | — | Host name sensors use for gRPC (e.g. `sensors.example.com[:443]`); no gRPC binding without it |
+| `SENSOR_TRANSPORT_V3` | `auto` | `auto`: HTTPS binding always, gRPC binding while its self-probe passes; `off`: no v3, every sensor on v2 (emergency switch). The former `SENSOR_TRANSPORT_V3_ENABLED` is refused at startup |
+| `SENSOR_PUBLIC_HOST` | `sensors.<platform host>:<port>` when the platform URL's host is a DNS name, else none | Host sensors use for gRPC (e.g. `sensors.example.com[:443]`, or `192.0.2.10:8444` for a port of its own); no gRPC binding without one |
 | `SENSOR_MTLS_LISTEN_ADDR` | `:8443` | mTLS listener |
 | `SENSOR_MTLS_CA_CERT_FILE` / `SENSOR_MTLS_CA_KEY_FILE` | — | Sensor CA (PEM) |
 | `SENSOR_MTLS_CA_DIR` | `data/sensor-ca` (in the image: `/app/data/sensor-ca`, on the `api-data` volume) | Where the CA is created when the files are unset |
@@ -183,10 +197,11 @@ by the v2 code it reuses.
 | 7 | sensor | adopt; `SENSOR_TRANSPORT`; end-to-end on a scratch stack |
 | 8 | helm-charts, docs | passthrough values, sensor host, upgrade notes |
 
-Upgrade: nothing changes until the flag is set. Turning it on needs a DNS
-name for `SENSOR_PUBLIC_HOST` pointing at the gateway; sensors pick v3 up on
-their next hello. Turning it off sends every sensor back to v2 at its next
-call.
+Upgrade: key-bound sensors move to the HTTPS binding at their next hello
+with no configuration. The gRPC binding needs a path to the mTLS listener: a
+DNS name routed by SNI through the passthrough gateway (§T14), or a port of
+its own; once the self-probe passes, sensors move to it at their next hello.
+`SENSOR_TRANSPORT_V3=off` sends every sensor back to v2 at its next call.
 
 ## 11. Alternatives considered
 
