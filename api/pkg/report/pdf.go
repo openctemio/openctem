@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/go-pdf/fpdf"
+
+	"github.com/openctemio/openctem/api/pkg/report/markdown"
 )
 
 // translator maps UTF-8 text to the cp1252 charset of the core PDF fonts.
@@ -73,7 +75,7 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 	}
 	if strings.TrimSpace(input.Campaign.Description) != "" {
 		pdf.Ln(2)
-		bodyText(pdf, tr, input.Campaign.Description)
+		writeMarkdown(pdf, tr, input.Campaign.Description, input.Images)
 	}
 
 	// Team.
@@ -105,7 +107,7 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 			bodyText(pdf, tr, "No findings recorded for this campaign.")
 		}
 		for i, f := range input.Findings {
-			renderFinding(pdf, tr, i+1, f, input.IncludePOC)
+			renderFinding(pdf, tr, i+1, f, input.IncludePOC, input.Images)
 		}
 	} else {
 		// Executive summary: compact findings listing, no per-finding detail.
@@ -204,7 +206,7 @@ func statsTable(pdf *fpdf.Fpdf, tr translator, s StatsData) {
 		s.Total, s.Progress, s.AvgCVSS, s.MaxCVSS)), "", "L", false)
 }
 
-func renderFinding(pdf *fpdf.Fpdf, tr translator, n int, f FindingData, includePOC bool) {
+func renderFinding(pdf *fpdf.Fpdf, tr translator, n int, f FindingData, includePOC bool, images map[string]markdown.Image) {
 	pdf.Ln(3)
 
 	// Severity badge + title.
@@ -248,7 +250,7 @@ func renderFinding(pdf *fpdf.Fpdf, tr translator, n int, f FindingData, includeP
 		pdf.MultiCell(0, 5, tr(strings.Join(meta, "   |   ")), "", "L", false)
 	}
 
-	findingField(pdf, tr, "Description", f.Description)
+	markdownField(pdf, tr, "Description", f.Description, images)
 	if len(f.Steps) > 0 {
 		pdf.SetFont("Helvetica", "B", 10)
 		pdf.SetTextColor(80, 80, 80)
@@ -257,12 +259,12 @@ func renderFinding(pdf *fpdf.Fpdf, tr translator, n int, f FindingData, includeP
 		pdf.SetTextColor(40, 40, 40)
 		for i, step := range f.Steps {
 			pdf.CellFormat(8, 5, tr(fmt.Sprintf("%d.", i+1)), "", 0, "L", false, 0, "")
-			pdf.MultiCell(0, 5, tr(step), "", "L", false)
+			writeMarkdown(pdf, tr, step, images)
 		}
 	}
-	findingField(pdf, tr, "Business impact", f.Impact)
-	findingField(pdf, tr, "Technical impact", f.TechImpact)
-	findingField(pdf, tr, "Remediation", f.Remediation)
+	markdownField(pdf, tr, "Business impact", f.Impact, images)
+	markdownField(pdf, tr, "Technical impact", f.TechImpact, images)
+	markdownField(pdf, tr, "Remediation", f.Remediation, images)
 	if includePOC {
 		findingField(pdf, tr, "Proof of concept", f.POC)
 	}
