@@ -454,11 +454,6 @@ func registerPlatformScanningRoutes(
 	}, tenantMiddlewares...)
 }
 
-// F-1: wire HMAC verification around the Jira webhook. The tenant query
-// param remains for routing, but the middleware now requires a valid
-// HMAC-SHA256 of the body signed with JIRA_WEBHOOK_SECRET before the
-// handler runs — preventing cross-tenant spoofing by external callers.
-
 // JiraWebhookSecretResolver returns the candidate HMAC secrets for a tenant's
 // inbound Jira webhooks (one per configured Jira integration). Implemented by
 // the integration service.
@@ -470,21 +465,16 @@ type JiraWebhookSecretResolver interface {
 // These endpoints are NOT protected by JWT — they are called by external services (e.g. Jira).
 // Tenant routing is done via a ?tenant= query parameter that each external service configures.
 //
-// Each request is verified with HMAC-SHA256 over the raw body (middleware.VerifyHMACMulti).
-// The accepted secrets are, in order:
-//   - the requesting tenant's own per-integration webhook secrets (resolved via
-//     resolver using the ?tenant= param) — this is what prevents cross-tenant
-//     spoofing, since a tenant only ever holds its own secrets;
-//   - the platform-wide jiraSecret as a backward-compatible fallback for
-//     deployments that have not yet configured per-tenant secrets.
-//
-// If neither resolves to anything the middleware fails closed (rejects every
-// request), so the endpoint is never reachable without explicit configuration.
+// Each request is verified with HMAC-SHA256 over the raw body
+// (middleware.VerifyHMACMulti) against the requesting organization's own
+// per-integration webhook secrets only, resolved from ?tenant=. An
+// organization only ever holds its own secrets, so one organization cannot
+// sign a delivery for another. There is no platform-wide secret. With no
+// secret for the named organization the middleware rejects the request.
 func registerIncomingWebhookRoutes(
 	router Router,
 	jiraHandler *handler.JiraWebhookHandler,
 	resolver JiraWebhookSecretResolver,
-	jiraSecret string,
 	log *logger.Logger,
 ) {
 	if jiraHandler == nil {
@@ -493,26 +483,20 @@ func registerIncomingWebhookRoutes(
 	hmacMW := middleware.VerifyHMACMulti(
 		"X-OpenCTEM-Signature",
 		func(r *http.Request) ([]string, bool) {
-			secrets := make([]string, 0, 2)
-
-			// Per-tenant secrets for the tenant named in ?tenant=. Failures to
-			// resolve (bad tenant id, lookup error) simply contribute no
+			// Failures to resolve (bad tenant id, lookup error) contribute no
 			// candidates — they never widen acceptance to another tenant.
-			if resolver != nil {
-				if tid, err := shared.IDFromString(r.URL.Query().Get("tenant")); err == nil {
-					if tenantSecrets, err := resolver.ListJiraWebhookSecrets(r.Context(), tid); err == nil {
-						secrets = append(secrets, tenantSecrets...)
-					} else {
-						log.Warn("failed to resolve tenant Jira webhook secrets", "error", err)
-					}
-				}
+			if resolver == nil {
+				return nil, false
 			}
-
-			// Backward-compatible platform fallback.
-			if jiraSecret != "" {
-				secrets = append(secrets, jiraSecret)
+			tid, err := shared.IDFromString(r.URL.Query().Get("tenant"))
+			if err != nil {
+				return nil, false
 			}
-
+			secrets, err := resolver.ListJiraWebhookSecrets(r.Context(), tid)
+			if err != nil {
+				log.Warn("failed to resolve tenant Jira webhook secrets", "error", err)
+				return nil, false
+			}
 			return secrets, len(secrets) > 0
 		},
 		log,

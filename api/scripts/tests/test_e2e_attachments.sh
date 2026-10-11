@@ -550,43 +550,12 @@ req DELETE "/api/v1/attachments/${ATT_ID}" "" ""
 assert_status "8.5 Unauthenticated delete → 401" 401
 
 # =============================================================================
-# 9. META ENDPOINT
+# 9. META ENDPOINT (removed: GET /attachments lists the metadata)
 # =============================================================================
 h "9. META ENDPOINT"
 
-# ── 9.1 GET /attachments/{id}/meta → 200 with expected fields ─────────────────
 req GET "/api/v1/attachments/${ATT_ID}/meta" "" "$OWNER_AUTH"
-assert_status "9.1 GET /attachments/{id}/meta → 200" 200
-
-META_ID=$(jv '.id')
-META_CT=$(jv '.content_type')
-META_CTX_TYPE=$(jv '.context_type')
-META_CTX_ID=$(jv '.context_id')
-
-if [ "$META_ID" = "$ATT_ID" ]; then
-  pass "9.2 Meta returns correct id"
-else
-  fail "9.2 Meta returns correct id" "Expected $ATT_ID, got $META_ID"
-fi
-if [ "$META_CT" = "image/png" ]; then
-  pass "9.3 Meta returns correct content_type (image/png)"
-else
-  fail "9.3 Meta returns correct content_type" "Expected image/png, got $META_CT"
-fi
-if [ "$META_CTX_TYPE" = "finding" ]; then
-  pass "9.4 Meta returns correct context_type (finding)"
-else
-  fail "9.4 Meta returns correct context_type" "Expected finding, got $META_CTX_TYPE"
-fi
-if [ "$META_CTX_ID" = "$FINDING_ID" ]; then
-  pass "9.5 Meta returns correct context_id"
-else
-  fail "9.5 Meta returns correct context_id" "Expected $FINDING_ID, got $META_CTX_ID"
-fi
-
-# ── 9.2 GET /attachments/{id}/meta for non-existent → 404 ────────────────────
-req GET "/api/v1/attachments/${FAKE_ID}/meta" "" "$OWNER_AUTH"
-assert_status "9.6 Meta for non-existent id → 404" 404
+assert_status "9.1 GET /attachments/{id}/meta is gone → 404" 404
 
 # =============================================================================
 # CLEANUP
