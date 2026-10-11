@@ -32,11 +32,11 @@ type pendingStore interface {
 // next run takes the rest.
 const settleBatch = 100
 
-// SettleLegacyPending puts into effect the pending scope entries and
+// ActivateLeftoverPending puts into effect the pending scope entries and
 // exclusions of every organization whose scan approval mode no longer
 // requires approvals for them. Idempotent; one tenant's failure is logged
 // and does not stop the others. It returns the rows put into effect.
-func (s *Service) SettleLegacyPending(ctx context.Context) (int, error) {
+func (s *Service) ActivateLeftoverPending(ctx context.Context) (int, error) {
 	store, ok := s.targetRepo.(pendingStore)
 	if !ok {
 		return 0, nil

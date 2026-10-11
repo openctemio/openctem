@@ -148,7 +148,7 @@ func TestScopeDuplicate_ActivatePendingFollowsMode(t *testing.T) {
 	}
 }
 
-func TestScopeDuplicate_SettleLegacyPending(t *testing.T) {
+func TestScopeDuplicate_ActivateLeftoverPending(t *testing.T) {
 	strict, off := shared.NewID(), shared.NewID()
 	modes := modeByTenant{}
 	svc, tr, er := dupService(t, modes)
@@ -169,7 +169,7 @@ func TestScopeDuplicate_SettleLegacyPending(t *testing.T) {
 	oe, ox := mk(off, "*.off.example")
 	modes[off] = scangov.ModeOff // the organization left Strict
 
-	n, err := svc.SettleLegacyPending(ctx)
+	n, err := svc.ActivateLeftoverPending(ctx)
 	if err != nil || n != 2 {
 		t.Fatalf("settled %d (%v), want 2", n, err)
 	}
@@ -182,7 +182,7 @@ func TestScopeDuplicate_SettleLegacyPending(t *testing.T) {
 	if !tr.targets[se.ID().String()].IsPending() || !er.exclusions[sx.ID().String()].IsPending() {
 		t.Fatal("a Strict organization's pending rows were put into effect")
 	}
-	if n, err := svc.SettleLegacyPending(ctx); err != nil || n != 0 {
+	if n, err := svc.ActivateLeftoverPending(ctx); err != nil || n != 0 {
 		t.Fatalf("second run settled %d (%v), want 0", n, err)
 	}
 }

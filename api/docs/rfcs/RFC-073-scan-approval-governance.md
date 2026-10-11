@@ -229,7 +229,7 @@ Left-over pending rows (amended 2026-10-11, owner decision: approvals of
 scope changes are removed outside Strict). An entry or exclusion still
 pending in an organization whose mode is Off or On (created before this
 RFC, or before the organization left Strict) is put into effect by the
-`scope-pending-settle` controller (hourly, `scope.Service.SettleLegacyPending`):
+`scope-pending-settle` controller (hourly, `scope.Service.ActivateLeftoverPending`):
 one row at a time through the ledger hook of §7 (`commitEntry` /
 `commitExclusion`, so the signer accepts each widening before it is saved,
 which a SQL migration could not do), audited as a system decision
