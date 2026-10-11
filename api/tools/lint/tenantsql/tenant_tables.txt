@@ -148,6 +148,7 @@ scans
 scim_group_role_mappings
 scim_groups
 scim_tokens
+scm_app_installations scm_gitlab_connections
 scope_exclusions
 scope_snapshots
 scope_target_approvals
