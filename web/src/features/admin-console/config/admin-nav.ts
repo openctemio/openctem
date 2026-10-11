@@ -11,6 +11,7 @@ import {
   Mail,
   Megaphone,
   Radar,
+  Scale,
   Package,
   ShieldCheck,
   UserCog,
@@ -151,6 +152,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/email',
         icon: Mail,
         keywords: ['smtp', 'mail', 'invitations', 'notifications', 'sender'],
+      },
+      {
+        title: 'Legal',
+        i18nKey: 'admin.nav.legal',
+        url: '/admin/system/legal',
+        icon: Scale,
+        keywords: ['terms', 'privacy', 'security.txt', 'contact', 'policy'],
       },
       {
         title: 'Scan approval',
