@@ -29,7 +29,7 @@ func registerAssetRoutes(
 	// Asset routes - tenant from JWT token
 	router.Group("/api/v1/assets", func(r Router) {
 		// Stats and tags endpoints (must be before /{id} to avoid matching)
-		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		r.GET("/facets", h.GetFacets, middleware.Require(permission.AssetsRead))
 		r.GET("/overview", h.GetInventoryOverview, middleware.Require(permission.AssetsRead))
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
@@ -354,13 +354,13 @@ func registerAttackSurfaceRoutes(
 
 	// Attack Surface routes
 	router.Group("/api/v1/attack-surface", func(r Router) {
-		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		// Attack path scoring — BFS reachability analysis from public entry points.
 		// Returns top assets ranked by composite path score (reachability × risk × criticality).
-		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead))
+		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		// Exposure chains — concrete shortest paths from public entry points to
 		// assets carrying KEV/critical findings, ranked by urgency.
-		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead))
+		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 	}, tenantMiddlewares...)
 }
 
