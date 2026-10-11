@@ -351,7 +351,6 @@ POST /api/v1/template-sources/{}/sync
 POST /api/v1/tenants
 POST /api/v1/tenants/{}/invitations
 POST /api/v1/tenants/{}/invitations/{}/resend
-POST /api/v1/tenants/{}/members
 POST /api/v1/tenants/{}/members/{}/reactivate
 POST /api/v1/tenants/{}/members/{}/suspend
 POST /api/v1/tenants/{}/settings/asset-lifecycle/dry-run
