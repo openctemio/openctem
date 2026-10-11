@@ -495,6 +495,15 @@ type RuleActionInput struct {
 type RuleRefusal struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Existing names the tenant's own entry or exclusion a duplicate
+	// collides with (SCOPE_ENTRY_EXISTS, SCOPE_EXCLUSION_EXISTS).
+	Existing *ExistingRef `json:"existing,omitempty"`
+}
+
+// ExistingRef is an existing scope entry or exclusion: its id and status.
+type ExistingRef struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 // RuleEntryPreview is the scope entry or exclusion an action would create.
@@ -523,6 +532,11 @@ type RulePreview struct {
 }
 
 func refusalOf(err error) *RuleRefusal {
+	var dup *scopedom.DuplicateError
+	if errors.As(err, &dup) {
+		return &RuleRefusal{Code: dup.Code(), Message: dup.Message(),
+			Existing: &ExistingRef{ID: dup.Existing.ID.String(), Status: dup.Existing.Status.String()}}
+	}
 	var de *shared.DomainError
 	if errors.As(err, &de) && de.Code != "" {
 		return &RuleRefusal{Code: de.Code, Message: de.Message}
