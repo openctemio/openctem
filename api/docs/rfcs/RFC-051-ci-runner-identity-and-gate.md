@@ -249,7 +249,7 @@ branch sees it. See `docs/architecture/branch-only-findings.md`.
   "baseline": {"branch": "main", "known": true},
   "summary": {"evaluated": 3, "new": 1, "pre_existing": 1, "accepted": 1, "blocking": 1},
   "reasons": [{"code": "severity", "message": "severity high is at or above high", "finding_id": "…", "title": "…", "file": "db.go", "line": 42, "url": "https://…/findings/…"}],
-  "links": {"run": "https://…/ci-runners/…", "findings": "https://…/findings?asset_id=…"} }
+  "links": {"run": "https://…/ci-cd?view=runs&run=…", "findings": "https://…/findings?asset_id=…"} }
 ```
 
 Policy resolution (`ci_gate_policies`): the repository's own policy, else the
@@ -320,6 +320,7 @@ The sensor's one-shot mode, through sdk-go `pkg/sensorkit` (`CIRun`):
 | A token valid for other services (Azure's fixed audience, a CI organization's default audience) | Azure: `org_id` pinned to the issuer, one exchange per `jti`, five-minute tokens; elsewhere a tenant-bound audience is required |
 | A renamed Bitbucket workspace's slug taken by someone else | `workspaceUuid` pinned in the configuration |
 | A Bitbucket repository reporting as another (the name is not signed) | Rules list repository UUIDs; a name stays bound to the first UUID that used it (`repository_binding`) |
+| A name that changed hands (GitHub or GitLab organization renamed or deleted and its name registered again, a repository deleted and created anew): trust rules match names | GitHub, GitLab and Bitbucket: a repository name stays bound to the repository id (`repository_id`, `project_id`, `repositoryUuid`) that first reported under it while that pipeline is not retired; another id is refused (`repository_binding`, audited) until an administrator retires the old pipeline. A rename keeps the id and is admitted |
 | A job naming a commit it did not build (CircleCI) | Marked unverified; never matches a break-glass |
 | A person driving a CI job interactively (CircleCI SSH re-run) | Refused |
 | Pull request builds of fork code where the token cannot say so | Refused unless fork pull requests are admitted |
