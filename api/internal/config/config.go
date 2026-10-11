@@ -62,6 +62,27 @@ type Config struct {
 	// Scope is the platform's scope guardrails (RFC-054 §8): operator-level,
 	// never tenant-overridable.
 	Scope ScopeConfig
+
+	// GitHubApp is the deployment's GitHub App that posts CI checks and pull
+	// request comments (RFC-077). Off unless every value is set.
+	GitHubApp GitHubAppConfig
+}
+
+// GitHubAppConfig is the deployment's GitHub App (RFC-077):
+// GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID,
+// GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY_FILE (PEM; or
+// GITHUB_APP_PRIVATE_KEY with the PEM itself), GITHUB_APP_WEBHOOK_SECRET,
+// and for GitHub Enterprise Server GITHUB_APP_API_URL / GITHUB_APP_WEB_URL.
+type GitHubAppConfig struct {
+	AppID          int64
+	Slug           string
+	ClientID       string
+	ClientSecret   string
+	PrivateKey     string
+	PrivateKeyFile string
+	WebhookSecret  string
+	APIURL         string
+	WebURL         string
 }
 
 // Active-probe proof modes, SCOPE_ACTIVE_PROOF (RFC-054 §8.1).
@@ -1495,6 +1516,17 @@ func Load() (*Config, error) {
 		AuditRetention: AuditRetentionConfig{
 			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
 			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
+		},
+		GitHubApp: GitHubAppConfig{
+			AppID:          getEnvInt64("GITHUB_APP_ID", 0),
+			Slug:           getEnv("GITHUB_APP_SLUG", ""),
+			ClientID:       getEnv("GITHUB_APP_CLIENT_ID", ""),
+			ClientSecret:   getEnv("GITHUB_APP_CLIENT_SECRET", ""),
+			PrivateKey:     getEnv("GITHUB_APP_PRIVATE_KEY", ""),
+			PrivateKeyFile: getEnv("GITHUB_APP_PRIVATE_KEY_FILE", ""),
+			WebhookSecret:  getEnv("GITHUB_APP_WEBHOOK_SECRET", ""),
+			APIURL:         getEnv("GITHUB_APP_API_URL", ""),
+			WebURL:         getEnv("GITHUB_APP_WEB_URL", ""),
 		},
 		Scope: ScopeConfig{
 			ActiveProof:     getEnv("SCOPE_ACTIVE_PROOF", ""),
