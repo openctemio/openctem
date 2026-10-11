@@ -131,6 +131,7 @@ type Service struct {
 	now       func() time.Time
 	purgeMu   sync.Mutex
 	lastPurge time.Time
+	images    ImageLinker
 }
 
 // Deps are the service's collaborators.
@@ -781,6 +782,7 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 		}
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
+	s.suggestImageLinks(ctx, run, report)
 	s.auditUpload(ctx, run, report, out)
 	return out, nil
 }
