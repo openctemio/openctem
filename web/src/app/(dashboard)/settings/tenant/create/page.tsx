@@ -14,17 +14,16 @@ import { Main } from '@/components/layout'
 import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
 import { PageHeader } from '@/features/shared'
 import { CreateTeamForm, NoOrganizationNotice } from '@/features/tenant'
+import { useTranslation } from '@/context/i18n-provider'
 
 export default function CreateTeamPage() {
+  const { t } = useTranslation()
   const { canCreate, isLoading } = useCanCreateOrganization()
 
   return (
     <>
       <Main>
-        <PageHeader
-          title="Create New Team"
-          description="Set up a new team to organize your security assets and collaborate with others"
-        />
+        <PageHeader title={t('settings.createTeam.title', 'Create team')} />
 
         <div className="mt-6 flex justify-center">
           {isLoading ? (
