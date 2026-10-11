@@ -58,22 +58,31 @@ http)
 	;;
 esac
 
-# Sensor protocol v3 gRPC binding (RFC-059 T14): layer-4 passthrough of the
-# sensor host name to the API's mTLS listener.
+# Sensor protocol v3 gRPC binding (RFC-059 §5): layer-4 routing on this
+# port to the API's mTLS listener, by the sensor ALPN id (alpn) or by the
+# ALPN id and a dedicated sensor host name (passthrough).
+need_layer4() {
+	[ "$mode" != http ] || die "OPENCTEM_SENSOR_GATEWAY=$1 needs a TLS mode (the gateway must see the TLS ClientHello to route it)"
+	caddy list-modules 2>/dev/null | grep -q '^layer4$' ||
+		die "OPENCTEM_SENSOR_GATEWAY=$1 needs the gateway image with the layer4 module (deploy/gateway/Dockerfile, docker-compose.sensor-passthrough.yml)"
+}
 case "${OPENCTEM_SENSOR_GATEWAY:-off}" in
 off) ;;
+alpn)
+	need_layer4 alpn
+	[ -z "${SENSOR_PUBLIC_HOSTNAME:-}" ] ||
+		echo "openctem-gateway: SENSOR_PUBLIC_HOSTNAME is ignored with OPENCTEM_SENSOR_GATEWAY=alpn; use passthrough to also route that host name" >&2
+	;;
 passthrough)
 	sensor_host="${SENSOR_PUBLIC_HOSTNAME:-}"
-	[ -n "$sensor_host" ] || die "OPENCTEM_SENSOR_GATEWAY=passthrough needs SENSOR_PUBLIC_HOSTNAME (the DNS name sensors dial for gRPC, without a port)"
+	[ -n "$sensor_host" ] || die "OPENCTEM_SENSOR_GATEWAY=passthrough needs SENSOR_PUBLIC_HOSTNAME (the DNS name sensors dial for gRPC, without a port); for the ALPN routing alone use alpn"
 	case "$sensor_host" in
 	*:* | */* | *" "*) die "SENSOR_PUBLIC_HOSTNAME=$sensor_host must be a host name only (no port, path or space)" ;;
 	esac
-	[ "$sensor_host" != "${OPENCTEM_HOSTNAME:-}" ] || die "SENSOR_PUBLIC_HOSTNAME must differ from OPENCTEM_HOSTNAME: the gateway routes the sensor host by its name (SNI)"
-	[ "$mode" != http ] || die "OPENCTEM_SENSOR_GATEWAY=passthrough needs a TLS mode (the gateway must see TLS to route by SNI)"
-	caddy list-modules 2>/dev/null | grep -q '^layer4$' ||
-		die "OPENCTEM_SENSOR_GATEWAY=passthrough needs the gateway image with the layer4 module (deploy/gateway/Dockerfile, docker-compose.sensor-passthrough.yml)"
+	[ "$sensor_host" != "${OPENCTEM_HOSTNAME:-}" ] || die "SENSOR_PUBLIC_HOSTNAME must differ from OPENCTEM_HOSTNAME: the gateway routes the sensor host by its name (SNI); for one host name use alpn"
+	need_layer4 passthrough
 	;;
-*) die "OPENCTEM_SENSOR_GATEWAY=${OPENCTEM_SENSOR_GATEWAY} is not one of: off, passthrough" ;;
+*) die "OPENCTEM_SENSOR_GATEWAY=${OPENCTEM_SENSOR_GATEWAY} is not one of: off, alpn, passthrough" ;;
 esac
 
 # The internal CA's root certificate, copied where the operator (and sensors)

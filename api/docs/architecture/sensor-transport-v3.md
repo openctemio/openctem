@@ -138,31 +138,42 @@ The sensors API returns them under `protocol.binding` /
 
 ## Deploying the gRPC binding (Compose)
 
-The gRPC binding needs a host name of its own, routed by SNI on port 443:
+The gRPC binding shares port 443 with the web UI and the API in every setup
+(an IP address, one host name, no DNS at all; RFC-059 T16):
 
 ```bash
-# DNS: sensors.example.com -> the gateway (same address as the platform host)
-SENSOR_PUBLIC_HOSTNAME=sensors.example.com \
-  docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d --build
 ```
 
 - The override builds the gateway with the layer4 module (`deploy/gateway/Dockerfile`,
-  caddy-l4 pinned) and sets `OPENCTEM_SENSOR_GATEWAY=passthrough`: a TLS
-  connection whose SNI is `SENSOR_PUBLIC_HOSTNAME` is not terminated; its bytes
-  go to `api:8443` behind a PROXY protocol v2 header. Every other host is
-  served exactly as before.
-- It names the sensor host to the API (`SENSOR_PUBLIC_HOST=<name>:443`,
-  `SENSOR_MTLS_LISTEN_ADDR=:8443`) and trusts
-  the PROXY header from the gateway's address only
+  caddy-l4 pinned) and sets `OPENCTEM_SENSOR_GATEWAY=alpn`
+  (`sensors/alpn.wrappers`): a TLS connection whose ClientHello offers the ALPN
+  id `openctem-sensor/3` is not terminated; its bytes go to `api:8443` behind a
+  PROXY protocol v2 header. Every other connection (browsers on h2 or
+  HTTP/1.1, WebSockets, API clients, sensors on the HTTPS binding or v2) is
+  served exactly as before: none of them offers that id.
+- The API derives the endpoint from its own URL (`APP_URL` host and port) and
+  advertises it once its probe passes through the gateway; nothing else to
+  set. It trusts the PROXY header from the gateway's address only
   (`SENSOR_MTLS_TRUSTED_PROXIES`); a PROXY header from any other peer closes
   the connection, so a sensor cannot choose the address it is recorded with.
-- No public certificate is needed for the sensor host: the API mints its
-  server certificate from the sensor CA and sensors pin that CA.
-- The gateway entrypoint refuses `passthrough` without `SENSOR_PUBLIC_HOSTNAME`,
-  with a port in it, with the platform host name, in TLS mode `http`, or on an
-  image without the layer4 module.
-- A separate port instead of SNI: publish the API's 8443 directly (or through
-  any TCP load balancer) and set `SENSOR_PUBLIC_HOST=<host>:<port>`.
+- No public certificate is needed for the sensor endpoint: the API mints its
+  server certificate (DNS or IP SAN) from the sensor CA and sensors pin that CA.
+- Dedicated sensor host name as well (also reached by sensors that do not
+  offer the id): `OPENCTEM_SENSOR_GATEWAY=passthrough SENSOR_PUBLIC_HOSTNAME=sensors.example.com
+  SENSOR_PUBLIC_HOST=sensors.example.com:443` (`sensors/passthrough.wrappers`:
+  routed by ALPN and by SNI).
+- The gateway entrypoint refuses `alpn` or `passthrough` in TLS mode `http`
+  or on an image without the layer4 module, and `passthrough` without
+  `SENSOR_PUBLIC_HOSTNAME`, with a port in it or with the platform host name.
+- A separate port, only when explicitly wanted: publish the API's 8443
+  directly (or through any TCP load balancer) and set
+  `SENSOR_PUBLIC_HOST=<host>:<port>`.
+- With the stock gateway image nothing changes: the probe meets the gateway's
+  own certificate and sensors use the HTTPS binding, whose `Subscribe` stream
+  is flushed as it is written (`flush_interval -1` on every route to the API).
+- `deploy/gateway/smoke-test.sh` builds the layer4 image and checks the ALPN
+  and SNI routing next to the normal routing.
 
 ## How the bindings are chosen
 
@@ -174,26 +185,28 @@ v2 at its next call).
   always served: it reuses the v2 edge chain and needs nothing new.
 - The gRPC binding listens once the sensor CA loads (created on first start in
   `SENSOR_MTLS_CA_DIR` when no CA files are given) and a public host is known:
-  `SENSOR_PUBLIC_HOST`, else `sensors.<host>:<port>` of the platform URL
-  (`SENSOR_PUBLIC_API_URL`, else `APP_URL`) when that host is a DNS name. A
-  platform reached by an IP address derives nothing, because the gateway
-  routes the sensor host by its TLS server name and a client sends none for an
-  address; such a platform sets `SENSOR_PUBLIC_HOST` to a name, or to an
-  address and a port of the listener's own.
+  `SENSOR_PUBLIC_HOST`, else the host and port of the platform URL
+  (`SENSOR_PUBLIC_API_URL`, else `APP_URL`, https only), a name or an IP
+  address alike.
 - A self-probe dials the public host every minute (every 30 s while failing):
-  TLS 1.3, ALPN `h2`, server certificate verified against the sensor CA only.
-  Only the API's mTLS listener holds such a certificate, so the probe passes
-  only when the path through the gateway reaches it. Hello (v2 and v3) names
-  the gRPC endpoint only while the probe passes; otherwise sensors use the
-  HTTPS binding. A gateway without passthrough, a closed port or a wrong name
-  fail the probe (`foreign_certificate`, `unreachable`, `dns_failed`,
-  `handshake_failed`, `http2_refused`), so a sensor is never sent to an
-  endpoint that cannot work.
+  TLS 1.3 offering the ALPN ids `h2` and `openctem-sensor/3` like a sensor,
+  server certificate verified against the sensor CA only. Only the API's mTLS
+  listener holds such a certificate, so the probe passes only when the path
+  through the gateway reaches it. A passing probe is followed by one offering
+  `h2` only. Hello names the endpoint as `grpc_endpoint` when both pass (a port
+  of its own, a dedicated SNI host) and only as `grpc_alpn_endpoint` when just
+  the first does (ALPN routing on the platform's port), so sensors that do not
+  offer the id never dial an endpoint where they would meet the gateway's
+  certificate. The v3 `Hello` RPC names `grpc_endpoint` only. A gateway
+  without ALPN or SNI routing, a closed port or a wrong name fail the probe
+  (`foreign_certificate`, `unreachable`, `dns_failed`, `handshake_failed`,
+  `http2_refused`), so a sensor is never sent to an endpoint that cannot work.
 - Status: `GET /api/v1/sensors/transport` (`sensors:read`; platform
   configuration, no tenant data) answers the mode, the HTTPS path and the gRPC
-  state, endpoint, reason and last check; metrics
+  state, endpoint, `requires_alpn`, reason and last check; metrics
   `openctem_sensor_transport_grpc_advertised` (0/1) and
-  `openctem_sensor_transport_grpc_probe_total{result}`; the API logs each
+  `openctem_sensor_transport_grpc_probe_total{result}` (`ok`, `ok_alpn`, or
+  the failure reason); the API logs each
   change of state.
 
 ## Working on the proto

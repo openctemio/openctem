@@ -37,11 +37,13 @@ func TestSensorPublicHost(t *testing.T) {
 	cases := []struct{ explicit, publicURL, appURL, want string }{
 		{"sensors.corp.example:8443", "", "https://ctem.corp.example", "sensors.corp.example:8443"},
 		{"192.168.8.204:8444", "", "https://192.168.8.204", "192.168.8.204:8444"},
-		{"", "", "https://ctem.corp.example", "sensors.ctem.corp.example:443"},
-		{"", "https://api.corp.example:9443", "https://ctem.corp.example", "sensors.api.corp.example:9443"},
-		// An address cannot be routed by name: nothing derived.
-		{"", "", "https://192.168.8.204", ""},
-		{"", "", "https://[2001:db8::1]", ""},
+		// Derived: the platform's own host and port, reached through the
+		// gateway's ALPN routing (a name or an address alike).
+		{"", "", "https://ctem.corp.example", "ctem.corp.example:443"},
+		{"", "https://api.corp.example:9443", "https://ctem.corp.example", "api.corp.example:9443"},
+		{"", "", "https://192.168.8.204", "192.168.8.204:443"},
+		{"", "", "https://[2001:db8::1]", "[2001:db8::1]:443"},
+		{"", "", "https://ctem", "ctem:443"},
 		// No TLS, no name, nothing configured.
 		{"", "", "http://ctem.corp.example", ""},
 		{"", "", "https://localhost", ""},

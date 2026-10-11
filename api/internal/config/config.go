@@ -807,13 +807,14 @@ type RateLimitConfig struct {
 }
 
 // SensorPublicHost is the host:port sensors dial for the protocol v3 gRPC
-// binding: SENSOR_PUBLIC_HOST when set, else "sensors.<host>:<port>" of the
-// platform's public URL (SENSOR_PUBLIC_API_URL, else APP_URL) when that host
-// is a DNS name. An IP address gives nothing: the gateway routes the sensor
-// host by its TLS server name, which a client never sends for an address,
-// so such a platform needs SENSOR_PUBLIC_HOST (a name, or an address and a
-// port of its own). The derived name is a guess the self-probe confirms:
-// it is advertised only once the probe reaches the mTLS listener through it.
+// binding: SENSOR_PUBLIC_HOST when set (a dedicated sensor host name, or an
+// address with a port of its own), else the host and port (default 443) of
+// the platform's public URL (SENSOR_PUBLIC_API_URL, else APP_URL), a name or
+// an IP address. The derived endpoint shares the platform's port: a gateway
+// with ALPN routing passes a connection that offers the sensor ALPN id
+// through to the mTLS listener, whatever the server name. It is a guess the
+// self-probe confirms: behind a gateway without that routing the probe meets
+// the gateway's own certificate and the endpoint is never advertised.
 func (c *Config) SensorPublicHost() string {
 	if h := strings.TrimSpace(c.SensorConfig.TransportV3.PublicHost); h != "" {
 		return h
@@ -827,14 +828,14 @@ func (c *Config) SensorPublicHost() string {
 		return ""
 	}
 	host := u.Hostname()
-	if net.ParseIP(host) != nil || !strings.Contains(host, ".") {
+	if strings.EqualFold(host, "localhost") {
 		return ""
 	}
 	port := u.Port()
 	if port == "" {
 		port = "443"
 	}
-	return net.JoinHostPort("sensors."+host, port)
+	return net.JoinHostPort(host, port)
 }
 
 // Sensor protocol v3 modes (SENSOR_TRANSPORT_V3).
@@ -852,13 +853,16 @@ type SensorTransportV3Config struct {
 	// v2 at its next call), the emergency switch.
 	Mode string
 	// PublicHost is host[:port] sensors dial for the gRPC binding
-	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443). Empty: derived
-	// from the platform's public URL (SensorPublicHost); advertised only
-	// while the self-probe passes either way.
+	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443 for a dedicated
+	// sensor host name, or 192.168.1.10:8444 for a port of its own). Empty:
+	// the platform's public URL host and port (SensorPublicHost), reached
+	// through the gateway's ALPN routing; advertised only while the
+	// self-probe passes either way.
 	PublicHost string
 	// MTLSListenAddr is the gRPC binding's TLS 1.3 listener
-	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes the
-	// PublicHost name through to it at layer 4.
+	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes
+	// connections that offer the sensor ALPN id (or name the dedicated
+	// sensor host) through to it at layer 4.
 	MTLSListenAddr string
 	// CACertFile and CAKeyFile are the sensor CA (SENSOR_MTLS_CA_CERT_FILE,
 	// SENSOR_MTLS_CA_KEY_FILE, PEM). Its key is not the job signer's.
