@@ -232,7 +232,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-json}
       AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
-      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required (openssl rand -hex 64)}
+      # Empty: derived from APP_ENCRYPTION_KEY (rotating that key then signs
+      # everyone out). Set it to rotate the two independently.
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required (openssl rand -hex 32)}
       # Old key(s) while rotating APP_ENCRYPTION_KEY (docs/deployment/encryption-key-rotation.md).
       APP_ENCRYPTION_KEY_PREVIOUS: ${APP_ENCRYPTION_KEY_PREVIOUS:-}
