@@ -94,7 +94,8 @@ func registerTenantRoutes(
 
 		// Admin operations (admin+)
 		r.PATCH("/", h.Update, middleware.RequireTeamAdmin(), tenantPerm(permission.TeamUpdate))
-		r.POST("/members", h.AddMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		// No direct add of an existing account: invitations are the consent
+		// path (POST /members was removed, see removed_routes_test.go).
 		r.PATCH("/members/{userId}", h.UpdateMemberRole, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/members/{userId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
