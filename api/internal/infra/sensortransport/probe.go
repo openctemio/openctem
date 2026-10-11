@@ -4,8 +4,8 @@ package sensortransport
 // the platform advertises its gRPC endpoint to sensors only while it can
 // reach that endpoint itself, the way a sensor would. A probe dials the
 // advertised host:port (through whatever gateway sits in front), completes a
-// TLS 1.3 handshake with ALPN h2 and verifies the server certificate against
-// the sensor CA only. Only the API's own mTLS listener holds a certificate
+// TLS 1.3 handshake offering the ALPN ids h2 and SensorALPN, and verifies the
+// server certificate against the sensor CA only; the listener answers h2. Only the API's own mTLS listener holds a certificate
 // from that CA, so a passing probe proves the path reaches it; a gateway that
 // terminates TLS itself, a closed port or a wrong name fail the probe, and
 // sensors are then told about the HTTPS binding only instead of being sent
@@ -13,12 +13,22 @@ package sensortransport
 //
 // The probe presents no client certificate: the listener refuses it after
 // the handshake, which proves nothing more and is logged at debug level.
+//
+// A gateway may route by the sensor ALPN id (one port for everything, any
+// server name, an IP address too) or by a dedicated server name (SNI). Once
+// the probe with the sensor ALPN id passes, a second probe offers h2 only:
+// when it passes too, the endpoint works for every v3 client and hello names
+// it as grpc_endpoint; when it meets the gateway's own certificate, the
+// endpoint needs the sensor ALPN id and hello names it only as
+// grpc_alpn_endpoint, which older clients do not read (they would meet the
+// gateway's certificate, refuse it and stop).
 
 import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -60,16 +70,26 @@ var (
 	})
 	grpcProbeTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "openctem_sensor_transport_grpc_probe_total",
-		Help: "Self-probes of the sensor protocol v3 gRPC endpoint by result (ok or the failure reason).",
+		Help: "Self-probes of the sensor protocol v3 gRPC endpoint by result (ok, ok_alpn when reached only with the sensor ALPN id, or the failure reason).",
 	}, []string{"result"})
 )
 
+// SensorALPN is the ALPN protocol id a sensor offers, next to h2, when it
+// dials the gRPC binding. A gateway with ALPN routing passes a connection
+// that offers it through to the mTLS listener at layer 4; the listener
+// itself negotiates h2. It routes, it does not authenticate: the client
+// certificate is the identity.
+const SensorALPN = "openctem-sensor/3"
+
 // GRPCStatus is the gRPC binding's state as the platform sees it.
 type GRPCStatus struct {
-	State     string    `json:"state"`
-	Endpoint  string    `json:"endpoint,omitempty"`
-	Reason    string    `json:"reason,omitempty"`
-	CheckedAt time.Time `json:"checked_at,omitempty"`
+	State    string `json:"state"`
+	Endpoint string `json:"endpoint,omitempty"`
+	// RequiresALPN: the endpoint is reached only by offering SensorALPN
+	// (the gateway routes by it); hello names it as grpc_alpn_endpoint only.
+	RequiresALPN bool      `json:"requires_alpn,omitempty"`
+	Reason       string    `json:"reason,omitempty"`
+	CheckedAt    time.Time `json:"checked_at,omitempty"`
 }
 
 // Advertiser holds what hello says about the gRPC binding. Safe for
@@ -105,8 +125,19 @@ func (a *Advertiser) Status() GRPCStatus {
 	return GRPCStatus{State: GRPCUnavailable, Reason: ReasonTransportOff}
 }
 
-// Endpoint is the host:port hello names, "" while not advertised.
+// Endpoint is the host:port hello names as grpc_endpoint: advertised and
+// reachable without the sensor ALPN id, "" otherwise.
 func (a *Advertiser) Endpoint() string {
+	st := a.Status()
+	if st.State != GRPCAdvertised || st.RequiresALPN {
+		return ""
+	}
+	return st.Endpoint
+}
+
+// ALPNEndpoint is the host:port hello names as grpc_alpn_endpoint: reachable
+// by a client that offers SensorALPN, "" while not advertised.
+func (a *Advertiser) ALPNEndpoint() string {
 	st := a.Status()
 	if st.State != GRPCAdvertised {
 		return ""
@@ -114,9 +145,16 @@ func (a *Advertiser) Endpoint() string {
 	return st.Endpoint
 }
 
-// ProbeFunc dials endpoint and returns "" when it reaches the mTLS listener,
-// else the failure reason.
-type ProbeFunc func(ctx context.Context, endpoint string) string
+// ProbeFunc dials endpoint offering the ALPN ids protos and returns "" when
+// it reaches the mTLS listener, else the failure reason.
+type ProbeFunc func(ctx context.Context, endpoint string, protos []string) string
+
+// The ALPN ids a probe offers: what a current sensor offers, and what a
+// client without ALPN routing support offers.
+var (
+	probeProtosSensor = []string{alpnH2, SensorALPN}
+	probeProtosDirect = []string{alpnH2}
+)
 
 // Prober re-probes the endpoint and updates the advertiser.
 type Prober struct {
@@ -156,18 +194,23 @@ func NewProber(adv *Advertiser, endpoint string, probe ProbeFunc, cfg ProberConf
 
 // Check runs one probe and updates the advertisement.
 func (p *Prober) Check(ctx context.Context) GRPCStatus {
-	reason := p.probe(ctx, p.endpoint)
+	reason := p.probe(ctx, p.endpoint, probeProtosSensor)
 	result := "ok"
 	st := GRPCStatus{State: GRPCAdvertised, Endpoint: p.endpoint, CheckedAt: p.now()}
 	if reason != ReasonProbeOK {
 		result = reason
 		st.State, st.Reason = GRPCUnavailable, reason
+	} else if p.probe(ctx, p.endpoint, probeProtosDirect) != ReasonProbeOK {
+		// Reached only through the gateway's ALPN routing.
+		st.RequiresALPN = true
+		result = "ok_alpn"
 	}
 	grpcProbeTotal.WithLabelValues(result).Inc()
 	p.adv.set(st)
+	key := fmt.Sprintf("%s|%s|%t", st.State, st.Reason, st.RequiresALPN)
 	p.mu.Lock()
-	changed := p.last != st.State+"|"+st.Reason
-	p.last = st.State + "|" + st.Reason
+	changed := p.last != key
+	p.last = key
 	p.mu.Unlock()
 	if changed && p.onChange != nil {
 		p.onChange(st)
@@ -200,7 +243,7 @@ const probeTimeout = 5 * time.Second
 // TLSProbe returns the probe that dials endpoint and verifies its server
 // certificate against pool (the sensor CA) for the endpoint's host name.
 func TLSProbe(pool *x509.CertPool) ProbeFunc {
-	return func(ctx context.Context, endpoint string) string {
+	return func(ctx context.Context, endpoint string, protos []string) string {
 		host, port, err := net.SplitHostPort(endpoint)
 		if err != nil {
 			host, port = endpoint, "443"
@@ -213,7 +256,7 @@ func TLSProbe(pool *x509.CertPool) ProbeFunc {
 				MinVersion: tls.VersionTLS13,
 				ServerName: host,
 				RootCAs:    pool,
-				NextProtos: []string{alpnH2},
+				NextProtos: protos,
 			},
 		}
 		conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, port))

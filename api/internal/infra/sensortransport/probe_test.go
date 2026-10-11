@@ -41,7 +41,7 @@ func TestTLSProbeReachesOnlyTheMTLSListener(t *testing.T) {
 	probe := TLSProbe(ca.Pool())
 	ctx := context.Background()
 
-	if got := probe(ctx, startMTLSOn(t, ca)); got != ReasonProbeOK {
+	if got := probe(ctx, startMTLSOn(t, ca), probeProtosSensor); got != ReasonProbeOK {
 		t.Fatalf("probe of the mTLS listener = %q, want ok", got)
 	}
 	// A gateway that terminates TLS itself (its own certificate) answers
@@ -50,11 +50,11 @@ func TestTLSProbeReachesOnlyTheMTLSListener(t *testing.T) {
 	gw.EnableHTTP2 = true
 	gw.StartTLS()
 	t.Cleanup(gw.Close)
-	if got := probe(ctx, strings.TrimPrefix(gw.URL, "https://")); got != ReasonForeignCert {
+	if got := probe(ctx, strings.TrimPrefix(gw.URL, "https://"), probeProtosSensor); got != ReasonForeignCert {
 		t.Fatalf("probe of a terminating gateway = %q, want %q", got, ReasonForeignCert)
 	}
 	// Another platform's sensor CA is foreign too.
-	if got := TLSProbe(testCA(t).Pool())(ctx, startMTLSOn(t, ca)); got != ReasonForeignCert {
+	if got := TLSProbe(testCA(t).Pool())(ctx, startMTLSOn(t, ca), probeProtosSensor); got != ReasonForeignCert {
 		t.Fatalf("probe with another CA = %q, want %q", got, ReasonForeignCert)
 	}
 	// Nothing listening.
@@ -64,10 +64,10 @@ func TestTLSProbeReachesOnlyTheMTLSListener(t *testing.T) {
 	}
 	closed := ln.Addr().String()
 	_ = ln.Close()
-	if got := probe(ctx, closed); got != ReasonUnreachable {
+	if got := probe(ctx, closed, probeProtosSensor); got != ReasonUnreachable {
 		t.Fatalf("probe of a closed port = %q, want %q", got, ReasonUnreachable)
 	}
-	if got := probe(ctx, "no-such-host.invalid:443"); got != ReasonDNSFailed {
+	if got := probe(ctx, "no-such-host.invalid:443", probeProtosSensor); got != ReasonDNSFailed {
 		t.Fatalf("probe of an unknown name = %q, want %q", got, ReasonDNSFailed)
 	}
 }
@@ -80,7 +80,7 @@ func TestProberTogglesTheAdvertisement(t *testing.T) {
 		t.Fatal("a pending endpoint must not be advertised")
 	}
 	var changes []GRPCStatus
-	p := NewProber(adv, "sensors.test:443", func(context.Context, string) string { return reason.Load().(string) },
+	p := NewProber(adv, "sensors.test:443", func(context.Context, string, []string) string { return reason.Load().(string) },
 		ProberConfig{OnChange: func(st GRPCStatus) { changes = append(changes, st) }})
 
 	srv := NewServer(Config{}, nil, logger.NewNop())
