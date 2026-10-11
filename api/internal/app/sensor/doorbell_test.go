@@ -46,7 +46,7 @@ func testSensor() *sensordom.Sensor {
 }
 
 func newTestDoorbell(src PendingWorkSource) *Doorbell {
-	return NewDoorbell(src, DefaultDoorbellConfig().Normalized(5*time.Minute), logger.NewNop())
+	return NewDoorbell(src, DefaultDoorbellConfig().Normalized(5*time.Minute, 0), logger.NewNop())
 }
 
 func TestDoorbell_IdleLegacySensorGetsNoHints(t *testing.T) {
@@ -89,13 +89,14 @@ func TestDoorbell_RecentlyCanceledRingsWithShortInterval(t *testing.T) {
 	}
 }
 
-func TestDoorbell_SlowQueryAdvisesLoadedInterval(t *testing.T) {
+func TestDoorbell_SlowQueryAdvisesTheMaximumInterval(t *testing.T) {
 	cfg := DefaultDoorbellConfig()
 	cfg.SlowQuery = 20 * time.Millisecond
-	d := NewDoorbell(&fakeWork{delay: 30 * time.Millisecond}, cfg.Normalized(5*time.Minute), logger.NewNop())
+	// Offline mark 90 s, lease 3 min: the maximum is min(45 s, 60 s).
+	d := NewDoorbell(&fakeWork{delay: 30 * time.Millisecond}, cfg.Normalized(90*time.Second, 3*time.Minute), logger.NewNop())
 	h := d.Ring(context.Background(), DoorbellRequest{Identity: SensorIdentity{Sensor: testSensor()}})
-	if h.NextHeartbeatSeconds != 120 {
-		t.Fatalf("next = %d after a slow doorbell query, want the 120s loaded interval", h.NextHeartbeatSeconds)
+	if h.NextHeartbeatSeconds != 45 {
+		t.Fatalf("next = %d after a slow doorbell query, want the 45s maximum", h.NextHeartbeatSeconds)
 	}
 }
 
@@ -108,7 +109,7 @@ func TestDoorbell_QueryFailureOmitsHintsButKeepsActions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cfg := DefaultDoorbellConfig()
 			cfg.QueryTimeout = 20 * time.Millisecond
-			d := NewDoorbell(src, cfg.Normalized(5*time.Minute), logger.NewNop())
+			d := NewDoorbell(src, cfg.Normalized(5*time.Minute, 0), logger.NewNop())
 			h := d.Ring(context.Background(), DoorbellRequest{
 				Identity: SensorIdentity{Sensor: testSensor(), KeyExpiresAt: &exp}, Aware: true,
 			})
@@ -239,18 +240,18 @@ func TestConfigVersion_StableAndSensitive(t *testing.T) {
 }
 
 func TestDoorbellConfig_Normalized(t *testing.T) {
-	c := DoorbellConfig{}.Normalized(5 * time.Minute)
+	c := DoorbellConfig{}.Normalized(5*time.Minute, 0)
 	if c.MaxInterval != 150*time.Second {
 		t.Errorf("max = %v, want 150s: half of the 5m offline timeout", c.MaxInterval)
 	}
 	if c.MinInterval != 5*time.Second || c.IdleInterval != 30*time.Second || c.BusyInterval != 5*time.Second ||
-		c.LoadedInterval != 120*time.Second || c.PendingCap != 100 {
+		c.PendingCap != 100 {
 		t.Errorf("zero config did not take the defaults: %+v", c)
 	}
 
 	d := NewDoorbell(&fakeWork{work: sensordom.PendingWork{Count: 1}}, DoorbellConfig{
 		IdleInterval: time.Hour, BusyInterval: time.Millisecond, MinInterval: 5 * time.Second, MaxInterval: time.Hour,
-	}.Normalized(2*time.Minute), logger.NewNop())
+	}.Normalized(2*time.Minute, 0), logger.NewNop())
 	if got := d.seconds(time.Hour); got != 60 {
 		t.Errorf("an hour clamps to %ds, want 60 (half the 2m offline timeout)", got)
 	}
@@ -258,9 +259,59 @@ func TestDoorbellConfig_Normalized(t *testing.T) {
 		t.Errorf("1ms clamps to %ds, want the 5s floor", got)
 	}
 
-	tiny := DoorbellConfig{MinInterval: 10 * time.Second, MaxInterval: time.Second}.Normalized(0)
+	tiny := DoorbellConfig{MinInterval: 10 * time.Second, MaxInterval: time.Second}.Normalized(0, 0)
 	if tiny.MaxInterval < tiny.MinInterval {
 		t.Errorf("max %v below min %v", tiny.MaxInterval, tiny.MinInterval)
+	}
+}
+
+func TestMaxIntervalBound(t *testing.T) {
+	for _, tc := range []struct {
+		offline, lease, want time.Duration
+	}{
+		{90 * time.Second, 3 * time.Minute, 45 * time.Second}, // the defaults: the offline mark binds
+		{5 * time.Minute, 3 * time.Minute, time.Minute},       // the lease binds
+		{0, 3 * time.Minute, time.Minute},
+		{90 * time.Second, 0, 45 * time.Second},
+		{0, 0, 0},
+	} {
+		if got := MaxIntervalBound(tc.offline, tc.lease); got != tc.want {
+			t.Errorf("MaxIntervalBound(%s, %s) = %s, want %s", tc.offline, tc.lease, got, tc.want)
+		}
+	}
+}
+
+// Raising any setting never lets an advised interval reach a third of the
+// command lease: a sensor that follows the advice renews each lease at least
+// twice before it runs out, so a command is never re-queued while it runs
+// (lease loss, duplicate execution).
+func TestDoorbellConfig_AdviceNeverExceedsAThirdOfTheLease(t *testing.T) {
+	durations := []time.Duration{
+		time.Second, 5 * time.Second, 30 * time.Second, time.Minute, 2 * time.Minute,
+		5 * time.Minute, 30 * time.Minute, time.Hour, 24 * time.Hour,
+	}
+	leases := []time.Duration{time.Minute, 90 * time.Second, 101 * time.Second, 3 * time.Minute, 10 * time.Minute, 30 * time.Minute}
+	offlines := []time.Duration{0, 10 * time.Second, 61 * time.Second, 90 * time.Second, 5 * time.Minute, time.Hour, 24 * time.Hour}
+	for _, lease := range leases {
+		for _, offline := range offlines {
+			for _, setting := range durations {
+				c := DoorbellConfig{
+					IdleInterval: setting, BusyInterval: setting,
+					MinInterval: setting, MaxInterval: setting,
+				}.Normalized(offline, lease)
+				d := NewDoorbell(nil, c, logger.NewNop())
+				for _, v := range []time.Duration{c.IdleInterval, c.BusyInterval, c.MinInterval, c.MaxInterval, setting, 24 * time.Hour} {
+					advised := time.Duration(d.seconds(v)) * time.Second
+					if advised > lease/3 {
+						t.Fatalf("lease %s, offline %s, settings %s: advised %s > lease/3 (%s)",
+							lease, offline, setting, advised, lease/3)
+					}
+					if offline > 0 && advised > offline/2 {
+						t.Fatalf("lease %s, offline %s, settings %s: advised %s > offline/2", lease, offline, setting, advised)
+					}
+				}
+			}
+		}
 	}
 }
 

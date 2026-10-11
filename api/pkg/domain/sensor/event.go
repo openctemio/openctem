@@ -66,6 +66,9 @@ const (
 	// EventCertificateIssued: the platform issued the sensor a client
 	// certificate for protocol v3 (RFC-059).
 	EventCertificateIssued EventType = "certificate_issued"
+	// EventKeyBound: a bearer-key sensor bound its own signing key and
+	// became key-bound; details carry the key fingerprint and the address.
+	EventKeyBound EventType = "key_bound"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -93,7 +96,7 @@ func (c ActivityCategory) IsValid() bool {
 func (t EventType) Category() ActivityCategory {
 	switch t {
 	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned, EventHeartbeatRecovered,
-		EventPairingCompleted, EventCertificateIssued:
+		EventPairingCompleted, EventCertificateIssued, EventKeyBound:
 		return CategoryStatus
 	case EventJobRefusedByLocalPolicy, EventJobRefusedByGrant, EventPushRefusedByGrant:
 		return CategoryJobs
@@ -108,7 +111,7 @@ func EventTypesIn(cats []ActivityCategory) []EventType {
 		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
 		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged, EventHeartbeatRecovered,
 		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy, EventPairingCompleted, EventJobRefusedByGrant,
-		EventPushRefusedByGrant, EventCertificateIssued}
+		EventPushRefusedByGrant, EventCertificateIssued, EventKeyBound}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {

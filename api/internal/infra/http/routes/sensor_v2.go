@@ -151,6 +151,9 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 			r.POST(protov2.FingerprintsCheckPath, ctl.CheckFingerprints, controlWrite...)
 			r.POST(protov2.BaselineDiffPath, ctl.BaselineDiff, controlWrite...)
 			r.POST(protov2.KeysPath, ctl.RenewKey, keys...)
+			// Self-binding a signing key (RFC-052 §4.8) mints a credential
+			// like renewal: the same per-sensor budget.
+			r.POST(protov2.IdentityBindPath, ctl.BindKey, keys...)
 			r.PUT(protov2.ManifestPath, ctl.PutManifest, controlWrite...)
 			r.GET(protov2.ManifestPath, ctl.GetManifest, controlRead...)
 			r.PUT(protov2.ConfigReportPath, ctl.PutConfigReport, controlWrite...)
