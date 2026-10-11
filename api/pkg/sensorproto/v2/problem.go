@@ -70,6 +70,12 @@ const (
 	// organization requires the CI job's OIDC identity (RFC-051).
 	ProblemCIOIDCRequired ProblemType = "ci-oidc-required"
 	ProblemTooManyItems   ProblemType = "too-many-items"
+	// ProblemKeyBindRefused: the sensor cannot bind a signing key (not an
+	// active bearer-key sensor, the key is known, or the proof is invalid).
+	// ProblemKeyBindApproval: the organization requires an administrator to
+	// re-pair the sensor instead (RFC-052 §4.8).
+	ProblemKeyBindRefused  ProblemType = "key-bind-refused"
+	ProblemKeyBindApproval ProblemType = "key-bind-approval-required"
 
 	// RFC-033 (ProblemTypeBaseSensor).
 	ProblemManifestInvalid           ProblemType = "manifest-invalid"
@@ -141,6 +147,8 @@ var problemDefs = map[ProblemType]problemDef{
 	ProblemRenewalRefused:     {http.StatusForbidden, "Renewal refused", "This sensor may not renew its key.", false, ProblemTypeBaseSensor},
 	ProblemCIOIDCRequired:     {http.StatusForbidden, "OIDC required for CI", "This organization accepts CI results only with the CI job's OIDC identity, not a sensor key: set OPENCTEM_TENANT_ID and add a CI trust configuration.", false, ProblemTypeBaseSensor},
 	ProblemTooManyItems:       {http.StatusUnprocessableEntity, "Too many items", "The request lists more items than the limit; split it into several requests.", false, ProblemTypeBaseSensor},
+	ProblemKeyBindRefused:     {http.StatusConflict, "Key bind refused", "This sensor cannot bind a signing key: it is not an active bearer-key sensor, the key is already registered, or the proof of possession is invalid.", false, ProblemTypeBaseSensor},
+	ProblemKeyBindApproval:    {http.StatusForbidden, "Approval required", "This organization requires an administrator to approve the sensor's key: re-pair it (pair -repair).", false, ProblemTypeBaseSensor},
 
 	ProblemManifestInvalid:           {http.StatusUnprocessableEntity, "Manifest invalid", "The manifest is not a JSON object with a schema member of the documented shape.", false, ProblemTypeBaseSensor},
 	ProblemManifestNotFound:          {http.StatusNotFound, "Manifest not found", "This sensor has no registered manifest; PUT it first.", false, ProblemTypeBaseSensor},

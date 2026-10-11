@@ -17,6 +17,7 @@ import en_assetTimeline from './en/assetTimeline.json'
 import en_auth from './en/auth.json'
 import en_common from './en/common.json'
 import en_components from './en/components.json'
+import en_confirm from './en/confirm.json'
 import en_criticality from './en/criticality.json'
 import en_findings from './en/findings.json'
 import en_help from './en/help.json'
@@ -43,6 +44,7 @@ import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_auth from './vi/auth.json'
 import vi_common from './vi/common.json'
 import vi_components from './vi/components.json'
+import vi_confirm from './vi/confirm.json'
 import vi_criticality from './vi/criticality.json'
 import vi_findings from './vi/findings.json'
 import vi_help from './vi/help.json'
@@ -74,6 +76,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   auth: en_auth,
   common: en_common,
   components: en_components,
+  confirm: en_confirm,
   criticality: en_criticality,
   findings: en_findings,
   help: en_help,
@@ -103,6 +106,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   auth: vi_auth,
   common: vi_common,
   components: vi_components,
+  confirm: vi_confirm,
   criticality: vi_criticality,
   findings: vi_findings,
   help: vi_help,

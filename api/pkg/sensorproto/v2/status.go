@@ -266,6 +266,9 @@ const (
 	// signer's keys in "signed_jobs". A command the signer did not sign is
 	// not handed out.
 	FeatureSignedJobs = "signed_jobs"
+	// FeatureKeyBind: a bearer-key sensor may bind its own Ed25519 signing
+	// key at POST /identity/bind (RFC-052 §4.8) and become key-bound.
+	FeatureKeyBind = "key_bind"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
