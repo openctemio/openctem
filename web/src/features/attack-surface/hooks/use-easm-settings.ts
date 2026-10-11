@@ -33,6 +33,8 @@ export interface EASMSettingsInput {
   /** 0 = platform default; otherwise 6..168. */
   ct_interval_hours: number
   dns_interval_hours: number
+  /** Automatic passive enrichment of new assets; omitted keeps the stored value. */
+  enrichment_enabled?: boolean
 }
 
 /** PUT /api/v1/easm/settings (settings:write, audited). */

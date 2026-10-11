@@ -35,6 +35,7 @@ import { SensorDetailSheet } from './sensor-detail-sheet'
 import { FleetContentRefreshButton } from './sensor-content-cells'
 import { SensorTable } from './sensor-table'
 import { FleetHealthStrip } from './fleet-health-strip'
+import { SensorTransportStatusLine } from './sensor-transport-status'
 import { SensorFacetPanel } from './sensor-facet-panel'
 import { dispatchTools } from '../lib/capabilities'
 import {
@@ -885,6 +886,7 @@ export function SensorsSection({
           {/* Where else scans can run: the platform's shared scanning, shown
               only when the organization may use it. */}
           <PlatformScanningCard className="mt-4" />
+          <SensorTransportStatusLine className="mt-3" />
           {!fleetEmpty && (
             <FleetHealthStrip
               className="mt-5"

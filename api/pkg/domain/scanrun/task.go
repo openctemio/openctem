@@ -61,6 +61,11 @@ type Task struct {
 	// SkippedTotal counts all of them.
 	Skipped      []SkippedTarget
 	SkippedTotal int
+	// CoverageGaps are the hosts the sensor could not fully cover in a
+	// task that completed (at most MaxTaskCoverageGaps; cleaned);
+	// CoverageGapsTotal counts all of them.
+	CoverageGaps      []CoverageGap
+	CoverageGapsTotal int
 	// WindowHold says why a queued task waits for a scan window and until
 	// when (nil: it does not).
 	WindowHold *scanwindow.Hold

@@ -39,6 +39,7 @@ export type InventoryFilters = Pick<
   | 'isInternetAccessible'
   | 'isCrownJewel'
   | 'programAssets'
+  | 'freshness'
   | 'hasFindings'
   | 'lastSeenBefore'
   | 'lastSeenAfter'
@@ -97,6 +98,7 @@ const STRING_PARAMS = {
   expiresBefore: 'expires_before',
   expiresAfter: 'expires_after',
   programAssets: 'program_assets',
+  freshness: 'freshness',
 } as const
 
 type ArrayKey = keyof typeof ARRAY_PARAMS

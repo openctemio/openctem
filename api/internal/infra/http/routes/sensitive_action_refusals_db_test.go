@@ -346,6 +346,50 @@ func TestSensitiveActionRefusals_IdentityPolicyWidening_DB(t *testing.T) {
 	}
 }
 
+// Allowing bearer-key sensors to bind their own signing key again widens
+// (sensors:grant:widen + step-up); requiring approval narrows. A field left
+// out of the body is unchanged.
+func TestSensitiveActionRefusals_KeyBindPolicy_DB(t *testing.T) {
+	h := newSensitiveHarness(t)
+	o := h.org()
+	h.exec(`UPDATE tenants SET sensor_key_bind_requires_approval = TRUE, sensor_bearer_keys_allowed = FALSE WHERE id = $1`, o.tid)
+	read := func() (approval, bearer bool) {
+		if err := h.db.QueryRow(`SELECT sensor_key_bind_requires_approval, sensor_bearer_keys_allowed FROM tenants WHERE id = $1`, o.tid).Scan(&approval, &bearer); err != nil {
+			t.Fatal(err)
+		}
+		return approval, bearer
+	}
+	const allow, require = `{"key_bind_requires_approval":false}`, `{"key_bind_requires_approval":true}`
+	const path = "/api/v1/sensors/identity-policy"
+	for _, tc := range h.refusals(o, true)[:3] {
+		*h.fresh = tc.fresh
+		if code, body := h.call(http.MethodPut, path, allow, tc.bearer); code != tc.want || (tc.code != "" && !strings.Contains(body, tc.code)) {
+			t.Errorf("allow self-binding as %s: got %d %s, want %d %s", tc.name, code, body, tc.want, tc.code)
+		}
+		if approval, _ := read(); !approval {
+			t.Fatalf("allow as %s: the refused request changed the policy", tc.name)
+		}
+	}
+	*h.fresh = false
+	owner := h.session(o.tid, o.owner, "owner")
+	if code, body := h.call(http.MethodPut, path, require, owner); code != http.StatusOK {
+		t.Fatalf("require approval outside the window: got %d %s, want 200", code, body)
+	}
+	*h.fresh = true
+	code, body := h.call(http.MethodPut, path, allow, owner)
+	if approval, bearer := read(); code != http.StatusOK || approval || bearer {
+		t.Fatalf("owner inside the window allows self-binding: got %d %s, approval %v, bearer keys %v (must stay off)", code, body, approval, bearer)
+	}
+	if !strings.Contains(body, `"key_bind_requires_approval":false`) || !strings.Contains(body, `"bearer_keys_allowed":false`) {
+		t.Fatalf("answer %s", body)
+	}
+	// Another organization's policy is untouched (the tenant is the token's).
+	var other bool
+	if err := h.db.QueryRow(`SELECT sensor_key_bind_requires_approval FROM tenants WHERE id = $1`, o.other).Scan(&other); err != nil || other {
+		t.Fatalf("other organization: %v (%v)", other, err)
+	}
+}
+
 func TestSensitiveActionRefusals_CredentialReveal_DB(t *testing.T) {
 	h := newSensitiveHarness(t)
 	o := h.org()

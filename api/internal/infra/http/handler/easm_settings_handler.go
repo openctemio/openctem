@@ -42,10 +42,12 @@ type EASMSweeper interface {
 
 // EASMPlatform is what the platform runs at all, and its default cadence.
 type EASMPlatform struct {
-	CTAvailable   bool
-	DNSAvailable  bool
-	CTDefaultHrs  int
-	DNSDefaultHrs int
+	CTAvailable  bool
+	DNSAvailable bool
+	// EnrichmentAvailable: ASSET_ENRICHMENT_ENABLED.
+	EnrichmentAvailable bool
+	CTDefaultHrs        int
+	DNSDefaultHrs       int
 }
 
 // EASMSettingsHandler serves /api/v1/easm/settings and /api/v1/easm/sweeps.
@@ -73,6 +75,12 @@ type EASMSettingsResponse struct {
 	CTEnabled bool `json:"ct_enabled"`
 	// DNSChecksEnabled: dangling CNAME/NS, lame delegation and email posture.
 	DNSChecksEnabled bool `json:"dns_checks_enabled"`
+	// EnrichmentEnabled: new assets are enriched passively at once (DNS,
+	// registration, network owner); nothing is sent to the hosts.
+	EnrichmentEnabled bool `json:"enrichment_enabled"`
+	// EnrichmentAvailable: false when the operator turned automatic
+	// enrichment off for the whole platform.
+	EnrichmentAvailable bool `json:"enrichment_available"`
 	// CTIntervalHours / DNSIntervalHours: 0 = the platform default.
 	CTIntervalHours  int `json:"ct_interval_hours"`
 	DNSIntervalHours int `json:"dns_interval_hours"`
@@ -95,6 +103,8 @@ type EASMSettingsResponse struct {
 type EASMSettingsUpdateRequest struct {
 	CTEnabled        bool `json:"ct_enabled"`
 	DNSChecksEnabled bool `json:"dns_checks_enabled"`
+	// EnrichmentEnabled: omitted keeps the stored value.
+	EnrichmentEnabled *bool `json:"enrichment_enabled,omitempty"`
 	// 0 = platform default; otherwise 6..168.
 	CTIntervalHours  int `json:"ct_interval_hours"`
 	DNSIntervalHours int `json:"dns_interval_hours"`
@@ -127,6 +137,7 @@ func effective(hours, def int) int {
 func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, es tenant.EASMSettings) EASMSettingsResponse {
 	out := EASMSettingsResponse{
 		CTEnabled: !es.CTDisabled, DNSChecksEnabled: !es.DNSChecksDisabled,
+		EnrichmentEnabled: !es.EnrichmentDisabled, EnrichmentAvailable: h.platform.EnrichmentAvailable,
 		CTIntervalHours: es.CTIntervalHours, DNSIntervalHours: es.DNSIntervalHours,
 		CTEffectiveIntervalHours:  effective(es.CTIntervalHours, h.platform.CTDefaultHrs),
 		DNSEffectiveIntervalHours: effective(es.DNSIntervalHours, h.platform.DNSDefaultHrs),
@@ -172,7 +183,7 @@ func (h *EASMSettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 // Update handles PUT /api/v1/easm/settings
 // @Summary      Change attack-surface monitoring settings
-// @Description  Turn the Certificate Transparency monitor (sends the organization's domain names to crt.sh and Cert Spotter) or the DNS-only checks off or on, and set their interval in hours: 0 for the platform default, otherwise 6 to 168. Audited.
+// @Description  Turn the Certificate Transparency monitor (sends the organization's domain names to crt.sh and Cert Spotter), the DNS-only checks or automatic passive enrichment of new assets off or on (enrichment_enabled omitted keeps it as it is), and set their interval in hours: 0 for the platform default, otherwise 6 to 168. Audited.
 // @Tags         Attack Surface
 // @Accept       json
 // @Produce      json
@@ -196,6 +207,17 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	es := tenant.EASMSettings{
 		CTDisabled: !req.CTEnabled, DNSChecksDisabled: !req.DNSChecksEnabled,
 		CTIntervalHours: req.CTIntervalHours, DNSIntervalHours: req.DNSIntervalHours,
+	}
+	if req.EnrichmentEnabled != nil {
+		es.EnrichmentDisabled = !*req.EnrichmentEnabled
+	} else {
+		current, err := h.store.GetEASMSettings(r.Context(), tenantID.String())
+		if err != nil {
+			h.logger.Error("easm settings: read", "error", logger.SanitizeError(err))
+			apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+			return
+		}
+		es.EnrichmentDisabled = current.EnrichmentDisabled
 	}
 	if err := es.Validate(); err != nil {
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
