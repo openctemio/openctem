@@ -35,7 +35,7 @@ document.getElementById("manifest").value = JSON.stringify({
   "url": "https://openctem.io",
   "description": "Posts the OpenCTEM CI gate as a check and comments on pull requests.",
   "public": true,
-  "hook_attributes": { "url": "API/api/v1/webhooks/incoming/github-app", "active": true },
+  "hook_attributes": { "url": "API/api/v1/hooks/github-app", "active": true },
   "redirect_url": "CONSOLE/ci-cd",
   "callback_urls": ["CONSOLE/ci-cd/github-app/callback"],
   "setup_url": "CONSOLE/ci-cd/github-app/callback",
