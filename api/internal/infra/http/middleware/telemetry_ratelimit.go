@@ -1,8 +1,9 @@
 package middleware
 
 import (
+	"crypto/rand"
 	"math"
-	"math/rand/v2"
+	"math/big"
 	"net/http"
 	"strings"
 	"sync"
@@ -161,8 +162,18 @@ func (rl *TelemetryRateLimiter) RefillTime(key string) time.Duration {
 // The sensor SDK honors Retry-After up to the same 5 minutes.
 const MaxRetryAfter = 5 * time.Minute
 
-// retryAfterIntN draws the jitter; a variable so a test can pin it.
-var retryAfterIntN = rand.IntN
+// retryAfterIntN draws the jitter in [0, n); a variable so a test can pin
+// it. crypto/rand, so a client cannot predict the draw sequence.
+var retryAfterIntN = func(n int) int {
+	if n <= 1 {
+		return 0
+	}
+	v, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		return 0
+	}
+	return int(v.Int64())
+}
 
 // JitteredRetryAfter is the Retry-After, in whole seconds, for a request
 // refused by a bucket that holds a token again after refill: a uniform draw
