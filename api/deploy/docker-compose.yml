@@ -257,12 +257,12 @@ services:
       # Sensors: the install snippets on the Sensors page pin this image
       # release and install the gateway's internal CA (TLS mode internal; the
       # file is absent in the other modes and the snippets then skip it).
-      SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.11.0}
+      SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.12.0}
       SENSOR_MIN_VERSION: ${SENSOR_MIN_VERSION:-v0.9.0}
       # SDK policy: a sensor built with an SDK below the minimum shows as
       # degraded ("SDK below minimum"); below the latest it is "outdated".
       SENSOR_SDK_MIN_VERSION: ${SENSOR_SDK_MIN_VERSION:-}
-      SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.18.0}
+      SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.19.0}
       SENSOR_CA_CERT_FILE: /ca/openctem-root-ca.crt
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
