@@ -33,6 +33,7 @@ import {
   PENDING_SSO_MESSAGE,
 } from '@/features/sso-approvals/api/use-sso-changes'
 import { emptySamlConfig, type SamlConfig } from '@/features/saml/types/saml.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 function CopyableUrl({ label, url }: { label: string; url: string }) {
   const [copied, setCopied] = useState(false)
@@ -79,6 +80,7 @@ export function SamlConfigForm({
   canManage,
   onChanged,
 }: SamlConfigFormProps) {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSamlConfig(tenantId)
   const { trigger: save, isMutating: isSaving } = useSaveSamlConfig(tenantId)
   const { trigger: remove, isMutating: isDeleting } = useDeleteSamlConfig(tenantId)
@@ -339,9 +341,12 @@ export function SamlConfigForm({
       <ConfirmDialog
         open={removeOpen}
         onOpenChange={setRemoveOpen}
-        title="Remove SAML configuration?"
-        desc="Users will no longer be able to log in through your identity provider."
-        confirmText="Remove"
+        title={t('confirm.saml.removeTitle', 'Remove the SAML configuration?')}
+        desc={t(
+          'confirm.saml.removeDesc',
+          'People can no longer sign in through your identity provider. Make sure they have another way to sign in first. This cannot be undone.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         isLoading={isDeleting}
         handleConfirm={() => void handleDelete()}
