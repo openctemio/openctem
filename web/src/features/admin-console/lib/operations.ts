@@ -1,4 +1,4 @@
-import type { AdminOperations } from '../types'
+import type { AdminOperations, AdminSensorTransport } from '../types'
 
 /** Compares two versions like v0.9.2 / 0.10.0-rc.1 by their numeric core. */
 export function compareVersions(a: string, b: string): number {
@@ -69,4 +69,54 @@ export function schemaState(o: AdminOperations): SchemaState {
   if (o.schema.shipped > 0 && o.schema.applied < o.schema.shipped) return 'behind'
   if (o.schema.shipped > 0 && o.schema.applied > o.schema.shipped) return 'ahead'
   return 'ok'
+}
+
+/** Probe reasons with their own explanation (api sensortransport/probe.go). */
+const TRANSPORT_REASONS = new Set([
+  'transport_off',
+  'no_public_host',
+  'sensor_ca_unavailable',
+  'listener_failed',
+  'dns_failed',
+  'unreachable',
+  'foreign_certificate',
+  'handshake_failed',
+  'http2_refused',
+  'probe_pending',
+])
+
+export interface SensorTransportView {
+  /** What sensors use: grpc (offered, HTTPS too), https, pending, off (v2). */
+  binding: 'grpc' | 'https' | 'pending' | 'off'
+  /** The i18n key of the note, set only when an operator can change something. */
+  noteKey?: string
+  /** The raw reason code, a secondary detail next to the note. */
+  reason?: string
+}
+
+/**
+ * How sensors reach this installation, for Console > Operations. HTTPS is a
+ * normal, signed binding, not a fault: the note says what would let sensors
+ * use gRPC, and only when the probe gave a reason (not while it runs).
+ */
+export function sensorTransportView(st?: AdminSensorTransport): SensorTransportView | null {
+  if (!st) return null
+  if (st.mode === 'off') {
+    return {
+      binding: 'off',
+      noteKey: 'admin.ops.transport.reason.transport_off',
+      reason: 'transport_off',
+    }
+  }
+  if (st.grpc.state === 'advertised') return { binding: 'grpc' }
+  if (st.grpc.state === 'pending' || st.grpc.reason === 'probe_pending') {
+    return { binding: 'pending' }
+  }
+  const reason = st.grpc.reason || undefined
+  const known = reason && TRANSPORT_REASONS.has(reason)
+  return {
+    binding: 'https',
+    noteKey: `admin.ops.transport.reason.${known ? reason : 'other'}`,
+    reason,
+  }
 }
