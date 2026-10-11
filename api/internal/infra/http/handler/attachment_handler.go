@@ -30,12 +30,25 @@ import (
 // missing attachment) to avoid leaking existence.
 var errAttachmentAccessDenied = errors.New("attachment access denied")
 
+// Pentest attachment contexts. "finding" and "retest" both carry the finding
+// id as context_id; "campaign" carries the campaign id.
+const (
+	attachmentCtxFinding  = "finding"
+	attachmentCtxRetest   = "retest"
+	attachmentCtxCampaign = "campaign"
+)
+
 // FindingCampaignAccessChecker verifies that a user has access to a finding's
 // or campaign's attachments. Returns nil if access is allowed,
 // ErrNotFound/ErrForbidden otherwise.
 type FindingCampaignAccessChecker interface {
 	CheckFindingAccess(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
 	CheckCampaignAccess(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
+	// CheckFindingEvidenceWrite / CheckCampaignEvidenceWrite gate adding and
+	// removing evidence: the caller must be able to edit the finding (or
+	// write to the campaign), and the campaign must not be locked.
+	CheckFindingEvidenceWrite(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
+	CheckCampaignEvidenceWrite(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
 }
 
 // AttachmentHandler handles file upload/download/delete HTTP endpoints.
@@ -65,12 +78,34 @@ func (h *AttachmentHandler) SetAccessChecker(checker FindingCampaignAccessChecke
 	h.accessChecker = checker
 }
 
-// verifyContextAccess checks the caller may write to (upload/link into) the
-// given context. finding/retest contexts require campaign membership for the
-// finding; campaign contexts require campaign membership. Empty/unknown
-// context (a private orphan attachment owned by the uploader) is allowed.
-// No-op when no checker is configured.
+// verifyContextWrite checks the caller may add evidence to (upload/link into)
+// the given context: finding/retest contexts need the right to edit the
+// finding, campaign contexts a role that can upload evidence, and in both the
+// campaign must not be completed or canceled. Observers stay read-only.
+// Empty/unknown context (a private orphan attachment owned by the uploader) is
+// allowed. No-op when no checker is configured.
 // Both "finding" and "retest" contexts use finding ID as context_id.
+func (h *AttachmentHandler) verifyContextWrite(r *http.Request, contextType, contextID string) error {
+	if h.accessChecker == nil || contextID == "" {
+		return nil
+	}
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	isAdmin := middleware.IsAdmin(r.Context())
+	switch contextType {
+	case attachmentCtxFinding, attachmentCtxRetest:
+		return h.accessChecker.CheckFindingEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
+	case attachmentCtxCampaign:
+		return h.accessChecker.CheckCampaignEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
+	default:
+		return nil
+	}
+}
+
+// verifyContextAccess checks the caller may read the given context's
+// attachments: finding/retest contexts require campaign membership for the
+// finding; campaign contexts require campaign membership. No-op when no
+// checker is configured.
 func (h *AttachmentHandler) verifyContextAccess(r *http.Request, contextType, contextID string) error {
 	if h.accessChecker == nil || contextID == "" {
 		return nil
@@ -79,9 +114,9 @@ func (h *AttachmentHandler) verifyContextAccess(r *http.Request, contextType, co
 	userID := middleware.GetUserID(r.Context())
 	isAdmin := middleware.IsAdmin(r.Context())
 	switch contextType {
-	case "finding", "retest":
+	case attachmentCtxFinding, attachmentCtxRetest:
 		return h.accessChecker.CheckFindingAccess(r.Context(), tenantID, contextID, userID, isAdmin)
-	case "campaign":
+	case attachmentCtxCampaign:
 		return h.accessChecker.CheckCampaignAccess(r.Context(), tenantID, contextID, userID, isAdmin)
 	default:
 		return nil
@@ -106,9 +141,9 @@ func (h *AttachmentHandler) authorizeAttachment(r *http.Request, att *attachment
 	userID := middleware.GetUserID(r.Context())
 	ct, cid := att.ContextType(), att.ContextID()
 	switch {
-	case cid != "" && (ct == "finding" || ct == "retest"):
+	case cid != "" && (ct == attachmentCtxFinding || ct == attachmentCtxRetest):
 		return h.accessChecker.CheckFindingAccess(r.Context(), tenantID, cid, userID, false)
-	case cid != "" && ct == "campaign":
+	case cid != "" && ct == attachmentCtxCampaign:
 		return h.accessChecker.CheckCampaignAccess(r.Context(), tenantID, cid, userID, false)
 	default:
 		// No / unknown context → private to the uploader.
@@ -117,6 +152,37 @@ func (h *AttachmentHandler) authorizeAttachment(r *http.Request, att *attachment
 		}
 		return errAttachmentAccessDenied
 	}
+}
+
+// authorizeAttachmentWrite decides whether the caller may remove an existing
+// attachment. Finding/retest and campaign contexts need the same rights as
+// adding evidence there (verifyContextWrite); an attachment with no (or
+// unknown) context stays private to its uploader. Admins bypass.
+func (h *AttachmentHandler) authorizeAttachmentWrite(r *http.Request, att *attachment.Attachment) error {
+	if middleware.IsAdmin(r.Context()) {
+		return nil
+	}
+	ct, cid := att.ContextType(), att.ContextID()
+	switch {
+	case cid != "" && (ct == attachmentCtxFinding || ct == attachmentCtxRetest || ct == attachmentCtxCampaign):
+		return h.verifyContextWrite(r, ct, cid)
+	default:
+		if att.UploadedBy().String() == middleware.GetUserID(r.Context()) {
+			return nil
+		}
+		return errAttachmentAccessDenied
+	}
+}
+
+// writeAttachmentAccessError answers a refused attachment change: a member
+// who may read but not change the evidence gets 403 with the reason; anyone
+// else gets 404, so the attachment's existence does not leak.
+func writeAttachmentAccessError(w http.ResponseWriter, err error) {
+	if errors.Is(err, shared.ErrForbidden) {
+		apierror.Forbidden("You cannot change this evidence: your campaign role, the finding's owner or the campaign's status does not allow it").WriteJSON(w)
+		return
+	}
+	apierror.NotFound("Attachment not found").WriteJSON(w)
 }
 
 // Upload handles multipart file upload.
@@ -144,8 +210,8 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	// Campaign membership check on upload
 	ctxType := r.FormValue("context_type")
 	ctxID := r.FormValue("context_id")
-	if err := h.verifyContextAccess(r, ctxType, ctxID); err != nil {
-		apierror.NotFound("Access denied").WriteJSON(w)
+	if err := h.verifyContextWrite(r, ctxType, ctxID); err != nil {
+		writeAttachmentAccessError(w, err)
 		return
 	}
 
@@ -288,8 +354,8 @@ func (h *AttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
-		if err := h.authorizeAttachment(r, att); err != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
+		if err := h.authorizeAttachmentWrite(r, att); err != nil {
+			writeAttachmentAccessError(w, err)
 			return
 		}
 	}
@@ -425,8 +491,8 @@ func (h *AttachmentHandler) LinkToContext(w http.ResponseWriter, r *http.Request
 	// Verify the caller may write to the destination context before linking,
 	// otherwise a user could attach their own evidence onto a finding/campaign
 	// they have no access to.
-	if err := h.verifyContextAccess(r, req.ContextType, req.ContextID); err != nil {
-		apierror.NotFound("Access denied").WriteJSON(w)
+	if err := h.verifyContextWrite(r, req.ContextType, req.ContextID); err != nil {
+		writeAttachmentAccessError(w, err)
 		return
 	}
 
