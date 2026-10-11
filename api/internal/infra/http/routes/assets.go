@@ -151,10 +151,17 @@ func registerComponentRoutes(
 	}, middlewares...)
 
 	// Asset-scoped component routes
-	router.Group("/api/v1/assets/{id}", func(r Router) {
-		r.GET("/components", h.ListByAsset, middleware.Require(permission.ComponentsRead))
-		r.GET("/dependency-paths", h.DependencyPaths, middleware.Require(permission.ComponentsRead))
-		r.GET("/dependency-graph", h.DependencyGraph, middleware.Require(permission.ComponentsRead))
+	// One group per sub-path: a group mounted at /api/v1/assets/{id} itself
+	// would capture /api/v1/assets/stats, /tags, /{id} and every other
+	// one-segment asset route and answer 404.
+	router.Group("/api/v1/assets/{id}/components", func(r Router) {
+		r.GET("/", h.ListByAsset, middleware.Require(permission.ComponentsRead))
+	}, middlewares...)
+	router.Group("/api/v1/assets/{id}/dependency-paths", func(r Router) {
+		r.GET("/", h.DependencyPaths, middleware.Require(permission.ComponentsRead))
+	}, middlewares...)
+	router.Group("/api/v1/assets/{id}/dependency-graph", func(r Router) {
+		r.GET("/", h.DependencyGraph, middleware.Require(permission.ComponentsRead))
 	}, middlewares...)
 }
 
