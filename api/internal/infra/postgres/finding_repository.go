@@ -997,16 +997,20 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 	}, append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...)...), nil
 }
 
-// IsPentestCampaignMember reports whether the user belongs to the given
-// pentest campaign in this tenant. Used by the generic findings surface to
+// CanSeePentestFinding reports whether the user belongs to the given
+// pentest campaign in this tenant and may see a finding in that status. Used by the generic findings surface to
 // gate single-finding reads of pentest findings by campaign membership.
-func (r *FindingRepository) IsPentestCampaignMember(ctx context.Context, tenantID, campaignID, userID string) (bool, error) {
+//
+// A client member sees only published findings: a finding in draft or
+// in_review is not visible to them.
+func (r *FindingRepository) CanSeePentestFinding(ctx context.Context, tenantID, campaignID, userID, findingStatus string) (bool, error) {
 	const q = `SELECT EXISTS (
 		SELECT 1 FROM pentest_campaign_members
 		WHERE tenant_id = $1 AND campaign_id = $2 AND user_id = $3
+		  AND (role <> 'client' OR $4 NOT IN ('draft', 'in_review'))
 	)`
 	var ok bool
-	if err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID).Scan(&ok); err != nil {
+	if err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID, findingStatus).Scan(&ok); err != nil {
 		return false, err
 	}
 	return ok, nil
@@ -1944,6 +1948,22 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 	}
 	n, _ := res.RowsAffected()
 	return n, nil
+}
+
+// BranchCountsAsExposure reports whether a branch of the tenant is a release
+// line in its own right: default, protected, or of type main or release. Unlike
+// branch_counts_as_exposure it does not count every branch of a repository
+// whose default branch is unknown, so a job's base-branch hint can never make
+// a feature branch the baseline.
+func (r *FindingRepository) BranchCountsAsExposure(ctx context.Context, tenantID, branchID shared.ID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `SELECT b.is_default OR b.is_protected OR b.branch_type IN ('main', 'release')
+		FROM repository_branches b JOIN assets a ON a.id = b.repository_id
+		WHERE b.id = $2 AND a.tenant_id = $1`, tenantID.String(), branchID.String()).Scan(&ok)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return ok, err
 }
 
 // FingerprintsOpenOnBranch returns the subset of fingerprints that currently
@@ -3414,6 +3434,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			`pentest_campaign_id IN (
 				SELECT campaign_id FROM pentest_campaign_members
 				WHERE user_id = $%d AND tenant_id = $%d
+				  AND (role <> 'client' OR findings.status NOT IN ('draft', 'in_review'))
 			)`, userIdx, tenantIdx))
 	}
 
@@ -3430,6 +3451,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			`(source != 'pentest' OR pentest_campaign_id IN (
 				SELECT campaign_id FROM pentest_campaign_members
 				WHERE user_id = $%d AND tenant_id = $%d
+				  AND (role <> 'client' OR findings.status NOT IN ('draft', 'in_review'))
 			))`, userIdx, tenantIdx))
 	}
 

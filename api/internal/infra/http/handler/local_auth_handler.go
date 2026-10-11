@@ -1253,6 +1253,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	// Password validation errors
 	case errors.Is(err, password.ErrPasswordTooShort):
 		apierror.BadRequest(fmt.Sprintf("Password is too short (minimum %d characters)", h.minPasswordLength())).WriteJSON(w)
+	case errors.Is(err, password.ErrPasswordTooLong):
+		apierror.BadRequest(fmt.Sprintf("Password is too long (maximum %d bytes; a letter with an accent counts as 2 or more)", password.MaxBytes)).WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordCommon):
 		apierror.BadRequest("This password appears in lists of breached passwords. Choose another one.").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoUppercase):

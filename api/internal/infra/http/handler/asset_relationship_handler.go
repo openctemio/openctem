@@ -314,6 +314,19 @@ func (h *AssetRelationshipHandler) Delete(w http.ResponseWriter, r *http.Request
 //
 // Always returns 200 with a results array, even if every item failed.
 // The caller decides what to do based on per-item statuses.
+//
+// @Summary      Create relationships in bulk
+// @Description  Creates relationships from one source asset to many targets; per-item results, never aborts the batch.
+// @Tags         Asset Relationships
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  string                          true  "Source asset ID"
+// @Param        body  body  BatchCreateRelationshipRequest  true  "Targets"
+// @Success      200  {object}  assetapp.BatchCreateRelationshipResult
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /assets/{id}/relationships/batch [post]
 func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	pathAssetID := chi.URLParam(r, "id")

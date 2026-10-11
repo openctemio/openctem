@@ -490,3 +490,50 @@ func TestReissueSetupLink_ServiceAccountRefused(t *testing.T) {
 		t.Fatalf("a service account must be refused, got %v", err)
 	}
 }
+
+// An administrator of an organization that has verified no domain cannot
+// create an account for an address: the account would be email-verified and
+// its set-password link can come back to that administrator, so any
+// organization could take an address ahead of its real holder.
+func TestCreateUser_NoVerifiedDomain_Refused(t *testing.T) {
+	svc, tr, ur, _, _ := provFixture(t)
+	svc.SetAddressClassifier(NewAddressClassifier(fakeOwners{}, ownsAny(false, nil)))
+
+	_, err := svc.CreateUser(context.Background(), CreateUserInput{
+		TenantID: tr.tenant.ID().String(), Email: "ceo@bigbank.test", RoleIDs: viewerOnly, CreatedBy: shared.NewID(),
+	}, auditapp.AuditContext{})
+	if !errors.Is(err, ErrDirectAddNeedsVerifiedDomain) {
+		t.Fatalf("want ErrDirectAddNeedsVerifiedDomain, got %v", err)
+	}
+	if ur.byEmail["ceo@bigbank.test"] != nil {
+		t.Fatal("no account may be created")
+	}
+}
+
+// A domain verified by another organization is not this organization's.
+func TestCreateUser_OtherOrganizationsDomain_Refused(t *testing.T) {
+	svc, tr, ur, _, _ := provFixture(t)
+	svc.SetAddressClassifier(NewAddressClassifier(fakeOwners{owners: map[string]shared.ID{"bigbank.test": shared.NewID()}}, ownsAny(true, nil)))
+
+	_, err := svc.CreateUser(context.Background(), CreateUserInput{
+		TenantID: tr.tenant.ID().String(), Email: "ceo@bigbank.test", RoleIDs: viewerOnly, CreatedBy: shared.NewID(),
+	}, auditapp.AuditContext{})
+	if err == nil || ur.byEmail["ceo@bigbank.test"] != nil {
+		t.Fatalf("an address on another organization's domain must be refused, got %v", err)
+	}
+}
+
+// The organization's own people, on its verified domain, are still created.
+func TestCreateUser_VerifiedDomainAllowed(t *testing.T) {
+	svc, tr, ur, _, _ := provFixture(t)
+	svc.SetAddressClassifier(NewAddressClassifier(fakeOwners{owners: map[string]shared.ID{"corp.com": tr.tenant.ID()}}, ownsAny(true, nil)))
+
+	if _, err := svc.CreateUser(context.Background(), CreateUserInput{
+		TenantID: tr.tenant.ID().String(), Email: "new@corp.com", RoleIDs: viewerOnly, CreatedBy: shared.NewID(),
+	}, auditapp.AuditContext{}); err != nil {
+		t.Fatalf("CreateUser on the verified domain: %v", err)
+	}
+	if ur.byEmail["new@corp.com"] == nil {
+		t.Fatal("the account must be created")
+	}
+}
