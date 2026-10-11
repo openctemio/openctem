@@ -13,11 +13,13 @@
   routes:
     - "/api/v1/attack-surface"
     - /api/v1/easm
+    - "/api/v1/assets/{id}/web-evidence"
   mcp:
     - get_exposure_chains
   jobs:
     - AssetEnrichmentController
     - CertMonitorController
     - EASMDNSController
+    - WebEvidenceRetentionController
     - GraphEnrichmentController
     - ScopeJoinController

@@ -63,6 +63,20 @@ beforeEach(() => {
 })
 
 describe('EASMMonitoringCard', () => {
+  it('turns screenshots on with only that field changed', async () => {
+    wrap(<EASMMonitoringCard />)
+    const shots = await screen.findByRole('switch', { name: 'Screenshots of web assets' })
+    expect(shots).not.toBeChecked()
+    await userEvent.click(shots)
+    expect(api.put).toHaveBeenCalledWith('/api/v1/easm/settings', {
+      ct_enabled: true,
+      dns_checks_enabled: true,
+      ct_interval_hours: 0,
+      dns_interval_hours: 12,
+      web_screenshots_enabled: true,
+    })
+  })
+
   it('turns CT off keeping the other settings', async () => {
     wrap(<EASMMonitoringCard />)
     const ct = await screen.findByRole('switch', { name: 'Certificate Transparency discovery' })

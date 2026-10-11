@@ -97,6 +97,9 @@ type EASMSettingsResponse struct {
 	LastCTSweepAt     *time.Time `json:"last_ct_sweep_at,omitempty"`
 	LastDNSCheckAt    *time.Time `json:"last_dns_check_at,omitempty"`
 	RunNowAvailableAt *time.Time `json:"run_now_available_at,omitempty"`
+	// WebScreenshotsEnabled: screenshots sent with web evidence are kept
+	// (30 days); off by default.
+	WebScreenshotsEnabled bool `json:"web_screenshots_enabled"`
 }
 
 // EASMSettingsUpdateRequest replaces the settings.
@@ -108,6 +111,8 @@ type EASMSettingsUpdateRequest struct {
 	// 0 = platform default; otherwise 6..168.
 	CTIntervalHours  int `json:"ct_interval_hours"`
 	DNSIntervalHours int `json:"dns_interval_hours"`
+	// WebScreenshotsEnabled omitted keeps it as it is.
+	WebScreenshotsEnabled *bool `json:"web_screenshots_enabled,omitempty"`
 }
 
 func (h *EASMSettingsHandler) tenant(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
@@ -143,6 +148,7 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		DNSEffectiveIntervalHours: effective(es.DNSIntervalHours, h.platform.DNSDefaultHrs),
 		MinIntervalHours:          tenant.MinEASMIntervalHours, MaxIntervalHours: tenant.MaxEASMIntervalHours,
 		CTAvailable: h.platform.CTAvailable, DNSAvailable: h.platform.DNSAvailable,
+		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
 	}
 	if h.freshness != nil {
 		if ct, dns, err := h.freshness.Freshness(ctx, tenantID); err == nil {
@@ -204,20 +210,21 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	es := tenant.EASMSettings{
-		CTDisabled: !req.CTEnabled, DNSChecksDisabled: !req.DNSChecksEnabled,
-		CTIntervalHours: req.CTIntervalHours, DNSIntervalHours: req.DNSIntervalHours,
+	current, err := h.store.GetEASMSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.logger.Error("easm settings: read", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+		return
 	}
+	// Optional fields left out keep their current value.
+	es := *current
+	es.CTDisabled, es.DNSChecksDisabled = !req.CTEnabled, !req.DNSChecksEnabled
+	es.CTIntervalHours, es.DNSIntervalHours = req.CTIntervalHours, req.DNSIntervalHours
 	if req.EnrichmentEnabled != nil {
 		es.EnrichmentDisabled = !*req.EnrichmentEnabled
-	} else {
-		current, err := h.store.GetEASMSettings(r.Context(), tenantID.String())
-		if err != nil {
-			h.logger.Error("easm settings: read", "error", logger.SanitizeError(err))
-			apierror.InternalServerError("failed to read the settings").WriteJSON(w)
-			return
-		}
-		es.EnrichmentDisabled = current.EnrichmentDisabled
+	}
+	if req.WebScreenshotsEnabled != nil {
+		es.WebScreenshotsEnabled = *req.WebScreenshotsEnabled
 	}
 	if err := es.Validate(); err != nil {
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)

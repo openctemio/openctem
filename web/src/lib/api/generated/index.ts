@@ -219,6 +219,9 @@ export type AuditChainClass =
 /** GET /api/v1/easm/summary — the EASM overview (RFC-036). */
 export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Summary']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
+/** GET /api/v1/assets/{id}/web-evidence (RFC-081). */
+export type WebEvidenceList = Schemas['internal_infra_http_handler.WebEvidenceListResponse']
+export type WebEvidenceItem = Schemas['internal_infra_http_handler.WebEvidenceResponse']
 
 /** A scan run's tasks (RFC-046): GET /api/v1/scan-runs and /scan-runs/{id}. */
 export type RunTaskSummary = Schemas['internal_infra_http_handler.RunTaskSummaryResponse']
