@@ -236,6 +236,8 @@ type Repositories struct {
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
 	EASMSummary *postgres.EASMSummaryRepository
+	// EASMChange reads typed attack-surface changes and claims weekly digests (RFC-080).
+	EASMChange *postgres.EASMChangeRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -499,6 +501,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
+		EASMChange:       postgres.NewEASMChangeRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),
