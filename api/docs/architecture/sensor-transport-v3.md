@@ -10,10 +10,11 @@ is built, where it lives and how to work on it.
 | Proto `openctem.sensor.v3.SensorService` | built | `api/proto/openctem/sensor/v3/sensor.proto` |
 | Generated Go (protobuf + Connect) | built, committed | `api/pkg/sensorproto/v3`, `api/pkg/sensorproto/v3/sensorv3connect` |
 | CI: buf lint, buf breaking, generated code current | built | `api/scripts/check-proto.sh`, step "Sensor Protocol v3" of API CI |
-| HTTPS binding (`/api/v3/sensor`) | built, behind `SENSOR_TRANSPORT_V3_ENABLED` | `internal/infra/sensortransport` (server), `handler/sensor_v3_bridge.go` (identity, in-process authenticator, stream hints), `routes/sensor_v2.go` (`sensorV2InProcess`) |
+| HTTPS binding (`/api/v3/sensor`) | built, served unless `SENSOR_TRANSPORT_V3=off` | `internal/infra/sensortransport` (server), `handler/sensor_v3_bridge.go` (identity, in-process authenticator, stream hints), `routes/sensor_v2.go` (`sensorV2InProcess`) |
 | Control stream `Subscribe`, push on command changes (one replica) | built | `sensortransport/subscribe.go`, `postgres/command_notify.go` |
 | Sensor CA, `IssueCertificate`, mTLS listener (gRPC binding), revocation | built | `sensortransport/ca.go`, `issuer.go`, `mtls.go`; `SensorService.SetStatusNotifier` |
 | Redis wake fan-out across replicas | built | `internal/infra/redis/sensor_wake.go` (`SensorWakeBus`, channel `sensor:v3:wake`) |
+| gRPC self-probe: endpoint advertised only while reachable; `GET /api/v1/sensors/transport`, metrics | built | `sensortransport/probe.go`, `handler/sensor_transport_status_handler.go`, `cmd/server/handlers.go` (`setupSensorGRPC`) |
 | Gateway SNI passthrough (Compose), PROXY protocol | built | `deploy/gateway/Dockerfile`, `deploy/gateway/sensors/*.wrappers`, `deploy/docker-compose.sensor-passthrough.yml`; `SENSOR_MTLS_TRUSTED_PROXIES` |
 
 ## How a call is served
@@ -150,8 +151,8 @@ SENSOR_PUBLIC_HOSTNAME=sensors.example.com \
   connection whose SNI is `SENSOR_PUBLIC_HOSTNAME` is not terminated; its bytes
   go to `api:8443` behind a PROXY protocol v2 header. Every other host is
   served exactly as before.
-- It turns protocol v3 on in the API (`SENSOR_TRANSPORT_V3_ENABLED`,
-  `SENSOR_PUBLIC_HOST=<name>:443`, `SENSOR_MTLS_LISTEN_ADDR=:8443`) and trusts
+- It names the sensor host to the API (`SENSOR_PUBLIC_HOST=<name>:443`,
+  `SENSOR_MTLS_LISTEN_ADDR=:8443`) and trusts
   the PROXY header from the gateway's address only
   (`SENSOR_MTLS_TRUSTED_PROXIES`); a PROXY header from any other peer closes
   the connection, so a sensor cannot choose the address it is recorded with.
@@ -163,9 +164,37 @@ SENSOR_PUBLIC_HOSTNAME=sensors.example.com \
 - A separate port instead of SNI: publish the API's 8443 directly (or through
   any TCP load balancer) and set `SENSOR_PUBLIC_HOST=<host>:<port>`.
 
-Without the override, `SENSOR_TRANSPORT_V3_ENABLED=true` alone serves the
-HTTPS binding (`/api/v3/sensor`, through the normal TLS termination) and no
-gRPC listener.
+## How the bindings are chosen
+
+No operator switch turns a binding on. `SENSOR_TRANSPORT_V3` is `auto` by
+default; `off` is the emergency switch (no v3 at all; every sensor is back on
+v2 at its next call).
+
+- The HTTPS binding (`/api/v3/sensor`, through the normal TLS termination) is
+  always served: it reuses the v2 edge chain and needs nothing new.
+- The gRPC binding listens once the sensor CA loads (created on first start in
+  `SENSOR_MTLS_CA_DIR` when no CA files are given) and a public host is known:
+  `SENSOR_PUBLIC_HOST`, else `sensors.<host>:<port>` of the platform URL
+  (`SENSOR_PUBLIC_API_URL`, else `APP_URL`) when that host is a DNS name. A
+  platform reached by an IP address derives nothing, because the gateway
+  routes the sensor host by its TLS server name and a client sends none for an
+  address; such a platform sets `SENSOR_PUBLIC_HOST` to a name, or to an
+  address and a port of the listener's own.
+- A self-probe dials the public host every minute (every 30 s while failing):
+  TLS 1.3, ALPN `h2`, server certificate verified against the sensor CA only.
+  Only the API's mTLS listener holds such a certificate, so the probe passes
+  only when the path through the gateway reaches it. Hello (v2 and v3) names
+  the gRPC endpoint only while the probe passes; otherwise sensors use the
+  HTTPS binding. A gateway without passthrough, a closed port or a wrong name
+  fail the probe (`foreign_certificate`, `unreachable`, `dns_failed`,
+  `handshake_failed`, `http2_refused`), so a sensor is never sent to an
+  endpoint that cannot work.
+- Status: `GET /api/v1/sensors/transport` (`sensors:read`; platform
+  configuration, no tenant data) answers the mode, the HTTPS path and the gRPC
+  state, endpoint, reason and last check; metrics
+  `openctem_sensor_transport_grpc_advertised` (0/1) and
+  `openctem_sensor_transport_grpc_probe_total{result}`; the API logs each
+  change of state.
 
 ## Working on the proto
 
