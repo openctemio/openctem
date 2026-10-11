@@ -279,7 +279,7 @@
   "scans.basic.anotherWorkflow": "Quy trình khác",
   "scans.basic.anotherWorkflowHint": "Một trong các quy trình của tổ chức bạn.",
   "scans.basic.scanner": "Trình quét",
-  "scans.basic.scannerHint": "Các trình quét đang hoạt động trong danh mục công cụ. Trình quét mà không sensor trực tuyến nào chạy được vẫn hiện nhưng bị tắt.",
+  "scans.basic.scannerHint": "Trình quét mà không sensor trực tuyến nào chạy được vẫn hiện nhưng bị tắt.",
   "scans.basic.chainHint": "Muốn nối nhiều công cụ, hãy chọn một quy trình quét ở mục \"Chạy gì\".",
   "scans.basic.selectWorkflow": "Chọn quy trình",
   "scans.basic.workflow": "Quy trình",
@@ -461,7 +461,7 @@
   "scans.clone.status": "Trạng thái:",
   "scans.clone.asPaused": "(bản sao sẽ ở trạng thái tạm dừng)",
   "scans.clone.tags": "Thẻ:",
-  "scans.clone.note": "Bản sao sẽ ở trạng thái \"tạm dừng\". Bạn có thể kích hoạt sau khi xem lại cấu hình.",
+  "scans.clone.note": "Bản sao bắt đầu ở trạng thái tạm dừng.",
   "scans.clone.cloning": "Đang nhân bản...",
   "scans.clone.clone": "Nhân bản",
   "scans.trigger.automation": "Tự động hóa",
@@ -1007,5 +1007,14 @@
   "scans.basic.continuous": "Khám phá liên tục",
   "scans.basic.continuousHint": "Hằng ngày: khám phá thụ động các tên miền gốc, sau đó chỉ thăm dò chủ động những tài sản được xác nhận kể từ lần chạy trước. Tên miền đang chờ duyệt không bao giờ bị thăm dò.",
   "scans.new.continuousSecondName": "{name}: tài sản mới",
-  "scans.new.continuousSecondFailed": "Đã lưu lần quét khám phá thụ động, nhưng chưa lưu được lần quét thăm dò tài sản mới: {error}"
+  "scans.new.continuousSecondFailed": "Đã lưu lần quét khám phá thụ động, nhưng chưa lưu được lần quét thăm dò tài sản mới: {error}",
+  "scans.workflows.systemTemplate": "Mẫu hệ thống",
+  "scans.workflows.cloneHint": "Bản sao của bạn chỉnh sửa được hoàn toàn và không làm thay đổi mẫu.",
+  "scans.templates.title": "Mẫu trình quét",
+  "scans.templates.description": "Mẫu Nuclei, Semgrep và Betterleaks tùy chỉnh, tải lên tại đây hoặc đồng bộ từ nguồn mẫu.",
+  "scans.templates.uploaded": "Tải lên tại đây",
+  "scans.capabilities.title": "Năng lực",
+  "scans.capabilities.description": "Những gì công cụ làm được. Thêm năng lực tùy chỉnh cho công cụ của riêng bạn.",
+  "scans.zones.emptyTitle": "Chưa có vùng quét",
+  "scans.zones.empty": "Vùng quét là tùy chọn. Thêm một vùng để quét dải mạng riêng qua sensor của bạn."
 }
