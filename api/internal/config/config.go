@@ -334,17 +334,16 @@ type SensorConfigConfig struct {
 
 	// Heartbeat doorbell (RFC-023 §9.2a): the intervals the heartbeat
 	// response advises in next_heartbeat_seconds. Every value is clamped to
-	// [HeartbeatMinInterval, HeartbeatMaxInterval], and the maximum to half
-	// of WORKER_HEARTBEAT_TIMEOUT so a sensor that follows the advice is
-	// never marked offline.
-	HeartbeatInterval       time.Duration // SENSOR_HEARTBEAT_INTERVAL, idle (default 30s)
-	HeartbeatBusyInterval   time.Duration // SENSOR_HEARTBEAT_BUSY_INTERVAL, work waiting (default 5s)
-	HeartbeatLoadedInterval time.Duration // SENSOR_HEARTBEAT_LOADED_INTERVAL, platform under load (default 2m)
-	HeartbeatMinInterval    time.Duration // SENSOR_HEARTBEAT_MIN_INTERVAL (default 5s)
-	HeartbeatMaxInterval    time.Duration // SENSOR_HEARTBEAT_MAX_INTERVAL (default 5m)
+	// [HeartbeatMinInterval, HeartbeatMaxInterval], and the maximum to the
+	// derived bound min(offline mark/2, CommandLease/3) so a sensor that
+	// follows the advice is never marked offline and never loses a lease.
+	HeartbeatInterval     time.Duration // SENSOR_HEARTBEAT_INTERVAL, idle (default 30s)
+	HeartbeatBusyInterval time.Duration // SENSOR_HEARTBEAT_BUSY_INTERVAL, work waiting (default 5s)
+	HeartbeatMinInterval  time.Duration // SENSOR_HEARTBEAT_MIN_INTERVAL (default 5s)
+	HeartbeatMaxInterval  time.Duration // SENSOR_HEARTBEAT_MAX_INTERVAL (default 5m, can only lower the derived bound)
 	// HeartbeatSlowQuery is the doorbell query latency that counts as "under
-	// load" and advises HeartbeatLoadedInterval. SENSOR_HEARTBEAT_SLOW_QUERY
-	// (default 250ms).
+	// load"; the doorbell then advises the maximum interval.
+	// SENSOR_HEARTBEAT_SLOW_QUERY (default 250ms).
 	HeartbeatSlowQuery time.Duration
 
 	// CommandLease is how long a sensor holds a claimed command without
@@ -1181,25 +1180,24 @@ func Load() (*Config, error) {
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
 			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
 
-			KeyRenewBefore:          getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
-			SlimHeartbeat:           getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
-			SignerSocket:            getEnv("SIGNER_SOCKET", ""),
-			SignerTimeout:           getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
-			HeartbeatInterval:       getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
-			HeartbeatBusyInterval:   getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
-			HeartbeatLoadedInterval: getEnvDuration("SENSOR_HEARTBEAT_LOADED_INTERVAL", 2*time.Minute),
-			HeartbeatMinInterval:    getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
-			HeartbeatMaxInterval:    getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
-			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
-			CommandLease:            getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
-			HealthSlowHeartbeat:     getEnvDuration("SENSOR_HEALTH_SLOW_HEARTBEAT", 2*time.Second),
-			HealthStartupGrace:      getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
-			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
-			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", DefaultSensorMinVersion)),
-			SDKMinVersion:           sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", DefaultSensorSDKMinVersion)),
-			SDKLatestVersion:        sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", DefaultSensorSDKLatestVersion)),
-			Image:                   getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
-			CACertFile:              getEnv("SENSOR_CA_CERT_FILE", ""),
+			KeyRenewBefore:        getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
+			SlimHeartbeat:         getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
+			SignerSocket:          getEnv("SIGNER_SOCKET", ""),
+			SignerTimeout:         getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
+			HeartbeatInterval:     getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
+			HeartbeatBusyInterval: getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
+			HeartbeatMinInterval:  getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
+			HeartbeatMaxInterval:  getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
+			HeartbeatSlowQuery:    getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
+			CommandLease:          getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
+			HealthSlowHeartbeat:   getEnvDuration("SENSOR_HEALTH_SLOW_HEARTBEAT", 2*time.Second),
+			HealthStartupGrace:    getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
+			LatestVersion:         sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
+			MinVersion:            sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", DefaultSensorMinVersion)),
+			SDKMinVersion:         sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", DefaultSensorSDKMinVersion)),
+			SDKLatestVersion:      sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", DefaultSensorSDKLatestVersion)),
+			Image:                 getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
+			CACertFile:            getEnv("SENSOR_CA_CERT_FILE", ""),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),
