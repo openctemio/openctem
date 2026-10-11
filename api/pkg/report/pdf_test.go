@@ -2,8 +2,14 @@ package report
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	pngenc "image/png"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/report/markdown"
 )
 
 func sampleReportInput() ReportInput {
@@ -94,5 +100,40 @@ func TestGeneratePDF_ExcludePOC(t *testing.T) {
 	in.IncludePOC = false
 	if _, err := GeneratePDF(in); err != nil {
 		t.Fatalf("GeneratePDF exclude-poc: %v", err)
+	}
+}
+
+// Finding Markdown is formatted in the PDF and evidence images resolved by
+// the service are embedded.
+func TestGeneratePDF_MarkdownAndEvidenceImage(t *testing.T) {
+	var png bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 40, 20))
+	for x := 0; x < 40; x++ {
+		img.Set(x, 10, color.RGBA{R: 200, A: 255})
+	}
+	if err := pngenc.Encode(&png, img); err != nil {
+		t.Fatal(err)
+	}
+	url := "/api/v1/attachments/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	in := ReportInput{
+		Campaign: CampaignData{Name: "md"},
+		Findings: []FindingData{{Title: "XSS", Severity: "high",
+			Description: "**Stored** XSS in `comment`:\n\n- step one\n\n![proof](" + url + ")\n\n```\n<script>x</script>\n```"}},
+		ReportType: TypeTechnical,
+		Images:     map[string]markdown.Image{url: {ContentType: "image/png", Data: png.Bytes(), Width: 40, Height: 20}},
+	}
+	data, err := GeneratePDF(in)
+	if err != nil {
+		t.Fatalf("GeneratePDF: %v", err)
+	}
+	if !bytes.Contains(data, []byte("/Subtype /Image")) {
+		t.Fatal("the evidence image is not embedded")
+	}
+	html, err := GenerateHTML(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html, "data:image/png;base64,") || strings.Contains(html, "<script>x</script>") || !strings.Contains(html, "<strong>Stored</strong>") {
+		t.Fatal("HTML report does not render Markdown safely with the evidence image")
 	}
 }
