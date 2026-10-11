@@ -8,7 +8,7 @@ import (
 // ScopePendingSettler puts leftover pending scope rows into effect
 // (*scope.Service).
 type ScopePendingSettler interface {
-	SettleLegacyPending(ctx context.Context) (int, error)
+	ActivateLeftoverPending(ctx context.Context) (int, error)
 }
 
 // ScopePendingController puts into effect the scope entries and exclusions
@@ -39,5 +39,5 @@ func (c *ScopePendingController) Reconcile(ctx context.Context) (int, error) {
 	if c.svc == nil {
 		return 0, nil
 	}
-	return c.svc.SettleLegacyPending(ctx)
+	return c.svc.ActivateLeftoverPending(ctx)
 }
