@@ -32,6 +32,10 @@ type EASMSettings struct {
 	// EnrichmentDisabled stops automatic passive enrichment of new assets
 	// (docs/architecture/asset-freshness.md); on by default.
 	EnrichmentDisabled bool `json:"enrichment_disabled,omitempty"`
+	// WebScreenshotsEnabled keeps the screenshots sensors send with web
+	// evidence (docs/rfcs/RFC-081-web-evidence-screenshots.md); off by
+	// default: a screenshot can show whatever the page shows.
+	WebScreenshotsEnabled bool `json:"web_screenshots_enabled,omitempty"`
 }
 
 // Validate checks the floors: an interval is 0 (default) or 6..168 hours.

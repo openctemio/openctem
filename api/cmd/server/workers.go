@@ -680,6 +680,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Web evidence retention (RFC-081): screenshots after 30 days (O7),
+	// files of deleted rows, capture text after a year.
+	if svc.WebEvidence != nil {
+		w.ControllerManager.Register(controller.NewWebEvidenceRetentionController(svc.WebEvidence, 0, log))
+	}
+
 	// Owner resolution — make the member whose email is owner_ref a primary owner (asset_owners)
 	w.ControllerManager.Register(controller.NewOwnerResolutionController(
 		deps.DB,

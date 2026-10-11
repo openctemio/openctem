@@ -126,9 +126,9 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "attack surface is computed from assets"},
 		},
-		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm"},
+		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm", "/api/v1/assets/{id}/web-evidence"},
 		MCP:    []string{"get_exposure_chains"},
-		Jobs:   []string{"AssetEnrichmentController", "CertMonitorController", "EASMDNSController", "GraphEnrichmentController", "ScopeJoinController"},
+		Jobs:   []string{"AssetEnrichmentController", "CertMonitorController", "EASMDNSController", "WebEvidenceRetentionController", "GraphEnrichmentController", "ScopeJoinController"},
 	},
 	{
 		ID: ModuleScopeConfig, Slug: "scope-config", Name: "Scope Config",

@@ -363,3 +363,33 @@ func (s *AttachmentService) GetByID(ctx context.Context, tenantID, attachmentID 
 	}
 	return s.repo.GetByID(ctx, tid, aid)
 }
+
+// StoreBlob stores platform-generated content (no attachment row) in the
+// tenant's storage and returns its key and provider. Used for web evidence
+// screenshots (RFC-081): they are served by their own data-scoped route,
+// never by /api/v1/attachments.
+func (s *AttachmentService) StoreBlob(ctx context.Context, tenantID, filename, contentType string, data []byte) (string, string, error) {
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return "", "", fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
+	}
+	if int64(len(data)) > attachmentdom.MaxFileSize {
+		return "", "", attachmentdom.ErrTooLarge
+	}
+	store, provider := s.resolveStorage(ctx, tenantID)
+	key, err := store.Upload(ctx, tenantID, filename, contentType, bytes.NewReader(data))
+	if err != nil {
+		return "", "", fmt.Errorf("store blob: %w", err)
+	}
+	return key, provider, nil
+}
+
+// OpenBlob opens content stored with StoreBlob.
+func (s *AttachmentService) OpenBlob(ctx context.Context, tenantID, provider, key string) (io.ReadCloser, error) {
+	rc, _, err := s.resolveStorageByProvider(ctx, tenantID, provider).Download(ctx, tenantID, key)
+	return rc, err
+}
+
+// DeleteBlob deletes content stored with StoreBlob (idempotent).
+func (s *AttachmentService) DeleteBlob(ctx context.Context, tenantID, provider, key string) error {
+	return s.resolveStorageByProvider(ctx, tenantID, provider).Delete(ctx, tenantID, key)
+}

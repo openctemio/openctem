@@ -236,6 +236,8 @@ type Repositories struct {
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
 	EASMSummary *postgres.EASMSummaryRepository
+	// AssetWebEvidence stores web assets' captures (RFC-081).
+	AssetWebEvidence *postgres.AssetWebEvidenceRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -499,6 +501,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
+		AssetWebEvidence: postgres.NewAssetWebEvidenceRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),
