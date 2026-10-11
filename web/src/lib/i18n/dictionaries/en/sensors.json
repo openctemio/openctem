@@ -188,5 +188,9 @@
   "sensors.posture.pin.caFile": "Private CA file",
   "sensors.posture.pin.none": "System trust store only",
   "sensors.posture.network.enforced": "Confined",
-  "sensors.posture.network.unenforced": "Not confined"
+  "sensors.posture.network.unenforced": "Not confined",
+  "sensors.transportStatus.grpc": "Sensors connect over gRPC with mutual TLS at {endpoint}.",
+  "sensors.transportStatus.pending": "Checking whether sensors can reach the gRPC binding; they use HTTPS meanwhile.",
+  "sensors.transportStatus.httpsOnly": "Sensors connect over HTTPS: the gRPC binding is not reachable through the platform address",
+  "sensors.transportStatus.off": "Sensor protocol v3 is off: sensors use protocol v2."
 }
