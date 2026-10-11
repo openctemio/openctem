@@ -469,5 +469,7 @@
   "admin.users.session.started": "Bắt đầu",
   "admin.users.sessions": "Phiên đang hoạt động",
   "admin.users.startHint": "Nhập ít nhất 3 ký tự của email, tên hoặc id người dùng. Tài khoản được tra cứu, không liệt kê.",
-  "admin.users.startTitle": "Tìm một tài khoản"
+  "admin.users.startTitle": "Tìm một tài khoản",
+  "admin.targetMappings.emptyTitle": "Chưa có ánh xạ mục tiêu",
+  "admin.targetMappings.empty": "Không có ánh xạ thì mọi lần quét đều bỏ qua tất cả tài sản. Hãy ánh xạ mỗi loại mục tiêu của trình quét tới các loại tài sản nó quét được."
 }
