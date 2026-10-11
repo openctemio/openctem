@@ -26,6 +26,7 @@ var keyChainExempt = map[string]string{
 	"/api/v1/version":             "JWT-only base chain (authMiddleware, no oct_ keys)",
 	"/api/v1/announcements":       "JWT-only base chain (authMiddleware, no oct_ keys)",
 	"/api/v1/client-errors":       "public, no chain: counts a web error kind",
+	"/api/v1/legal":               "public, no chain: the operator's legal information, no tenant data",
 	"/api/v1/validation/evidence": "sensor-key auth only",
 	// CI runner routes (RFC-051): mounted outside every key chain, with
 	// their own authentication (the CI OIDC token, the CI run token).
