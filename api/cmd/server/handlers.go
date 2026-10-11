@@ -759,8 +759,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SignupPolicy = svc.Signup
 	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
-	if handlers.Sensor != nil {
-		handlers.Sensor.SetTransportStatus(sensorTransportStatus(handlers.SensorV3))
+	if handlers.AdminOperations != nil {
+		handlers.AdminOperations.SetSensorTransport(sensorTransportStatus(handlers.SensorV3))
 	}
 	handlers.Bootstrap.WithSession(bootstrapSession(cfg, svc, handlers))
 	return handlers

@@ -15,5 +15,10 @@
   "findings.status.in_review": "In Review",
   "findings.statusCategory.open": "Open",
   "findings.statusCategory.in_progress": "In progress",
-  "findings.statusCategory.closed": "Closed"
+  "findings.statusCategory.closed": "Closed",
+  "findings.typeOverview.breakdownUnavailable": "The breakdown for this type is not available here. The findings list shows it in full.",
+  "findings.typeOverview.viewInFindings": "View in findings",
+  "findings.dataFlow.emptyTitle": "No data flow",
+  "findings.dataFlow.empty": "The scanner sent no source-to-sink trace for this finding. Semgrep sends one when run with --dataflow-traces.",
+  "findings.dataFlow.hint": "How untrusted data reaches the vulnerable code, from source to sink."
 }

@@ -33,8 +33,10 @@ import { ImportResultsDialog } from '@/features/findings/components/import-resul
 import { TenableConnectorCard } from './tenable-connector-card'
 import { TenableConnectorDialog } from './tenable-connector-dialog'
 import { TenableCoveragePanel } from './tenable-coverage-panel'
+import { useTranslation } from '@/context/i18n-provider'
 
 export function TenableConnectorView() {
+  const { t } = useTranslation()
   const [dialog, setDialog] = useState<{ open: boolean; integration?: Integration }>({
     open: false,
   })
@@ -141,8 +143,10 @@ export function TenableConnectorView() {
             Paused Tenable integrations
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
-            Nessus Pro and direct-mode integrations have no runner any more. Remove them, or connect
-            Tenable.sc through a sensor instead.
+            {t(
+              'settings.scanners.pausedRows',
+              'Nessus Pro and direct connections are no longer supported. Remove them, or connect Tenable.sc through a sensor.'
+            )}
           </p>
           <div className="space-y-4">
             {paused.map((p) => (
