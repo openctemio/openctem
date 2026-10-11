@@ -507,6 +507,24 @@ func registerIncomingWebhookRoutes(
 	router.POST("/api/v1/webhooks/incoming/jira", jiraHandler.IncomingJiraWebhook, hmacMW)
 }
 
+// GitHub webhook budget per client IP. Generous: deliveries for every
+// organization arrive from GitHub's shared address pool. It bounds the
+// per-request secret lookup an unauthenticated caller can trigger.
+const (
+	githubWebhookPerIPPerSecond = 50
+	githubWebhookPerIPBurst     = 500
+)
+
+// registerGitHubWebhookRoute registers the public GitHub webhook. The handler
+// verifies GitHub's X-Hub-Signature-256 against the organization's own
+// secrets and refuses replays of a delivery id; the route adds a per-IP
+// budget in front of the secret lookup.
+func registerGitHubWebhookRoute(router Router, h *handler.GitHubWebhookHandler, log *logger.Logger) {
+	perIP := middleware.NewTelemetryRateLimiter(githubWebhookPerIPPerSecond, githubWebhookPerIPBurst, time.Hour, log).
+		MiddlewareKeyed(middleware.ClientIPKey, "Too many webhook deliveries")
+	router.POST("/api/v1/webhooks/incoming/github", h.IncomingGitHubWebhook, perIP)
+}
+
 // includeProgramAssets puts include_program_assets=true into the request
 // context (shared.WithProgramAssets); any other value keeps the default.
 func includeProgramAssets(next http.Handler) http.Handler {
