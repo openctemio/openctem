@@ -1,0 +1,24 @@
+# OPENCTEM_SENSOR_GATEWAY=alpn: sensor protocol v3 gRPC binding on the
+# platform's own port, for every setup (an IP address, one host name, no
+# DNS at all). Needs the gateway image with the layer4 module
+# (deploy/gateway/Dockerfile). docs/rfcs/RFC-059-sensor-transport-v3.md §5.
+#
+# A TLS connection whose ClientHello offers the ALPN id openctem-sensor/3 is
+# not terminated here: its bytes go to the API's mTLS listener, which checks
+# the client certificate itself and negotiates h2. The id routes, it does not
+# authenticate. Browsers, API clients and sensors on the HTTPS binding never
+# offer it, so they continue to the TLS termination below as before. A PROXY
+# protocol v2 header carries the sensor's address; the API believes it only
+# from SENSOR_MTLS_TRUSTED_PROXIES.
+listener_wrappers {
+	layer4 {
+		@sensor_alpn tls alpn openctem-sensor/3
+		route @sensor_alpn {
+			proxy {
+				proxy_protocol v2
+				upstream {$SENSOR_MTLS_UPSTREAM:api:8443}
+			}
+		}
+	}
+	tls
+}

@@ -799,7 +799,8 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, r
 	adv := setupSensorGRPC(cfg, srv, svc, log)
 	srv.SetAdvertiser(adv)
 	v2.SetTransportV3Func(func() *protov2.TransportV3 {
-		return &protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix, GRPCEndpoint: adv.Endpoint()}
+		return &protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix,
+			GRPCEndpoint: adv.Endpoint(), GRPCALPNEndpoint: adv.ALPNEndpoint()}
 	})
 	st := adv.Status()
 	log.Info("sensor protocol v3 enabled", "https_path", sensortransport.PathPrefix,
@@ -816,7 +817,7 @@ func sensorTransportStatus(srv *sensortransport.Server) func() handler.SensorTra
 		}
 		st := srv.GRPCStatus()
 		out := handler.SensorTransportStatus{Mode: config.TransportV3Auto, HTTPSPath: sensortransport.PathPrefix,
-			GRPC: handler.SensorTransportGRPC{State: st.State, Endpoint: st.Endpoint, Reason: st.Reason}}
+			GRPC: handler.SensorTransportGRPC{State: st.State, Endpoint: st.Endpoint, RequiresALPN: st.RequiresALPN, Reason: st.Reason}}
 		if !st.CheckedAt.IsZero() {
 			at := st.CheckedAt
 			out.GRPC.CheckedAt = &at
@@ -842,7 +843,7 @@ func setupSensorGRPC(cfg *config.Config, srv *sensortransport.Server, svc *Servi
 	log.Info("sensor CA loaded", "fingerprint", ca.Fingerprint())
 	srv.SetCertificateIssuer(sensortransport.NewIssuer(ca, svc.Sensor, svc.Sensor, tc.CertTTL, host, log))
 	if host == "" {
-		log.Info("sensor protocol v3 gRPC binding not served: no SENSOR_PUBLIC_HOST and none derived from the platform URL (an IP address cannot be routed by name)")
+		log.Info("sensor protocol v3 gRPC binding not served: no SENSOR_PUBLIC_HOST and no https platform URL (APP_URL or SENSOR_PUBLIC_API_URL) to derive it from")
 		return sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonNoPublicHost})
 	}
 	mcfg := sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: host, TrustedProxies: tc.MTLSTrustedProxies}
@@ -854,10 +855,18 @@ func setupSensorGRPC(cfg *config.Config, srv *sensortransport.Server, svc *Servi
 	srv.SetProber(sensortransport.NewProber(adv, host, sensortransport.TLSProbe(ca.Pool()), sensortransport.ProberConfig{
 		OnChange: func(st sensortransport.GRPCStatus) {
 			if st.State == sensortransport.GRPCAdvertised {
-				log.Info("sensor protocol v3 gRPC binding reachable: advertised to sensors", "endpoint", st.Endpoint)
+				log.Info("sensor protocol v3 gRPC binding reachable: advertised to sensors", "endpoint", st.Endpoint,
+					"requires_alpn", st.RequiresALPN)
 				return
 			}
-			log.Warn("sensor protocol v3 gRPC binding not reachable through its public host: sensors use the HTTPS binding",
+			if tc.PublicHost == "" {
+				// Derived from the platform URL: a gateway without ALPN
+				// routing (the stock image) is an expected setup, not a fault.
+				log.Info("sensor protocol v3 gRPC binding not reachable on the platform's port (the gateway does not route the sensor ALPN id): sensors use the HTTPS binding",
+					"endpoint", host, "reason", st.Reason)
+				return
+			}
+			log.Warn("sensor protocol v3 gRPC binding not reachable through SENSOR_PUBLIC_HOST: sensors use the HTTPS binding",
 				"endpoint", host, "reason", st.Reason)
 		},
 	}))
