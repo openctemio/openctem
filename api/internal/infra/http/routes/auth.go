@@ -120,8 +120,11 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			firstTeamHandler := ChainFunc(h.LocalAuth.CreateFirstTeam, crossSite, registerRL)
 			r.POST("/create-first-team", firstTeamHandler.ServeHTTP)
 
-			// Protected: logout requires authentication
-			logoutHandler := ChainFunc(h.LocalAuth.Logout, authMiddleware)
+			// Sign-out: by the refresh token when the request carries one
+			// (it outlives the access token, so an idle user's sign-out still
+			// ends the server session), else by the access token.
+			logoutByAccess := ChainFunc(h.LocalAuth.Logout, authMiddleware)
+			logoutHandler := ChainFunc(h.LocalAuth.LogoutWithRefreshToken(logoutByAccess), crossSite, tokenExchangeRL)
 			r.POST("/logout", logoutHandler.ServeHTTP)
 
 			// Step-up re-authentication (docs/architecture/step-up-reauth.md):
