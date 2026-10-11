@@ -378,8 +378,10 @@ jobs:
           # shellcheck disable=SC2046
           docker buildx imagetools create "${args[@]}" $(printf "${IMAGE}@sha256:%s " *)
 
-  # Keyless cosign signatures (Sigstore, GitHub OIDC) + an SPDX SBOM per image.
-  # Verify with:
+  # Keyless cosign signatures (Sigstore, GitHub OIDC), an SPDX SBOM and a
+  # signed SLSA build provenance per image. Verify the provenance with:
+  #   gh attestation verify oci://ghcr.io/openctemio/openctem:vX.Y.Z --owner openctemio
+  # and the signature with:
   #   cosign verify ghcr.io/openctemio/openctem:vX.Y.Z \
   #     --certificate-identity-regexp '^https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v' \
   #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -391,6 +393,7 @@ jobs:
       contents: write
       packages: write
       id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -410,6 +413,20 @@ jobs:
         run: |
           digest=$(crane digest "$REF")
           cosign sign --yes "${REF%:*}@${digest}"
+      - name: Index digest
+        id: digest
+        env:
+          REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
+        run: echo "digest=$(crane digest "$REF")" >> "$GITHUB_OUTPUT"
+      # SLSA build provenance (this workflow, commit, runner) signed through
+      # Sigstore and stored next to the image, so a consumer can check where and
+      # from what an image was built, not only who signed it.
+      - name: Attest the build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ matrix.name }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
       - name: SBOM (SPDX JSON)
         env:
           REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
