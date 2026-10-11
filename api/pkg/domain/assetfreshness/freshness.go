@@ -64,11 +64,11 @@ var specs = []ClassSpec{
 	{ClassRegistration, stage.LookupRDAP, []asset.AssetType{asset.AssetTypeDomain}, 7 * 24 * time.Hour, true},
 	{ClassNetworkOwner, stage.LookupASN, []asset.AssetType{asset.AssetTypeIPAddress, asset.AssetTypeNetwork}, 7 * 24 * time.Hour, true},
 	{ClassHTTP, stage.ProbeHTTP, []asset.AssetType{
-		asset.AssetTypeService, asset.AssetTypeWebsite, asset.AssetTypeWebApplication,
+		asset.AssetTypeService, asset.AssetTypeApplication,
 		asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeIPAddress,
 	}, 3 * 24 * time.Hour, false},
 	{ClassTLS, stage.ProbeHTTP, []asset.AssetType{asset.AssetTypeCertificate}, 3 * 24 * time.Hour, false},
-	{ClassPorts, stage.ScanPorts, []asset.AssetType{asset.AssetTypeIPAddress, asset.AssetTypeHost, asset.AssetTypeOpenPort}, 7 * 24 * time.Hour, false},
+	{ClassPorts, stage.ScanPorts, []asset.AssetType{asset.AssetTypeIPAddress, asset.AssetTypeHost}, 7 * 24 * time.Hour, false},
 }
 
 // Specs returns every class, in display order.
