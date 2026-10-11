@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   DangerZone,
   DangerZoneItem,
@@ -141,6 +142,8 @@ export default function ScanDetailPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [stoppingRunId, setStoppingRunId] = useState<string | null>(null)
+  const [pendingStop, setPendingStop] = useState<ScanRun | null>(null)
+  const { t } = useTranslation()
   const [openRunId, setOpenRunId] = useState<string | null>(null)
 
   const { data: config, isLoading, error } = useScanConfig(scanId)
@@ -189,6 +192,7 @@ export default function ScanDetailPage() {
     try {
       await post(scanRunEndpoints.cancel(run.id), {})
       toast.success('Run canceled. In-flight tasks stop at their next heartbeat.')
+      setPendingStop(null)
       await refetchAll()
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to cancel run'))
@@ -307,7 +311,7 @@ export default function ScanDetailPage() {
               size="sm"
               variant="ghost"
               disabled={stoppingRunId === run.id}
-              onClick={() => handleStopRun(run)}
+              onClick={() => setPendingStop(run)}
               aria-label={`Cancel run started ${formatScanDate(run.started_at || run.created_at)}`}
             >
               {stoppingRunId === run.id ? (
@@ -629,21 +633,41 @@ export default function ScanDetailPage() {
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
-        title="Delete scan"
+        title={t('confirm.scan.deleteTitle', 'Delete scan "{name}"?', { name: config.name })}
         desc={
           <>
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <AlertTriangle className="h-4 w-4 text-destructive" aria-hidden="true" />
               {config.name}
             </span>
-            The scan and its schedule are deleted. Past runs and findings stay. This cannot be
-            undone.
+            {t(
+              'confirm.scan.deleteDesc',
+              'The scan and its schedule are deleted. Past runs and findings stay. This cannot be undone.'
+            )}
           </>
         }
-        confirmText={isDeleting ? 'Deleting...' : 'Delete'}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfig}
+      />
+      <ConfirmDialog
+        open={pendingStop !== null}
+        onOpenChange={(open) => !open && !stoppingRunId && setPendingStop(null)}
+        destructive
+        title={t('confirm.scan.cancelRunTitle', 'Cancel this run of "{name}"?', {
+          name: config.name,
+        })}
+        desc={t(
+          'confirm.scan.cancelRunDesc',
+          'No new tasks start and running tasks stop at their next heartbeat. Results already received stay. A canceled run cannot be resumed; start a new run instead.'
+        )}
+        cancelBtnText={t('confirm.keepRunning', 'Keep running')}
+        confirmText={t('confirm.scan.cancelRun', 'Cancel run')}
+        isLoading={stoppingRunId !== null}
+        handleConfirm={() => (pendingStop ? handleStopRun(pendingStop) : undefined)}
       />
       <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
     </Main>

@@ -7,6 +7,8 @@ import { useMembers } from '@/features/organization/api/use-members'
 import { memberDisplayName } from '@/features/organization/lib/member-lifecycle'
 import { useTenant } from '@/context/tenant-provider'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { ResolveCampaignDialog } from '@/features/remediation/components/resolve-campaign-dialog'
@@ -232,6 +234,7 @@ export default function CampaignDetailPage() {
         },
       })
       await mutateCampaign()
+      setPendingUnlink(null)
       toast.success('Finding unlinked')
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to unlink finding'))
@@ -240,6 +243,8 @@ export default function CampaignDetailPage() {
 
   // Inline edit state
   const [resolveOpen, setResolveOpen] = useState(false)
+  const [pendingUnlink, setPendingUnlink] = useState<{ id: string; title: string } | null>(null)
+  const { t } = useTranslation()
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({
     name: '',
@@ -536,7 +541,9 @@ export default function CampaignDetailPage() {
                           <Can permission={Permission.RemediationWrite}>
                             <DropdownMenuItem
                               className="text-destructive"
-                              onClick={() => handleUnlinkFinding(f.id)}
+                              onSelect={() =>
+                                setPendingUnlink({ id: f.id, title: f.title || f.message || f.id })
+                              }
                             >
                               <Link2Off className="me-2 h-4 w-4" /> Unlink from campaign
                             </DropdownMenuItem>
@@ -703,6 +710,21 @@ export default function CampaignDetailPage() {
           </Card>
         )}
       </div>
+      <ConfirmDialog
+        open={pendingUnlink !== null}
+        onOpenChange={(open) => !open && setPendingUnlink(null)}
+        destructive
+        title={t('confirm.remediation.unlinkTitle', 'Unlink "{name}" from this campaign?', {
+          name: pendingUnlink?.title ?? '',
+        })}
+        desc={t(
+          'confirm.remediation.unlinkDesc',
+          'It is removed from the findings linked to "{campaign}". The finding itself is not changed, and you can link it again later.',
+          { campaign: campaign.name }
+        )}
+        confirmText={t('confirm.unlink', 'Unlink')}
+        handleConfirm={() => (pendingUnlink ? handleUnlinkFinding(pendingUnlink.id) : undefined)}
+      />
     </Main>
   )
 }

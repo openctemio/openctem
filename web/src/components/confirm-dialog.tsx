@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -25,7 +26,11 @@ type ConfirmDialogProps = {
   cancelBtnText?: string
   confirmText?: React.ReactNode
   destructive?: boolean
-  handleConfirm: () => void
+  /**
+   * Runs the action. When it returns a promise, both buttons stay disabled
+   * until it settles, so a second click cannot fire the action twice.
+   */
+  handleConfirm: () => unknown
   isLoading?: boolean
   className?: string
   children?: React.ReactNode
@@ -34,6 +39,14 @@ type ConfirmDialogProps = {
    * the user types this exact text (e.g. the organization's name).
    */
   typeToConfirm?: string
+}
+
+/** Bulk deletes of this many items or more ask the user to type the count. */
+export const BULK_TYPE_TO_CONFIRM_MIN = 10
+
+/** The typeToConfirm value for a bulk action: the count once it is large. */
+export function bulkTypeToConfirm(count: number): string | undefined {
+  return count >= BULK_TYPE_TO_CONFIRM_MIN ? String(count) : undefined
 }
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
@@ -51,13 +64,30 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     typeToConfirm,
     ...actions
   } = props
+  const { t } = useTranslation()
   const inputId = useId()
   const [typed, setTyped] = useState('')
+  const [running, setRunning] = useState(false)
   const typedOk = !typeToConfirm || typed === typeToConfirm
+  const busy = !!isLoading || running
+  const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
+    '{text}'
+  )
+  const onConfirm = () => {
+    if (busy || disabled || !typedOk) return
+    const result = handleConfirm()
+    if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      setRunning(true)
+      const done = () => setRunning(false)
+      ;(result as PromiseLike<unknown>).then(done, done)
+    }
+  }
   return (
     <AlertDialog
       {...actions}
       onOpenChange={(open) => {
+        // Esc and outside clicks do not close it while the action runs.
+        if (!open && busy) return
         if (!open) setTyped('')
         actions.onOpenChange(open)
       }}
@@ -74,8 +104,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             {children}
             {typeToConfirm && (
               <div className="space-y-2">
-                <Label htmlFor={inputId} className="font-normal">
-                  Type <span className="font-semibold">{typeToConfirm}</span> to confirm
+                <Label htmlFor={inputId} className="block font-normal">
+                  {typeBefore}
+                  <span className="font-semibold break-all">{typeToConfirm}</span>
+                  {typeAfter}
                 </Label>
                 <Input
                   id={inputId}
@@ -89,13 +121,15 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           </AlertDialogBody>
         ) : null}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isLoading}>{cancelBtnText ?? 'Cancel'}</AlertDialogCancel>
+          <AlertDialogCancel disabled={busy}>
+            {cancelBtnText ?? t('confirm.cancel', 'Cancel')}
+          </AlertDialogCancel>
           <Button
             variant={destructive ? 'destructive' : 'default'}
-            onClick={handleConfirm}
-            disabled={disabled || isLoading || !typedOk}
+            onClick={onConfirm}
+            disabled={disabled || busy || !typedOk}
           >
-            {confirmText ?? 'Continue'}
+            {confirmText ?? t('confirm.continue', 'Continue')}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -18,6 +18,8 @@ import {
 import { useSWRConfig } from 'swr'
 
 import { Main } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -105,6 +107,8 @@ function Dashboard() {
   const [restored, setRestored] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [customizing, setCustomizing] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
+  const { t } = useTranslation()
 
   // Refresh all — re-fetch every dashboard/finding/stats query on the page (the
   // widgets self-fetch via SWR, so revalidating their keys refreshes the view).
@@ -175,7 +179,8 @@ function Dashboard() {
       await deleteDashboard(id)
       await revalidate()
       choose('ctem')
-      toast.success(`Deleted "${name}"`)
+      setPendingDelete(null)
+      toast.success(t('confirm.dashboard.deleted', 'Dashboard "{name}" deleted', { name }))
     } catch (e) {
       toast.error(getErrorMessage(e))
     }
@@ -281,7 +286,9 @@ function Dashboard() {
                     )}
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
-                      onClick={() => remove(activeCustom.id, activeCustom.name)}
+                      onSelect={() =>
+                        setPendingDelete({ id: activeCustom.id, name: activeCustom.name })
+                      }
                     >
                       <Trash2 className="me-2 h-4 w-4" /> Delete
                     </DropdownMenuItem>
@@ -307,6 +314,22 @@ function Dashboard() {
           <CtemDashboard />
         )}
       </div>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        destructive
+        title={t('confirm.dashboard.deleteTitle', 'Delete dashboard "{name}"?', {
+          name: pendingDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.dashboard.deleteDesc',
+          'The dashboard and its widget layout are deleted for everyone who can see it. Your data is not affected. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
+        handleConfirm={() =>
+          pendingDelete ? remove(pendingDelete.id, pendingDelete.name) : undefined
+        }
+      />
     </Main>
   )
 }
