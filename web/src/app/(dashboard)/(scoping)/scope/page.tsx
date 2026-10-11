@@ -4,7 +4,9 @@
  * Scoping › Scope (research/53, RFC-054): what scans may touch.
  *
  * Two lists, In scope (entries) and Out of scope (exclusions, which always
- * win), plus Approvals: every change waiting for a second person. No inline
+ * win), each listing every row (pending ones with their pill), plus
+ * Approvals: every change waiting for a second person, shown while the
+ * organization requires approvals or something still waits. No inline
  * toggles; widening actions say they may need approval and go through
  * step-up. The tab and filters live in the URL.
  */
@@ -46,14 +48,16 @@ export default function ScopePage() {
   const canApprove = useHasPermission(Permission.ScopeApprove)
   const { data: settings } = useScopeSettingsApi()
   const membersMayRequest = settings?.one_off_targets === 'admins_and_requests'
+  // Unknown (still loading) counts as Strict.
+  const entriesNeedApproval = settings?.approval_policy?.entries_need_approval ?? true
 
   const [tabParam, setTabParam] = useUrlFilter('tab', 'in')
   const { moduleIds } = useTenantModules()
   const proofVisible = moduleIds.includes('attack_surface')
-  const tab: ScopeTab =
-    (TABS as readonly string[]).includes(tabParam) && (tabParam !== 'proof' || proofVisible)
-      ? (tabParam as ScopeTab)
-      : 'in'
+  const tabVisible = (name: string) =>
+    (TABS as readonly string[]).includes(name) &&
+    (name !== 'proof' || proofVisible) &&
+    (name !== 'approvals' || showApprovals)
 
   const [q, setQ] = useUrlFilter('q', '')
   const [kind, setKind] = useUrlFilter('kind', 'all')
@@ -86,15 +90,33 @@ export default function ScopePage() {
   }
   const onPagination = list.setPagination
 
+  // The add dialogs' "Show it" for an existing row: its tab, searched.
+  const showExisting = (href: string) => {
+    const p = new URL(href, 'http://local').searchParams
+    const next = p.get('q') ?? ''
+    setSearchInput(next)
+    setQ(next)
+    setKind('all')
+    setStatus(p.get('status') ?? 'all')
+    setPage(1)
+    setTabParam(p.get('tab') ?? 'in')
+  }
+
   // Counts for the tabs and the strip (one row each; the lists load their own).
   const { data: activeEntries } = useScopeTargetsApi({ status: 'active', per_page: 1 })
-  const { data: inEntries } = useScopeTargetsApi({ status: 'active,expired,inactive', per_page: 1 })
+  const { data: inEntries } = useScopeTargetsApi({
+    status: 'active,pending,expired,inactive',
+    per_page: 1,
+  })
   const { data: outRows } = useScopeExclusionsApi({
-    status: 'active,inactive,expired',
+    status: 'active,pending,inactive,expired,rejected',
     per_page: 1,
   })
   const { data: activeOut } = useScopeExclusionsApi({ status: 'active', per_page: 1 })
   const { total: pending } = usePendingScopeChanges()
+  // Without approvals in force and nothing waiting there is nothing to decide.
+  const showApprovals = entriesNeedApproval || pending > 0
+  const tab: ScopeTab = tabVisible(tabParam) ? (tabParam as ScopeTab) : 'in'
 
   const metrics: MetricStripItem[] = [
     {
@@ -113,15 +135,19 @@ export default function ScopePage() {
       onClick: () => selectTab('out'),
       active: tab === 'out',
     },
-    {
-      key: 'approvals',
-      label: 'Waiting for approval',
-      value: pending,
-      tone: pending > 0 ? 'warning' : 'default',
-      hint: pending > 0 ? 'authorize nothing until approved' : undefined,
-      onClick: () => selectTab('approvals'),
-      active: tab === 'approvals',
-    },
+    ...(showApprovals
+      ? ([
+          {
+            key: 'approvals',
+            label: 'Waiting for approval',
+            value: pending,
+            tone: pending > 0 ? 'warning' : 'default',
+            hint: pending > 0 ? 'authorize nothing until approved' : undefined,
+            onClick: () => selectTab('approvals'),
+            active: tab === 'approvals',
+          },
+        ] satisfies MetricStripItem[])
+      : []),
   ]
 
   const addLabel = canApprove ? 'Add to scope' : 'Request access'
@@ -172,9 +198,11 @@ export default function ScopePage() {
             <TabsTrigger value="out">
               Out of scope <TabsCount value={outRows?.total ?? '…'} />
             </TabsTrigger>
-            <TabsTrigger value="approvals">
-              Approvals <TabsCount value={pending} />
-            </TabsTrigger>
+            {showApprovals && (
+              <TabsTrigger value="approvals">
+                Approvals <TabsCount value={pending} />
+              </TabsTrigger>
+            )}
             {proofVisible && <TabsTrigger value="proof">Domain proof</TabsTrigger>}
           </TabsList>
         </div>
@@ -224,8 +252,12 @@ export default function ScopePage() {
         )}
       </Tabs>
 
-      <ScopeEntryDialog open={addOpen} onOpenChange={setAddOpen} />
-      <ScopeExclusionDialog open={excludeOpen} onOpenChange={setExcludeOpen} />
+      <ScopeEntryDialog open={addOpen} onOpenChange={setAddOpen} onShowExisting={showExisting} />
+      <ScopeExclusionDialog
+        open={excludeOpen}
+        onOpenChange={setExcludeOpen}
+        onShowExisting={showExisting}
+      />
     </Main>
   )
 }

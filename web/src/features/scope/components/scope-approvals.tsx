@@ -266,7 +266,7 @@ export function ScopeApprovals() {
         >
           {t(
             'scope.approvals.leftOver',
-            'Scope changes need no approval while scan approval is not Strict. These were submitted earlier and still wait: approve or reject them, or their requester can remove them and add them again.'
+            'Scope changes need no approval while scan approval is not Strict. These were submitted earlier: they take effect automatically within the hour, or put one in effect now from the In scope or Out of scope list. Reject one you do not want.'
           )}
         </p>
       )}
