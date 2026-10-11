@@ -101,7 +101,10 @@ type AssetService struct {
 	changes     assetdom.ChangeEventRepository
 	attrLister  AttributeSourceLister
 	// Freshness of attribute classes. Optional: nil serves no observation.
-	freshness freshdom.Repository
+	freshness  freshdom.Repository
+	enrichReqs freshdom.RequestRepository
+	// createdHook requests enrichment of assets a person created.
+	createdHook CreatedAssetsHook
 	// Background re-resolution after a precedence change, per tenant.
 	reresolving    sync.Map
 	reresolveAgain sync.Map
@@ -522,6 +525,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 					"asset_id", assetID.String(), "error", err)
 			}
 		}()
+	}
+
+	if s.createdHook != nil {
+		s.createdHook(ctx, tenantID, []*assetdom.Asset{a})
 	}
 
 	s.logger.Info("asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()))

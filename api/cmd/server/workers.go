@@ -912,6 +912,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Automatic passive enrichment of new assets (RFC-075).
+	if cfg.Worker.AssetEnrichmentEnabled && svc.AssetEnricher != nil {
+		w.ControllerManager.Register(controller.NewAssetEnrichmentController(svc.AssetEnricher, 0))
+	}
+
 	// Asset lifecycle worker. Demotes assets that no scanner or
 	// integration has re-observed within each tenant's configured
 	// threshold. Backward compatible by default: a tenant that has

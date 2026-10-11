@@ -9,8 +9,24 @@ import (
 	"fmt"
 	"time"
 
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
+
+// CreatedAssetsHook receives assets a person created (manual create, CSV
+// import), so they are enriched like assets an ingest found.
+type CreatedAssetsHook func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset)
+
+// SetCreatedAssetsHook wires the hook for manual creates.
+func (s *AssetService) SetCreatedAssetsHook(h CreatedAssetsHook) { s.createdHook = h }
+
+// SetCreatedAssetsHook wires the hook for CSV imports (called once per import
+// with every asset it created).
+func (s *AssetImportService) SetCreatedAssetsHook(h CreatedAssetsHook) { s.createdHook = h }
+
+// SetEnrichmentRequests wires the requests the freshness view shows.
+func (s *AssetService) SetEnrichmentRequests(r freshdom.RequestRepository) { s.enrichReqs = r }
 
 // SetFreshness wires the freshness records. Unwired, every asset shows its
 // passive classes as never observed.
@@ -32,5 +48,10 @@ func (s *AssetService) GetFreshness(ctx context.Context, tenantID, assetID strin
 		}
 	}
 	v := freshdom.View(a.Type(), freshdom.ImportanceOf(a), obs, time.Now())
+	if s.enrichReqs != nil {
+		if v.Enrichment, err = s.enrichReqs.Get(ctx, a.TenantID(), a.ID()); err != nil {
+			return nil, fmt.Errorf("get enrichment request: %w", err)
+		}
+	}
 	return &v, nil
 }
