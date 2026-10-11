@@ -34,7 +34,6 @@ R3 POST /api/v1/organization/members/{member_id}/erase
 R3 POST /api/v1/organization/members/{member_id}/offboard
 R3 DELETE /api/v1/pentest/campaigns/{id}/members/{userId}
 R3 DELETE /api/v1/pentest/findings/{findingId}
-R3 DELETE /api/v1/pentest/reports/{reportId}
 R3 DELETE /api/v1/pentest/templates/{templateId}
 R3 DELETE /api/v1/scan-workflows/{id}/steps/{stepId}
 R3 DELETE /api/v1/relationships/{relationshipId}
@@ -68,8 +67,6 @@ R3 GET /api/v1/groups/{groupId}/scope-rules
 R3 GET /api/v1/groups/{groupId}/scope-rules/{ruleId}
 R3 GET /api/v1/pentest/findings/{findingId}
 R3 GET /api/v1/pentest/findings/{findingId}/retests
-R3 GET /api/v1/pentest/reports/{reportId}
-R3 GET /api/v1/pentest/reports/{reportId}/download
 R3 GET /api/v1/pentest/templates/{templateId}
 R3 GET /api/v1/relationships/{relationshipId}
 R3 GET /api/v1/repositories/{repositoryId}/branches
