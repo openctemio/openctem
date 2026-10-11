@@ -2,7 +2,7 @@
 
 /**
  * CI/CD integration (api RFC-051): the pipelines that scan your repositories
- * from GitHub Actions and GitLab CI, their runs and repository coverage, and
+ * from any supported CI system, their runs and repository coverage, and
  * the setup that decides which pipelines may send results (trust) and what
  * fails them (gate policy, break-glass). One page, two tabs; each tab reuses
  * the component the rest of the console shows.
@@ -41,22 +41,16 @@ export function CICDIntegration() {
         )}
       >
         <Button asChild variant="outline" size="sm">
-          <SafeExternalLink href={DOCS.ci.githubActions}>
+          <SafeExternalLink href={DOCS.ci.guide}>
             <BookOpen className="h-4 w-4" />
-            GitHub Actions guide
-          </SafeExternalLink>
-        </Button>
-        <Button asChild variant="outline" size="sm">
-          <SafeExternalLink href={DOCS.ci.gitlabCi}>
-            <BookOpen className="h-4 w-4" />
-            GitLab CI guide
+            {t('scans.ci.guide', 'CI integration guide')}
           </SafeExternalLink>
         </Button>
       </PageHeader>
       <Tabs value={tab} onValueChange={(v) => setTabParam(v === 'setup' ? 'setup' : '')}>
         <TabsList>
-          <TabsTrigger value="pipelines">Pipelines</TabsTrigger>
-          <TabsTrigger value="setup">Trust and gate</TabsTrigger>
+          <TabsTrigger value="pipelines">{t('scans.ci.tab.pipelines', 'Pipelines')}</TabsTrigger>
+          <TabsTrigger value="setup">{t('scans.ci.tab.setup', 'Trust and gate')}</TabsTrigger>
         </TabsList>
       </Tabs>
       {tab === 'setup' ? <CITrustSettings embedded /> : <CIPipelinesPanel />}
