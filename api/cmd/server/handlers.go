@@ -416,11 +416,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:             vulnHandler,
-		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
-		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingActions:            findingActionsHandler,
-		FindingRetest:             handler.NewFindingRetestHandler(svc.Retest, log),
+		Vulnerability:    vulnHandler,
+		RemediationGroup: handler.NewRemediationGroupHandler(svc.RemediationGroup),
+		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		FindingActions:   findingActionsHandler,
+		FindingRetest: func() *handler.FindingRetestHandler {
+			h := handler.NewFindingRetestHandler(svc.Retest, log)
+			if svc.Pentest != nil {
+				h.SetManualRetestSource(svc.Pentest) // pentest testers' retests join the history
+			}
+			return h
+		}(),
 		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
