@@ -422,6 +422,20 @@ the ports it found open (`technical.ip_address.ports`). Ingest
 - Certificates page: the client-side Validity filter was never applied by the
   inventory page and is removed; each row shows its expiry, and expiring or
   expired certificates are listed on Exposures.
+## 4k. Network seeds (built)
+
+Design: [RFC-082](../rfcs/RFC-082-network-seeds.md). Scoping › Scope ›
+**Networks** holds AS number and organization-name seeds
+(`/api/v1/easm/network-seeds`, scope permissions, audited; at most 50). An AS
+seed is expanded from RIPEstat (through the SSRF-guarded client, one fixed
+host) into its holder and announced prefixes; each prefix is checked against
+the platform guardrails and offered as a CIDR scope entry through the scope
+flow. An organization seed lists the AS numbers registered to the name
+(shared cloud/CDN ASes dropped). A seed never authorizes a probe. In the
+review queue an address in a seeded network gets the /24 or /48 around it
+offered (`network.seeded`). Seeds are refreshed weekly
+(`easm-network-seed-refresh`). A CIDR seed is a CIDR scope entry.
+
 ## 4f. Review queue reachable, honest counts (built, P0-12)
 
 - **Reachable:** the Attack surface sidebar row carries the section tabs

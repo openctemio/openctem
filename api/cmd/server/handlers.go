@@ -385,16 +385,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
-		Component:     handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
-		VEXStatement:  handler.NewVEXStatementHandler(svc.VEX, log),
-		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
-		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
-		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
-		BountyProgram: handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
-		ScopeLetter:   handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
-		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
-		EASM:          newEASMHandler(repos, svc, log),
-		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
+		Component:       handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
+		VEXStatement:    handler.NewVEXStatementHandler(svc.VEX, log),
+		AssetGroup:      handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetType:       handler.NewAssetTypeHandler(svc.AssetType, v, log),
+		Scope:           handler.NewScopeHandler(svc.Scope, v, log),
+		BountyProgram:   handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
+		ScopeLetter:     handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
+		AttackSurface:   handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		EASM:            newEASMHandler(repos, svc, log),
+		EASMSettings:    newEASMSettingsHandler(cfg, svc, deps, log),
+		EASMNetworkSeed: newEASMNetworkSeedHandler(svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -1130,6 +1131,9 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	}
 	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
 	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	if repos.EASMNetworkSeed != nil {
+		review.SetSeededNetworks(repos.EASMNetworkSeed.Networks) // range fixes in seeded networks (RFC-082)
+	}
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
 	}
@@ -1319,4 +1323,17 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		return mode
 	}
 	return s
+}
+
+// newEASMNetworkSeedHandler serves network seeds when the service is wired;
+// every change is audited.
+func newEASMNetworkSeedHandler(svc *Services, log *logger.Logger) *handler.EASMNetworkSeedHandler {
+	if svc.EASMNetworkSeeds == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMNetworkSeedHandler(svc.EASMNetworkSeeds, audit, log)
 }
