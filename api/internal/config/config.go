@@ -1132,9 +1132,9 @@ type AITriageConfig struct {
 	GeminiAPIKey     string // Platform's Google Gemini API key
 
 	// Rate Limiting
-	RateLimitRPM      int // Rate limit per minute
-	TimeoutSeconds    int // Timeout for AI API calls
-	MaxTokens         int // Max tokens per request
+	RateLimitRPM   int // Rate limit per minute
+	TimeoutSeconds int // Timeout for AI API calls
+	MaxTokens      int // Max tokens per request
 
 	// LLM Parameters
 	Temperature float64 // Temperature for LLM (0.0-1.0, lower = more deterministic)
@@ -1219,9 +1219,9 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name:  getEnv("APP_NAME", "openctem"),
-			Env:   appEnv(),
-			URL:   getEnv("APP_URL", ""),
+			Name: getEnv("APP_NAME", "openctem"),
+			Env:  appEnv(),
+			URL:  getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
