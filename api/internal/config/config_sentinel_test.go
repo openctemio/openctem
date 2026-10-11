@@ -119,7 +119,6 @@ func minimalValidConfig() *Config {
 		App: AppConfig{
 			Name:  "openctem",
 			Env:   "development",
-			Debug: false,
 		},
 		Server: ServerConfig{
 			Host: "0.0.0.0",
