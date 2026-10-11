@@ -100,9 +100,14 @@ page offers **Request access** (`/request-access`, en/vi):
 - Retention (`access-request-retention` controller, hourly): unconfirmed
   requests are deleted after 24 hours, decided ones after 90 days.
 - CAPTCHA: `CAPTCHA_TURNSTILE_SECRET` makes the API require a Cloudflare
-  Turnstile token on submissions; `CAPTCHA_TURNSTILE_SITE_KEY` is published as
-  `captcha_site_key` on `/auth/providers`. The web widget is not wired yet:
-  leave the secret unset until it is, or every submission is refused.
+  Turnstile token on request-access submissions **and on self-service
+  registration** (`POST /auth/register`, `captcha_token`, checked before the
+  account lookup, 400 `CAPTCHA_FAILED`). `CAPTCHA_TURNSTILE_SITE_KEY` is
+  published as `captcha_site_key` on `/auth/providers`, and the register and
+  request-access forms render the check when it is set. The two variables
+  must be set together; the server refuses to start with only one. The web
+  CSP allows `frame-src https://challenges.cloudflare.com` for the widget.
+  Set both whenever self-service sign-up is on in production.
 
 ### Invitation tokens stay out of URLs
 
