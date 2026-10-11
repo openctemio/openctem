@@ -193,5 +193,9 @@
   "sensors.keyBindPolicy.description": "Tắt (mặc định): sensor dùng API key sẽ thay nó bằng khóa ký do chính sensor tạo, một lần và có ghi nhật ký kiểm toán; sau đó API key không còn dùng được. Bật: sensor đó giữ API key cho đến khi quản trị viên ghép nối lại. Tắt tùy chọn này cần quyền mở rộng quyền hạn của sensor.",
   "sensors.keyBindPolicy.requiredToast": "Khóa của sensor giờ cần quản trị viên ghép nối lại sensor",
   "sensors.keyBindPolicy.allowedToast": "Sensor có thể thay API key bằng khóa ký của chính nó",
-  "sensors.keyBindPolicy.error": "Không thể thay đổi chính sách khóa sensor"
+  "sensors.keyBindPolicy.error": "Không thể thay đổi chính sách khóa sensor",
+  "sensors.transportStatus.grpc": "Sensor kết nối qua gRPC với mutual TLS tại {endpoint}.",
+  "sensors.transportStatus.pending": "Đang kiểm tra sensor có kết nối được gRPC không; trong lúc đó sensor dùng HTTPS.",
+  "sensors.transportStatus.httpsOnly": "Sensor kết nối qua HTTPS: không truy cập được kênh gRPC qua địa chỉ của nền tảng",
+  "sensors.transportStatus.off": "Giao thức sensor v3 đang tắt: sensor dùng giao thức v2."
 }
