@@ -81,7 +81,7 @@ func registerThreatIntelRoutes(
 	// Threat Intel routes - global data accessible to authenticated users
 	router.Group("/api/v1/threat-intel", func(r Router) {
 		// Unified stats endpoint (combines EPSS, KEV, and sync status)
-		r.GET("/stats", h.GetThreatIntelStats, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/stats", h.GetThreatIntelStats, middleware.Require(permission.VulnerabilitiesRead), heavyReads.Middleware())
 
 		// Sync status and management (admin operations)
 		r.GET("/sync", h.GetSyncStatuses, middleware.Require(permission.VulnerabilitiesRead))
@@ -213,7 +213,7 @@ func registerVulnerabilityRoutes(
 		r.GET("/", h.ListFindings, middleware.Require(permission.FindingsRead))
 
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
-		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead))
+		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 
 		// The FilterDocument form of the list (RFC-048): read-only, same
 		// permission and scope as GET /findings.
@@ -226,7 +226,7 @@ func registerVulnerabilityRoutes(
 
 		// Groups + Related CVEs (must be before /{id})
 		if findingActionsHandler != nil {
-			r.GET("/groups", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead))
+			r.GET("/groups", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 			r.GET("/related-cves/{cveId}", findingActionsHandler.GetRelatedCVEs, middleware.Require(permission.FindingsRead))
 		}
 
