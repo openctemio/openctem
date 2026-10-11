@@ -203,14 +203,14 @@ func (h *SCMAppHandler) Remove(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GitHubWebhook handles POST /api/v1/webhooks/incoming/github-app
+// GitHubWebhook handles POST /api/v1/hooks/github-app
 // @Summary      GitHub App webhook
 // @Description  Installation events from GitHub, verified with the app's webhook secret (X-Hub-Signature-256) before anything is read.
 // @Tags         CI
 // @Accept       json
 // @Success      204
 // @Failure      401  {object}  apierror.Error
-// @Router       /webhooks/incoming/github-app [post]
+// @Router       /hooks/github-app [post]
 func (h *SCMAppHandler) GitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, scmappsvc.MaxWebhookBody+1))
 	if err != nil || len(body) > scmappsvc.MaxWebhookBody {
