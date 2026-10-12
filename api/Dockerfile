@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # =============================================================================
 # MULTI-STAGE DOCKERFILE
 # =============================================================================
@@ -95,36 +96,28 @@ ARG VERSION=""
 ARG COMMIT=""
 ARG BUILD_TIME=""
 
-# Build the main server
-RUN CGO_ENABLED=0 \
+# Every binary in ONE go build: the packages they share compile once. The
+# build cache is a BuildKit cache mount (local rebuilds recompile only what
+# changed; it never ends up in a layer). -trimpath keeps the builder's paths
+# out of the binaries, so the same source gives the same binary on any host.
+# Binaries:
+#   server           the API
+#   bootstrap-admin  initial setup: platform administrators and the first
+#                    organization
+#   refingerprint    re-keys findings to the current identity recipe (a dry run
+#                    by default, RFC-043 §6)
+#   openctem-signer  the job signer (RFC-040 §5.6); runs as its own container
+#                    from this image, see deploy/docker-compose.job-signer.yml
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 \
     GOOS=${TARGETOS:-linux} \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
-    go build -ldflags="-s -w \
+    go build -trimpath -ldflags="-s -w \
       -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
       -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
       -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
-    -o /app/bin/server ./cmd/server
-
-# Build bootstrap-admin (initial setup: platform administrators and the first
-# organization)
-RUN CGO_ENABLED=0 \
-    GOOS=${TARGETOS:-linux} \
-    GOARCH=${TARGETARCH:-$(go env GOARCH)} \
-    go build -ldflags="-s -w" -o /app/bin/bootstrap-admin ./cmd/bootstrap-admin
-
-# Build refingerprint (re-keys findings to the current identity recipe; a dry
-# run by default, RFC-043 §6)
-RUN CGO_ENABLED=0 \
-    GOOS=${TARGETOS:-linux} \
-    GOARCH=${TARGETARCH:-$(go env GOARCH)} \
-    go build -ldflags="-s -w" -o /app/bin/refingerprint ./cmd/refingerprint
-
-# Build openctem-signer (the job signer, RFC-040 §5.6; runs as its own
-# container from this image, see deploy/docker-compose.job-signer.yml)
-RUN CGO_ENABLED=0 \
-    GOOS=${TARGETOS:-linux} \
-    GOARCH=${TARGETARCH:-$(go env GOARCH)} \
-    go build -ldflags="-s -w" -o /app/bin/openctem-signer ./cmd/signer
+    -o /app/bin/ ./cmd/server ./cmd/bootstrap-admin ./cmd/refingerprint ./cmd/signer \
+ && mv /app/bin/signer /app/bin/openctem-signer
 
 
 # -----------------------------------------------------------------------------
@@ -139,21 +132,23 @@ WORKDIR /app
 # Install runtime dependencies
 RUN apk --no-cache add ca-certificates tzdata
 
-# Create non-root user
+# Non-root users. The job signer runs as its own user (uid 1001), in the API's
+# group only so the API can reach its socket: its key and state are never the
+# API's.
 RUN addgroup -g 1000 -S openctem && \
-    adduser -u 1000 -S openctem -G openctem
+    adduser -u 1000 -S openctem -G openctem && \
+    adduser -u 1001 -S -G openctem openctem-signer
 
-# Copy binaries from builder
-COPY --from=builder /app/bin/server .
-COPY --from=builder /app/bin/bootstrap-admin .
-COPY --from=builder /app/bin/refingerprint .
-COPY --from=builder /app/bin/openctem-signer .
+# Everything below is owned by root and read-only to the runtime users: the API
+# cannot rewrite its own binaries, spec, migrations or configs. COPY sets the
+# owner in the same layer (a later `chown -R` would store every file a second
+# time in a new layer).
+COPY --from=builder /app/bin/server /app/bin/bootstrap-admin /app/bin/refingerprint /app/bin/openctem-signer ./
 
 # The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
 # cmd/server/handlers.go NewDocsHandler).
 COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
 
-# Copy migrations if exist
 COPY --from=builder /app/migrations ./migrations
 # The migrate wrapper of the migrations image, for the all-in-one image.
 COPY --from=builder /app/scripts/migrate-entrypoint.sh ./migrate-entrypoint.sh
@@ -162,19 +157,19 @@ COPY --from=builder /app/scripts/migrate-entrypoint.sh ./migrate-entrypoint.sh
 # mount a configmap/host volume on /app/configs to override)
 COPY --from=builder /app/configs ./configs
 
-# Attachment storage (STORAGE_LOCAL_PATH default ./data/attachments). Created
-# here, owned by openctem, so a volume mounted at /app/data starts with the
-# right owner (Docker copies it into a new named volume); without it the
-# volume root is root-owned and uploads fail. Mount a volume there: the
-# container filesystem is read-only in the Compose files and ephemeral anyway.
-# Change ownership
-RUN mkdir -p /app/data/attachments && chown -R openctem:openctem /app
-
-# The job signer runs as its own user (uid 1001), in the API's group only so
-# the API can reach its socket: its key and state are never the API's. The
-# directories are created here so new named volumes start with this owner.
-RUN adduser -u 1001 -S -G openctem openctem-signer && \
-    mkdir -p /var/lib/openctem-signer/keys /var/lib/openctem-signer/state /run/openctem-signer && \
+# The only writable paths, created here with their owners so a new named
+# volume mounted on them starts with the right owner (Docker copies it into
+# the volume); without it the volume root is root-owned and writes fail.
+#   /app/data                 the API: attachments (STORAGE_LOCAL_PATH default
+#                             ./data/attachments) and the sensor CA
+#                             (SENSOR_MTLS_CA_DIR default data/sensor-ca).
+#                             Mount a volume there: the container filesystem is
+#                             read-only in the Compose files and ephemeral anyway.
+#   /var/lib/openctem-signer  the job signer's key and state (0700)
+#   /run/openctem-signer      its socket, reachable by the API's group (0770)
+RUN mkdir -p /app/data/attachments \
+      /var/lib/openctem-signer/keys /var/lib/openctem-signer/state /run/openctem-signer && \
+    chown -R openctem:openctem /app/data && \
     chown -R openctem-signer:openctem /var/lib/openctem-signer /run/openctem-signer && \
     chmod 0700 /var/lib/openctem-signer/keys /var/lib/openctem-signer/state && \
     chmod 0770 /run/openctem-signer

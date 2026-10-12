@@ -511,52 +511,23 @@ grouped by category — see
 ## Telemetry — measure before you prune
 
 A frequent question is "should we delete this type, nobody uses it."
-The honest answer is "you don't know — go count first." There's a
-backend endpoint for that:
+The honest answer is "you don't know — go count first." Count the
+relationships per type on a read replica or a restored backup (never
+on the live primary from a laptop):
 
-```
-GET /api/v1/relationships/usage-stats
-Authorization: Bearer <jwt>
-```
-
-Returns one entry per relationship type registered, with that tenant's
-count of relationships of that type. **Zero-count entries are
-included** — they're the candidates for removal:
-
-```json
-{
-  "data": [
-    {
-      "id": "runs_on",
-      "direct": "Runs On",
-      "inverse": "Runs",
-      "description": "Runtime location of a workload — ...",
-      "category": "attack_surface_mapping",
-      "count": 1247
-    },
-    {
-      "id": "audited_by",
-      "direct": "Audited By",
-      "inverse": "Audits",
-      "description": "...",
-      "category": "control_and_observability",
-      "count": 0
-    }
-  ],
-  "total": 19
-}
+```sql
+SELECT relationship_type, COUNT(*) AS n
+FROM asset_relationships
+GROUP BY relationship_type
+ORDER BY n;
 ```
 
-**Recommended workflow**: run this monthly. Types with count=0 after
-3 consecutive months are strong candidates for removal. Types you
-*want* but don't see in the list are candidates for adding.
+A type registered in `configs/relationship-types.yaml` that does not
+appear in the result has zero relationships.
 
-This is the only honest way to converge on a registry tuned to YOUR
-data instead of theoretical CMDB best practice.
-
-The implementation lives in
-`internal/app/asset/relationship.go:GetRelationshipTypeUsage`
-and `internal/infra/postgres/asset_relationship_repository.go:CountByType`.
+**Recommended workflow**: run this monthly. Types with no relationships
+after 3 consecutive months are strong candidates for removal. Types you
+*want* but don't see are candidates for adding.
 
 ## Limitations and known footguns
 
@@ -732,7 +703,7 @@ created two data paths for the same concept.
 
 ### How do I know if my new type is actually being used?
 
-Use the [usage-stats endpoint](#telemetry--measure-before-you-prune).
+Count them first ([telemetry](#telemetry--measure-before-you-prune)).
 If a type sits at count=0 for several months, it probably isn't
 solving a real problem. Remove it and free up dropdown space.
 
@@ -763,10 +734,6 @@ git add api/configs/relationship-types.yaml \
         api/pkg/domain/asset/relationship_types_generated.go \
         web/src/features/assets/types/relationship.types.generated.ts
 git commit -m "feat(assets): <conventional message>"
-
-# See what types are actually used
-curl -H "Authorization: Bearer $JWT" \
-     https://your-tenant/api/v1/relationships/usage-stats | jq '.data[] | select(.count == 0)'
 
 # Run relationship tests
 cd api && GOWORK=off go test ./tests/unit/ -run TestAssetRelationship -count=1
