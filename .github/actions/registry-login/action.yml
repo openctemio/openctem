@@ -24,18 +24,18 @@ runs:
     - name: Log in to GHCR and Docker Hub
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
-        GH_ACTOR: ${{ github.actor }}
-        DH_USER: ${{ inputs.dockerhub-username }}
-        DH_TOKEN: ${{ inputs.dockerhub-token }}
+        GHCR_TOKEN: ${{ inputs.github-token }}
+        GHCR_USER: ${{ github.actor }}
+        DOCKERHUB_USER: ${{ inputs.dockerhub-username }}
+        DOCKERHUB_PASS: ${{ inputs.dockerhub-token }}
       run: |
-        if printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin >/dev/null 2>&1; then
+        if printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
           echo "logged in to ghcr.io"
         else
           echo "::notice::GHCR login failed; pulling ghcr.io/openctemio/mirror anonymously"
         fi
-        if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
-          if printf '%s' "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin >/dev/null 2>&1; then
+        if [ -n "$DOCKERHUB_USER" ] && [ -n "$DOCKERHUB_PASS" ]; then
+          if printf '%s' "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USER" --password-stdin >/dev/null 2>&1; then
             echo "logged in to Docker Hub"
           else
             echo "::warning::Docker Hub login failed; base images are pulled anonymously"

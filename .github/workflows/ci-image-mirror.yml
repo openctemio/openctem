@@ -58,14 +58,14 @@ jobs:
 
       - name: Log in to GHCR (and Docker Hub when configured)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_ACTOR: ${{ github.actor }}
-          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_PASS: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          printf '%s' "$GH_TOKEN" | crane auth login ghcr.io -u "$GH_ACTOR" --password-stdin
-          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
-            printf '%s' "$DH_TOKEN" | crane auth login index.docker.io -u "$DH_USER" --password-stdin \
+          printf '%s' "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GHCR_USER" --password-stdin
+          if [ -n "$DOCKERHUB_USER" ] && [ -n "$DOCKERHUB_PASS" ]; then
+            printf '%s' "$DOCKERHUB_PASS" | crane auth login index.docker.io -u "$DOCKERHUB_USER" --password-stdin \
               || echo "::warning::Docker Hub login failed; copying anonymously"
           fi
 
