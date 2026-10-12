@@ -52,7 +52,7 @@
 # log (openctem-signer verify-log checks it).
 services:
   signer:
-    image: ${API_IMAGE:-ghcr.io/openctemio/api}:${API_VERSION:-${OPENCTEM_VERSION}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.9.0}}
     entrypoint: ["/app/openctem-signer"]
     command: ["serve"]
     user: "1001:1000"
@@ -90,6 +90,15 @@ services:
       timeout: 3s
       retries: 3
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${SIGNER_MEMORY_LIMIT:-256m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   api:
     environment:

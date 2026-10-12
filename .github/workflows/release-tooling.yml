@@ -20,6 +20,7 @@ on:
       - api/.env.example
       - api/deploy/.env.example
       - api/deploy/docker-compose.yml
+      - api/deploy/docker-compose.job-signer.yml
       - api/internal/config/config.go
       - api/internal/infra/http/handler/sensor_handler.go
       - web/package.json
@@ -32,6 +33,7 @@ on:
       - api/.env.example
       - api/deploy/.env.example
       - api/deploy/docker-compose.yml
+      - api/deploy/docker-compose.job-signer.yml
       - api/internal/config/config.go
       - api/internal/infra/http/handler/sensor_handler.go
       - web/package.json
