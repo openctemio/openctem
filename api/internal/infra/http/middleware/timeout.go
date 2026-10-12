@@ -47,6 +47,7 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 			tw := &timeoutWriter{
 				ResponseWriter: w,
 				done:           done,
+				ctx:            ctx,
 				h:              w.Header().Clone(),
 			}
 
@@ -112,10 +113,27 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 type timeoutWriter struct {
 	http.ResponseWriter
 	done     chan struct{}
+	ctx      context.Context
 	mu       sync.Mutex
 	h        http.Header
 	written  bool
 	timedOut bool
+}
+
+// expiredLocked reports whether the deadline has passed before the handler
+// wrote anything, and then takes the response away from the handler. The
+// handler and the timeout path both see ctx.Done at the deadline; without
+// this check the handler could write its own status before the timeout path
+// took the lock, and the 504 was lost. Callers hold tw.mu.
+func (tw *timeoutWriter) expiredLocked() bool {
+	if tw.timedOut {
+		return true
+	}
+	if !tw.written && tw.ctx != nil && tw.ctx.Err() == context.DeadlineExceeded {
+		tw.timedOut = true
+		return true
+	}
+	return false
 }
 
 // Header returns the handler's own header map (see timeoutWriter).
@@ -147,7 +165,7 @@ func (tw *timeoutWriter) Write(b []byte) (int, error) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
-	if tw.timedOut {
+	if tw.expiredLocked() {
 		return 0, context.DeadlineExceeded
 	}
 
@@ -160,7 +178,7 @@ func (tw *timeoutWriter) WriteHeader(code int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
-	if tw.timedOut {
+	if tw.expiredLocked() {
 		return
 	}
 
