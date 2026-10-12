@@ -22,6 +22,7 @@ type renderer struct {
 	iterations int
 	strict     bool // record lookups that find nothing
 	missing    map[string]bool
+	media      *mediaSink // evidence images of the part being rendered (nil: none)
 }
 
 func (r *renderer) checkSize() error {
@@ -41,7 +42,7 @@ func (r *renderer) render(n *node, scopes []any) error {
 		r.renderValue(n, scopes)
 	case kindMarkdown:
 		v, _ := r.lookup(scopes, n.tag.path)
-		r.out.WriteString(markdownToOOXML(toText(v), n.pPr, n.rPr))
+		r.out.WriteString(markdownToOOXML(toText(v), n.pPr, n.rPr, r.media))
 	case kindSection:
 		return r.renderSection(n, scopes)
 	}
