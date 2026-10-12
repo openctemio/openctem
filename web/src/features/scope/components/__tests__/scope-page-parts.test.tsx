@@ -280,7 +280,7 @@ describe('Approvals', () => {
 })
 
 describe('In scope list', () => {
-  it('asks for active, expired and inactive entries (pending live on Approvals)', async () => {
+  it('asks for every live entry, pending ones too (never invisible)', async () => {
     routeGets([], [])
     wrap(
       <ScopeEntriesTable
@@ -295,7 +295,7 @@ describe('In scope list', () => {
     )
     expect(await screen.findByText('onboarding')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith(
-      '/api/v1/scope/targets?statuses=active%2Cexpired%2Cinactive&page=1&per_page=20'
+      '/api/v1/scope/targets?statuses=active%2Cpending%2Cexpired%2Cinactive&page=1&per_page=20'
     )
   })
 
