@@ -240,6 +240,8 @@ type Repositories struct {
 	CIRun       *postgres.CIRunRepository
 	SCMApp      *postgres.SCMAppInstallationRepository
 	EASMSummary *postgres.EASMSummaryRepository
+	// AssetWebEvidence stores web assets' captures (RFC-081).
+	AssetWebEvidence *postgres.AssetWebEvidenceRepository
 	// EASMChange reads typed attack-surface changes and claims weekly digests (RFC-080).
 	EASMChange *postgres.EASMChangeRepository
 
@@ -508,6 +510,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CIRun:            postgres.NewCIRunRepository(db),
 		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
+		AssetWebEvidence: postgres.NewAssetWebEvidenceRepository(db),
 		EASMChange:       postgres.NewEASMChangeRepository(db),
 
 		// KEV Escalation

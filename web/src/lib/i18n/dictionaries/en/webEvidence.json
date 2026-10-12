@@ -1,0 +1,12 @@
+{
+  "webEvidence.contentType": "Content type",
+  "webEvidence.description": "What a sensor saw when it fetched this asset. Screenshots are kept for 30 days when your organization turned them on.",
+  "webEvidence.finalUrl": "Final URL",
+  "webEvidence.screenshotAlt": "Screenshot of {url}",
+  "webEvidence.server": "Server",
+  "webEvidence.settings.description": "Keep the screenshots that sensors with the screenshot tool take of your web assets, for 30 days. A screenshot shows whatever the page shows, so this is off by default. Status, title and a short masked response are kept either way.",
+  "webEvidence.settings.title": "Screenshots of web assets",
+  "webEvidence.snippet": "Response (start, secrets masked)",
+  "webEvidence.title": "Web evidence",
+  "webEvidence.url": "URL"
+}
