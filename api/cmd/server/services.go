@@ -439,6 +439,14 @@ type wsChannelAccess struct {
 	groups *postgres.GroupRepository
 	scope  *datascope.Enforcer
 	runs   runReader // run:{id} channels (CanSeeRun); nil refuses them
+	// pentest decides pentest finding channels by campaign role (team
+	// only); nil leaves them to the data scope.
+	pentest pentestChannelChecker
+}
+
+// pentestChannelChecker is *finding.VulnerabilityService.
+type pentestChannelChecker interface {
+	PentestChannelAccess(ctx context.Context, tenantID, userID, findingID shared.ID) (pentestFinding, allowed bool)
 }
 
 // CanSeeFinding applies the Layer 2 data scope to finding and triage
@@ -455,6 +463,13 @@ func (a wsChannelAccess) CanSeeFinding(ctx context.Context, tenantID, userID, fi
 	fid, err := shared.IDFromString(findingID)
 	if err != nil {
 		return false, err // not a finding id: refuse the subscription
+	}
+	// A pentest finding is governed by its campaign: the team subscribes,
+	// a client never does (the channel carries team-only comments).
+	if a.pentest != nil {
+		if isPentest, allowed := a.pentest.PentestChannelAccess(ctx, tid, uid, fid); isPentest {
+			return allowed, nil
+		}
 	}
 	if a.scope == nil {
 		return true, nil
@@ -2457,7 +2472,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
-	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope, runs: s.ScanRun})
+	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope, runs: s.ScanRun, pentest: s.Vulnerability})
 	// The live run map: a run that changes tells its run:{id} watchers,
 	// at most once a second per run.
 	s.ScanRun.SetRunNotifier(newRunChangeThrottle(s.WebSocketHub, time.Second))

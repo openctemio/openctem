@@ -29,5 +29,20 @@
   "findings.retest.manual.partial": "Kiểm tra lại thủ công: khắc phục một phần",
   "findings.retest.manual.pending": "Kiểm tra lại thủ công đang chờ",
   "findings.retest.manual.canceled": "Kiểm tra lại thủ công đã hủy",
-  "findings.remediation.none": "Trình quét không đưa ra hướng khắc phục."
+  "findings.remediation.none": "Trình quét không đưa ra hướng khắc phục.",
+  "findings.commentVisibility.chooseHint": "Tắt: chỉ nhóm chiến dịch đọc được. Bật: khách hàng của chiến dịch cũng đọc được.",
+  "findings.commentVisibility.visibleToClient": "Khách hàng xem được",
+  "findings.commentVisibility.teamOnlyNote": "Chỉ nhóm",
+  "findings.commentVisibility.teamNote": "Chỉ nhóm chiến dịch đọc được bình luận của bạn.",
+  "findings.commentVisibility.clientNote": "Nhóm chiến dịch và tổ chức của bạn đọc được bình luận của bạn.",
+  "findings.commentVisibility.client": "Khách hàng xem được",
+  "findings.commentVisibility.clientHint": "Khách hàng của chiến dịch đọc được bình luận này.",
+  "findings.commentVisibility.team": "Chỉ nhóm",
+  "findings.commentVisibility.teamHint": "Chỉ nhóm chiến dịch đọc được bình luận này; khách hàng không thấy.",
+  "findings.commentVisibility.via": "qua {client}",
+  "findings.commentVisibility.viaHint": "Do một ứng dụng AI viết thay người này, sau khi họ xác nhận.",
+  "findings.activity.loadFailed": "Không tải được hoạt động. Mở để thử lại.",
+  "findings.activity.loadFailedTitle": "Không tải được hoạt động",
+  "findings.activity.loadFailedBody": "Lịch sử của phát hiện này không hiển thị vì yêu cầu bị lỗi. Hãy thử lại sau.",
+  "findings.activity.startDiscussion": "Bắt đầu thảo luận bên dưới."
 }

@@ -493,6 +493,8 @@ export interface ApiFindingComment {
   updated_at?: string
   /** Tenant-only note: never sent to an integration. */
   is_internal?: boolean
+  /** Pentest findings: team (the campaign team only) or client. */
+  visibility?: 'team' | 'client'
   /** Edited after it was posted. */
   edited?: boolean
   /** Aggregated reactions, ordered by first use. */
