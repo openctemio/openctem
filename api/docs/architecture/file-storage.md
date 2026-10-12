@@ -132,7 +132,7 @@ Shipped: local and S3 drivers, an organization's own bucket (fail closed),
 tenant erasure, content-sniffed types, streamed uploads, the quota, upload
 and delete audit, effective import limits with a streaming web proxy.
 
-Planned (RFC-084 §6): short-lived signed downloads for S3; retention for
+Planned (RFC-084 §6): short-lived direct downloads from a bucket; retention for
 evidence whose finding or campaign is deleted and for uploads never linked;
 report bytes moved out of Postgres; asynchronous large imports; image
 metadata stripping; a malware scanning hook; S3 server-side encryption
