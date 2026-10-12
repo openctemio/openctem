@@ -2,9 +2,11 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +85,12 @@ func bsHandler(calls *bsCalls, failing bool) *BootstrapHandler {
 			return 3, nil
 		},
 		TenantCreationMode: func(context.Context) string { return "admin_only" },
+		Announcements: func(context.Context) ([]AnnouncementResponse, error) {
+			if failing {
+				return nil, fail
+			}
+			return []AnnouncementResponse{{ID: "a1", Message: "Maintenance", Severity: "maintenance"}}, nil
+		},
 	})
 }
 
@@ -115,6 +123,26 @@ func TestBootstrapSession_FillsTheCallersOwnData(t *testing.T) {
 	}
 	if resp.TenantCreationMode != "admin_only" {
 		t.Fatalf("tenant_creation_mode = %q", resp.TenantCreationMode)
+	}
+	if resp.Announcements == nil || len(*resp.Announcements) != 1 || (*resp.Announcements)[0].ID != "a1" {
+		t.Fatalf("announcements = %+v, want the active notices", resp.Announcements)
+	}
+}
+
+// No active notice is an empty list, not a missing field: a missing field
+// sends the client to GET /announcements.
+func TestBootstrapSession_NoAnnouncementsIsAnEmptyList(t *testing.T) {
+	h := (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{
+		Announcements: func(context.Context) ([]AnnouncementResponse, error) { return []AnnouncementResponse{}, nil },
+	})
+	resp := withModules()
+	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), nil, false), resp, bsTenant, bsUser)
+	body, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"announcements":[]`) {
+		t.Fatalf("body = %s, want an empty announcements list", body)
 	}
 }
 
@@ -166,6 +194,9 @@ func TestBootstrapSession_AFailingSourceIsLeftOut(t *testing.T) {
 	}
 	if resp.Badges != nil {
 		t.Fatalf("badges = %+v, want omitted after failures", resp.Badges)
+	}
+	if resp.Announcements != nil {
+		t.Fatalf("announcements = %+v, want omitted after a failure", resp.Announcements)
 	}
 	if resp.User == nil {
 		t.Fatal("a failing count must not drop the profile")

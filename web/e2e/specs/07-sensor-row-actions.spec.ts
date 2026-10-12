@@ -43,6 +43,12 @@ async function rowAction(page: Page, name: string, action: string) {
   await page.getByRole('menuitem', { name: action, exact: true }).click()
 }
 
+// Disable asks before it acts (a reversible action, so no typed name).
+async function disableFromRow(page: Page, name: string) {
+  await rowAction(page, name, 'Disable')
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Disable', exact: true }).click()
+}
+
 async function expectStatus(page: Page, name: string, disabled: boolean) {
   const badge = rowFor(page, name).getByText('Disabled', { exact: true })
   if (disabled) await expect(badge).toBeVisible({ timeout: 15_000 })
@@ -63,7 +69,7 @@ test.describe('Sensor row actions', () => {
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toBeHidden()
 
-    await rowAction(page, b, 'Disable')
+    await disableFromRow(page, b)
     await expect(page.getByText(`Sensor "${b}" disabled`)).toBeVisible()
 
     await page.reload()
@@ -85,7 +91,7 @@ test.describe('Sensor row actions', () => {
     const [b] = await activeSensorNames(page, 1)
     test.skip(!b, 'Needs an active sensor')
 
-    await rowAction(page, b, 'Disable')
+    await disableFromRow(page, b)
     await expect(page.getByText(`Sensor "${b}" disabled`)).toBeVisible()
     await expect(page.getByText(/missing key/i)).toHaveCount(0)
 
@@ -119,7 +125,10 @@ test.describe('Sensor row actions', () => {
     // Clean up the sensor this test created.
     await expect(rowFor(page, name)).toBeVisible({ timeout: 30_000 })
     await rowAction(page, name, 'Delete')
-    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
+    // Delete is permanent: the dialog asks for the sensor's name first.
+    const confirm = page.getByRole('alertdialog')
+    await confirm.getByRole('textbox').fill(name)
+    await confirm.getByRole('button', { name: 'Delete', exact: true }).click()
     await expect(rowFor(page, name)).toHaveCount(0, { timeout: 15_000 })
   })
 })
