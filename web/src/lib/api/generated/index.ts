@@ -213,6 +213,14 @@ export type DeleteModuleGrantRequest =
 export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
 export type UpdateSignupPolicyRequest =
   Schemas['internal_infra_http_handler.UpdateSignupPolicyRequest']
+// Admin console: the platform e-mail settings (System > E-mail, RFC-079)
+export type EmailSettingsResponse = Schemas['internal_infra_http_handler.EmailSettingsResponse']
+export type UpdateEmailSettingsRequest =
+  Schemas['internal_infra_http_handler.UpdateEmailSettingsRequest']
+// Admin console: the operator's legal information (System > Legal, RFC-079)
+export type LegalSettingsResponse = Schemas['internal_infra_http_handler.LegalSettingsResponse']
+export type UpdateLegalSettingsRequest =
+  Schemas['internal_infra_http_handler.UpdateLegalSettingsRequest']
 export type AuditChainSample =
   Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample']
 export type AuditChainClass =
@@ -224,6 +232,17 @@ export type EASMChangePage =
   Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Page']
 export type EASMChange = Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Change']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
+/** Lookalike-domain monitoring (RFC-083). */
+export type LookalikeWatchList = Schemas['internal_infra_http_handler.LookalikeWatchList']
+export type LookalikeWatch =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_lookalike.Watch']
+export type LookalikeCandidate =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_lookalike.CandidateRecord']
+export type LookalikeCandidateList = Schemas['internal_infra_http_handler.LookalikeCandidateList']
+/** GET /api/v1/easm/network-seeds (RFC-082). */
+export type EASMNetworkSeedList = Schemas['internal_infra_http_handler.EASMNetworkSeedList']
+export type EASMNetworkSeed =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
 /** GET /api/v1/assets/{id}/web-evidence (RFC-081). */
 export type WebEvidenceList = Schemas['internal_infra_http_handler.WebEvidenceListResponse']
 export type WebEvidenceItem = Schemas['internal_infra_http_handler.WebEvidenceResponse']

@@ -30,6 +30,14 @@
     overflow: unset !important;
   }
 
+  /* A fieldset is min-content wide by default: one long unbreakable or
+     truncated line inside it (a list of names, an address) made the New Scan
+     dialog body scroll sideways and clip its content. Let it shrink like a
+     div; long values wrap or truncate inside it. */
+  fieldset {
+    min-width: 0;
+  }
+
   /* Cursor pointer for buttons */
   button:not(:disabled),
   [role='button']:not(:disabled) {

@@ -222,6 +222,50 @@ export function EASMMonitoringCard() {
         </section>
         <section
           className="space-y-3 md:col-span-2"
+          aria-label={t('lookalikes.ct.title', 'Certificate checks of lookalike domains')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-lookalike-ct" className="font-medium">
+              {t('lookalikes.ct.title', 'Certificate checks of lookalike domains')}
+            </Label>
+            <Switch
+              id="easm-lookalike-ct"
+              checked={!!settings.lookalike_ct_enabled}
+              disabled={!canSettings || busy}
+              onCheckedChange={(on) => void save({ lookalike_ct_enabled: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'lookalikes.ct.description',
+              'Registered lookalikes of your domains are looked up in crt.sh to see whether they hold certificates. Turn this off to keep those names private; lookalikes are then checked through DNS only.'
+            )}
+          </p>
+        </section>
+        <section
+          className="space-y-3 md:col-span-2"
+          aria-label={t('networkSeeds.lookups.title', 'Network seed lookups')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-network-lookups" className="font-medium">
+              {t('networkSeeds.lookups.title', 'Network seed lookups')}
+            </Label>
+            <Switch
+              id="easm-network-lookups"
+              checked={!!settings.network_lookups_enabled}
+              disabled={!canSettings || busy}
+              onCheckedChange={(on) => void save({ network_lookups_enabled: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'networkSeeds.lookups.description',
+              'Your AS numbers and organization names are sent to RIPEstat to find your address ranges. Turn this off to keep them private; network seeds are then not looked up.'
+            )}
+          </p>
+        </section>
+        <section
+          className="space-y-3 md:col-span-2"
           aria-label={t('webEvidence.settings.title', 'Screenshots of web assets')}
         >
           <div className="flex items-center justify-between gap-3">

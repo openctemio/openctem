@@ -39,7 +39,7 @@ describe('legalConfig', () => {
     const cfg = legalConfig({
       LEGAL_PAGES_ENABLED: 'true',
       LEGAL_TERMS_URL: 'https://legal.example.com/terms',
-      NEXT_PUBLIC_PRIVACY_URL: 'https://legal.example.com/privacy',
+      LEGAL_PRIVACY_URL: 'https://legal.example.com/privacy',
     })
     expect(cfg.termsUrl).toBe('https://legal.example.com/terms')
     expect(cfg.privacyUrl).toBe('https://legal.example.com/privacy')
@@ -102,5 +102,27 @@ describe('securityTxt', () => {
   it('a contact cannot inject extra fields', () => {
     expect(securityContactUri('a@example.com\nPolicy: https://evil.example.com')).toBe('')
     expect(securityTxt({ SECURITY_CONTACT: 'a@example.com\r\nCanonical: x' }, now)).toBeNull()
+  })
+})
+
+describe('toLegalRecord', () => {
+  it('maps the admin console settings onto the values legalConfig and securityTxt read', async () => {
+    const { toLegalRecord } = await import('../legal-settings')
+    const rec = toLegalRecord({
+      terms_url: 'https://legal.example.com/terms',
+      pages_enabled: true,
+      security_contact: 'sec@example.com',
+      security_txt_disabled: true,
+    })
+    const cfg = legalConfig(rec)
+    expect(cfg.termsUrl).toBe('https://legal.example.com/terms')
+    expect(cfg.templatesEnabled).toBe(true)
+    expect(cfg.values.securityEmail).toBe('sec@example.com')
+    expect(securityTxt(rec)).toBeNull()
+  })
+
+  it('the old NEXT_PUBLIC_* aliases are not read', () => {
+    const cfg = legalConfig({ NEXT_PUBLIC_TERMS_URL: 'https://legal.example.com/terms' })
+    expect(cfg.termsUrl).toBe('')
   })
 })

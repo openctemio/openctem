@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
@@ -406,6 +407,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackSurface:    handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:             newEASMHandler(repos, svc, log),
 		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
+		EASMLookalike:    newEASMLookalikeHandler(svc, log),
+		EASMNetworkSeed:  newEASMNetworkSeedHandler(svc, log),
 		AssetWebEvidence: newAssetWebEvidenceHandler(svc, log),
 
 		// Configuration (read-only system config)
@@ -777,6 +780,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
+		if repos.PlatformSetting != nil {
+			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
+		}
+		if svc.PlatformEmail != nil {
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.App.Name, log)
+		}
 		handlers.SignupPolicy = svc.Signup
 	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
@@ -1157,6 +1166,9 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	}
 	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
 	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	if repos.EASMNetworkSeed != nil {
+		review.SetSeededNetworks(repos.EASMNetworkSeed.Networks) // range fixes in seeded networks (RFC-082)
+	}
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
 	}
@@ -1350,6 +1362,31 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		return mode
 	}
 	return s
+}
+
+// newEASMLookalikeHandler serves lookalike monitoring; changes are audited.
+func newEASMLookalikeHandler(svc *Services, log *logger.Logger) *handler.EASMLookalikeHandler {
+	if svc.EASMLookalikes == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMLookalikeHandler(svc.EASMLookalikes, audit, log)
+}
+
+// newEASMNetworkSeedHandler serves network seeds when the service is wired;
+// every change is audited.
+func newEASMNetworkSeedHandler(svc *Services, log *logger.Logger) *handler.EASMNetworkSeedHandler {
+	if svc.EASMNetworkSeeds == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMNetworkSeedHandler(svc.EASMNetworkSeeds, audit, log)
 }
 
 // newAssetWebEvidenceHandler serves web evidence when the service is wired.

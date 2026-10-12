@@ -364,7 +364,7 @@ func (h *AttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, attachment.ErrStorageUnavailable):
 			apierror.ServiceUnavailable("The organization's file storage cannot be reached").WriteJSON(w)
 		default:
-			h.logger.Error("attachment delete failed", "error", err, "id", id)
+			h.logger.Error("attachment delete failed", "error", err, "id", att.ID().String())
 			apierror.InternalServerError("Delete failed").WriteJSON(w)
 		}
 		return

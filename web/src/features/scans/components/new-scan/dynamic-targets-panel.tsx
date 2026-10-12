@@ -60,7 +60,7 @@ export function DynamicTargetsPanel({
     : [...SEEN_WITHIN_CHOICES, seenWithin].sort((a, b) => a - b)
 
   return (
-    <fieldset className="space-y-3 rounded-lg border p-3" data-testid="dynamic-targets">
+    <fieldset className="min-w-0 space-y-3 rounded-lg border p-3" data-testid="dynamic-targets">
       <legend className="flex items-center gap-1.5 px-1 text-sm font-medium">
         <RefreshCw className="h-3.5 w-3.5" aria-hidden />
         {t('scans.dynamic.title')}
@@ -113,21 +113,7 @@ export function DynamicTargetsPanel({
                                   count: p.total.toLocaleString(),
                                 })}
                 </p>
-                {p && p.recent.length > 0 && (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {t('scans.dynamic.seenRecently', undefined, {
-                      names:
-                        p.recent[0].name +
-                        (p.recent[0].lastSeen ? ` (${formatRelative(p.recent[0].lastSeen)})` : '') +
-                        (p.recent.length > 1
-                          ? `, ${p.recent
-                              .slice(1)
-                              .map((r) => r.name)
-                              .join(', ')}`
-                          : ''),
-                    })}
-                  </p>
-                )}
+                {p && p.recent.length > 0 && <RecentNames recent={p.recent} />}
               </li>
             )
           })}
@@ -209,5 +195,26 @@ export function DynamicTargetsPanel({
         </div>
       )}
     </fieldset>
+  )
+}
+
+/** The names a selector matched recently: one line, the full list as a tooltip. */
+function RecentNames({ recent }: { recent: { name: string; lastSeen?: string }[] }) {
+  const { t } = useTranslation()
+  const text = t('scans.dynamic.seenRecently', undefined, {
+    names:
+      recent[0].name +
+      (recent[0].lastSeen ? ` (${formatRelative(recent[0].lastSeen)})` : '') +
+      (recent.length > 1
+        ? `, ${recent
+            .slice(1)
+            .map((r) => r.name)
+            .join(', ')}`
+        : ''),
+  })
+  return (
+    <p className="truncate text-xs text-muted-foreground" title={text}>
+      {text}
+    </p>
   )
 }
