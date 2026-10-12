@@ -311,11 +311,6 @@ export const tenantEndpoints = {
   memberStats: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/stats`,
 
   /**
-   * Add member to tenant
-   */
-  addMember: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/members`,
-
-  /**
    * Update member (alias for updateMemberRole)
    */
   updateMember: (tenantIdOrSlug: string, memberId: string) =>

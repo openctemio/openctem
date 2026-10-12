@@ -575,7 +575,7 @@ import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { safeImageSrc } from '@/lib/safe-href'
+import { safeAvatarSrc } from '@/lib/safe-href'
 import { SEVERITY_LEVELS, compareSeverity } from '@/lib/severity'
 import type { CriticalityLevel } from '@/lib/criticality'
 
@@ -909,7 +909,7 @@ function OverviewTab({
                 {defaultBranch.last_commit_sha && (
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={safeImageSrc(defaultBranch.last_commit_author_avatar)} />
+                      <AvatarImage src={safeAvatarSrc(defaultBranch.last_commit_author_avatar)} />
                       <AvatarFallback>
                         {defaultBranch.last_commit_author?.[0] || '?'}
                       </AvatarFallback>
@@ -1059,7 +1059,7 @@ function OverviewTab({
                   </div>
                   {finding.assigned_to_name && (
                     <Avatar className="h-6 w-6">
-                      <AvatarImage src={safeImageSrc(finding.assigned_to_avatar)} />
+                      <AvatarImage src={safeAvatarSrc(finding.assigned_to_avatar)} />
                       <AvatarFallback>{finding.assigned_to_name[0]}</AvatarFallback>
                     </Avatar>
                   )}
@@ -1677,7 +1677,7 @@ function FindingsTab({
                     {finding.assigned_to_name && (
                       <div className="flex items-center gap-1.5">
                         <Avatar className="h-5 w-5">
-                          <AvatarImage src={safeImageSrc(finding.assigned_to_avatar)} />
+                          <AvatarImage src={safeAvatarSrc(finding.assigned_to_avatar)} />
                           <AvatarFallback className="text-xs">
                             {finding.assigned_to_name[0]}
                           </AvatarFallback>

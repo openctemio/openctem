@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { submitAccessRequestAction } from '../actions/local-auth-actions'
+import { useAuthProviders } from '../api/use-auth-providers'
+import { TurnstileWidget } from './turnstile-widget'
 import { isSignupNotAvailable } from '../lib/signup-outcome'
 
 const MAX_COMPANY = 200
@@ -28,12 +30,17 @@ export function RequestAccessForm() {
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const { data: authProviders } = useAuthProviders()
+  const captchaSiteKey = authProviders?.captcha_site_key ?? ''
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaReset, setCaptchaReset] = useState(0)
 
   const valid =
     company.trim().length > 0 &&
     company.length <= MAX_COMPANY &&
     note.length <= MAX_NOTE &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
+    (!captchaSiteKey || captchaToken !== '')
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -44,11 +51,15 @@ export function RequestAccessForm() {
         company: company.trim(),
         email: email.trim(),
         note: note.trim(),
+        captchaToken: captchaToken || undefined,
       })
+      if (captchaSiteKey) setCaptchaReset((n) => n + 1)
       if (res.success) {
         setSent(true)
       } else if (isSignupNotAvailable(res.code)) {
         setError(t('auth.requestAccess.closed', 'Requests are not accepted at the moment.'))
+      } else if (res.code === 'CAPTCHA_FAILED') {
+        setError(t('auth.captcha.failed', 'Complete the security check and try again.'))
       } else {
         setError(res.error)
       }
@@ -130,6 +141,13 @@ export function RequestAccessForm() {
               rows={3}
             />
           </div>
+          {captchaSiteKey && (
+            <TurnstileWidget
+              siteKey={captchaSiteKey}
+              onToken={setCaptchaToken}
+              resetSignal={captchaReset}
+            />
+          )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}
