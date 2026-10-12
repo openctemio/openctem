@@ -50,7 +50,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.5 // indirect
-	github.com/aws/smithy-go v1.28.4 // indirect
 	github.com/beevik/etree v1.6.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -103,6 +102,7 @@ require (
 
 require (
 	connectrpc.com/connect v1.21.0
+	github.com/aws/smithy-go v1.28.4
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.2.1-0.20261010105554-cd662a8cd894

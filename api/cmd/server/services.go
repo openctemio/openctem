@@ -1353,8 +1353,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	//                    _ENDPOINT, _ACCESS_KEY, _SECRET_KEY); needed when more
 	//                    than one API replica serves attachments without a
 	//                    shared (ReadWriteMany) volume.
-	// Attachments record the provider "local" for this server-wide storage, so
-	// switching STORAGE_PROVIDER later does not move existing files.
+	// Attachments record the provider "local" for this server-wide storage
+	// whatever its driver: before switching STORAGE_PROVIDER, copy the files
+	// with `bootstrap-admin storage migrate` (file-storage.md).
 	var fileStorage attachment.FileStorage
 	switch cfg.Storage.Provider {
 	case "local", "":
@@ -1370,15 +1371,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		if err != nil {
 			return nil, fmt.Errorf("attachment storage: %w", err)
 		}
+		if err := s3Store.SetServerSideEncryption(cfg.Storage.SSE, cfg.Storage.SSEKMSKeyID); err != nil {
+			return nil, fmt.Errorf("attachment storage: %w", err)
+		}
 		fileStorage = s3Store
 		log.Info("attachment storage: S3-compatible bucket", "provider", cfg.Storage.Provider,
-			"bucket", cfg.Storage.Bucket, "endpoint", cfg.Storage.Endpoint)
+			"bucket", cfg.Storage.Bucket, "endpoint", cfg.Storage.Endpoint, "sse", cfg.Storage.SSE)
 	default:
 		// Used to fall back to local storage with only a warning, so a typo
 		// (or "gcs") silently kept files on an ephemeral container disk.
 		return nil, fmt.Errorf("unsupported STORAGE_PROVIDER %q (local, s3 or minio)", cfg.Storage.Provider)
 	}
+	fileStorage = storage.Instrument(fileStorage, storage.BackendServer)
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
+	s.Attachment.SetMetrics(storage.Metrics{})
+	s.Attachment.SetDirectDownloads(cfg.Storage.DirectDownload)
 	s.Attachment.SetTenantQuota(cfg.Storage.TenantQuotaMB << 20)
 	// Retention: evidence of deleted findings/campaigns and never-linked
 	// uploads are purged by the attachment-retention controller.
