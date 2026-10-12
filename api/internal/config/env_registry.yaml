@@ -792,8 +792,7 @@ vars:
     component: api
     group: "Attachment storage"
     type: string
-    example: "clamav:3310"
-    description: "ClamAV daemon (`host:port` or `unix:/path`) that scans new uploads. A flagged file is kept and marked, audited `attachment.malware_detected`, and downloads only after a confirmation. Unset: no scanning."
+    description: "ClamAV daemon (`host:port` or `unix:/path`, e.g. `clamav:3310` with `docker-compose.clamav.yml`) that scans new uploads. A flagged file is kept and marked, audited `attachment.malware_detected`, and downloads only after a confirmation. Unset: no scanning."
   - name: STORAGE_ENDPOINT
     component: api
     group: "Attachment storage"
