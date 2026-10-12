@@ -402,6 +402,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.PentestRead,
     module: Module.Pentest,
   },
+  // Methodology checklist templates; managing them is checked per action.
+  '/settings/pentest/checklists': {
+    permission: Permission.PentestRead,
+    module: Module.Pentest,
+  },
   '/settings/pentest/templates/new': {
     permission: Permission.PentestTemplatesWrite,
     module: Module.Pentest,
