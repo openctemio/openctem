@@ -34,7 +34,10 @@ type fieldSpec struct {
 }
 
 // Item groups and the list a template loops over to read them.
-var itemGroupList = map[string]string{"finding": "findings", "retest": "retests", "team_member": "team"}
+var itemGroupList = map[string]string{
+	"finding": "findings", "retest": "retests", "team_member": "team",
+	"checklist": "checklists", "checklist_section": "checklist_sections", "checklist_item": "checklist_failed_items",
+}
 
 var fieldSpecs = []fieldSpec{
 	{"report", "report.title", docx.KindText, "", "The report type's name in the template language.", "Tên loại báo cáo theo ngôn ngữ của mẫu."},
@@ -118,6 +121,47 @@ var fieldSpecs = []fieldSpec{
 	{"retest", "status_label", docx.KindText, "", "Retest result in the template language.", "Kết quả theo ngôn ngữ của mẫu."},
 	{"retest", "notes", docx.KindText, "", "Tester's notes.", "Ghi chú của người kiểm thử."},
 	{"retest", "tested_at", docx.KindText, "", "Date of the retest, YYYY-MM-DD.", "Ngày kiểm tra lại, dạng YYYY-MM-DD."},
+
+	{"checklists", "checklists", docx.KindList, "checklist", "The methodology checklists the campaign ran; loop with {#checklists}…{/checklists}.", "Các danh mục kiểm thử của chiến dịch; lặp bằng {#checklists}…{/checklists}."},
+	{"checklists", "has_checklists", docx.KindBool, "", "Yes when the campaign ran at least one checklist.", "Có khi chiến dịch có ít nhất một danh mục kiểm thử."},
+	{"checklists", "has_checklist_failures", docx.KindBool, "", "Yes when at least one checklist item failed.", "Có khi có ít nhất một hạng mục không đạt."},
+	{"checklists", "checklist_summary.total", docx.KindNumber, "", "Number of items in all checklists.", "Số hạng mục trong mọi danh mục."},
+	{"checklists", "checklist_summary.passed", docx.KindNumber, "", "Items that passed.", "Số hạng mục đạt."},
+	{"checklists", "checklist_summary.failed", docx.KindNumber, "", "Items that failed.", "Số hạng mục không đạt."},
+	{"checklists", "checklist_summary.not_applicable", docx.KindNumber, "", "Items marked not applicable.", "Số hạng mục không áp dụng."},
+	{"checklists", "checklist_summary.untested", docx.KindNumber, "", "Items without a result.", "Số hạng mục chưa có kết quả."},
+	{"checklists", "checklist_summary.tested", docx.KindNumber, "", "Items with a result (passed, failed or not applicable).", "Số hạng mục đã có kết quả (đạt, không đạt hoặc không áp dụng)."},
+	{"checklists", "checklist_summary.coverage", docx.KindNumber, "", "Share of items with a result, in percent, one decimal.", "Tỷ lệ hạng mục đã có kết quả, theo phần trăm, một chữ số thập phân."},
+	{"checklists", "checklist_sections", docx.KindList, "checklist_section", "Coverage of each checklist section; loop with {#checklist_sections}…{/checklist_sections}.", "Độ bao phủ của từng mục; lặp bằng {#checklist_sections}…{/checklist_sections}."},
+	{"checklists", "checklist_failed_items", docx.KindList, "checklist_item", "The checklist items that failed; loop with {#checklist_failed_items}…{/checklist_failed_items}.", "Các hạng mục không đạt; lặp bằng {#checklist_failed_items}…{/checklist_failed_items}."},
+	{"checklist", "name", docx.KindText, "", "Checklist name.", "Tên danh mục kiểm thử."},
+	{"checklist", "standard", docx.KindText, "", "Standard the checklist follows, such as OWASP WSTG; may be empty.", "Tiêu chuẩn của danh mục, ví dụ OWASP WSTG; có thể trống."},
+	{"checklist", "standard_version", docx.KindText, "", "Version of the standard, such as 4.2; may be empty.", "Phiên bản tiêu chuẩn, ví dụ 4.2; có thể trống."},
+	{"checklist", "template_version", docx.KindNumber, "", "Version of the organization's checklist template the campaign ran.", "Phiên bản mẫu danh mục mà chiến dịch đã dùng."},
+	{"checklist", "has_failed", docx.KindBool, "", "Yes when an item of this checklist failed.", "Có khi danh mục này có hạng mục không đạt."},
+	{"checklist", "total", docx.KindNumber, "", "Number of items in the checklist.", "Số hạng mục trong danh mục."},
+	{"checklist", "passed", docx.KindNumber, "", "Items that passed.", "Số hạng mục đạt."},
+	{"checklist", "failed", docx.KindNumber, "", "Items that failed.", "Số hạng mục không đạt."},
+	{"checklist", "not_applicable", docx.KindNumber, "", "Items marked not applicable.", "Số hạng mục không áp dụng."},
+	{"checklist", "untested", docx.KindNumber, "", "Items without a result.", "Số hạng mục chưa có kết quả."},
+	{"checklist", "tested", docx.KindNumber, "", "Items with a result (passed, failed or not applicable).", "Số hạng mục đã có kết quả (đạt, không đạt hoặc không áp dụng)."},
+	{"checklist", "coverage", docx.KindNumber, "", "Share of items with a result, in percent, one decimal.", "Tỷ lệ hạng mục đã có kết quả, theo phần trăm, một chữ số thập phân."},
+	{"checklist_section", "checklist", docx.KindText, "", "Name of the checklist the section belongs to.", "Tên danh mục chứa mục này."},
+	{"checklist_section", "id", docx.KindText, "", "Section ID, such as WSTG-ATHN.", "Mã mục, ví dụ WSTG-ATHN."},
+	{"checklist_section", "title", docx.KindText, "", "Section title.", "Tên mục."},
+	{"checklist_section", "total", docx.KindNumber, "", "Number of items in the section.", "Số hạng mục trong mục."},
+	{"checklist_section", "passed", docx.KindNumber, "", "Items that passed.", "Số hạng mục đạt."},
+	{"checklist_section", "failed", docx.KindNumber, "", "Items that failed.", "Số hạng mục không đạt."},
+	{"checklist_section", "not_applicable", docx.KindNumber, "", "Items marked not applicable.", "Số hạng mục không áp dụng."},
+	{"checklist_section", "untested", docx.KindNumber, "", "Items without a result.", "Số hạng mục chưa có kết quả."},
+	{"checklist_section", "tested", docx.KindNumber, "", "Items with a result (passed, failed or not applicable).", "Số hạng mục đã có kết quả (đạt, không đạt hoặc không áp dụng)."},
+	{"checklist_section", "coverage", docx.KindNumber, "", "Share of items with a result, in percent, one decimal.", "Tỷ lệ hạng mục đã có kết quả, theo phần trăm, một chữ số thập phân."},
+	{"checklist_item", "checklist", docx.KindText, "", "Name of the checklist.", "Tên danh mục kiểm thử."},
+	{"checklist_item", "section", docx.KindText, "", "Title of the item's section.", "Tên mục chứa hạng mục."},
+	{"checklist_item", "id", docx.KindText, "", "Item ID, such as WSTG-INPV-05.", "Mã hạng mục, ví dụ WSTG-INPV-05."},
+	{"checklist_item", "title", docx.KindText, "", "Item title.", "Tên hạng mục."},
+	{"checklist_item", "severity", docx.KindText, "", "The item's severity hint; may be empty.", "Mức độ gợi ý của hạng mục; có thể trống."},
+	{"checklist_item", "severity_label", docx.KindText, "", "That severity in the template language.", "Mức độ đó theo ngôn ngữ của mẫu."},
 }
 
 // labelDescription describes every labels.* field.
@@ -291,6 +335,9 @@ var referenceGroups = []struct{ id, title string }{
 	{"findings", "Finding lists"}, {"finding", "Each finding (inside {#findings}…{/findings} or a findings_by_severity list)"},
 	{"retests", "Retests"}, {"retest", "Each retest (inside {#retests}…{/retests})"},
 	{"team", "Team"}, {"team_member", "Each team member (inside {#team}…{/team})"},
+	{"checklists", "Methodology checklists"}, {"checklist", "Each checklist (inside {#checklists}…{/checklists})"},
+	{"checklist_section", "Each checklist section (inside {#checklist_sections}…{/checklist_sections})"},
+	{"checklist_item", "Each failed checklist item (inside {#checklist_failed_items}…{/checklist_failed_items})"},
 }
 
 // TemplateReferenceMarkdown is the tag reference as Markdown tables (English

@@ -69,6 +69,8 @@ type Repositories struct {
 	PentestTemplate       *postgres.PentestTemplateRepository
 	PentestReport         *postgres.PentestReportRepository
 	PentestReportTemplate *postgres.PentestReportTemplateRepository
+	PentestChecklistTpl   *postgres.PentestChecklistTemplateRepository
+	PentestChecklist      *postgres.PentestCampaignChecklistRepository
 
 	// Attachments (file upload metadata)
 	Attachment *postgres.AttachmentRepository
@@ -373,6 +375,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		PentestTemplate:       postgres.NewPentestTemplateRepository(db),
 		PentestReport:         postgres.NewPentestReportRepository(db),
 		PentestReportTemplate: postgres.NewPentestReportTemplateRepository(db),
+		PentestChecklistTpl:   postgres.NewPentestChecklistTemplateRepository(db),
+		PentestChecklist:      postgres.NewPentestCampaignChecklistRepository(db),
 
 		// Attachments
 		Attachment: postgres.NewAttachmentRepository(db),

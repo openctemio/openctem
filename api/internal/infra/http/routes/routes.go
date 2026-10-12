@@ -195,6 +195,7 @@ type Handlers struct {
 	Pentest                *handler.PentestHandler               // nil if not initialized (no database)
 	PentestCampaignRoleQry middleware.CampaignRoleQuerier        // Campaign role resolver for RBAC middleware
 	PentestReportTemplate  *handler.PentestReportTemplateHandler // nil if not initialized
+	PentestChecklist       *handler.PentestChecklistHandler      // nil if not initialized
 
 	// File Attachments (shared across pentest, retest, campaign)
 	Attachment *handler.AttachmentHandler // nil if not initialized
@@ -682,7 +683,10 @@ func Register(
 
 	// Pentest Campaign Management routes (tenant from JWT token)
 	if h.Pentest != nil {
-		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync, h.PentestCampaignRoleQry, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		registerPentestRoutes(router, h.Pentest, h.PentestChecklist, authMiddleware, userSync, h.PentestCampaignRoleQry, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		if h.PentestChecklist != nil {
+			registerPentestChecklistTemplateRoutes(router, h.PentestChecklist, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		}
 		if h.PentestReportTemplate != nil {
 			registerPentestReportTemplateRoutes(router, h.PentestReportTemplate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModulePentest))
 		}

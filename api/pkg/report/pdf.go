@@ -162,6 +162,23 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 		}
 	}
 
+	// Methodology coverage.
+	if len(input.Checklists) > 0 {
+		pdf.Ln(4)
+		sectionHeading(pdf, tr, "Methodology Coverage")
+		for _, c := range input.Checklists {
+			name := c.Name
+			if c.StandardVersion != "" {
+				name += " (" + c.StandardVersion + ")"
+			}
+			bulletLine(pdf, tr, fmt.Sprintf("%s: %.1f%% covered - %d passed, %d failed, %d not applicable, %d untested of %d",
+				name, c.Counts.Coverage(), c.Counts.Passed, c.Counts.Failed, c.Counts.NotApplicable, c.Counts.Untested, c.Counts.Total))
+			for _, it := range c.FailedItems {
+				bodyText(pdf, tr, "Failed: "+it.ID+" "+it.Title)
+			}
+		}
+	}
+
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
 		return nil, fmt.Errorf("render pdf: %w", err)

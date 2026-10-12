@@ -28,7 +28,8 @@ var baselinePermissionRow = regexp.MustCompile(`^INSERT INTO public\.permissions
 
 // permSeedMigrations are the migrations above the baseline that INSERT INTO
 // permissions. A new permission-seeding migration MUST be added here (every
-// listed file must exist, so a typo fails loudly).
+// listed file must exist, so a typo fails loudly). An entry without a
+// version prefix is found by name, so the merge queue can renumber it.
 var permSeedMigrations = []string{
 	"001198_scope_entries.up.sql", // attack_surface:scope:approve (RFC-054)
 	"001223_finding_evidence.up.sql",
@@ -37,6 +38,7 @@ var permSeedMigrations = []string{
 	"001534_findings_comment_severity.up.sql", // findings:comment, findings:severity
 	"001760_scan_window_policies.up.sql",      // scans:windows:manage (RFC-067)
 	"001921_scan_approval_requests.up.sql",    // scans:approve (RFC-073)
+	"pentest_checklists",                      // pentest:checklists:manage (RFC-086)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
@@ -103,7 +105,7 @@ func seededPermissionIDs(t *testing.T) map[string]string {
 		}
 	}
 	for _, m := range permSeedMigrations {
-		path := filepath.Join(root, "migrations", m)
+		path := migrationFile(t, root, m)
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read seed migration %s: %v (update permSeedMigrations if a file was renamed)", m, err)
