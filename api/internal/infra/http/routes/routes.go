@@ -127,7 +127,6 @@ type Handlers struct {
 	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
 	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
 	Scan          *handler.ScanHandler          // nil if not initialized (no database)
-	CI            *handler.CIHandler            // nil if not initialized (no database) - CI/CD snippet generator
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
@@ -400,11 +399,6 @@ func Register(
 	registerHealthRoutes(router, h.Health, middleware.MetricsAuth(cfg.Metrics.Public, cfg.Metrics.Token, log))
 	registerClientErrorRoute(router, h.ClientErrors, log)
 
-	// API Documentation routes (public)
-	if h.Docs != nil {
-		registerDocsRoutes(router, h.Docs)
-	}
-
 	// Initialize per-user read endpoint rate limiter to prevent enumeration and scraping.
 	// Applied to all GET requests on authenticated tenant-scoped routes via
 	// buildTokenTenantMiddlewares (package-level variable).
@@ -509,6 +503,15 @@ func Register(
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
 	registerLegalRoute(router, h.AdminLegal)
+	// API documentation: public outside production; in production the spec
+	// needs a signed-in user and the reference page a platform administrator.
+	if h.Docs != nil {
+		var consoleAuth Middleware
+		if h.AdminAuthMiddleware != nil {
+			consoleAuth = h.AdminAuthMiddleware.Authenticate
+		}
+		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth)
+	}
 	if h.Announcement != nil {
 		registerAnnouncementRoute(router, h.Announcement, authMiddleware)
 	}
@@ -617,7 +620,7 @@ func Register(
 	}
 
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
-	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, cfg.Webhooks.JiraSecret, log)
+	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, log)
 
 	// Public GitHub webhook endpoint — verified in the handler via GitHub's
 	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
@@ -912,7 +915,7 @@ func Register(
 
 	// Scan routes (tenant from JWT token)
 	if h.Scan != nil {
-		registerScanRoutes(router, h.Scan, h.CI, authMiddleware, userSync, triggerRateLimiter)
+		registerScanRoutes(router, h.Scan, authMiddleware, userSync, triggerRateLimiter)
 	}
 
 	// Scanner Template routes (tenant from JWT token)

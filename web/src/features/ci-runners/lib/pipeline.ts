@@ -123,16 +123,31 @@ export function repositoryPath(name: string | undefined): string {
 }
 
 /** A cadence in words ("every 1 day", "every 6 hours"). */
-export function cadenceLabel(seconds: number | undefined): string | null {
+/** A translator shaped like the console's `t()`. */
+type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string
+
+const plain: Translate = (_key, fallback, vars) =>
+  Object.entries(vars ?? {}).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), fallback)
+
+/** "every 6 hours" for an interval in seconds; translated when `t` is given. */
+export function cadenceLabel(seconds: number | undefined, t: Translate = plain): string | null {
   if (!seconds || seconds <= 0) return null
   const h = seconds / 3600
-  if (h < 1) return `every ${Math.max(1, Math.round(seconds / 60))} min`
+  if (h < 1) {
+    return t('scans.ci.cadence.minutes', 'every {n} min', {
+      n: Math.max(1, Math.round(seconds / 60)),
+    })
+  }
   if (h < 48) {
     const n = Math.round(h)
-    return `every ${n} ${n === 1 ? 'hour' : 'hours'}`
+    return n === 1
+      ? t('scans.ci.cadence.hour', 'every 1 hour')
+      : t('scans.ci.cadence.hours', 'every {n} hours', { n })
   }
   const d = Math.round(h / 24)
-  return `every ${d} ${d === 1 ? 'day' : 'days'}`
+  return d === 1
+    ? t('scans.ci.cadence.day', 'every 1 day')
+    : t('scans.ci.cadence.days', 'every {n} days', { n: d })
 }
 
 export interface PipelineListFilters {
