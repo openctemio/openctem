@@ -109,7 +109,6 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `AUTH_ACCESS_TOKEN_COOKIE_NAME` | string | `auth_token` |  |  | Name of the access-token cookie. The gateway's routing rule and the web console expect `auth_token`; change all three together or not at all. |
 | `AUTH_ACCESS_TOKEN_DURATION` | duration | `15m` |  |  | Access token lifetime. |
 | `AUTH_COOKIE_DOMAIN` | string | empty |  |  | `Domain` attribute of session cookies. Unset: the current host only. |
 | `AUTH_COOKIE_SAMESITE` | string | `lax` |  |  | `strict`, `lax` or `none` (`none` needs `AUTH_COOKIE_SECURE=true`). |
@@ -127,11 +126,9 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `AUTH_PASSWORD_REQUIRE_UPPERCASE` | bool | `true` |  |  | Require an uppercase letter. |
 | `AUTH_PASSWORD_RESET_DURATION` | duration | `1h` |  |  | Lifetime of a password reset link. |
 | `AUTH_PROVIDER` | string | `local` |  |  | `local` (built-in email and password), `oidc` (an external Keycloak realm) or `hybrid` (both). Up to v0.8.0 the default was `oidc`: an installation that relied on that must now set `AUTH_PROVIDER=oidc`. |
-| `AUTH_REFRESH_TOKEN_COOKIE_NAME` | string | `refresh_token` |  |  | Name of the refresh-token cookie. |
 | `AUTH_REFRESH_TOKEN_DURATION` | duration | `168h` |  |  | Refresh token lifetime (7 days). |
 | `AUTH_REQUIRE_EMAIL_VERIFICATION` | bool | `true` |  |  | Require a verified email address. Production refuses `false` with `local` or `hybrid`. |
 | `AUTH_SESSION_DURATION` | duration | `720h` |  |  | Session lifetime (30 days). |
-| `AUTH_TENANT_COOKIE_NAME` | string | `app_tenant` |  |  | Name of the cookie holding the selected organization. |
 
 ### Organizations and scope guardrails
 
@@ -533,4 +530,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
 | `AI_MAX_CONCURRENT_JOBS` | unset it; it limited nothing, AI triage jobs run on the background job queue |
 | `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > System > Sign-up) |
+| `AUTH_ACCESS_TOKEN_COOKIE_NAME` | unset it; the session cookie is always auth_token |
+| `AUTH_REFRESH_TOKEN_COOKIE_NAME` | unset it; the refresh cookie is always refresh_token |
+| `AUTH_TENANT_COOKIE_NAME` | unset it; the organization cookie is always app_tenant |
 | `JIRA_WEBHOOK_SECRET` | unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate |
