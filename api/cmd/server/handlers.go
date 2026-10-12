@@ -1147,6 +1147,7 @@ func newCIRunnerKeyPolicy(repos *Repositories, svc *Services, log *logger.Logger
 // review decision is audited (RFC-036).
 func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMHandler {
 	h := handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log)
+	h.SetChanges(easmapp.NewChangeService(repos.EASMChange, svc.DataScope))
 	var audit handler.AttributionAuditor
 	if svc.Audit != nil {
 		audit = svc.Audit
@@ -1202,7 +1203,8 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),
 		DNSDefaultHrs:       int(cfg.Worker.EASMDNSInterval.Hours()),
 	}
-	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log)
+	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log).
+		SetDigests(postgres.NewEASMChangeRepository(deps.DB))
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit

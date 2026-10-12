@@ -78,6 +78,7 @@ easm_dns_check_state
 easm_dns_name_state
 easm_evidence
 easm_tombstones
+easm_weekly_digests
 exposure_events
 exposures
 finding_activities
