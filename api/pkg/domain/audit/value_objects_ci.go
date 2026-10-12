@@ -54,6 +54,13 @@ const (
 	// A repository marked, or no longer marked, as expected to be covered.
 	ActionCICoverageExpected   Action = "ci_coverage.expected"
 	ActionCICoverageUnexpected Action = "ci_coverage.unexpected"
+
+	// SCM app installations used to post CI checks and pull request comments
+	// (RFC-077): bound to the organization, removed, or changed on the code
+	// host (suspended, deleted).
+	ActionSCMAppInstalled     Action = "scm_app.installed"
+	ActionSCMAppRemoved       Action = "scm_app.removed"
+	ActionSCMAppStatusChanged Action = "scm_app.status_changed"
 )
 
 // Resource types of the CI actions.
@@ -64,6 +71,7 @@ const (
 	ResourceTypeCIGateOverride ResourceType = "ci_gate_override"
 	ResourceTypeCIPipeline     ResourceType = "ci_pipeline"
 	ResourceTypeCISettings     ResourceType = "ci_settings"
+	ResourceTypeSCMApp         ResourceType = "scm_app_installation"
 )
 
 var _ = registerActions("ci", map[Action]Severity{
@@ -89,10 +97,13 @@ var _ = registerActions("ci", map[Action]Severity{
 	ActionCIStaleSourceFindings:     SeverityLow,
 	ActionCICoverageExpected:        SeverityLow,
 	ActionCICoverageUnexpected:      SeverityLow,
+	ActionSCMAppInstalled:           SeverityHigh,
+	ActionSCMAppRemoved:             SeverityMedium,
+	ActionSCMAppStatusChanged:       SeverityMedium,
 })
 
 func init() {
-	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride, ResourceTypeCIPipeline, ResourceTypeCISettings} {
+	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride, ResourceTypeCIPipeline, ResourceTypeCISettings, ResourceTypeSCMApp} {
 		configResourceTypes[r] = struct{}{}
 	}
 }

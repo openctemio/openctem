@@ -72,6 +72,15 @@ type CITrustConfigResponse struct {
 	LastUsedAt    *time.Time  `json:"last_used_at,omitempty"`
 	CreatedAt     time.Time   `json:"created_at"`
 	UpdatedAt     time.Time   `json:"updated_at"`
+	// OwnerPins (on GET by id) are the organization or namespace ids the
+	// configuration pinned at their first admitted exchange; a token naming
+	// the same organization with another id is refused.
+	OwnerPins []cirun.OwnerPin `json:"owner_pins,omitempty"`
+}
+
+// ciOwnerPinLister is the optional part of the service that lists pins.
+type ciOwnerPinLister interface {
+	OwnerPins(ctx context.Context, tenantID, id shared.ID) ([]cirun.OwnerPin, error)
 }
 
 func toCITrustResponse(c *cirun.TrustConfig) CITrustConfigResponse {
@@ -377,7 +386,16 @@ func (h *CIAdminHandler) GetTrustConfig(w http.ResponseWriter, r *http.Request) 
 		h.writeErr(w, err, "get trust configuration", "CI trust configuration")
 		return
 	}
-	ciWriteJSON(w, http.StatusOK, toCITrustResponse(c))
+	resp := toCITrustResponse(c)
+	if lister, ok := h.svc.(ciOwnerPinLister); ok {
+		pins, err := lister.OwnerPins(r.Context(), tenantID, id)
+		if err != nil {
+			h.writeErr(w, err, "list owner pins", "CI trust configuration")
+			return
+		}
+		resp.OwnerPins = pins
+	}
+	ciWriteJSON(w, http.StatusOK, resp)
 }
 
 // CreateTrustConfig handles POST /api/v1/ci/trust-configs

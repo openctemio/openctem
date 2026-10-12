@@ -122,6 +122,5 @@ const DefaultSensorSDKLatestVersion = "v0.14.0"
 const DefaultSensorSDKMinVersion = ""
 GO
   echo 'const DefaultSensorImage = "ghcr.io/openctemio/sensor:v0.6.4"' >"$d/api/internal/infra/http/handler/sensor_handler.go"
-  printf '# SENSOR_LATEST_VERSION=v0.6.4\n# SENSOR_SDK_LATEST_VERSION=v0.14.0\n' >"$d/api/.env.example"
   printf '{\n  "name": "w",\n  "version": "0.0.0",\n  "private": true\n}\n' >"$d/web/package.json"
 }

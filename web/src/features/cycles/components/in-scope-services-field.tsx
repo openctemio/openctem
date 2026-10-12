@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { get } from '@/lib/api/client'
 import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface BusinessServiceOption {
   id: string
@@ -41,6 +42,7 @@ export function InScopeServicesField({
   onChange: (next: string[]) => void
   editable: boolean
 }) {
+  const { t } = useTranslation()
   const { data, error, isLoading } = useSWR<BusinessServiceList>(
     '/api/v1/business-services?per_page=100',
     (url: string) => get<BusinessServiceList>(url)
@@ -86,8 +88,10 @@ export function InScopeServicesField({
         )
       ) : services.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No business services yet. Create them under Scoping › Business Services to scope a cycle
-          to them; with none selected, the cycle covers every asset.
+          {t(
+            'scope.cycles.noServices',
+            'No business services yet. Create them under Scoping › Business services.'
+          )}
         </p>
       ) : (
         <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border p-2">
