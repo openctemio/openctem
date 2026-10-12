@@ -318,6 +318,24 @@ describe('reactions', () => {
   })
 })
 
+describe('Reaction picker from the comment menu', () => {
+  // On touch screens the menu is the only way to add a new reaction: the
+  // picker must stay open once the menu has closed.
+  it('opens the picker from "Add reaction" in the actions menu', async () => {
+    const user = userEvent.setup()
+    setUrl('?activity=open')
+    renderActivity({ onToggleReaction: vi.fn() })
+    const dialog = await screen.findByRole('dialog', { name: /Activity/ })
+    const card = within(dialog).getByRole('article', { name: 'Comment by Jamie' })
+    await user.click(within(card).getByRole('button', { name: 'Comment actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Add reaction' }))
+    await waitFor(() =>
+      expect(document.querySelector('[data-radix-popper-content-wrapper]')).not.toBeNull()
+    )
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
 describe('Pentest comment visibility', () => {
   it('shows who reads each comment and the AI client that wrote one', async () => {
     const user = userEvent.setup()
