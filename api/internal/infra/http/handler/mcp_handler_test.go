@@ -7,11 +7,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -20,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/report"
 )
 
 // fakeFindingReader records the tenant it was called with so tests can assert
@@ -439,6 +442,7 @@ type fakePentestReader struct {
 	templates  []*pentestdom.Template
 	members    []*pentestdom.CampaignMember
 	role       pentestdom.CampaignRole // the acting user's campaign role; empty means lead
+	gotQuery   compliance.PentestFindingQuery
 }
 
 func (p *fakePentestReader) GetUserCampaignRole(_ context.Context, _, _, _ string) (pentestdom.CampaignRole, error) {
@@ -469,11 +473,56 @@ func (p *fakePentestReader) GetCampaignStats(_ context.Context, tenantID, _ stri
 	}
 	return p.stats, nil
 }
-func (p *fakePentestReader) ListAllPentestFindings(_ context.Context, tenantID, _, viewerUserID, _ string, isAdmin bool, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+
+// QueryCampaignFindings simulates the SQL: the client rule, the filters,
+// then the page.
+func (p *fakePentestReader) QueryCampaignFindings(_ context.Context, q compliance.PentestFindingQuery) (pagination.Result[*vulnerability.Finding], error) {
+	p.gotTenant = q.TenantID
+	p.gotUser = q.ViewerUserID
+	p.gotQuery = q
+	rows := make([]*vulnerability.Finding, 0, len(p.findings))
+	for _, f := range p.findings {
+		if q.PublishedOnly && !pentestdom.CampaignRoleClient.CanSeeFindingStatus(string(f.Status())) {
+			continue
+		}
+		if len(q.Severities) > 0 && !slices.Contains(q.Severities, string(f.Severity())) {
+			continue
+		}
+		if len(q.Statuses) > 0 && !slices.Contains(q.Statuses, string(f.Status())) {
+			continue
+		}
+		if q.Search != "" && !strings.Contains(strings.ToLower(f.Title()), strings.ToLower(q.Search)) {
+			continue
+		}
+		rows = append(rows, f)
+	}
+	start := min((q.Page.Page-1)*q.Page.PerPage, len(rows))
+	end := min(start+q.Page.PerPage, len(rows))
+	return pagination.NewResult(rows[start:end], int64(len(rows)), q.Page), nil
+}
+
+// ReportFindings simulates the report selection: no drafts, findings under
+// review, false positives or duplicates.
+func (p *fakePentestReader) ReportFindings(_ context.Context, tenantID, _ string) ([]*vulnerability.Finding, report.StatsData, error) {
 	p.gotTenant = tenantID
-	p.gotUser = viewerUserID
-	p.gotIsAdmin = isAdmin
-	return pagination.NewResult(p.findings, int64(len(p.findings)), page), nil
+	var out []*vulnerability.Finding
+	var st report.StatsData
+	for _, f := range p.findings {
+		switch f.Status() {
+		case vulnerability.FindingStatusDraft, vulnerability.FindingStatusInReview,
+			vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusDuplicate:
+			continue
+		}
+		out = append(out, f)
+		st.Total++
+		switch f.Severity() {
+		case vulnerability.SeverityCritical:
+			st.Critical++
+		case vulnerability.SeverityHigh:
+			st.High++
+		}
+	}
+	return out, st, nil
 }
 func (p *fakePentestReader) ListCampaignRetests(_ context.Context, tenantID, _ string) ([]*pentestdom.Retest, error) {
 	p.gotTenant = tenantID
@@ -636,10 +685,17 @@ func TestMCP_GetPentestFinding_RedactsEvidence(t *testing.T) {
 		}
 	}
 	// But the redacted metadata must be present.
-	var dto mcpPentestFindingDTO
-	if err := json.Unmarshal([]byte(text), &dto); err != nil {
+	var env struct {
+		Notice string               `json:"notice"`
+		Data   mcpPentestFindingDTO `json:"untrusted_data"`
+	}
+	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("decode finding dto: %v", err)
 	}
+	if env.Notice == "" {
+		t.Error("a finding's text must come with the untrusted-data notice")
+	}
+	dto := env.Data
 	if dto.HasPoC == nil || !*dto.HasPoC {
 		t.Error("expected has_poc=true (poc_code present but redacted)")
 	}
