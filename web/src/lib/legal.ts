@@ -15,8 +15,9 @@
  *   and win over the templates in the sign-in and sign-up notices.
  * - /.well-known/security.txt (RFC 9116) names SECURITY_CONTACT (an email
  *   address or an https URL), security@openctem.io by default;
- *   SECURITY_POLICY_URL adds a Policy line. SECURITY_TXT_ENABLED=false turns
- *   the file off (404).
+ *   SECURITY_POLICY_URL sets the Policy line, which defaults to the OpenCTEM
+ *   disclosure policy while the contact is the default one.
+ *   SECURITY_TXT_ENABLED=false turns the file off (404).
  */
 
 import { DOCS_URL } from '@/lib/docs-links'
@@ -28,6 +29,7 @@ export const DEFAULT_CONTACTS = {
   security: 'security@openctem.io',
   website: 'https://openctem.io',
   docs: DOCS_URL,
+  securityPolicy: `${DOCS_URL}/security/vulnerability-disclosure/`,
 } as const
 
 export interface LegalValues {
@@ -140,8 +142,9 @@ export function securityContactUri(contact: string): string {
 /**
  * The body of /.well-known/security.txt (RFC 9116), or null when it is turned
  * off or the configured contact is not valid. The contact defaults to
- * security@openctem.io. Expires is one year from `now` (the file is generated
- * per request, so it never goes stale).
+ * security@openctem.io, with the OpenCTEM disclosure policy as Policy.
+ * Expires is one year from `now` (the file is generated per request, so it
+ * never goes stale).
  */
 export function securityTxt(env: Env = {}, now: Date = new Date()): string | null {
   if (clean(env.SECURITY_TXT_ENABLED).toLowerCase() === 'false') return null
@@ -150,7 +153,10 @@ export function securityTxt(env: Env = {}, now: Date = new Date()): string | nul
   if (!contact) return null
   const expires = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
   const lines = [`Contact: ${contact}`, `Expires: ${expires.toISOString()}`]
-  const policy = clean(env.SECURITY_POLICY_URL)
+  // Our own policy goes with our own contact only: an operator who sets their
+  // own contact sets their own policy (or none).
+  const policy =
+    clean(env.SECURITY_POLICY_URL) || (configured ? '' : DEFAULT_CONTACTS.securityPolicy)
   if (policy) {
     try {
       const u = new URL(policy)

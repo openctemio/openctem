@@ -226,6 +226,9 @@ export type AuditChainClass =
 
 /** GET /api/v1/easm/summary — the EASM overview (RFC-036). */
 export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Summary']
+export type EASMChangePage =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Page']
+export type EASMChange = Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Change']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
 
 /** A scan run's tasks (RFC-046): GET /api/v1/scan-runs and /scan-runs/{id}. */

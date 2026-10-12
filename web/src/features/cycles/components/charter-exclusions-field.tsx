@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useScopeExclusionsApi } from '@/features/scope'
 import type { CharterExclusion } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * The charter's exclusions, picked from the scope exclusions scans enforce
@@ -30,6 +31,7 @@ export function CharterExclusionsField({
   onChange: (next: CharterExclusion[]) => void
   editable: boolean
 }) {
+  const { t } = useTranslation()
   const { data, error, isLoading } = useScopeExclusionsApi({ per_page: 100 })
   const exclusions = useMemo(() => data?.data ?? [], [data])
   const enforced = useMemo(
@@ -78,8 +80,7 @@ export function CharterExclusionsField({
         <Skeleton className="h-20 w-full" />
       ) : error ? (
         <p className="text-sm text-muted-foreground">
-          Scope exclusions could not be loaded (the Scope module may be off), so none can be picked
-          here.
+          {t('scope.cycles.exclusionsLoadFailed', 'Scope exclusions could not be loaded.')}
         </p>
       ) : exclusions.length === 0 ? (
         <p className="text-sm text-muted-foreground">
