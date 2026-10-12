@@ -991,8 +991,11 @@ Inside the pentest module, campaign membership decides who sees a campaign
 | observer | everything in the campaign | nothing |
 | client | the campaign, its team, its **published** findings (never draft or in review) and its **delivered** reports | nothing |
 
-A client gets no campaign-wide read: no stats or finding counts (they
-include unpublished work), no exports, no campaign attachments and no
+A client reads the campaign's stats (`GET /pentest/campaigns/{id}/stats`)
+counted over published findings only (drafts, findings in review and their
+retests are left out); the campaign's own finding counts and progress stay
+hidden from a client (they include unpublished work). A client gets no other
+campaign-wide read: no exports, no campaign attachments and no
 report-writing (MCP) tools. Of the reports, a client lists, reads and
 downloads the delivered ones only (stored snapshots, without their
 generation options; downloads audited), never generates one on the fly. Every surface that lists or reads pentest

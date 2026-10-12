@@ -462,7 +462,7 @@ func (p *fakePentestReader) ListCampaignMembers(_ context.Context, tenantID, _ s
 	p.gotTenant = tenantID
 	return p.members, nil
 }
-func (p *fakePentestReader) GetCampaignStats(_ context.Context, tenantID, _ string) (*pentestdom.CampaignStats, error) {
+func (p *fakePentestReader) GetCampaignStats(_ context.Context, tenantID, _ string, _ bool) (*pentestdom.CampaignStats, error) {
 	p.gotTenant = tenantID
 	if p.stats == nil {
 		return &pentestdom.CampaignStats{}, nil
