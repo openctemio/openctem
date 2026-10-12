@@ -25,18 +25,15 @@ services:
     restart: on-failure
     ports:
       - "8080:8080" # HTTP API
-      - "9090:9090" # gRPC
       - "2345:2345" # Delve debugger
     environment:
       # Application
       APP_NAME: openctem
       APP_ENV: development
-      APP_DEBUG: "true"
       # Server
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
       SERVER_REQUEST_TIMEOUT: 30s
-      GRPC_PORT: 9090
       # Database
       DB_HOST: postgres
       DB_PORT: 5432
