@@ -1288,6 +1288,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	s.Pentest.SetReportTemplateRepository(repos.PentestReportTemplate)
 	if s.SLA != nil {
 		s.Pentest.SetSLACalculator(s.SLA) // deadline from the org SLA policy when a finding is published
 	}
@@ -1332,6 +1333,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		return nil, fmt.Errorf("unsupported STORAGE_PROVIDER %q (local, s3 or minio)", cfg.Storage.Provider)
 	}
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
+	s.Pentest.SetEvidenceImageReader(s.Attachment) // evidence images in reports
 	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
 	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
 		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdmins)
@@ -1932,7 +1934,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
-		WithPlatformPolicy(s.ScopeGuardrails, cfg.Scope.ActiveProof == config.ScopeProofAll)
+		WithPlatformPolicy(s.ScopeGuardrails)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -1967,6 +1969,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		// The scope check names the private address a refused hostname
+		// resolves to, unless that answer may come from the platform's own
+		// DNS in a self-service (multi-tenant) install.
+		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SelfServiceTenantCreation()),
 		// Scan windows (RFC-067): never-opening targets refuse the run, a
 		// scheduled run with nothing open is deferred to the next opening.
 		scan.WithScanWindows(s.ScanWindowResolver),
@@ -1975,9 +1981,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope)),
 		scan.WithScopeSnapshots(scope.NewSnapshotRecorder(s.Scope, s.ScopeSnapshots)),
-		// Platform sensors and intrusive scans need a verified domain
-		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
-		scan.WithActiveProof(cfg.Scope.ActiveProof),
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),

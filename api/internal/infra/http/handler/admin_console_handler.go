@@ -36,7 +36,7 @@ type AdminConsoleHandler struct {
 // NewAdminConsoleHandler creates the handler. cookieSecure mirrors
 // AUTH_COOKIE_SECURE (true in production, behind HTTPS).
 // refreshTokenCookie is the name of the normal sign-in refresh-token cookie
-// (AUTH_REFRESH_TOKEN_COOKIE_NAME): the console session starts from it.
+// (refresh_token): the console session starts from it.
 func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, refreshTokenCookie string, log *logger.Logger) *AdminConsoleHandler {
 	if refreshTokenCookie == "" {
 		refreshTokenCookie = "refresh_token"
