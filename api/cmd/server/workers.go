@@ -645,6 +645,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// (RFC-054 §12.5).
 	if svc.Scope != nil {
 		w.ControllerManager.Register(controller.NewScopeAttestationController(svc.Scope, 0))
+		// Scope rows left pending where approvals are no longer required
+		// take effect through the signer's ledger (RFC-073 §6).
+		w.ControllerManager.Register(controller.NewScopePendingController(svc.Scope, 0))
 	}
 
 	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
