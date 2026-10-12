@@ -24,10 +24,7 @@ case "$comp" in
   openctem-api)     budget=150 ;;  # 131 MB
   openctem-web)     budget=300 ;;  # 253 MB (node alone is ~145 MB)
   openctem)         budget=490 ;;  # 423 MB (node + web + API + Caddy)
-  # The gateway runs as root like the Caddy image it replaces: existing
-  # gateway-data/gateway-config volumes hold root-owned files, so a non-root
-  # gateway needs an ownership step for them first.
-  openctem-gateway) budget=75; root_ok="existing volumes are root-owned" ;;  # 63 MB
+  openctem-gateway) budget=75 ;;   # 63 MB (runs as uid 1000)
   migrations)       budget=25 ;;   # 18 MB
   seed)             budget=25 ;;   # 17 MB
   admin-cli)        budget=30 ;;   # 24 MB

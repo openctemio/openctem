@@ -236,12 +236,23 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.plain-http.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.job-signer.yml config -q
           OPENCTEM_SENSOR_GATEWAY=passthrough SENSOR_PUBLIC_HOSTNAME=sensors.example.test SENSOR_PUBLIC_HOST=sensors.example.test:443 \
             docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml config -q
           # Only the gateway publishes a port.
           published="$(docker compose config --format json | jq -r '.services | to_entries[] | select(.value.ports != null and (.value.ports | length) > 0) | .key')"
           echo "services with published ports: $published"
           test "$published" = "gateway"
+          # Every image the stack pulls by default is one a release publishes
+          # (docker-publish.yml), under its current name.
+          published_names="$(yq -r '.jobs.merge.strategy.matrix.image[].name' ../../.github/workflows/docker-publish.yml)"
+          for img in $(docker compose -f docker-compose.yml -f docker-compose.job-signer.yml config --images | sort -u); do
+            case "$img" in
+              ghcr.io/openctemio/*)
+                name="${img#ghcr.io/openctemio/}"; name="${name%%:*}"
+                grep -qx "$name" <<<"$published_names" || { echo "::error::$img is not published by docker-publish.yml"; exit 1; } ;;
+            esac
+          done
           rm .env
 
       # The shards of the two DB-backed jobs below cover every package and
@@ -571,6 +582,69 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash ../.github/scripts/check-db-test-skips.sh lp-test.json
 
+  # The next PostgreSQL major: every migration on a fresh PostgreSQL 18
+  # database plus the schema probes that read the catalog (PostgreSQL 18
+  # records NOT NULL constraints in pg_constraint, which a catalog query must
+  # allow for). The full suite runs on the supported 17 above.
+  pg18:
+    name: Migrations (PostgreSQL 18)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # postgres:18-alpine in .github/ci-images.txt (bump both together).
+      PG18_DIGEST: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+      DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # the test merge's base parent, for the renumber below
+
+      - name: Renumber this PR's clashing migrations (this run only)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: bash .github/scripts/pr-migration-renumber.sh
+
+      # The CI image mirror first; its upstream (same digest) until the mirror
+      # has copied the image.
+      - name: Start PostgreSQL 18
+        working-directory: .
+        run: |
+          img="ghcr.io/openctemio/mirror/postgres:18-alpine@$PG18_DIGEST"
+          if ! docker pull -q "$img"; then
+            img="public.ecr.aws/docker/library/postgres:18-alpine@$PG18_DIGEST"
+            bash .github/scripts/retry.sh docker pull -q "$img"
+          fi
+          docker run -d --name pg18 -p 5432:5432 -e POSTGRES_USER=openctem \
+            -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=app_test "$img"
+          # Over TCP: the entrypoint's init server listens on the socket only.
+          for _ in $(seq 1 60); do
+            docker exec pg18 pg_isready -h 127.0.0.1 -U openctem -d app_test -q && exit 0
+            sleep 1
+          done
+          docker logs pg18
+          exit 1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Apply every migration
+        run: migrate -path migrations -database "$DATABASE_URL" up
+
+      - name: Schema probes on the migrated database
+        env:
+          OPENCTEM_TEST_DB_REQUIRED: "1"
+        run: go test -count=1 -run 'TestCheckSensorRename' ./internal/infra/postgres/
+
   # Merge queue and pushes only: the release-style static binaries (the former
   # separate `Build` job).
   binaries:
@@ -641,7 +715,7 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, lint, test, least-privilege, binaries, docker]
+    needs: [changes, static, lint, test, least-privilege, pg18, binaries, docker]
     runs-on: ubuntu-latest
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
@@ -659,7 +733,7 @@ jobs:
           # the tier for this event must have RUN and passed, so a mistyped
           # condition cannot wave a queued PR through without its tests.
           if [ "$API" = true ]; then
-            if [ "$EVENT" = pull_request ]; then required="changes static lint test least-privilege"; else required="changes static lint test least-privilege binaries"; fi
+            if [ "$EVENT" = pull_request ]; then required="changes static lint test least-privilege pg18"; else required="changes static lint test least-privilege pg18 binaries"; fi
             for j in $required; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass for $EVENT, got: $r"; exit 1; fi

@@ -16,7 +16,7 @@
 
 # The newest released vX.Y.Z tag of this repository (API + web share it).
 platform:
-  release: v0.8.0
+  release: v0.9.0
 
 # Sensor (openctemio/sensor). latest: the install snippets pin this image tag
 # and the Sensors page shows "update available" below it. min: a sensor below it

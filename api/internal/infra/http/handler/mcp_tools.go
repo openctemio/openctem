@@ -705,6 +705,17 @@ type campaignFindingsArgs struct {
 	Limit      int    `json:"limit"`
 }
 
+// campaignViewerRole is the acting user's role in the campaign. A client sees
+// published findings only, exactly as in the web console; an unknown role
+// (lookup error) is treated as a client so the read fails closed.
+func (h *MCPHandler) campaignViewerRole(ctx context.Context, tenantID, campaignID, userID string) pentestdom.CampaignRole {
+	role, err := h.pentest.GetUserCampaignRole(ctx, tenantID, campaignID, userID)
+	if err != nil || role == "" {
+		return pentestdom.CampaignRoleClient
+	}
+	return role
+}
+
 func (h *MCPHandler) toolListCampaignFindings(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
 	if h.pentest == nil {
 		return nil, toolInputError{"pentest reader not configured"}
@@ -730,22 +741,31 @@ func (h *MCPHandler) toolListCampaignFindings(ctx context.Context, tenantID stri
 	if err != nil {
 		return nil, err
 	}
+	role := h.campaignViewerRole(ctx, tenantID, a.CampaignID, user)
 	sevFilter := strings.ToLower(strings.TrimSpace(a.Severity))
 	statFilter := strings.ToLower(strings.TrimSpace(a.Status))
 	out := make([]mcpPentestFindingDTO, 0, len(res.Data))
+	visible := 0
 	for _, f := range res.Data {
+		if !role.CanSeeFindingStatus(string(f.Status())) {
+			continue
+		}
+		visible++
 		if sevFilter != "" && strings.ToLower(string(f.Severity())) != sevFilter {
 			continue
 		}
 		if statFilter != "" && strings.ToLower(string(f.Status())) != statFilter {
 			continue
 		}
-		out = append(out, toPentestFindingDTO(f, false))
-		if len(out) >= limit {
-			break
+		if len(out) < limit {
+			out = append(out, toPentestFindingDTO(f, false))
 		}
 	}
-	return map[string]any{"total": res.Total, "findings": out}, nil
+	total := res.Total
+	if !role.CanSeeUnpublished() {
+		total = int64(visible)
+	}
+	return map[string]any{"total": total, "findings": out}, nil
 }
 
 func (h *MCPHandler) toolGetPentestFinding(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
@@ -764,6 +784,12 @@ func (h *MCPHandler) toolGetPentestFinding(ctx context.Context, tenantID string,
 	}
 	if f == nil || f.Source() != vulnerability.FindingSourcePentest {
 		return nil, toolInputError{"pentest finding not found"}
+	}
+	if h.pentest != nil && f.PentestCampaignID() != nil {
+		role := h.campaignViewerRole(ctx, tenantID, f.PentestCampaignID().String(), actingUser(ctx))
+		if !role.CanSeeFindingStatus(string(f.Status())) {
+			return nil, toolInputError{"pentest finding not found"}
+		}
 	}
 	return toPentestFindingDTO(f, true), nil
 }
@@ -797,8 +823,11 @@ func (h *MCPHandler) toolListRetests(ctx context.Context, tenantID string, raw j
 	lookup := map[string]*vulnerability.Finding{}
 	if fres, ferr := h.pentest.ListAllPentestFindings(ctx, tenantID, a.CampaignID, user, "", false,
 		pagination.Pagination{Page: 1, PerPage: 500}); ferr == nil {
+		role := h.campaignViewerRole(ctx, tenantID, a.CampaignID, user)
 		for _, f := range fres.Data {
-			lookup[f.ID().String()] = f
+			if role.CanSeeFindingStatus(string(f.Status())) {
+				lookup[f.ID().String()] = f
+			}
 		}
 	}
 	retests, err := h.pentest.ListCampaignRetests(ctx, tenantID, a.CampaignID)
@@ -807,6 +836,10 @@ func (h *MCPHandler) toolListRetests(ctx context.Context, tenantID string, raw j
 	}
 	out := make([]mcpRetestDTO, 0, len(retests))
 	for _, rt := range retests {
+		// Only retests of findings the viewer may see (a client sees published ones).
+		if _, ok := lookup[rt.FindingID().String()]; !ok {
+			continue
+		}
 		dto := mcpRetestDTO{
 			FindingID: rt.FindingID().String(),
 			Status:    string(rt.Status()),
@@ -908,5 +941,41 @@ func (h *MCPHandler) toolCampaignReportStats(ctx context.Context, tenantID strin
 	if err := h.pentest.CheckCampaignAccess(ctx, tenantID, a.CampaignID, user, false); err != nil {
 		return nil, err
 	}
-	return h.pentest.GetCampaignStats(ctx, tenantID, a.CampaignID)
+	stats, err := h.pentest.GetCampaignStats(ctx, tenantID, a.CampaignID)
+	if err != nil || stats == nil {
+		return stats, err
+	}
+	if !h.campaignViewerRole(ctx, tenantID, a.CampaignID, user).CanSeeUnpublished() {
+		// A client's counts leave out unpublished work, as in the console:
+		// the severity totals are recounted from the findings they may see.
+		out := *stats
+		out.DraftCount, out.InReviewCount = 0, 0
+		out.TotalFindings, out.CriticalFindings, out.HighFindings = 0, 0, 0
+		out.MediumFindings, out.LowFindings, out.InfoFindings = 0, 0, 0
+		res, lerr := h.pentest.ListAllPentestFindings(ctx, tenantID, a.CampaignID, user, "", false,
+			pagination.Pagination{Page: 1, PerPage: 500})
+		if lerr != nil {
+			return nil, lerr
+		}
+		for _, f := range res.Data {
+			if !pentestdom.CampaignRoleClient.CanSeeFindingStatus(string(f.Status())) {
+				continue
+			}
+			out.TotalFindings++
+			switch strings.ToLower(string(f.Severity())) {
+			case "critical":
+				out.CriticalFindings++
+			case "high":
+				out.HighFindings++
+			case "medium":
+				out.MediumFindings++
+			case "low":
+				out.LowFindings++
+			default:
+				out.InfoFindings++
+			}
+		}
+		return &out, nil
+	}
+	return stats, nil
 }

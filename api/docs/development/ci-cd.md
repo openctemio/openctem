@@ -393,6 +393,7 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 | Lint (job `API lint`, parallel to the static checks; the golangci-lint cache and the staticcheck binary are cached) | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
 | Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -race -timeout 20m` against Postgres 17 + Redis 7 service containers, split into eight parallel shards (four of `tests/unit`, which is most of the run time, and four groups of the other packages; `.github/scripts/go-shard.sh`), each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
 | Tests (least-privilege DB role) | Sharded the same way (3 + 3 shards). Every event (when `api/` or shared files change). Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
+| Migrations (PostgreSQL 18) | Every event (when `api/` or shared files change). Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`). PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
 | Release Binaries | Merge queue and pushes. Builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 | Docker Build | Pushes to `main` only; builds the image, does not push it. |
 
@@ -466,7 +467,10 @@ README) `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` receive the same
 manifests as `openctem-api` and `openctem-web` (`crane copy`), so existing
 compose files, Helm values and `docker pull` lines keep working. The window
 ends when the `legacy` field of the matrix entry in `docker-publish.yml` is blanked.
-The legacy names are also the only ones that hold v0.8.0 and earlier.
+The legacy names are also the only ones that hold v0.8.0 and earlier. The copy
+is best effort: when it is refused the step warns and the release goes on
+(v0.9.0 has no `ui` copy). The shipped Compose file and Helm values use the
+current names.
 
 **Docker Hub** mirroring (`mirror-to-dockerhub`) runs only when the
 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` secrets are set. They currently are not,
@@ -540,7 +544,8 @@ against `develop`: gomod for `/api` (and monthly for the compat harness), npm fo
 | `vars.RELEASE_TRAIN_ANCHOR` | variable (optional) | The first train Monday (`YYYY-MM-DD`, default `2026-10-05`) |
 
 The legacy `ui` GHCR package was created by `openctemio/ui`; this repository needs
-**Write** in that package's "Manage Actions access" for the legacy copy to succeed.
+**Write** in that package's "Manage Actions access" for the legacy copy to succeed
+(without it the copy step warns and the release continues).
 
 ## Troubleshooting
 

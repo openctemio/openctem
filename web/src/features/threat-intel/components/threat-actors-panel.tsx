@@ -275,7 +275,7 @@ export function ThreatActorsPanel() {
               <Can permission={Permission.ThreatIntelWrite} mode="disable">
                 <Button size="sm" className="h-9" onClick={() => setCreateOpen(true)}>
                   <Plus className="h-4 w-4 sm:me-2" />
-                  <span className="hidden sm:inline">Add actor</span>
+                  <span className="sr-only sm:not-sr-only">Add actor</span>
                 </Button>
               </Can>
             </>

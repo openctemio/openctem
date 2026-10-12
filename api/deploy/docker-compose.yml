@@ -37,7 +37,7 @@ services:
   # `up` (a no-op once the owner is right); only CHOWN, plus DAC_READ_SEARCH
   # to walk the gateway's own 0700 directories.
   gateway-init:
-    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION}}
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.9.0}}
     user: "0:0"
     entrypoint: ["chown", "-R", "1000:1000", "/data", "/config", "/ca"]
     network_mode: none
@@ -58,7 +58,7 @@ services:
   # the namespaced sysctl below, so no-new-privileges stays on and it holds
   # no capability.
   gateway:
-    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION}}
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.9.0}}
     user: "1000:1000"
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0
@@ -96,11 +96,15 @@ services:
       api:
         condition: service_healthy
       web:
-        condition: service_started
+        condition: service_healthy
     networks:
       openctem:
         ipv4_address: ${OPENCTEM_NET_PREFIX:-172.30.80}.10
     restart: unless-stopped
+    # Caddy writes only to its volumes (/data, /config, /ca) and /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
     security_opt:
       - no-new-privileges:true
     deploy:
@@ -112,12 +116,13 @@ services:
   # ---------------------------------------------------------------------------
   # Web UI (Next.js): internal only
   # ---------------------------------------------------------------------------
-  # Image names: releases from the monorepo publish ghcr.io/openctemio/openctem-web
-  # and ghcr.io/openctemio/openctem-api; the legacy names used below receive
-  # identical copies during the transition window and are the only names that
-  # hold v0.8.0 and earlier. Set UI_IMAGE / API_IMAGE to switch.
+  # Image names: releases from v0.9.0 on are published as
+  # ghcr.io/openctemio/openctem-web and ghcr.io/openctemio/openctem-api. The
+  # names of v0.8.0 and earlier (ghcr.io/openctemio/ui, ghcr.io/openctemio/api)
+  # do not hold every later release: set UI_IMAGE / API_IMAGE to them only to
+  # run such an old release with this file.
   web:
-    image: ${UI_IMAGE:-ghcr.io/openctemio/ui}:${UI_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+    image: ${UI_IMAGE:-ghcr.io/openctemio/openctem-web}:${UI_VERSION:-${OPENCTEM_VERSION:-v0.9.0}}
     expose:
       - "3000"
     environment:
@@ -133,17 +138,21 @@ services:
       # published: nothing but the gateway can reach it.
       TRUST_PROXY_HEADERS: "true"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       openctem:
         ipv4_address: ${OPENCTEM_NET_PREFIX:-172.30.80}.11
     restart: unless-stopped
+    # node does not reap orphaned children as PID 1; a minimal init does and
+    # forwards SIGTERM, so `docker compose stop` is graceful.
+    init: true
     # Read-only root filesystem: the standalone server writes only to /tmp and
     # .next/cache (see web/Dockerfile). No Linux capabilities needed.
     read_only: true
     tmpfs:
-      - /tmp
-      - /app/.next/cache:uid=1001,gid=1001
+      - /tmp:size=64m
+      - /app/.next/cache:uid=1001,gid=1001,size=256m
     cap_drop:
       - ALL
     security_opt:
@@ -201,6 +210,10 @@ services:
     networks:
       - openctem
     restart: "no"
+    # A psql client only: the image's postgres user, no capabilities.
+    user: "999:999"
+    read_only: true
+    cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -209,7 +222,7 @@ services:
   # Database migrations (one-shot, before the API), as the schema owner
   # ---------------------------------------------------------------------------
   migrate:
-    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION:-v0.9.0}}
     command:
       - "-path=/migrations"
       - "-database"
@@ -223,6 +236,8 @@ services:
     networks:
       - openctem
     restart: "no"
+    read_only: true
+    cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -231,7 +246,7 @@ services:
   # API (Go): internal only
   # ---------------------------------------------------------------------------
   api:
-    image: ${API_IMAGE:-ghcr.io/openctemio/api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.9.0}}
     expose:
       - "8080"
     environment:
@@ -266,6 +281,10 @@ services:
       REDIS_TLS_CA_FILE: ${REDIS_TLS_CA_FILE:-/datastore-tls/ca.crt}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-json}
+      # Go's garbage collector works to stay under this, below the memory
+      # limit, instead of the container being killed at the limit. Keep it
+      # about 80% of API_MEMORY_LIMIT.
+      GOMEMLIMIT: ${API_GOMEMLIMIT:-1600MiB}
       AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
       # Empty: derived from APP_ENCRYPTION_KEY (rotating that key then signs
       # everyone out). Set it to rotate the two independently.
@@ -315,9 +334,12 @@ services:
       # ./data/attachments under /app). The root filesystem is read-only, so
       # without this volume every upload fails. Back it up with the database.
       - api-data:/app/data
+      # The system temp directory, on disk: uploaded archives (finding imports
+      # up to 110 MB) and form files are spooled here, and feed bundles and the
+      # feed cache are staged here. A small in-memory tmpfs fills up and counts
+      # against the memory limit. Not backed up.
+      - api-tmp:/tmp
     read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=100M
     cap_drop:
       - ALL
     security_opt:
@@ -359,9 +381,18 @@ services:
         echo "datastore TLS certificates issued"
     volumes:
       - datastore-tls:/tls
-    networks:
-      - openctem
+    network_mode: none
     restart: "no"
+    # Root inside, to give each key file to the user of the server that reads
+    # it: CHOWN for that, FOWNER and DAC_OVERRIDE to renew files it no longer
+    # owns. Nothing else.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt:
+      - no-new-privileges:true
     logging: *default-logging
 
   postgres:
@@ -416,8 +447,16 @@ services:
     networks:
       - openctem
     restart: unless-stopped
+    # The image's entrypoint starts as root to own the data directory, then
+    # runs postgres as its own user: only the capabilities for that.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     security_opt:
       - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEMORY_LIMIT:-4g}
     logging: *default-logging
 
   redis:
@@ -425,13 +464,17 @@ services:
     command:
       - sh
       - -c
+      # Through the image's entrypoint, which owns /data for the redis user
+      # and drops to it (a bare `redis-server` here would run as root).
       - >-
-        exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        exec docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
         --port 0 --tls-port 6379 --tls-auth-clients no
         --tls-cert-file /tls/server.crt --tls-key-file /tls/redis.key
         --tls-ca-cert-file /tls/ca.crt
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # redis-cli reads the password from here (the healthcheck), not argv.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     volumes:
       - redis-data:/data
       - datastore-tls:/tls:ro
@@ -439,19 +482,29 @@ services:
       datastore-tls:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli --tls --cacert /tls/ca.crt --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli --tls --cacert /tls/ca.crt ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - openctem
     restart: unless-stopped
+    # CHOWN and DAC_READ_SEARCH: the entrypoint gives /data to redis, also
+    # files an older stack wrote as root in 0700 directories; SETUID/SETGID
+    # to drop to that user.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_READ_SEARCH, SETGID, SETUID]
     security_opt:
       - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY_LIMIT:-1g}
     logging: *default-logging
 
 volumes:
   api-data:
+  api-tmp:
   datastore-tls:
   gateway-data:
   gateway-config:
