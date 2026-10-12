@@ -1,6 +1,6 @@
 # RFC-016 — Read-only MCP server (AI-native access to CTEM data)
 
-> Status: **Phase 1–2 shipped, Phase 3 partial** (checked 2026-10-12): tenant-scoped API-key auth + read-only MCP server (#299, hardened in #323); 15 read tools and 4 report prompts (#324); the connect page (openctemio/ui#234); per-key rate limits enforced (#556); the same keys read the REST API (#667); OAuth connections and the first confirmed write tool (RFC-062); pentest reads made report-consistent, paged, typed and marked untrusted (§ Pentest reads). Not built: campaign discovery, the TLP limit for AI clients, draft-first pentest write tools, MCP resources, the current protocol revisions.
+> Status: **Phase 1–2 shipped, Phase 3 partial** (checked 2026-10-12): tenant-scoped API-key auth + read-only MCP server (#299, hardened in #323); 15 read tools and 4 report prompts (#324); the connect page (openctemio/ui#234); per-key rate limits enforced (#556); the same keys read the REST API (#667); OAuth connections and the first confirmed write tool (RFC-062); pentest reads made report-consistent, paged, typed and marked untrusted, with campaign discovery (§ Pentest reads). Not built: the TLP limit for AI clients, draft-first pentest write tools, MCP resources, the current protocol revisions.
 
 ## Problem
 
@@ -92,6 +92,11 @@ bypass, and four rules keep them correct for an AI client:
    `readOnlyHint`/`destructiveHint`; ids are `campaign_id` and `finding_id`;
    the rules of engagement's contact and escalation details reach the
    campaign lead only.
+
+5. **Discovery.** `list_campaigns` (the person's campaigns with role, phase,
+   counts and next action) and `my_work` (the campaigns where the role has
+   something to do) replace pasting ids; membership is a SQL filter and a
+   client gets published counts only.
 
 Details: [mcp-server.md](../architecture/mcp-server.md).
 
