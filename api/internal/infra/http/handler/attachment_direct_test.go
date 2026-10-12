@@ -53,7 +53,7 @@ func uploadText(t *testing.T, h *AttachmentHandler, tenant, user string) string 
 
 func getDownloadURL(h *AttachmentHandler, id, tenant, user string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/attachments/"+id+"/download-url", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/attachments/"+id+"/signed-url", nil)
 	h.DownloadURL(rec, withID(asMember(r, tenant, user), id))
 	return rec
 }
@@ -69,7 +69,7 @@ func TestAttachmentDownloadURL(t *testing.T) {
 
 	rec := getDownloadURL(h, id, tenant, user)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("download-url: %d %s", rec.Code, rec.Body)
+		t.Fatalf("signed-url: %d %s", rec.Code, rec.Body)
 	}
 	var out struct {
 		URL       string    `json:"url"`

@@ -1,7 +1,7 @@
 ### Added: signed direct downloads, S3 server-side encryption, storage metrics and a local↔S3 copy command
 
 - `STORAGE_DIRECT_DOWNLOAD=true` (off by default) adds
-  `GET /api/v1/attachments/{id}/download-url`: after the same checks as a
+  `GET /api/v1/attachments/{id}/signed-url`: after the same checks as a
   download, a 60-second signed GET for that one object in an HTTPS bucket,
   forcing an attachment download. Local storage, plain-HTTP endpoints and
   flagged files answer `409` and download through the API. The console uses
