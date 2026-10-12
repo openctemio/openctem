@@ -51,6 +51,7 @@ const settings = {
   enrichment_enabled: true,
   enrichment_available: true,
   lookalike_ct_enabled: true,
+  network_lookups_enabled: true,
   weekly_digest_enabled: true,
   digest_weekday: 1,
   digest_hour_utc: 8,
@@ -80,6 +81,33 @@ describe('EASMMonitoringCard', () => {
       ct_interval_hours: 0,
       dns_interval_hours: 12,
       lookalike_ct_enabled: false,
+    })
+  })
+
+  it('turns network seed lookups off with only that field changed', async () => {
+    wrap(<EASMMonitoringCard />)
+    const sw = await screen.findByRole('switch', { name: 'Network seed lookups' })
+    await userEvent.click(sw)
+    expect(api.put).toHaveBeenCalledWith('/api/v1/easm/settings', {
+      ct_enabled: true,
+      dns_checks_enabled: true,
+      ct_interval_hours: 0,
+      dns_interval_hours: 12,
+      network_lookups_enabled: !settings.network_lookups_enabled,
+    })
+  })
+
+  it('turns screenshots on with only that field changed', async () => {
+    wrap(<EASMMonitoringCard />)
+    const shots = await screen.findByRole('switch', { name: 'Screenshots of web assets' })
+    expect(shots).not.toBeChecked()
+    await userEvent.click(shots)
+    expect(api.put).toHaveBeenCalledWith('/api/v1/easm/settings', {
+      ct_enabled: true,
+      dns_checks_enabled: true,
+      ct_interval_hours: 0,
+      dns_interval_hours: 12,
+      web_screenshots_enabled: true,
     })
   })
 

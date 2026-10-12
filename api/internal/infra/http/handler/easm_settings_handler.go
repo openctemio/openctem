@@ -112,6 +112,11 @@ type EASMSettingsResponse struct {
 	RunNowAvailableAt *time.Time `json:"run_now_available_at,omitempty"`
 	// LookalikeCTEnabled: lookalike candidates are looked up in crt.sh.
 	LookalikeCTEnabled bool `json:"lookalike_ct_enabled"`
+	// NetworkLookupsEnabled: network seeds are looked up in RIPEstat.
+	NetworkLookupsEnabled bool `json:"network_lookups_enabled"`
+	// WebScreenshotsEnabled: screenshots sent with web evidence are kept
+	// (30 days); off by default.
+	WebScreenshotsEnabled bool `json:"web_screenshots_enabled"`
 	// WeeklyDigestEnabled: the weekly "what changed" digest goes out.
 	WeeklyDigestEnabled bool `json:"weekly_digest_enabled"`
 	// DigestWeekday is the UTC weekday of the digest, 1..7 = Monday..Sunday.
@@ -133,6 +138,10 @@ type EASMSettingsUpdateRequest struct {
 	DNSIntervalHours int `json:"dns_interval_hours"`
 	// LookalikeCTEnabled omitted keeps it as it is.
 	LookalikeCTEnabled *bool `json:"lookalike_ct_enabled,omitempty"`
+	// NetworkLookupsEnabled omitted keeps it as it is.
+	NetworkLookupsEnabled *bool `json:"network_lookups_enabled,omitempty"`
+	// WebScreenshotsEnabled omitted keeps it as it is.
+	WebScreenshotsEnabled *bool `json:"web_screenshots_enabled,omitempty"`
 	// WeeklyDigestEnabled omitted keeps it as it is.
 	WeeklyDigestEnabled *bool `json:"weekly_digest_enabled,omitempty"`
 	// DigestWeekday omitted keeps it; 1..7 = Monday..Sunday.
@@ -172,10 +181,12 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		DNSEffectiveIntervalHours: effective(es.DNSIntervalHours, h.platform.DNSDefaultHrs),
 		MinIntervalHours:          tenant.MinEASMIntervalHours, MaxIntervalHours: tenant.MaxEASMIntervalHours,
 		CTAvailable: h.platform.CTAvailable, DNSAvailable: h.platform.DNSAvailable,
-		LookalikeCTEnabled:  !es.LookalikeCTDisabled,
-		WeeklyDigestEnabled: !es.WeeklyDigestDisabled,
-		DigestWeekday:       isoWeekday(easmchange.Weekday(es.DigestWeekday)),
-		DigestHourUTC:       easmchange.DigestHourUTC,
+		LookalikeCTEnabled:    !es.LookalikeCTDisabled,
+		WeeklyDigestEnabled:   !es.WeeklyDigestDisabled,
+		DigestWeekday:         isoWeekday(easmchange.Weekday(es.DigestWeekday)),
+		DigestHourUTC:         easmchange.DigestHourUTC,
+		NetworkLookupsEnabled: !es.NetworkLookupsDisabled,
+		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
 	}
 	if h.digests != nil {
 		if last, err := h.digests.LastDigestAt(ctx, tenantID); err == nil {
@@ -224,6 +235,7 @@ func (h *EASMSettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 // Update handles PUT /api/v1/easm/settings
 // @Summary      Change attack-surface monitoring settings
 // @Description  Turn the Certificate Transparency monitor (sends the organization's domain names to crt.sh and Cert Spotter), the DNS-only checks or automatic passive enrichment of new assets off or on (enrichment_enabled omitted keeps it as it is), turn Certificate Transparency queries of lookalike candidates off or on (lookalike_ct_enabled, omitted keeps it), and set their interval in hours: 0 for the platform default, otherwise 6 to 168. Audited.
+// @Description  Turn the Certificate Transparency monitor (sends the organization's domain names to crt.sh and Cert Spotter), the DNS-only checks or automatic passive enrichment of new assets off or on (enrichment_enabled omitted keeps it as it is), turn lookups of network seeds in RIPEstat off or on (network_lookups_enabled, omitted keeps it), and set their interval in hours: 0 for the platform default, otherwise 6 to 168. Audited.
 // @Tags         Attack Surface
 // @Accept       json
 // @Produce      json
@@ -259,6 +271,12 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.LookalikeCTEnabled != nil {
 		es.LookalikeCTDisabled = !*req.LookalikeCTEnabled
+	}
+	if req.NetworkLookupsEnabled != nil {
+		es.NetworkLookupsDisabled = !*req.NetworkLookupsEnabled
+	}
+	if req.WebScreenshotsEnabled != nil {
+		es.WebScreenshotsEnabled = *req.WebScreenshotsEnabled
 	}
 	if req.WeeklyDigestEnabled != nil {
 		es.WeeklyDigestDisabled = !*req.WeeklyDigestEnabled

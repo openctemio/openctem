@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
@@ -338,6 +340,22 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
 		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
+		// The OpenCTEM gate as a GitHub check run or GitLab commit status, and
+		// the pull or merge request comment (RFC-077).
+		if repos.SCMApp != nil {
+			var poster cirunapp.GitHubPoster
+			if app := newGitHubApp(deps.Config, log); app != nil {
+				poster = app
+			}
+			job := cirunapp.NewDecorationJob(repos.CIRun, repos.SCMApp, poster, deps.Config.SMTP.BaseURL, log)
+			gl := scmappsvc.NewService(repos.SCMApp, nil, deps.Config.Auth.JWTSecret, nil, log)
+			gl.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+			job.SetGitLab(gl)
+			if svc.Outbox != nil {
+				job.SetNotifier(svc.Outbox)
+			}
+			w.ControllerManager.Register(controller.NewCIDecorationController(job, 0))
+		}
 	}
 
 	jobRecovery := controller.NewJobRecoveryController(
@@ -684,6 +702,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Passive lookalike-domain checks (RFC-083): hourly, bounded batches.
 	if svc.EASMLookalikes != nil {
 		w.ControllerManager.Register(controller.NewEASMLookalikeController(svc.EASMLookalikes, svc.Module, 0))
+	}
+
+	// Network seeds (RFC-082): re-expanded weekly from public routing data.
+	if svc.EASMNetworkSeeds != nil {
+		w.ControllerManager.Register(controller.NewEASMNetworkSeedController(svc.EASMNetworkSeeds, svc.Module, 0))
+	}
+
+	// Web evidence retention (RFC-081): screenshots after 30 days (O7),
+	// files of deleted rows, capture text after a year.
+	if svc.WebEvidence != nil {
+		w.ControllerManager.Register(controller.NewWebEvidenceRetentionController(svc.WebEvidence, 0, log))
 	}
 
 	// Weekly "what changed" digest of the attack surface (RFC-080): hourly
