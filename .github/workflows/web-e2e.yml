@@ -33,6 +33,8 @@ concurrency:
 
 permissions:
   contents: read
+  # The e2e stack pulls the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
 
 jobs:
   changes:
@@ -115,6 +117,13 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+
       # The three images build in parallel (web/e2e/ci/docker-bake.hcl) with
       # the GitHub Actions layer cache: on a web-only change the API and
       # admin-cli layers come from the cache, so the web build sets the pace.
@@ -128,6 +137,11 @@ jobs:
       # written to web/e2e/ci/.env for compose and exported to later steps.
       - name: Generate the stack's secrets
         run: bash web/e2e/ci/make-env.sh
+
+      # postgres, redis and migrate come from the CI image mirror
+      # (.github/ci-images.txt); pulled first, with retries on registry limits.
+      - name: Pull the stack's third-party images
+        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis migrate
 
       - name: Start the stack
         run: docker compose -f web/e2e/ci/compose.yml up -d --wait --wait-timeout 180
