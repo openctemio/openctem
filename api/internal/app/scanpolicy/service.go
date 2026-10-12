@@ -110,6 +110,10 @@ type Service struct {
 	cached   *scangov.PlatformPolicy
 	cachedV  int
 	cachedAt time.Time
+
+	proofCached *bool
+	proofVer    int
+	proofAt     time.Time
 }
 
 // NewService creates the service; every dependency but repo may be nil.
@@ -397,8 +401,17 @@ func describeMode(m scangov.Mode) string {
 
 // record writes the critical admin audit row and a WARN line for alerting.
 func (s *Service) record(ctx context.Context, c Change, action string, tenantID *shared.ID, from, to string) {
-	s.log.Warn("scan approval policy changed", "alert", "scan_approval_policy_changed",
-		"admin_id", c.Actor.ID().String(), "from", logger.SanitizeValue(from), "to", logger.SanitizeValue(to))
+	s.recordFor(ctx, c, action, tenantID, scangov.PlatformPolicyKey, from, to)
+}
+
+// recordKey is record for another platform setting.
+func (s *Service) recordKey(ctx context.Context, c Change, action, key, from, to string) {
+	s.recordFor(ctx, c, action, nil, key, from, to)
+}
+
+func (s *Service) recordFor(ctx context.Context, c Change, action string, tenantID *shared.ID, key, from, to string) {
+	s.log.Warn("platform scanning policy changed", "alert", strings.TrimPrefix(strings.TrimPrefix(action, "platform."), "organization."),
+		"admin_id", c.Actor.ID().String(), "setting", key, "from", logger.SanitizeValue(from), "to", logger.SanitizeValue(to))
 	if s.audit == nil {
 		return
 	}
@@ -407,7 +420,7 @@ func (s *Service) record(ctx context.Context, c Change, action string, tenantID 
 		resourceType = "tenant"
 	}
 	entry := admin.NewAuditLogBuilder(c.Actor, action).
-		Resource(resourceType, tenantID, scangov.PlatformPolicyKey).
+		Resource(resourceType, tenantID, key).
 		Context(c.IP, c.UserAgent).
 		Request("PUT", "", map[string]any{"from": from, "to": to, "reason": strings.TrimSpace(c.Reason)}).
 		Critical().
