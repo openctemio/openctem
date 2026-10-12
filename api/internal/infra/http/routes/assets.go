@@ -29,7 +29,7 @@ func registerAssetRoutes(
 	// Asset routes - tenant from JWT token
 	router.Group("/api/v1/assets", func(r Router) {
 		// Stats and tags endpoints (must be before /{id} to avoid matching)
-		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		r.GET("/facets", h.GetFacets, middleware.Require(permission.AssetsRead))
 		r.GET("/overview", h.GetInventoryOverview, middleware.Require(permission.AssetsRead))
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
@@ -331,17 +331,10 @@ func registerFindingSourceRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Finding Source Category routes (read-only)
-	router.Group("/api/v1/finding-sources/categories", func(r Router) {
-		r.GET("/", h.ListCategories, middleware.Require(permission.FindingsRead))
-		r.GET("/{categoryId}", h.GetCategory, middleware.Require(permission.FindingsRead))
-	}, tenantMiddlewares...)
-
-	// Finding Source routes (read-only)
+	// Finding source catalog (read-only): the list, with each source's
+	// category, is the one read.
 	router.Group("/api/v1/finding-sources", func(r Router) {
 		r.GET("/", h.ListFindingSources, middleware.Require(permission.FindingsRead))
-		r.GET("/code/{code}", h.GetFindingSourceByCode, middleware.Require(permission.FindingsRead))
-		r.GET("/{id}", h.GetFindingSource, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 }
 
@@ -361,13 +354,13 @@ func registerAttackSurfaceRoutes(
 
 	// Attack Surface routes
 	router.Group("/api/v1/attack-surface", func(r Router) {
-		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		// Attack path scoring — BFS reachability analysis from public entry points.
 		// Returns top assets ranked by composite path score (reachability × risk × criticality).
-		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead))
+		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		// Exposure chains — concrete shortest paths from public entry points to
 		// assets carrying KEV/critical findings, ranked by urgency.
-		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead))
+		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 	}, tenantMiddlewares...)
 }
 
@@ -530,22 +523,8 @@ func registerAssetServiceRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Asset Service routes - standalone
-	router.Group("/api/v1/services", func(r Router) {
-		// Stats endpoint (must be before /{id})
-		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
-		r.GET("/public", h.ListPublic, middleware.Require(permission.AssetsRead))
-
-		// List all services
-		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
-
-		// Single service operations
-		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsDelete))
-	}, tenantMiddlewares...)
-
-	// Asset-scoped service routes
+	// Services are read and added through their asset only (the asset's
+	// data scope applies); there is no tenant-wide /services collection.
 	router.Group("/api/v1/assets/{id}/services", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
 		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
@@ -575,12 +554,8 @@ func registerAssetRelationshipRoutes(
 		r.POST("/batch", h.BatchCreate, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 
-	// Standalone relationship routes (direct CRUD by relationship ID
-	// + tenant-wide usage stats endpoint).
+	// Standalone relationship routes (direct CRUD by relationship ID).
 	router.Group("/api/v1/relationships", func(r Router) {
-		// usage-stats must be registered before /{relationshipId} so chi
-		// matches the literal path before the param pattern.
-		r.GET("/usage-stats", h.UsageStats, middleware.Require(permission.AssetsRead))
 		r.GET("/{relationshipId}", h.Get, middleware.Require(permission.AssetsRead))
 		r.PUT("/{relationshipId}", h.Update, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{relationshipId}", h.Delete, middleware.Require(permission.AssetsDelete))
@@ -625,11 +600,10 @@ func registerAssetStateHistoryRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// State History routes - standalone
+	// The "What changed" views. The generic list, get, stats, timeline and
+	// compliance reads were removed: these views and the asset-scoped
+	// history cover them.
 	router.Group("/api/v1/state-history", func(r Router) {
-		// Stats and analytics endpoints (must be before /{id})
-		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
-		r.GET("/timeline", h.Timeline, middleware.Require(permission.AssetsRead))
 		// The totals of every change view in one response (the What changed strip).
 		r.GET("/counts", h.Counts, middleware.Require(permission.AssetsRead))
 
@@ -641,13 +615,6 @@ func registerAssetStateHistoryRoutes(
 		// Exposure tracking
 		r.GET("/exposure-changes", h.ExposureChanges, middleware.Require(permission.AssetsRead))
 		r.GET("/newly-exposed", h.NewlyExposed, middleware.Require(permission.AssetsRead))
-
-		// Compliance
-		r.GET("/compliance", h.ComplianceChanges, middleware.Require(permission.AssetsRead))
-
-		// List and get
-		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 
 	// Asset-scoped state history routes
