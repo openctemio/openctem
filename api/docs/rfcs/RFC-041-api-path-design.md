@@ -769,7 +769,7 @@ Two notes from the approval:
 | D9 | Errors: keep the user-plane envelope; serve RFC 9457 when `Accept: application/problem+json`, and by default on new planes (inbound, organization) | yes |
 | D10 | Removal dates: web-only aliases 2027-01-15; external aliases ≥ 6 months after `Deprecation` and 30 days of zero use; sensor v1 per RFC-029 | yes |
 | D11 | Lint from day one as **blocking** with a frozen baseline, or report-only for a cycle | blocking (the openapicontract precedent worked) |
-| D12 | The 158 user and admin routes the web never calls: audit them for API-key/MCP use before any removal (separate issue) | separate issue, no removal in this RFC |
+| D12 | The 158 user and admin routes the web never calls: audit them for API-key/MCP use before any removal (separate issue) | separate issue, no removal in this RFC. Audited in issue #970: the duplicate and dead reads (`/services`, the generic `/state-history` reads, the `/finding-sources` sub-reads, `/relationships/usage-stats`, `/attachments/{id}/meta`, the single-command `/commands/{id}` routes, `PATCH /findings/{id}/triage`, `/auth/oauth/providers`) had no caller in the web, e2e, sdk-go, sensor, ctis, MCP tools or docs and were removed without a deprecation window (owner rule 2026-10-11: minimal back-compat); `removed_routes_test.go` keeps them out |
 
 ## 9. Follow-ups this RFC files but does not do
 

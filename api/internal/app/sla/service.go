@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -441,7 +442,16 @@ func (s *Service) CalculateSLADeadlineForPriority(
 	} else {
 		policy, err = s.GetTenantDefaultPolicy(ctx, tenantID)
 	}
-	if err != nil || policy == nil {
+	if err != nil {
+		policy = nil
+	}
+	return deadlineForPriority(policy, priorityClass, severity, detectedAt)
+}
+
+// deadlineForPriority computes a deadline from the effective policy (nil when
+// none is configured).
+func deadlineForPriority(policy *sladom.Policy, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+	if policy == nil {
 		// No policy configured: an informational finding gets no SLA (the
 		// default info days are sladom.NoSLA); every other finding honors
 		// priority-class defaults first, then severity defaults.
@@ -458,6 +468,60 @@ func (s *Service) CalculateSLADeadlineForPriority(
 		return detectedAt.Add(time.Duration(defaultDays) * 24 * time.Hour), nil
 	}
 	return policy.CalculateDeadlineFor(priorityClass, severity.String(), detectedAt), nil
+}
+
+// DeadlineFunc computes a finding's SLA deadline from policies loaded once.
+type DeadlineFunc func(assetID, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error)
+
+// SLADeadlineFunc loads the tenant's SLA policies with one query and returns
+// a function that resolves each finding's effective policy in memory, with
+// the same choice as CalculateSLADeadlineForPriority: for an asset, its own
+// active policy, else the active tenant default; without an asset, the tenant
+// default. It lets a batch of N findings cost one query instead of N.
+func (s *Service) SLADeadlineFunc(ctx context.Context, tenantID string) (DeadlineFunc, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	policies, err := s.repo.ListByTenant(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	// Earliest first, so ties resolve to the oldest policy, as
+	// GetTenantDefault does.
+	sort.SliceStable(policies, func(i, j int) bool { return policies[i].CreatedAt().Before(policies[j].CreatedAt()) })
+	byAsset := make(map[string]*sladom.Policy)
+	var activeDefault, anyDefault *sladom.Policy
+	for _, p := range policies {
+		if p.TenantID() != parsedID {
+			continue // defensive: never apply another tenant's policy
+		}
+		if aid := p.AssetID(); aid != nil {
+			if _, seen := byAsset[aid.String()]; !seen && p.IsActive() {
+				byAsset[aid.String()] = p
+			}
+			continue
+		}
+		if !p.IsDefault() {
+			continue
+		}
+		if anyDefault == nil {
+			anyDefault = p
+		}
+		if activeDefault == nil && p.IsActive() {
+			activeDefault = p
+		}
+	}
+	return func(assetID, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+		policy := anyDefault
+		if assetID != "" {
+			policy = activeDefault
+			if p, ok := byAsset[assetID]; ok {
+				policy = p
+			}
+		}
+		return deadlineForPriority(policy, priorityClass, severity, detectedAt)
+	}, nil
 }
 
 // CalculateSLADeadline calculates the SLA deadline for a finding based on its severity.
