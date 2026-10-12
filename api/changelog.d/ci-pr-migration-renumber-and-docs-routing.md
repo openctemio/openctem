@@ -8,6 +8,5 @@
 - Documentation (`*.md`, `api/docs/**`, agent notes) no longer starts the Go
   or web suites or the API/Web Security workflows; the changelog check moved
   to API CI's always-running `changes` job.
-- The least-privilege DB suite runs `tests/unit` in one shard instead of
-  three; Docs check cancels superseded PR runs; the secret-scan and
-  workflow-lint tool downloads retry.
+- Docs check cancels superseded PR runs; the secret-scan and workflow-lint
+  tool downloads retry.

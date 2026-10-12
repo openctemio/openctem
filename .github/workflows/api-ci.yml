@@ -245,7 +245,7 @@ jobs:
       # The shards of the two DB-backed jobs below cover every package and
       # every top-level test of tests/unit exactly once.
       - name: Test shards cover every test
-        run: bash ../.github/scripts/go-shard.sh check 4 4 && bash ../.github/scripts/go-shard.sh check 3 1
+        run: bash ../.github/scripts/go-shard.sh check 4 4 && bash ../.github/scripts/go-shard.sh check 3 3
 
   # vet, staticcheck and golangci-lint run in their own job, in parallel with
   # the gates in `API static checks` (they were two thirds of that job's time).
@@ -444,10 +444,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # tests/unit as the app role takes ~2 min of test time per third:
-          # one shard costs one job instead of three and still finishes
-          # before the pkgs shards.
-          - { kind: unit, shard: 0, total: 1 }
+          - { kind: unit, shard: 0, total: 3 }
+          - { kind: unit, shard: 1, total: 3 }
+          - { kind: unit, shard: 2, total: 3 }
           - { kind: pkgs, shard: 0, total: 3 }
           - { kind: pkgs, shard: 1, total: 3 }
           - { kind: pkgs, shard: 2, total: 3 }
