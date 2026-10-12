@@ -318,6 +318,15 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
+| `GITHUB_APP_ID` | int | empty |  |  | The GitHub App's numeric id (RFC-077). With the slug, client id and secret, private key and webhook secret it turns on the gate check and pull request comments; a partial configuration leaves the app off and is logged. |
+| `GITHUB_APP_SLUG` | string | empty |  |  | The GitHub App's URL name, used for its install link. |
+| `GITHUB_APP_CLIENT_ID` | string | empty |  |  | The GitHub App's OAuth client id (binding an installation to an organization). |
+| `GITHUB_APP_CLIENT_SECRET` | string | empty |  | yes | The GitHub App's OAuth client secret. |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | path | empty |  |  | File holding the GitHub App's private key (PEM). Preferred over `GITHUB_APP_PRIVATE_KEY`. |
+| `GITHUB_APP_PRIVATE_KEY` | string | empty |  | yes | The GitHub App's private key (PEM) itself, when a file cannot be mounted. |
+| `GITHUB_APP_WEBHOOK_SECRET` | string | empty |  | yes | HMAC secret of the GitHub App's webhook deliveries. |
+| `GITHUB_APP_API_URL` | url | empty |  |  | GitHub API base URL for GitHub Enterprise Server. Unset: api.github.com. |
+| `GITHUB_APP_WEB_URL` | url | empty |  |  | GitHub web base URL for GitHub Enterprise Server. Unset: github.com. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE` | string | `unset` |  |  | `1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
 
