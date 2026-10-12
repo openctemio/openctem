@@ -396,16 +396,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
-		Component:     handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
-		VEXStatement:  handler.NewVEXStatementHandler(svc.VEX, log),
-		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
-		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
-		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
-		BountyProgram: handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
-		ScopeLetter:   handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
-		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
-		EASM:          newEASMHandler(repos, svc, log),
-		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
+		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
+		VEXStatement:     handler.NewVEXStatementHandler(svc.VEX, log),
+		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetType:        handler.NewAssetTypeHandler(svc.AssetType, v, log),
+		Scope:            handler.NewScopeHandler(svc.Scope, v, log),
+		BountyProgram:    handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
+		ScopeLetter:      handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
+		AttackSurface:    handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		EASM:             newEASMHandler(repos, svc, log),
+		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
+		AssetWebEvidence: newAssetWebEvidenceHandler(svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -1349,6 +1350,14 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		return mode
 	}
 	return s
+}
+
+// newAssetWebEvidenceHandler serves web evidence when the service is wired.
+func newAssetWebEvidenceHandler(svc *Services, log *logger.Logger) *handler.AssetWebEvidenceHandler {
+	if svc.WebEvidence == nil || svc.Asset == nil {
+		return nil
+	}
+	return handler.NewAssetWebEvidenceHandler(svc.Asset, svc.WebEvidence, log)
 }
 
 // newSCMAppHandler builds the code-host app installation routes (RFC-077).

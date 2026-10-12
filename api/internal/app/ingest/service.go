@@ -249,6 +249,11 @@ func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	s.findingProcessor.SetFindingCreatedCallback(callback)
 }
 
+// SetWebEvidenceRecorder enables web evidence captures (RFC-081).
+func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
+	s.assetProcessor.SetWebEvidenceRecorder(r)
+}
+
 // SetAssetsObservedCallback sets the callback for every asset an ingest
 // wrote, with the report's tool and observation time (asset freshness).
 func (s *Service) SetAssetsObservedCallback(callback AssetsObservedCallback) {
