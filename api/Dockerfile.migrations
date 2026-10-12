@@ -30,13 +30,13 @@
 # standard library has since had many CVEs); `go install` verifies every module
 # against go.sum / the checksum database and uses the pinned Go below. Built in
 # the target platform's own stage, so there is no arch-specific URL to get wrong.
-FROM golang:1.26.9-alpine AS migrate
+FROM golang:1.27.0-alpine AS migrate
 RUN CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" -tags postgres \
       github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1 \
  && cp "$(go env GOPATH)/bin/migrate" /usr/local/bin/migrate
 
 # Alpine 3.20 reached end of support on 2026-04-01 (no more security fixes).
-FROM alpine:3.22
+FROM alpine:3.24
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates
