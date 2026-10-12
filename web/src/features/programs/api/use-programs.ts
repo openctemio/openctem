@@ -34,7 +34,7 @@ export function usePrograms() {
   const key = currentTenant && can ? ['programs', currentTenant.id] : null
   return useSWR<Program[]>(
     key,
-    async () => (await get<{ data: Program[] }>(`${BASE}/`))?.data ?? [],
+    async () => (await get<{ data: Program[] }>(BASE))?.data ?? [],
     {
       revalidateOnFocus: false,
     }
@@ -66,7 +66,7 @@ export function previewProgram(input: ProgramInput) {
 }
 
 export function importProgram(input: ProgramInput) {
-  return post<ProgramChange>(`${BASE}/`, input)
+  return post<ProgramChange>(BASE, input)
 }
 
 export function reimportProgram(id: string, input: ProgramInput) {
