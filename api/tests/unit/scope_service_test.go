@@ -263,8 +263,8 @@ func (m *mockAssetRepo) UpdateFindingCounts(_ context.Context, _ shared.ID, _ []
 	return nil
 }
 
-func (m *mockAssetRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, _ string, _ []string, _ int) ([]string, error) {
-	return []string{}, nil
+func (m *mockAssetRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, _ asset.TagListQuery) (asset.TagList, error) {
+	return asset.TagList{Tags: []string{}}, nil
 }
 
 func (m *mockAssetRepo) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
