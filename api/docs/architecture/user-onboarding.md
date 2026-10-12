@@ -148,6 +148,12 @@ written to the organization's audit log as `user.created` by
 `platform-admin:<email>`. The owner created with `POST /api/v1/admin/tenants`
 follows the same delivery rule.
 
+`bootstrap-admin -org-*` follows it too, with one difference: when the send
+fails it prints the link once on its standard output, with a warning that the
+link is a secret. Whoever runs the command holds the database credentials and
+could set any password anyway, and otherwise the new owner would have no link
+until mail works. The link is never written to a log.
+
 **Owner recovery.** When every owner of an organization is suspended, a
 super admin can send `{"email": "...", "name": "...", "recovery": true}` to the
 same endpoint to create a new owner (RFC-022 revision 7). It is refused with

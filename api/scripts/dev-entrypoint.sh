@@ -34,12 +34,28 @@ wait_for_db() {
     return 1
 }
 
+# Percent-encodes one URL part (user or password): a value with @ : / ? # or %
+# in it otherwise breaks the URL or changes what it means.
+urlenc() (
+  LC_ALL=C
+  s=$1
+  while [ -n "$s" ]; do
+    rest=${s#?}
+    c=${s%"$rest"}
+    s=$rest
+    case $c in
+      [A-Za-z0-9._~-]) printf '%s' "$c" ;;
+      *) printf '%%%02X' "'$c" ;;
+    esac
+  done
+)
+
 # Run migrations
 run_migrations() {
     echo "Running database migrations..."
 
     # Build database URL
-    DB_URL="postgres://${DB_USER:-openctem}:${DB_PASSWORD:-secret}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-openctem}?sslmode=${DB_SSLMODE:-disable}"
+    DB_URL="postgres://$(urlenc "${DB_USER:-openctem}"):$(urlenc "${DB_PASSWORD:-secret}")@${DB_HOST:-postgres}:${DB_PORT:-5432}/$(urlenc "${DB_NAME:-openctem}")?sslmode=${DB_SSLMODE:-disable}"
 
     # Check if migrate command exists
     if command -v migrate > /dev/null 2>&1; then
