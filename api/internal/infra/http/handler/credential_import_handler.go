@@ -220,8 +220,9 @@ func (h *CredentialImportHandler) Import(w http.ResponseWriter, r *http.Request)
 func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	// Parse multipart form (max 10MB)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
+	// The global body limit (10 MiB) bounds the form; at most 1 MiB of it is
+	// held in memory, the rest is spooled to a temporary file.
+	if err := r.ParseMultipartForm(multipartMemory); err != nil {
 		apierror.BadRequest("Invalid multipart form").WriteJSON(w)
 		return
 	}

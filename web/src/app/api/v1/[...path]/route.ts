@@ -17,14 +17,20 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
 
-// Limit request body to 12MB (matches backend MaxFileSize 10MB + 2MB overhead).
-// Prevents memory exhaustion from oversized uploads hitting the Node.js proxy.
+// Request bodies: at most 12 MiB, read into memory, except the import routes,
+// which are streamed up to the API's own limit (src/lib/api/proxy-upload.ts).
 export const maxDuration = 60 // seconds
 export const dynamic = 'force-dynamic'
 import { isInSwitchCooldown } from '@/lib/api/switch-cooldown'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { CONDITIONAL_REQUEST_HEADERS, proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
 import { proxyBackendPath } from '@/lib/api/proxy-path'
+import {
+  accessTokenExpiresSoon,
+  limitBodyStream,
+  ProxyBodyTooLargeError,
+  proxyBodyPolicy,
+} from '@/lib/api/proxy-upload'
 import {
   copyProxiedHeaders,
   PROXIED_RESPONSE_HEADERS,
@@ -188,11 +194,14 @@ async function makeBackendRequest(
   headers: Headers,
   body: BodyInit | undefined
 ): Promise<Response> {
+  // A streamed body needs duplex 'half' (Node's fetch refuses it otherwise).
+  const streamed = typeof ReadableStream !== 'undefined' && body instanceof ReadableStream
   return fetch(backendUrl, {
     method,
     headers,
     body,
-  })
+    ...(streamed ? { duplex: 'half' } : {}),
+  } as RequestInit)
 }
 
 async function proxyRequest(
@@ -232,9 +241,14 @@ async function proxyRequest(
   // Track if we refreshed the token (to set cookie in response)
   let refreshedTokenData: RefreshResult | null = null
 
+  const bodyPolicy = proxyBodyPolicy(request.method, path)
+
   // If access token is missing but refresh token exists, try to refresh BEFORE making request
-  // Skip during post-switch cooldown to avoid stale refresh token errors
-  if (!accessToken && refreshToken && !isInSwitchCooldown()) {
+  // Skip during post-switch cooldown to avoid stale refresh token errors.
+  // A streamed upload cannot be sent again after a 401, so a token about to
+  // expire is refreshed before it too.
+  const refreshFirst = !accessToken || (bodyPolicy.stream && accessTokenExpiresSoon(accessToken))
+  if (refreshFirst && refreshToken && !isInSwitchCooldown()) {
     devLog.log('[Proxy] Access token missing, attempting pre-request refresh...')
     const tenantId = await getTenantId()
     refreshedTokenData = await tryRefreshAccessToken(refreshToken, tenantId)
@@ -317,12 +331,16 @@ async function proxyRequest(
   // For JSON requests, read as text.
   let body: BodyInit | undefined
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    // Guard: reject oversized bodies before reading into memory (12MB max)
+    // Guard: reject oversized bodies before reading or forwarding them.
     const contentLength = parseInt(request.headers.get('content-length') || '0', 10)
-    if (contentLength > 12 * 1024 * 1024) {
+    if (contentLength > bodyPolicy.limit) {
       return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
     }
-    if (isMultipart) {
+    if (bodyPolicy.stream && request.body) {
+      // Import uploads go to the API as they arrive, never held in memory;
+      // the counting stream cuts a body without an honest Content-Length.
+      body = limitBodyStream(request.body, bodyPolicy.limit)
+    } else if (isMultipart) {
       // Preserve binary content for file uploads — read as raw ArrayBuffer
       // and wrap in Uint8Array which fetch() accepts as BodyInit.
       const buffer = await request.arrayBuffer()
@@ -339,7 +357,15 @@ async function proxyRequest(
     // Handle 401 Unauthorized - try to refresh token and retry ONCE
     // Skip during post-switch cooldown: tokens were just rotated by switch-team,
     // using the old refresh token would trigger "already been used" errors
-    if (response.status === 401 && refreshToken && !refreshedTokenData && !isInSwitchCooldown()) {
+    // A streamed body was consumed by the first attempt and cannot be resent.
+    const replayable = !(typeof ReadableStream !== 'undefined' && body instanceof ReadableStream)
+    if (
+      response.status === 401 &&
+      replayable &&
+      refreshToken &&
+      !refreshedTokenData &&
+      !isInSwitchCooldown()
+    ) {
       devLog.log('[Proxy] Got 401, attempting token refresh and retry...')
       const tenantId = await getTenantId()
       refreshedTokenData = await tryRefreshAccessToken(refreshToken, tenantId)
@@ -471,6 +497,12 @@ async function proxyRequest(
 
     return proxyResponse
   } catch (error) {
+    // A streamed upload cut at its limit: fetch rejects with the stream's
+    // error, or with a TypeError whose cause it is.
+    const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined
+    if (error instanceof ProxyBodyTooLargeError || cause instanceof ProxyBodyTooLargeError) {
+      return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
+    }
     devLog.error('[Proxy] Connection error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(

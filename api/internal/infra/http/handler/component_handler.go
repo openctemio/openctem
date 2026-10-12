@@ -431,6 +431,11 @@ func (h *ComponentHandler) ExportSBOM(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// MaxSBOMImportBody bounds the body of POST /components/import (one byte over
+// the SBOM limit, so an oversized document is told apart). The route declares
+// it as its body limit, which replaces the global one.
+const MaxSBOMImportBody = asset.MaxSBOMBytes + 1
+
 // ImportSBOM handles POST /api/v1/components/import
 // @Summary      Import an SBOM
 // @Description  CycloneDX (1.4-1.6) or SPDX (2.2, 2.3) JSON for one asset, at most 50 MB and 100000 components. With dry_run=true the preview (counts, skipped entries with reasons, diff with the current inventory) is returned and nothing is written; otherwise the asset's packages at the locations the document names are replaced.
@@ -451,7 +456,7 @@ func (h *ComponentHandler) ImportSBOM(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("asset_id query parameter is required").WriteJSON(w)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, asset.MaxSBOMBytes+1)
+	r.Body = http.MaxBytesReader(w, r.Body, MaxSBOMImportBody)
 	res, err := h.sbomImport.ImportSBOM(r.Context(), tenantID, assetID, r.Body, r.URL.Query().Get("dry_run") == "true")
 	if err != nil {
 		h.handleServiceError(w, err)
