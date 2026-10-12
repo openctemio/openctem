@@ -69,9 +69,12 @@ type mcpError struct {
 // logged in full by the caller.
 func classifyMCPError(err error) mcpError {
 	var ie toolInputError
+	var re mcpRestrictedError
 	switch {
 	case errors.As(err, &ie):
 		return mcpError{Code: mcpErrInvalidArgument, Message: ie.msg}
+	case errors.As(err, &re):
+		return mcpError{Code: mcpErrCampaignRestricted, Message: re.msg}
 	case errors.Is(err, shared.ErrNotFound):
 		return mcpError{Code: mcpErrNotFound, Message: mcpNotFoundMessage}
 	case errors.Is(err, shared.ErrForbidden):

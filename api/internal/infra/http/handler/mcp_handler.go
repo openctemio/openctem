@@ -104,7 +104,7 @@ type mcpPentestReader interface {
 	GetUserCampaignRole(ctx context.Context, tenantID, campaignID, userID string) (pentestdom.CampaignRole, error)
 	GetCampaign(ctx context.Context, tenantID, campaignID string) (*pentestdom.Campaign, error)
 	ListCampaignMembers(ctx context.Context, tenantID, campaignID string) ([]*pentestdom.CampaignMember, error)
-	GetCampaignStats(ctx context.Context, tenantID, campaignID string) (*pentestdom.CampaignStats, error)
+	GetCampaignStats(ctx context.Context, tenantID, campaignID string, publishedOnly bool) (*pentestdom.CampaignStats, error)
 	QueryCampaignFindings(ctx context.Context, q appcompliance.PentestFindingQuery) (pagination.Result[*vulnerability.Finding], error)
 	ReportFindings(ctx context.Context, tenantID, campaignID string) ([]*vulnerability.Finding, report.StatsData, error)
 	ListMemberCampaigns(ctx context.Context, q appcompliance.MemberCampaignQuery) (pagination.Result[appcompliance.MemberCampaign], error)
@@ -164,6 +164,9 @@ type MCPHandler struct {
 	// modules answers whether a module is on for the organization (the
 	// route module gate). nil: every module counts as on (tests, stub builds).
 	modules mcpModuleChecker
+	// aiPolicy reads the organization's TLP limit for AI applications
+	// (SetAIPolicy). nil: the default limit (amber).
+	aiPolicy mcpAIPolicyReader
 }
 
 // mcpModuleChecker is the route module gate (*middleware.ModuleGate).
