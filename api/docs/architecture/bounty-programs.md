@@ -38,7 +38,7 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
   only program entries; the general scope routes refuse to create one and
   refuse widening one.
 - **Own sensors only.** The trigger never routes a target that only program
-  entries cover to platform sensors, in any `SCOPE_ACTIVE_PROOF` mode.
+  entries cover to platform sensors, whether the platform sensor proof setting is on or off.
 - **Tier.** Program entries allow at most T1, T0 when the program forbids
   automated scanning.
 - **Program exclusions bind program entries only.** An out-of-scope item (and
