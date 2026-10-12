@@ -32,6 +32,13 @@ type EASMSettings struct {
 	// EnrichmentDisabled stops automatic passive enrichment of new assets
 	// (docs/architecture/asset-freshness.md); on by default.
 	EnrichmentDisabled bool `json:"enrichment_disabled,omitempty"`
+	// WeeklyDigestDisabled stops the weekly "what changed" digest of the
+	// attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md);
+	// on by default.
+	WeeklyDigestDisabled bool `json:"weekly_digest_disabled,omitempty"`
+	// DigestWeekday is the UTC weekday the digest goes out: 0 for the
+	// default (Monday), else 1..7 = Monday..Sunday (ISO 8601).
+	DigestWeekday int `json:"digest_weekday,omitempty"`
 }
 
 // Validate checks the floors: an interval is 0 (default) or 6..168 hours.
@@ -41,6 +48,10 @@ func (s EASMSettings) Validate() error {
 			return fmt.Errorf("%w: %s must be between %d and %d (or 0 for the platform default)",
 				shared.ErrValidation, name, MinEASMIntervalHours, MaxEASMIntervalHours)
 		}
+	}
+	if s.DigestWeekday < 0 || s.DigestWeekday > 7 {
+		return fmt.Errorf("%w: digest_weekday must be between 1 (Monday) and 7 (Sunday), or 0 for the default",
+			shared.ErrValidation)
 	}
 	return nil
 }
