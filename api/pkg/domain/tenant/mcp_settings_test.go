@@ -41,3 +41,21 @@ func TestMCPSettingsIsASection(t *testing.T) {
 		t.Fatal("mcp is not a typed settings section")
 	}
 }
+
+func TestMCPSettingsMaxTLP(t *testing.T) {
+	if got := (MCPSettings{}).AIMaxTLP(); got != "amber" {
+		t.Fatalf("default limit = %q, want amber", got)
+	}
+	for _, v := range []string{"clear", "green", "amber", "amber_strict", "red"} {
+		s := MCPSettings{MaxTLP: v}
+		if err := s.Validate(); err != nil || s.AIMaxTLP() != v {
+			t.Errorf("%s: %v %s", v, err, s.AIMaxTLP())
+		}
+	}
+	for _, bad := range []string{"AMBER", "white", "amber+strict"} {
+		s := MCPSettings{MaxTLP: bad}
+		if err := s.Validate(); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

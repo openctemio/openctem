@@ -277,7 +277,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"kind": "organization", "redirect_uris": "{https://client.example/cb}"}
 	},
 	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
-	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	// A report file is in the row (content) or in the file storage (key and
+	// provider); CHECK chk_*_stored wants one of them.
+	"pentest_report_templates": func(*schemaSeeder) map[string]any { return map[string]any{"content": "docx"} },
+	"pentest_report_files":     func(*schemaSeeder) map[string]any { return map[string]any{"content": "pdf"} },
+	"sensors":                  func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
 	"scan_window_policies": func(*schemaSeeder) map[string]any {
 		return map[string]any{"kind": "allow", "timezone": "UTC", "slots": `[{"days":[1],"start":"09:00","end":"17:00"}]`}
 	},

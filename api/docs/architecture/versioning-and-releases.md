@@ -19,7 +19,7 @@ working reference.
 ## versions.yaml
 
 ```yaml
-platform: { release: v0.8.0 }          # newest released tag
+platform: { release: v0.8.0 }          # newest released tag (vX.Y.Z on release/vX.Y.Z)
 sensor:   { latest: v0.6.4, min: "" }  # install snippets + "update available" / "unsupported"
 sdk:      { latest: v0.14.0, min: "" } # "outdated" / "SDK below minimum"
 chart:    { version: 0.4.1 }           # newest chart whose appVersion is platform.release
@@ -32,7 +32,11 @@ To change a default: edit `versions.yaml`, run
 `.github/scripts/release/sync-versions.sh`, commit both. The **Version
 consistency** check (`sync-versions.sh --check`, workflow Release Tooling)
 fails a PR whose defaults disagree with the file, whose `web/package.json` is
-not `0.0.0`, or whose `platform.release` is newer than any tag.
+not `0.0.0`, or whose `platform.release` is newer than any tag. On
+`release/vX.Y.Z` (and on `main` right after it merges) it runs with
+`--release vX.Y.Z` instead: `platform.release` must be exactly `vX.Y.Z`, so the
+tag's checkout (`api/deploy/.env.example`, `docker-compose.yml`) installs its
+own version.
 
 | Consumer | Field |
 |---|---|
@@ -69,16 +73,20 @@ the last tag (nor from `ui/<last tag>`, the imported web history):
    - `sha`: release a specific develop commit (its required checks must be
      green).
 3. With `dry_run` off, the workflow pushes `release/vX.Y.Z` (the develop
-   commit plus a `merge -s ours` commit recording `main` as a parent) and
+   commit, one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`
+   synced into every default, and a `merge -s ours` commit recording `main`
+   as a parent) and
    opens the PR into `main`, queued for the merge queue. Without
    `RELEASE_TOKEN`, open the PR from the link in the run summary.
 4. When the merge queue merges it, **Release Publish** tags `vX.Y.Z` on the
-   merge commit (only if `main`'s tree equals the release branch's), which
+   merge commit (only if `main`'s tree equals the release branch's and its
+   `versions.yaml` says `vX.Y.Z`), which
    publishes the images (Docker Publish) and the GitHub Release (notes with
    `@mentions` escaped and emails dropped).
 5. Merge the follow-up PRs it opens:
-   - `develop`: `main` merged back (no tree change; the tag becomes
-     reachable) and `versions.yaml` `platform.release` bumped;
+   - `develop`: `main` merged back (the tag becomes reachable; it brings only
+     the release branch's version commit, anything else is refused) and
+     `versions.yaml` `chart.version` set;
    - `helm-charts`: `appVersion` and the chart version.
 6. If the release needs release notes or an upgrade page, write it in
    `openctemio/docs`.
@@ -87,8 +95,8 @@ the last tag (nor from `ui/<last tag>`, the imported web history):
 
 Merge the fix into `develop`, then run Release Train with `mode: hotfix` and
 `cherry_picks: <develop SHA …>`. The release is the last tag's patch + 1,
-built from the tag plus the cherry-picks. Its follow-up only bumps
-`versions.yaml`.
+built from the tag plus the cherry-picks plus the version commit. Its
+follow-up only bumps `versions.yaml` on `develop`.
 
 ## Scripts
 
@@ -101,11 +109,11 @@ scripts).
 | `next-version.sh` | proposed version, counts, changelog preview |
 | `changelog.sh` | grouped Markdown preview (breaking, security, features, fixes, performance, other) |
 | `check-ci.sh` | required checks of a commit; newest green commit of a branch |
-| `cut-release.sh` | builds `release/vX.Y.Z` (train or hotfix), with the `-s ours` precondition per file |
-| `tag-release.sh` | annotated tag after the tree check |
+| `cut-release.sh` | builds `release/vX.Y.Z` (train or hotfix) with its version commit, with the `-s ours` precondition per file |
+| `tag-release.sh` | annotated tag after the tree and `platform.release` checks |
 | `post-release.sh` | the develop follow-up branch |
 | `helm-bump.sh` | chart `appVersion` + version bump |
-| `sync-versions.sh` | `versions.yaml` → consumers; `--check` for CI |
+| `sync-versions.sh` | `versions.yaml` → consumers; `--check` for CI; `--release vX.Y.Z` on a release branch |
 | `sanitize-notes.py` | escape `@mentions`, drop emails |
 
 `api/scripts/release-branch.sh` is the older interactive equivalent of

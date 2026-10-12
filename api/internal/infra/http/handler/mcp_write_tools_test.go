@@ -40,6 +40,19 @@ func (f *fakeConfirmer) UseConfirmation(_ context.Context, _ *mcpoauthapp.Princi
 
 type fakeCommenter struct {
 	added []finding.AddFindingCommentInput
+	// pentest and visErr drive CommentVisibilityFor.
+	pentest bool
+	visErr  error
+}
+
+func (f *fakeCommenter) CommentVisibilityFor(_ context.Context, _, _, _ string, _ bool, requested string) (bool, vulnerability.CommentVisibility, error) {
+	if f.visErr != nil {
+		return f.pentest, "", f.visErr
+	}
+	if requested == "client" {
+		return f.pentest, vulnerability.CommentVisibilityClient, nil
+	}
+	return f.pentest, vulnerability.CommentVisibilityTeam, nil
 }
 
 func (f *fakeCommenter) AddFindingCommentWithInput(_ context.Context, in finding.AddFindingCommentInput) (*vulnerability.FindingComment, error) {
@@ -89,7 +102,7 @@ func resultText(resp map[string]any) (string, bool) {
 
 func TestWriteToolNeedsAPersonAndConfirmation(t *testing.T) {
 	findings := &fakeFindingReader{finding: makePentestFinding(t)}
-	h := newTestMCP(findings)
+	h := newTestMCPWithPentest(findings, &fakePentestReader{})
 	conf := &fakeConfirmer{approved: map[string]string{}}
 	comments := &fakeCommenter{}
 	h.SetWriteTools(conf, comments)
@@ -124,7 +137,7 @@ func TestWriteToolNeedsAPersonAndConfirmation(t *testing.T) {
 	}
 	// Second call before approval: refused.
 	withID := `{"finding_id":"` + wtFinding + `","content":"triage note","confirmation_id":"c1"}`
-	if text, isErr := call(true, withID); !isErr || !strings.Contains(text, "not confirmed") || len(comments.added) != 0 {
+	if text, isErr := call(true, withID); !isErr || !strings.Contains(text, `"code":"not_confirmed"`) || len(comments.added) != 0 {
 		t.Fatalf("unapproved call: %v %s", isErr, text)
 	}
 	// Approved for these exact arguments: runs once, as an internal comment by the user.
@@ -153,5 +166,77 @@ func TestWriteToolNeedsAPersonAndConfirmation(t *testing.T) {
 	}
 	if conf.requests != before {
 		t.Fatal("bad input created a confirmation")
+	}
+}
+
+// summaryConfirmer records the confirmation summaries shown to the person.
+type summaryConfirmer struct {
+	fakeConfirmer
+	summaries []string
+}
+
+func (f *summaryConfirmer) RequestConfirmation(ctx context.Context, p *mcpoauthapp.Principal, tool, digest, summary string, a mcpoauthapp.Actor) (*mcpoauthapp.PendingConfirmation, error) {
+	f.summaries = append(f.summaries, summary)
+	return f.fakeConfirmer.RequestConfirmation(ctx, p, tool, digest, summary, a)
+}
+
+// On a pentest finding the comment's visibility is a confirmed argument:
+// the summary says whether the client reads it, a confirmation for a team
+// comment cannot run as a client one, a role that may not share with the
+// client is refused before any confirmation, and the comment records that
+// an AI client wrote it.
+func TestAddFindingComment_PentestVisibility(t *testing.T) {
+	findings := &fakeFindingReader{finding: makePentestFinding(t)}
+	h := newTestMCPWithPentest(findings, &fakePentestReader{})
+	conf := &summaryConfirmer{fakeConfirmer: fakeConfirmer{approved: map[string]string{}}}
+	comments := &fakeCommenter{pentest: true}
+	h.SetWriteTools(conf, comments)
+	perms := []string{"findings:read", "findings:comment"}
+	call := func(args string) (string, bool) {
+		return resultText(wtRequest(t, h, true, perms,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add_finding_comment","arguments":`+args+`}}`))
+	}
+
+	// Default: team-only, and the summary says so.
+	if _, isErr := call(`{"finding_id":"` + wtFinding + `","content":"triage note"}`); isErr {
+		t.Fatal("team comment refused")
+	}
+	if s := conf.summaries[len(conf.summaries)-1]; !strings.Contains(s, "Visible to the campaign's client: no") {
+		t.Fatalf("summary does not state team-only: %q", s)
+	}
+	// Client-visible for a lead/reviewer: the summary says yes.
+	if _, isErr := call(`{"finding_id":"` + wtFinding + `","content":"triage note","visibility":"client"}`); isErr {
+		t.Fatal("client comment refused for an allowed role")
+	}
+	if s := conf.summaries[len(conf.summaries)-1]; !strings.Contains(s, "Visible to the campaign's client: yes") {
+		t.Fatalf("summary does not state client-visible: %q", s)
+	}
+
+	// A confirmation approved for the team comment cannot run as a client one.
+	team := map[string]any{"finding_id": wtFinding, "content": "triage note", "confirmation_id": "c1"}
+	conf.approved["c1"] = mcpoauthapp.ArgsDigest("add_finding_comment", team)
+	if text, isErr := call(`{"finding_id":"` + wtFinding + `","content":"triage note","visibility":"client","confirmation_id":"c1"}`); !isErr || len(comments.added) != 0 {
+		t.Fatalf("team confirmation replayed as client: %v %s", isErr, text)
+	}
+	if text, isErr := call(`{"finding_id":"` + wtFinding + `","content":"triage note","confirmation_id":"c1"}`); isErr || len(comments.added) != 1 {
+		t.Fatalf("approved team comment: %v %s", isErr, text)
+	}
+	got := comments.added[0]
+	if got.Visibility != "" || got.Source != "mcp" || got.ActingUserID != wtUser || got.IsAdmin {
+		t.Fatalf("comment written as %+v", got)
+	}
+
+	// A role that may not share with the client (tester): refused before a
+	// confirmation is created.
+	comments.visErr = shared.ErrForbidden
+	before := len(conf.summaries)
+	text, isErr := call(`{"finding_id":"` + wtFinding + `","content":"triage note","visibility":"client"}`)
+	if !isErr || !strings.Contains(text, "only the campaign lead or a reviewer") || len(conf.summaries) != before {
+		t.Fatalf("tester client comment: %v %s", isErr, text)
+	}
+	// An unknown visibility never reaches the service.
+	comments.visErr = nil
+	if _, isErr := call(`{"finding_id":"` + wtFinding + `","content":"triage note","visibility":"public"}`); !isErr {
+		t.Fatal("unknown visibility accepted")
 	}
 }

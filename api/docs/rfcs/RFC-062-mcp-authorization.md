@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
+| Status | Accepted, implemented (PRs 1–7 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
 | Authors | Platform team |
 | Related | RFC-016 (MCP server), RFC-022 (admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-057 (evidence never leaves through prompts) |
 | Specification | MCP 2026-07-28 (Authorization, Authorization Server Discovery, Client Registration, Security Considerations, Streamable HTTP, Elicitation, Multi Round-Trip Requests) |
@@ -195,6 +195,7 @@ administrator, with step-up):
 | `api_keys` | on | off: `oct_` keys are refused on the MCP endpoint (still usable on the REST API) |
 | `refresh_days` | 90 | absolute refresh lifetime, 1–90 |
 | `require_dpop` | off | on: token requests without DPoP are refused |
+| `max_tlp` | `amber` | the most restrictive TLP of a pentest campaign AI applications may read (`clear` … `red`); above it, every MCP pentest tool and prompt refuses the campaign and lists leave it out. A campaign lead can also turn AI assistants off for one campaign (RFC-016) |
 
 Changing the policy applies on the next request: a grant outside the policy
 stops working (and its scopes beyond the policy stop counting).

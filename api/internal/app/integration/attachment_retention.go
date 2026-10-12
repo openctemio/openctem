@@ -53,6 +53,10 @@ func (s *AttachmentService) SweepRetention(ctx context.Context) (int, error) {
 	if s.retentionRepo == nil {
 		return 0, nil
 	}
+	// Files whose rows were deleted (report templates, stored reports).
+	if n := s.drainBlobDeletions(ctx); n > 0 {
+		s.logger.Info("stored files of deleted rows removed", "count", n)
+	}
 	now := time.Now().UTC()
 	marked, cleared, err := s.retentionRepo.MarkOrphans(ctx, now)
 	if err != nil {
@@ -120,6 +124,7 @@ func (s *AttachmentService) purgeOne(ctx context.Context, c attachmentdom.PurgeC
 			"tenant_id", tenantID, "attachment_id", att.ID().String(),
 			"storage_key", att.StorageKey(), "error", logger.SanitizeError(fileErr))
 	}
+	s.event("purged_" + string(c.Reason))
 	s.auditPurge(ctx, c, fileErr == nil || errors.Is(fileErr, attachmentdom.ErrNotFound))
 	return true, nil
 }

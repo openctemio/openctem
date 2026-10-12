@@ -148,6 +148,24 @@ describe('ScopeEntryDialog', () => {
     expect(toast.success).toHaveBeenCalledWith('Request sent', expect.anything())
   })
 
+  it('outside Strict scan approval a member adds directly and is told it is in scope', async () => {
+    perms.approve = false
+    api.get.mockResolvedValue({
+      ...settings,
+      one_off_targets: 'admins',
+      approval_policy: { entries_need_approval: false },
+    })
+    api.post.mockResolvedValue({ pattern: 'shop.acme.io', status: 'active' })
+    const user = userEvent.setup()
+    wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
+    expect(await screen.findByRole('heading', { name: 'Add to scope' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('What'), 'shop.acme.io')
+    await user.click(screen.getByText('shop.acme.io only'))
+    await user.click(screen.getByRole('button', { name: 'Add to scope' }))
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('shop.acme.io is in scope'))
+    expect(screen.queryByRole('button', { name: 'Send request' })).not.toBeInTheDocument()
+  })
+
   it('a member sees why they cannot request when the organization does not accept requests', async () => {
     perms.approve = false
     api.get.mockResolvedValue({ ...settings, one_off_targets: 'admins' })

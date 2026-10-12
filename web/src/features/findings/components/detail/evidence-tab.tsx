@@ -42,6 +42,11 @@ import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { ManualEvidenceNotesSection } from './manual-evidence-notes'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { safeImageSrc } from '@/lib/safe-href'
+import { openAttachmentDownload } from '@/features/pentest/lib/attachment-download'
+import {
+  FlaggedAttachmentRow,
+  isMalwareFlagged,
+} from '@/features/pentest/components/flagged-attachment'
 import Image from 'next/image'
 
 interface EvidenceTabProps {
@@ -136,6 +141,8 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
       content_type: string
       size: number
       url: string
+      scan_status?: string
+      scan_result?: string
     }>
   >([])
 
@@ -780,10 +787,21 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
               Uploaded Evidence ({apiAttachments.length})
             </h3>
             <div className="space-y-3">
-              {apiAttachments.filter((a) => a.content_type.startsWith('image/')).length > 0 && (
+              {/* A file the malware scanner flagged is never shown inline. */}
+              {apiAttachments.filter(isMalwareFlagged).map((att) => (
+                <FlaggedAttachmentRow
+                  key={att.id}
+                  filename={att.filename}
+                  url={att.url}
+                  signature={att.scan_result}
+                />
+              ))}
+              {apiAttachments.filter(
+                (a) => !isMalwareFlagged(a) && a.content_type.startsWith('image/')
+              ).length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {apiAttachments
-                    .filter((a) => a.content_type.startsWith('image/'))
+                    .filter((a) => !isMalwareFlagged(a) && a.content_type.startsWith('image/'))
                     .map((att) => {
                       const imgSrc = safeImageSrc(att.url)
                       return (
@@ -815,11 +833,15 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                 </div>
               )}
               {apiAttachments
-                .filter((a) => !a.content_type.startsWith('image/'))
+                .filter((a) => !isMalwareFlagged(a) && !a.content_type.startsWith('image/'))
                 .map((att) => (
                   <SafeExternalLink
                     key={att.id}
                     href={att.url}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      void openAttachmentDownload(att.url)
+                    }}
                     className="flex items-center gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
                   >
                     <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />

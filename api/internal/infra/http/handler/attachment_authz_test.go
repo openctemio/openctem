@@ -23,6 +23,13 @@ type mockAccessChecker struct {
 	campaignWriteErr    error
 	findingWriteCalled  bool
 	campaignWriteCalled bool
+	retestWriteErr      error
+	retestWriteCalled   bool
+}
+
+func (m *mockAccessChecker) CheckRetestEvidenceWrite(_ context.Context, _, _, _ string, _ bool) error {
+	m.retestWriteCalled = true
+	return m.retestWriteErr
 }
 
 func (m *mockAccessChecker) CheckFindingAccess(_ context.Context, _, _, _ string, _ bool) error {
@@ -181,8 +188,10 @@ func TestAuthorizeAttachmentWrite(t *testing.T) {
 	}{
 		{"finding: read access is not enough", mk("finding", shared.NewID().String()), other.String(), false,
 			&mockAccessChecker{findingWriteErr: forbidden}, true, true, false},
-		{"retest: write check consulted", mk("retest", shared.NewID().String()), other.String(), false,
-			&mockAccessChecker{}, false, true, false},
+		{"retest: the retest write check, not the finding one", mk("retest", shared.NewID().String()), other.String(), false,
+			&mockAccessChecker{findingWriteErr: forbidden}, false, false, false},
+		{"retest: refused by the retest write check", mk("retest", shared.NewID().String()), other.String(), false,
+			&mockAccessChecker{retestWriteErr: forbidden}, true, false, false},
 		{"campaign: write check consulted", mk("campaign", shared.NewID().String()), other.String(), false,
 			&mockAccessChecker{campaignWriteErr: forbidden}, true, false, true},
 		{"no context: uploader may delete", mk("", ""), owner.String(), false,
@@ -214,6 +223,9 @@ func TestAuthorizeAttachmentWrite(t *testing.T) {
 			}
 			if tc.wantCampaign != tc.checker.campaignWriteCalled {
 				t.Errorf("CheckCampaignEvidenceWrite consulted=%v, want %v", tc.checker.campaignWriteCalled, tc.wantCampaign)
+			}
+			if wantRetest := tc.att.ContextType() == "retest" && !tc.isAdmin; wantRetest != tc.checker.retestWriteCalled {
+				t.Errorf("CheckRetestEvidenceWrite consulted=%v, want %v", tc.checker.retestWriteCalled, wantRetest)
 			}
 		})
 	}

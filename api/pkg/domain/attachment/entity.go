@@ -30,6 +30,13 @@ type Attachment struct {
 	contentHash     string // SHA-256 hash for dedup within a finding
 	storageProvider string // "local", "s3", "minio" — where the file physically lives
 	createdAt       time.Time
+	// Malware scan state (ScanNone when no scanner is configured).
+	scanStatus ScanStatus
+	scanResult string // signature name when infected, reason when the scan failed
+	// originalHash is the SHA-256 of the bytes received, set on upload when
+	// the stored bytes differ (image metadata removed). Not persisted: the
+	// upload audit event records it.
+	originalHash string
 }
 
 // NewAttachment creates a new Attachment metadata record.
@@ -94,6 +101,19 @@ func (a *Attachment) ContextID() string       { return a.contextID }
 func (a *Attachment) ContentHash() string     { return a.contentHash }
 func (a *Attachment) StorageProvider() string { return a.storageProvider }
 func (a *Attachment) CreatedAt() time.Time    { return a.createdAt }
+
+func (a *Attachment) ScanStatus() ScanStatus      { return a.scanStatus }
+func (a *Attachment) ScanResult() string          { return a.scanResult }
+func (a *Attachment) OriginalContentHash() string { return a.originalHash }
+
+// SetScan records the malware scan state.
+func (a *Attachment) SetScan(status ScanStatus, result string) {
+	a.scanStatus, a.scanResult = status, result
+}
+
+// SetOriginalContentHash records the hash of the bytes received when the
+// stored bytes differ from them.
+func (a *Attachment) SetOriginalContentHash(hash string) { a.originalHash = hash }
 
 // SetContentHash sets the SHA-256 hash for dedup.
 func (a *Attachment) SetContentHash(hash string) { a.contentHash = hash }

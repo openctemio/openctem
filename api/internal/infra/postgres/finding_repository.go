@@ -997,23 +997,20 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 	}, append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...)...), nil
 }
 
-// CanSeePentestFinding reports whether the user belongs to the given
-// pentest campaign in this tenant and may see a finding in that status. Used by the generic findings surface to
-// gate single-finding reads of pentest findings by campaign membership.
-//
-// A client member sees only published findings: a finding in draft or
-// in_review is not visible to them.
-func (r *FindingRepository) CanSeePentestFinding(ctx context.Context, tenantID, campaignID, userID, findingStatus string) (bool, error) {
-	const q = `SELECT EXISTS (
-		SELECT 1 FROM pentest_campaign_members
-		WHERE tenant_id = $1 AND campaign_id = $2 AND user_id = $3
-		  AND (role <> 'client' OR $4 NOT IN ('draft', 'in_review'))
-	)`
-	var ok bool
-	if err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID, findingStatus).Scan(&ok); err != nil {
-		return false, err
+// PentestCampaignRole returns the user's role in a pentest campaign of the
+// tenant, or "" when the user is not a member.
+func (r *FindingRepository) PentestCampaignRole(ctx context.Context, tenantID, campaignID, userID string) (string, error) {
+	const q = `SELECT role FROM pentest_campaign_members
+		WHERE tenant_id = $1 AND campaign_id = $2 AND user_id = $3`
+	var role string
+	err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID).Scan(&role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
 	}
-	return ok, nil
+	if err != nil {
+		return "", err
+	}
+	return role, nil
 }
 
 // GetByID retrieves a finding by ID.
@@ -3446,6 +3443,19 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			}
 			conditions = append(conditions, fmt.Sprintf("pentest_campaign_id IN (%s)", strings.Join(placeholders, ",")))
 		}
+	}
+
+	// Pentest findings of campaigns kept away from AI applications: a TLP
+	// outside the allowed levels, or AI assistants turned off.
+	if filter.PentestAIAllowTLP != nil {
+		args = append(args, pq.StringArray(filter.PentestAIAllowTLP))
+		conditions = append(conditions, fmt.Sprintf(
+			`(findings.source <> 'pentest' OR EXISTS (
+				SELECT 1 FROM pentest_campaigns pc
+				WHERE pc.id = findings.pentest_campaign_id AND pc.tenant_id = findings.tenant_id
+				  AND NOT pc.ai_assistants_disabled AND pc.tlp = ANY($%d)
+			))`, argIndex))
+		argIndex++
 	}
 
 	// Pentest campaign membership visibility filter (single SQL subquery).

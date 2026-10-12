@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -65,9 +66,7 @@ func (r *AttachmentRepository) ListPurgeable(ctx context.Context, policy attachm
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT a.id, a.tenant_id, a.filename, a.content_type, a.size,
-			a.storage_key, a.uploaded_by, a.context_type, a.context_id, a.content_hash,
-			a.storage_provider, a.created_at
+	rows, err := r.db.QueryContext(ctx, `SELECT `+attachmentColsA+`
 		FROM attachments a
 		WHERE `+attachmentPurgeable+`
 		ORDER BY a.created_at
@@ -109,17 +108,27 @@ func (r *AttachmentRepository) DeletePurgeable(ctx context.Context, tenantID, id
 	return n == 1, nil
 }
 
-// scanAttachmentRow reads one row of attachmentCols.
+// attachmentColsA is attachmentCols qualified with the alias a.
+const attachmentColsA = `a.id, a.tenant_id, a.filename, a.content_type, a.size, a.storage_key,
+	a.uploaded_by, a.context_type, a.context_id, a.content_hash, a.storage_provider, a.created_at,
+	a.scan_status, a.scan_result`
+
+// scanAttachmentRow reads one row of attachmentCols. sql.ErrNoRows is
+// returned as is.
 func scanAttachmentRow(scan func(dest ...any) error) (*attachment.Attachment, error) {
 	var (
 		idStr, tenantStr, filename, contentType, storageKey string
-		contextType, contextID                              string
+		contextType, contextID, scanStatus, scanResult      string
 		uploadedByStr, contentHash, storageProvider         sql.NullString
 		size                                                int64
 		createdAt                                           time.Time
 	)
 	if err := scan(&idStr, &tenantStr, &filename, &contentType, &size, &storageKey,
-		&uploadedByStr, &contextType, &contextID, &contentHash, &storageProvider, &createdAt); err != nil {
+		&uploadedByStr, &contextType, &contextID, &contentHash, &storageProvider, &createdAt,
+		&scanStatus, &scanResult); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("scan attachment: %w", err)
 	}
 	id, err := shared.IDFromString(idStr)
@@ -131,6 +140,8 @@ func scanAttachmentRow(scan func(dest ...any) error) (*attachment.Attachment, er
 		return nil, fmt.Errorf("attachment tenant id: %w", err)
 	}
 	uploadedBy, _ := shared.IDFromString(uploadedByStr.String)
-	return attachment.ReconstituteAttachment(id, tid, filename, contentType, size, storageKey,
-		uploadedBy, contextType, contextID, contentHash.String, storageProvider.String, createdAt), nil
+	att := attachment.ReconstituteAttachment(id, tid, filename, contentType, size, storageKey,
+		uploadedBy, contextType, contextID, contentHash.String, storageProvider.String, createdAt)
+	att.SetScan(attachment.ScanStatus(scanStatus), scanResult)
+	return att, nil
 }

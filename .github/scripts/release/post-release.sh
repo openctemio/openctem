@@ -8,14 +8,18 @@
 #                   [--repo DIR]
 #
 # Builds chore/post-release-vX.Y.Z from develop with:
-#   1. (train only) main merged back. main's tree is an earlier develop tree,
-#      so the merge changes nothing; it makes main, and the tag on it, an
-#      ancestor of develop: `git pull` then fetches the tag, dev builds see it
-#      (RFC-037 §3.3) and the next cut needs no -s ours. Refused if the merge
-#      would change develop's tree. A hotfix skips it: its commits are already
-#      on develop, as the originals.
-#   2. versions.yaml platform.release = vX.Y.Z (and chart.version when given),
-#      copied into every consumer by sync-versions.sh.
+#   1. (train only) main merged back. main's tree is an earlier develop tree
+#      plus the release branch's version commit (cut-release.sh), so the merge
+#      brings exactly that: versions.yaml platform.release = vX.Y.Z and its
+#      consumers. It makes main, and the tag on it, an ancestor of develop:
+#      `git pull` then fetches the tag, dev builds see it (RFC-037 §3.3) and
+#      the next cut needs no -s ours. A hotfix skips it: its commits are
+#      already on develop, as the originals.
+#   2. versions.yaml platform.release = vX.Y.Z (a no-op after a train's merge;
+#      the bump itself for a hotfix) and chart.version when given, copied into
+#      every consumer by sync-versions.sh.
+# Refused unless the result is develop's tree plus step 2 alone: a merge that
+# brings anything else means main has changes develop lacks.
 #
 # Prints KEY=VALUE lines: BRANCH, HEAD.
 set -euo pipefail
@@ -71,6 +75,22 @@ g branch -f "$BRANCH" "$dev_ref" >/dev/null
 g worktree add --quiet "$worktree" "$BRANCH"
 w() { git -C "$worktree" -c user.name="${GIT_AUTHOR_NAME:-openctem-release}" -c user.email="${GIT_AUTHOR_EMAIL:-release@openctem.invalid}" "$@"; }
 
+if [[ -n "$CHART" ]]; then
+  [[ "$CHART" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "--chart-version must be X.Y.Z" >&2; exit 2; }
+fi
+# set_versions: versions.yaml platform.release = VERSION (+ chart), synced, staged.
+set_versions() {
+  rel_yaml_set "$worktree/versions.yaml" platform.release "$VERSION"
+  [[ -z "$CHART" ]] || rel_yaml_set "$worktree/versions.yaml" chart.version "$CHART"
+  bash "$HERE/sync-versions.sh" --root "$worktree" >&2 || die "versions.yaml does not sync cleanly"
+  w add -A
+}
+
+# The tree develop must end up with: its own tree plus the version bump, nothing else.
+set_versions
+want_tree="$(w write-tree)"
+w reset --quiet --hard
+
 if [[ "$MODE" == train ]]; then
   if g merge-base --is-ancestor "refs/tags/$VERSION" "$dev_ref"; then
     echo "note: $VERSION is already an ancestor of $DEVELOP; nothing to merge" >&2
@@ -78,24 +98,19 @@ if [[ "$MODE" == train ]]; then
     w merge --no-ff --no-edit "refs/tags/$VERSION" -m "chore(release): merge $VERSION back into $DEVELOP
 
 Makes the release tag an ancestor of $DEVELOP (it lives on $MAIN), so a pull
-fetches it and the next release branch needs no -s ours. The tree does not
-change: $MAIN's tree is an earlier $DEVELOP tree." >/dev/null ||
+fetches it and the next release branch needs no -s ours. It brings only the
+release branch's version commit (versions.yaml platform.release = $VERSION):
+the rest of $MAIN's tree is an earlier $DEVELOP tree." >/dev/null ||
       die "merging $VERSION into $DEVELOP conflicts; $MAIN has changes $DEVELOP lacks"
-    [[ "$(w rev-parse 'HEAD^{tree}')" == "$(g rev-parse "$dev_ref^{tree}")" ]] ||
-      die "merging $VERSION would change $DEVELOP's tree; $MAIN has changes $DEVELOP lacks (bring them over first)"
   fi
 fi
 
-rel_yaml_set "$worktree/versions.yaml" platform.release "$VERSION"
-if [[ -n "$CHART" ]]; then
-  [[ "$CHART" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "--chart-version must be X.Y.Z" >&2; exit 2; }
-  rel_yaml_set "$worktree/versions.yaml" chart.version "$CHART"
-fi
-bash "$HERE/sync-versions.sh" --root "$worktree" >&2 || die "versions.yaml does not sync cleanly"
-w add -A
+set_versions
 if ! w diff --cached --quiet; then
   w commit --quiet -m "chore(release): versions.yaml platform.release = $VERSION"
 fi
+[[ "$(w rev-parse 'HEAD^{tree}')" == "$want_tree" ]] ||
+  die "merging $VERSION would change $DEVELOP beyond versions.yaml and its consumers; $MAIN has changes $DEVELOP lacks (bring them over first)"
 
 HEAD_SHA="$(w rev-parse HEAD)"
 [[ "$HEAD_SHA" != "$(g rev-parse "$dev_ref")" ]] || die "nothing to do: $DEVELOP already says $VERSION"

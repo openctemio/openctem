@@ -45,6 +45,8 @@ export interface McpPolicy {
   effective_refresh_days: number
   /** Only DPoP-bound tokens (proof of the client key on every request). */
   require_dpop: boolean
+  /** Highest TLP of a pentest campaign sent to AI applications (default amber). */
+  max_tlp: 'clear' | 'green' | 'amber' | 'amber_strict' | 'red'
   platform_client_hosts: string[]
   available_scopes: McpScopeInfo[]
 }
@@ -58,6 +60,7 @@ export type McpPolicyUpdate = Pick<
   | 'api_keys_allowed'
   | 'refresh_days'
   | 'require_dpop'
+  | 'max_tlp'
 >
 
 export const MY_CONNECTIONS_URL = '/api/v1/mcp-access/my-connections'
