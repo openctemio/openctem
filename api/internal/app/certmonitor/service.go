@@ -108,7 +108,7 @@ const (
 	// must not exceed pagination's 100-row clamp: at 200 the loop below
 	// believed it had read two pages' worth after the first (clamped) page
 	// and stopped, so a tenant's domain assets past the 100th were never seen.
-	assetPageSize = 100
+	assetPageSize = 1000
 )
 
 // AssetLister is the narrow slice of the asset repository the CT sweep needs:
@@ -487,29 +487,20 @@ func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDo
 		WithTenantID(tenantID.String()).
 		WithTypes(assetdom.AssetTypeDomain).
 		WithAttribution(approved)
-	seen := 0
-	for pageNum := 1; ; pageNum++ {
-		res, err := s.assetRepo.List(ctx, filter, assetdom.NewListOptions(), pagination.New(pageNum, assetPageSize))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list domain assets: %w", err)
+	domains, err := assetdom.ListAll(ctx, s.assetRepo, filter, assetPageSize)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to list domain assets: %w", err)
+	}
+	for _, a := range domains {
+		name := normalizeDomain(a.Name())
+		if name == "" {
+			continue
 		}
-		seen += len(res.Data)
-		for _, a := range res.Data {
-			name := normalizeDomain(a.Name())
-			if name == "" {
-				continue
-			}
-			id := a.ID()
-			if _, ok := assetsByName[name]; !ok {
-				assetsByName[name] = id
-			}
-			in = append(in, rootDomain{name: name, origin: OriginAsset, assetID: &id})
+		id := a.ID()
+		if _, ok := assetsByName[name]; !ok {
+			assetsByName[name] = id
 		}
-		// Stop on an empty page or once every row is read; never on page
-		// arithmetic, which the repository's clamp can make wrong.
-		if len(res.Data) == 0 || int64(seen) >= res.Total {
-			break
-		}
+		in = append(in, rootDomain{name: name, origin: OriginAsset, assetID: &id})
 	}
 
 	if s.verified != nil {
