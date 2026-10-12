@@ -203,20 +203,17 @@ function HistoryList({ integrationId }: { integrationId: string }) {
 
 function HistoryContent() {
   const router = useRouter()
-  const initialId = useUrlParam('integration') || ''
-
-  const [selectedId, setSelectedId] = useState(initialId)
+  // Read on every render, not once: after an in-app navigation (a channel's
+  // "View events") the first render still sees the previous page's URL.
+  const urlId = useUrlParam('integration') || ''
+  const [pickedId, setPickedId] = useState('')
 
   const { data: integrationsData, isLoading: loadingIntegrations } =
     useNotificationIntegrationsApi()
   const integrations = useMemo(() => integrationsData?.data ?? [], [integrationsData?.data])
 
-  // Auto-select first integration if none selected and integrations are available
-  useEffect(() => {
-    if (!selectedId && integrations.length > 0 && !loadingIntegrations) {
-      setSelectedId(integrations[0].id)
-    }
-  }, [selectedId, integrations, loadingIntegrations])
+  // The channel picked here, else the one in the link, else the first.
+  const selectedId = pickedId || urlId || integrations[0]?.id || ''
 
   return (
     <>
@@ -247,7 +244,7 @@ function HistoryContent() {
             </Button>
           </Can>
         ) : (
-          <Select value={selectedId} onValueChange={setSelectedId}>
+          <Select value={selectedId} onValueChange={setPickedId}>
             <SelectTrigger className="w-[220px] max-w-full" aria-label="Channel">
               <SelectValue placeholder="Select channel…" />
             </SelectTrigger>

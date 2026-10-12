@@ -6,6 +6,9 @@ package audit
 const (
 	ActionAttachmentUploaded Action = "attachment.uploaded"
 	ActionAttachmentDeleted  Action = "attachment.deleted"
+	// ActionAttachmentPurged: the retention sweep removed a file whose
+	// finding or campaign was deleted, or that was never linked to one.
+	ActionAttachmentPurged Action = "attachment.purged"
 )
 
 // ResourceTypeAttachment is an uploaded evidence file.
@@ -14,6 +17,7 @@ const ResourceTypeAttachment ResourceType = "attachment"
 var _ = registerActions("attachment", map[Action]Severity{
 	ActionAttachmentUploaded: SeverityLow,
 	ActionAttachmentDeleted:  SeverityMedium,
+	ActionAttachmentPurged:   SeverityMedium,
 })
 
 func init() {

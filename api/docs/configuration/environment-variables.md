@@ -207,6 +207,8 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `STORAGE_ENDPOINT` | string | empty |  |  | Endpoint of an S3-compatible store, for example MinIO. Unset: AWS S3. |
 | `STORAGE_LOCAL_PATH` | string | `./data/attachments` |  |  | Directory for `local` storage, relative to the working directory (`/app` in the API image, so `/app/data/attachments`). Put it on a persistent volume and back it up. |
 | `STORAGE_TENANT_QUOTA_MB` | int | `20480` |  |  | Most attachment bytes one organization may hold, in MiB (20480 = 20 GiB). An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota. |
+| `STORAGE_ORPHAN_GRACE_DAYS` | int | `7` |  |  | Days evidence files stay after their finding or campaign is deleted; then the retention sweep deletes them (audited `attachment.purged`). 0 = keep them. |
+| `STORAGE_UNLINKED_RETENTION_HOURS` | int | `24` |  |  | Hours an upload never linked to a finding or campaign stays before the retention sweep deletes it. Authorization letter files are never purged. 0 = keep them. |
 | `STORAGE_PROVIDER` | string | `local` |  |  | `local`, `s3` or `minio`. Any other value stops start-up. |
 | `STORAGE_REGION` | string | empty |  |  | Bucket region. |
 | `STORAGE_SECRET_KEY` | string | empty |  | yes | Secret key. Required with `s3` / `minio`. |
@@ -383,7 +385,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
 | `ADMIN_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the first platform administrator (or `-email`). |
 | `ADMIN_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the first platform administrator. |
-| `DATABASE_URL` | string | `built from `DB_*`` |  |  | Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset. |
+| `DATABASE_URL` | string | `built from `DB_*`` |  |  | Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset. A password in it must be percent-encoded (`@` is `%40`, `:` is `%3A`, `/` is `%2F`, `%` is `%25`); the URL built from `DB_*` is encoded for you. |
 | `ORG_NAME` | string | empty |  |  | `bootstrap-admin`: create the first organization with this name (needs `ORG_OWNER_EMAIL`). |
 | `ORG_OWNER_EMAIL` | string | empty |  |  | `bootstrap-admin`: owner of the first organization; a new account gets a one-time set-password link. |
 | `ORG_OWNER_NAME` | string | empty |  |  | `bootstrap-admin`: display name of a new owner account. |
@@ -459,8 +461,8 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `OPENCTEM_CA_EXPORT_DIR` | string | `./ca` |  |  | Host directory the internal root CA is exported to. |
 | `OPENCTEM_VERSION` | string | `none` | yes |  | Release tag of the API, web and migrations images, for example `v0.9.0`. |
 | `OPENCTEM_PUBLIC_URL` | string | `https://<OPENCTEM_HOSTNAME>` | yes |  | Exact origin browsers use, when it is not `https://<OPENCTEM_HOSTNAME>` (a port other than 443). Passed to the API as `APP_URL`. |
-| `API_IMAGE` | string | `ghcr.io/openctemio/api` |  |  | Image repository of the API. |
-| `UI_IMAGE` | string | `ghcr.io/openctemio/ui` |  |  | Image repository of the web console. |
+| `API_IMAGE` | string | `ghcr.io/openctemio/openctem-api` |  |  | Image repository of the API. |
+| `UI_IMAGE` | string | `ghcr.io/openctemio/openctem-web` |  |  | Image repository of the web console. |
 | `MIGRATIONS_IMAGE` | string | `ghcr.io/openctemio/migrations` |  |  | Image repository of the migrations job. |
 | `API_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `UI_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
@@ -479,6 +481,10 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `API_MEMORY_LIMIT` | string | `2g` |  |  | Memory limit of the `api` container. |
 | `WEB_MEMORY_LIMIT` | string | `1g` |  |  | Memory limit of the `web` container. |
 | `GATEWAY_MEMORY_LIMIT` | string | `512m` |  |  | Memory limit of the `gateway` container. |
+| `API_GOMEMLIMIT` | string | `1600MiB` |  |  | `GOMEMLIMIT` of the `api` container: the Go runtime collects garbage to stay below it. Keep it about 80% of `API_MEMORY_LIMIT`. |
+| `POSTGRES_MEMORY_LIMIT` | string | `4g` |  |  | Memory limit of the bundled `postgres` container; keep it above `shared_buffers` plus connections times `work_mem`. |
+| `REDIS_MEMORY_LIMIT` | string | `1g` |  |  | Memory limit of the bundled `redis` container. |
+| `SIGNER_MEMORY_LIMIT` | string | `256m` |  |  | Memory limit of the `signer` container (`docker-compose.job-signer.yml`). |
 
 ## All-in-one image
 
@@ -488,7 +494,7 @@ Read by the all-in-one image's supervisor.
 |---|---|---|---|---|---|
 | `GATEWAY` | string | `on` |  |  | `on`: only the gateway listens on a routable address (port 443); the API and console bind to `127.0.0.1`. `off`: the API listens on 8080 and the console on 3000, without the gateway. |
 | `MIGRATE_ON_START` | string | `true` |  |  | Apply database migrations before starting, under a PostgreSQL advisory lock so several replicas do not migrate at once. |
-| `DATABASE_MIGRATE_URL` | string | `built from `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD`` |  |  | Connection URL of the schema owner for the start-up migrations. |
+| `DATABASE_MIGRATE_URL` | string | `built from `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD`` |  |  | Connection URL of the schema owner for the start-up migrations. A password in it must be percent-encoded; the URL built from `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD` is encoded for you. |
 | `WEB_HOSTNAME` | string | `127.0.0.1` |  |  | Listen address of the web console. |
 
 ## Retired and removed names

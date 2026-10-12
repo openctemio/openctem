@@ -88,9 +88,10 @@ if [[ "$MODE" == train ]]; then
 
   refused=()
   kept_deleted=()
+  # -m: a deletion made in a merge commit counts (plain log shows no diff for merges).
   while IFS= read -r path; do
     [[ -n "$path" ]] || continue
-    if [[ -n "$(g log -1 --format=%H --diff-filter=D "$SHA" -- "$path")" ]]; then
+    if [[ -n "$(g log -m -1 --format=%H --diff-filter=D "$SHA" -- "$path")" ]]; then
       kept_deleted+=("$path")
     else
       refused+=("$path")

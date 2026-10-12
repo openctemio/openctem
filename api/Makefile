@@ -20,6 +20,8 @@ DB_USER ?=
 DB_PASSWORD ?=
 DB_NAME ?= openctem
 DB_SSLMODE ?= disable
+# Not escaped: with @ : / ? # or % in the password, set DATABASE_URL yourself
+# with the password percent-encoded.
 DATABASE_URL ?= postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
 
 # Go commands

@@ -153,7 +153,7 @@ export function AssigneeSelect({
           ) : !loading ? (
             <>
               <UserPlus className="h-3 w-3" />
-              <span className="hidden sm:inline">{placeholder}</span>
+              <span className="sr-only sm:not-sr-only">{placeholder}</span>
             </>
           ) : null}
           {!disabled && <ChevronDown className="h-3 w-3" />}
