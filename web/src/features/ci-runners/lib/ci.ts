@@ -35,7 +35,7 @@ export interface SnippetInput {
  * The openctemio/ci release the GitHub and GitLab snippets pin. A release tag
  * also pins the scanner images the workflow and templates run.
  */
-export const CI_RELEASE = 'v0.1.0'
+export const CI_RELEASE = 'v0.2.0'
 
 /** The capabilities the GitHub and GitLab snippets run by default. */
 const DEFAULT_CAPABILITIES = 'sast,sca,secrets,iac'
