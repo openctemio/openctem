@@ -29,7 +29,7 @@ describe('production serving', () => {
     (file) => {
       const compose = read(file)
       expect(compose).toMatch(/read_only: true/)
-      expect(compose).toMatch(/- \/tmp\n\s+- \/app\/\.next\/cache:uid=1001,gid=1001/)
+      expect(compose).toMatch(/- \/tmp(:\S+)?\n\s+- \/app\/\.next\/cache:uid=1001,gid=1001/)
       expect(compose).toMatch(/cap_drop:\n\s+- ALL/)
     }
   )
