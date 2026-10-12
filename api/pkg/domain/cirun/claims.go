@@ -50,6 +50,11 @@ type Claims struct {
 	// one.
 	PullRequest string
 	SHA         string
+	// BaseRef is the branch a pull request merges into: GitHub's signed
+	// base_ref claim, else the job's hint (Hints). It only picks among the
+	// repository's scanned branches that count as exposure, so a hint can
+	// narrow, never widen, what passes the gate.
+	BaseRef string
 	// CommitVerified: SHA comes from the signed token. False when the
 	// provider signs no commit and SHA is the job's own report (Hints); such
 	// a commit never matches a break-glass override.
@@ -278,6 +283,7 @@ func ParseGitHubClaims(m map[string]any) Claims {
 		RefType:        str(m, "ref_type"),
 		SHA:            strings.ToLower(str(m, "sha")),
 		Actor:          str(m, "actor"),
+		BaseRef:        str(m, "base_ref"),
 		RunID:          str(m, "run_id"),
 		RunAttempt:     str(m, "run_attempt"),
 		JobID:          str(m, "check_run_id"),
