@@ -804,6 +804,7 @@ type mcpRetestDTO struct {
 	FindingSeverity string `json:"finding_severity,omitempty"`
 	Status          string `json:"status"`
 	Notes           string `json:"notes,omitempty"`
+	Environment     string `json:"environment,omitempty"`
 	TestedAt        string `json:"tested_at,omitempty"`
 }
 
@@ -845,9 +846,10 @@ func (h *MCPHandler) toolListRetests(ctx context.Context, tenantID string, raw j
 			continue
 		}
 		dto := mcpRetestDTO{
-			FindingID: rt.FindingID().String(),
-			Status:    string(rt.Status()),
-			Notes:     rt.Notes(),
+			FindingID:   rt.FindingID().String(),
+			Status:      string(rt.Status()),
+			Notes:       rt.Notes(),
+			Environment: string(rt.Environment()),
 		}
 		if f, ok := lookup[rt.FindingID().String()]; ok {
 			dto.FindingTitle = f.Title()

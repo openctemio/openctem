@@ -79,7 +79,9 @@ type RetestData struct {
 	FindingSeverity string
 	Status          string
 	Notes           string
-	TestedAt        string
+	// Environment is where the fix was verified ("" when not recorded).
+	Environment string
+	TestedAt    string
 }
 
 // StatsData represents campaign statistics for report rendering.
@@ -389,7 +391,7 @@ const reportTemplate = `<!DOCTYPE html>
   <h2>Retest Results</h2>
   <p>A total of <strong>{{len .Retests}}</strong> retest(s) were performed to verify remediation.</p>
   <table class="team-table">
-    <thead><tr><th>Finding</th><th>Severity</th><th>Result</th><th>Tested</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Finding</th><th>Severity</th><th>Result</th><th>Tested</th><th>Environment</th><th>Notes</th></tr></thead>
     <tbody>
     {{range .Retests}}
     <tr>
@@ -397,6 +399,7 @@ const reportTemplate = `<!DOCTYPE html>
       <td><span class="severity-badge" style="background-color:{{severityColor .FindingSeverity}}">{{upper .FindingSeverity}}</span></td>
       <td>{{upper .Status}}</td>
       <td>{{.TestedAt}}</td>
+      <td>{{.Environment}}</td>
       <td>{{.Notes}}</td>
     </tr>
     {{end}}
