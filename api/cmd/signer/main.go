@@ -29,6 +29,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -86,9 +87,25 @@ func run(args []string) error {
 		return ledgerCmd(args, os.Stdout)
 	case "serve":
 		return serve()
+	case "healthcheck":
+		return healthcheck(os.Getenv("SIGNER_SOCKET"), 2*time.Second)
 	default:
-		return fmt.Errorf("unknown command %q (keygen, pubkey, verify-log, ledger, serve, root keygen, keyset sign, keyset show)", cmd)
+		return fmt.Errorf("unknown command %q (keygen, pubkey, verify-log, ledger, serve, healthcheck, root keygen, keyset sign, keyset show)", cmd)
 	}
+}
+
+// healthcheck connects to the signer's Unix socket: it succeeds only while
+// `serve` is accepting connections. It is the container healthcheck, so the
+// image needs no shell or `test`.
+func healthcheck(socket string, timeout time.Duration) error {
+	if socket == "" {
+		return errors.New("healthcheck: SIGNER_SOCKET is not set")
+	}
+	c, err := net.DialTimeout("unix", socket, timeout)
+	if err != nil {
+		return fmt.Errorf("healthcheck: %w", err)
+	}
+	return c.Close()
 }
 
 func keygen(args []string) error {

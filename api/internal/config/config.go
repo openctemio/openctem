@@ -406,7 +406,7 @@ const DefaultSensorKeyRenewGrace = 15 * time.Minute
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
 // the platform is upgraded; set it to "none" to turn the comparison off.
-const DefaultSensorLatestVersion = "v0.15.0"
+const DefaultSensorLatestVersion = "v0.17.0"
 
 // DefaultSensorMinVersion is the oldest supported sensor release
 // (SENSOR_MIN_VERSION); empty means no minimum.
@@ -414,7 +414,7 @@ const DefaultSensorMinVersion = "v0.9.0"
 
 // DefaultSensorSDKLatestVersion is the newest SDK release
 // (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
-const DefaultSensorSDKLatestVersion = "v0.21.0"
+const DefaultSensorSDKLatestVersion = "v0.23.0"
 
 // DefaultSensorSDKMinVersion is the oldest supported SDK release
 // (SENSOR_SDK_MIN_VERSION); empty means no minimum.
@@ -2210,6 +2210,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
 	{"APP_ALLOW_PLAINTEXT_CREDENTIALS", "unset it; credentials are always encrypted (development uses the key in api/.env.example)"},
+	{"CTEM_ENFORCE_COVERAGE_SLO", "unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles)"},
 	// Cookie names are fixed: the API, the web console and the gateway must
 	// agree on them.
 	{"AUTH_ACCESS_TOKEN_COOKIE_NAME", "unset it; the session cookie is always auth_token"},
