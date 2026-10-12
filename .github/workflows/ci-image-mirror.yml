@@ -1,0 +1,91 @@
+name: CI image mirror
+
+# Copies the third-party images CI pulls (.github/ci-images.txt, pinned by
+# digest) to ghcr.io/openctemio/mirror/<name>:<tag>, so CI service containers,
+# job containers and pinned base images do not depend on the anonymous pull
+# quotas of public.ecr.aws and Docker Hub. The list file explains the format
+# and how to bump an image.
+#
+# Runs when the list or the script changes on develop, weekly (re-copies
+# anything missing and reports upstream drift), and on demand. Never on a pull
+# request: only trusted refs hold packages:write.
+
+on:
+  push:
+    branches: [develop, ci/ghcr-image-mirror]
+    paths:
+      - '.github/ci-images.txt'
+      - '.github/scripts/mirror-ci-images.sh'
+      - '.github/workflows/ci-image-mirror.yml'
+  schedule:
+    - cron: '23 4 * * 1' # Monday 04:23 UTC; schedules run from the default branch (main)
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-image-mirror
+  cancel-in-progress: false
+
+env:
+  CRANE_VERSION: v0.22.1
+  # sha256 of go-containerregistry_Linux_x86_64.tar.gz for CRANE_VERSION
+  # (checksums.txt of the GitHub release).
+  CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+
+jobs:
+  mirror:
+    name: Mirror CI images to GHCR
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install crane (checksum-verified)
+        run: |
+          dir="$RUNNER_TEMP/crane"
+          mkdir -p "$dir"
+          curl -fsSL --retry 5 --retry-all-errors -o "$dir/crane.tgz" \
+            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+          echo "${CRANE_SHA256}  $dir/crane.tgz" | sha256sum -c -
+          tar -xzf "$dir/crane.tgz" -C "$dir" crane
+          echo "$dir" >> "$GITHUB_PATH"
+
+      - name: Log in to GHCR (and Docker Hub when configured)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          printf '%s' "$GH_TOKEN" | crane auth login ghcr.io -u "$GH_ACTOR" --password-stdin
+          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+            printf '%s' "$DH_TOKEN" | crane auth login index.docker.io -u "$DH_USER" --password-stdin \
+              || echo "::warning::Docker Hub login failed; copying anonymously"
+          fi
+
+      - name: Mirror
+        run: bash .github/scripts/mirror-ci-images.sh .github/ci-images.txt ghcr.io/openctemio/mirror
+
+      # The packages must be public: fork pull requests and the other
+      # openctemio repositories pull them anonymously. Visibility is set once
+      # per package in the organisation's package settings (the API cannot set
+      # it); this check makes a private package visible in the run summary.
+      - name: Check the mirror is publicly pullable
+        run: |
+          crane auth logout ghcr.io >/dev/null 2>&1 || true
+          private=0
+          while read -r src dst _; do
+            case "$src" in '' | '#'*) continue ;; esac
+            if ! crane digest "ghcr.io/openctemio/mirror/$dst" >/dev/null 2>&1; then
+              echo "::warning::ghcr.io/openctemio/mirror/$dst is not anonymously pullable: make the package public"
+              private=1
+            fi
+          done < .github/ci-images.txt
+          [ "$private" -eq 0 ] && echo "all mirror packages are public"
+          exit 0
