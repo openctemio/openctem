@@ -115,10 +115,10 @@ func TestDynamicWhere_AllFiltersExecute(t *testing.T) {
 		check("FindingActivityRepository.ListByTenant", err)
 	}
 	{
-		st, ty, pr := pentest.CampaignStatusPlanning, pentest.CampaignTypeExternal, pentest.CampaignPriorityCritical
+		st, target := pentest.CampaignStatusPlanning, "web_app"
 		user := id.String()
 		_, err := NewPentestCampaignRepository(db).List(ctx, pentest.CampaignFilter{
-			TenantID: &tenantID, Status: &st, Type: &ty, Priority: &pr, Search: &search, UserID: &user,
+			TenantID: &tenantID, Status: &st, Target: &target, Search: &search, UserID: &user,
 		}, page)
 		check("PentestCampaignRepository.List", err)
 	}
