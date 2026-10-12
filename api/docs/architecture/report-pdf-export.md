@@ -65,9 +65,10 @@ badge, title, CVSS/CWE/CVE/OWASP meta, description, numbered repro steps,
 business/technical impact, remediation, PoC when `include_poc`, targets,
 references). Pagination is automatic (`SetAutoPageBreak`).
 
-Text is mapped to the core-font cp1252 charset via fpdf's unicode translator —
-characters outside it are dropped rather than mojibake'd. Embedding a Unicode
-TTF for full multilingual coverage is a future enhancement.
+Text is set in DejaVu Sans, embedded in the binary (`pkg/report/fonts`, license
+`LICENSE-DejaVu.txt`) and subset into each PDF, so every language a finding is
+written in renders, Vietnamese included. The core PDF fonts (cp1252 only) are
+not used.
 
 ## Code map
 
@@ -92,3 +93,18 @@ finding, of its retests or of the campaign, in the same tenant; when it is
 PNG, JPEG or GIF and decodes as one; and within 5 MiB per image, 40 MiB and
 200 images per report. Anything else renders as its alt text in brackets: a
 report never fetches a URL. `include_evidence=false` leaves images out.
+
+## Stored reports and delivery
+
+A report created with `POST /api/v1/pentest/campaigns/{id}/reports` is
+generated once and its bytes are stored (`pentest_report_files`, in the
+tenant's rows, at most 50 MiB, erased with the report and the tenant).
+`GET /api/v1/pentest/reports/{id}/download` returns those bytes, so a report
+never changes when the campaign does; the report carries their SHA-256.
+Reports created before reports were stored answer 409 (generate a new one).
+The live download (`/campaigns/{id}/reports/download`) still renders current
+data and stores nothing.
+
+The campaign lead marks a stored report delivered
+(`POST /api/v1/pentest/reports/{id}/deliver`, audited
+`pentest_report.delivered`); a delivered report cannot be deleted.
