@@ -6,8 +6,9 @@ name: Release Publish
 #              then push the annotated tag vX.Y.Z. Pushed with RELEASE_TOKEN the
 #              tag starts Docker Publish and Release by itself; pushed with
 #              GITHUB_TOKEN it does not, so both are started by dispatch.
-#   follow-ups the develop PR (main merged back for a train, versions.yaml
-#              platform.release + chart.version), the helm-charts PR (appVersion
+#   follow-ups the develop PR (a train: main merged back, which brings the
+#              release branch's platform.release commit; a hotfix: that bump
+#              made directly; both: chart.version), the helm-charts PR (appVersion
 #              + chart version; needs RELEASE_TOKEN, skipped with a message
 #              otherwise), and the train issue is closed.
 #
@@ -201,7 +202,7 @@ jobs:
             exit 0
           fi
           url="$(gh pr create --base develop --head "$branch" --title "$title" \
-            --body "Follow-up of ${VERSION}: versions.yaml says ${VERSION}. For a train it also merges main back into develop (the tree does not change), so the tag becomes reachable from develop. Merge with the queue (merge commit), never squash: a squash drops the second parent, which is the point.")"
+            --body "Follow-up of ${VERSION}: versions.yaml says ${VERSION}. For a train it merges main back into develop, which brings only the release branch's version commit (versions.yaml platform.release and its synced defaults), so the tag becomes reachable from develop. Merge with the queue (merge commit), never squash: a squash drops the second parent, which is the point.")"
           echo "develop PR: $url" >> "$GITHUB_STEP_SUMMARY"
           gh pr merge "$url" --merge --auto || echo "::notice::Press 'Merge when ready' on $url"
 
