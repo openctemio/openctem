@@ -41,7 +41,7 @@ func TestAddCampaignMember_Success(t *testing.T) {
 	userID := shared.NewID()
 	actorID := shared.NewID()
 
-	campaign, _ := pentest.NewCampaign(tenantID, "Test Campaign", pentest.CampaignTypeExternal, pentest.CampaignPriorityHigh)
+	campaign, _ := pentest.NewCampaign(tenantID, "Test Campaign")
 	campaignRepo.getByID = campaign
 
 	member, err := svc.AddCampaignMember(ctx, compliance.CampaignAddMemberInput{
@@ -71,7 +71,7 @@ func TestAddCampaignMember_InvalidRole(t *testing.T) {
 	ctx := context.Background()
 
 	tenantID := shared.NewID()
-	campaign, _ := pentest.NewCampaign(tenantID, "Test", pentest.CampaignTypeExternal, pentest.CampaignPriorityHigh)
+	campaign, _ := pentest.NewCampaign(tenantID, "Test")
 	campaignRepo.getByID = campaign
 
 	_, err := svc.AddCampaignMember(ctx, compliance.CampaignAddMemberInput{
@@ -95,7 +95,7 @@ func TestAddCampaignMember_DuplicateReturnsConflict(t *testing.T) {
 	ctx := context.Background()
 
 	tenantID := shared.NewID()
-	campaign, _ := pentest.NewCampaign(tenantID, "Test", pentest.CampaignTypeExternal, pentest.CampaignPriorityHigh)
+	campaign, _ := pentest.NewCampaign(tenantID, "Test")
 	campaignRepo.getByID = campaign
 	memberRepo.createErr = pentest.ErrMemberAlreadyExists
 
