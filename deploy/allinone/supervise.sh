@@ -99,6 +99,9 @@ else
   export SERVER_HOST="${SERVER_HOST:-0.0.0.0}" WEB_HOSTNAME="${WEB_HOSTNAME:-0.0.0.0}"
 fi
 export SERVER_PORT="${SERVER_PORT:-8080}"
+# The console's Content-Security-Policy names the public origin: the API's
+# APP_URL, unless set on its own.
+if [ -n "${APP_URL:-}" ]; then export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-$APP_URL}"; fi
 
 declare -A PIDS=()
 start() { # start <tag> <dir> <cmd...>

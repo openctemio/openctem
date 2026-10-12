@@ -91,12 +91,12 @@ func TestPrivateProgramSideChannels(t *testing.T) {
 
 	// Tag suggestions: the hidden asset's tag is not suggested to the
 	// admin; the owner gets both.
-	tags, err := assets.ListDistinctTags(ctx, tenant, asset.AccessScope{DataScopeUserID: &fx.admin, DataScopeUnrestricted: true}, "", nil, 50)
-	if err != nil || slices.Contains(tags, "secret-bb") || !slices.Contains(tags, "own-tag") {
+	tags, err := assets.ListDistinctTags(ctx, tenant, asset.AccessScope{DataScopeUserID: &fx.admin, DataScopeUnrestricted: true}, asset.TagListQuery{Limit: 50})
+	if err != nil || slices.Contains(tags.Tags, "secret-bb") || !slices.Contains(tags.Tags, "own-tag") {
 		t.Fatalf("admin tag suggestions = %v %v", tags, err)
 	}
-	tags, err = assets.ListDistinctTags(ctx, tenant, asset.AccessScope{}, "", nil, 50)
-	if err != nil || !slices.Contains(tags, "secret-bb") || !slices.Contains(tags, "own-tag") {
+	tags, err = assets.ListDistinctTags(ctx, tenant, asset.AccessScope{}, asset.TagListQuery{Limit: 50})
+	if err != nil || !slices.Contains(tags.Tags, "secret-bb") || !slices.Contains(tags.Tags, "own-tag") {
 		t.Fatalf("owner tag suggestions = %v %v", tags, err)
 	}
 
