@@ -44,7 +44,7 @@ func TestEASMChangesHandler(t *testing.T) {
 		lister.q.From != time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC) {
 		t.Fatalf("query: %+v", lister.q)
 	}
-	for _, bad := range []string{"/?kind=nope", "/?from=yesterday", "/?limit=0", "/?limit=500",
+	for _, bad := range []string{"/?kind=nope", "/?from=yesterday", "/?limit=0", "/?limit=x",
 		"/?from=2026-01-01T00:00:00Z&to=2026-03-01T00:00:00Z"} {
 		w = httptest.NewRecorder()
 		h.Changes(w, seedReq(http.MethodGet, bad, "", tenantID, "u1"))

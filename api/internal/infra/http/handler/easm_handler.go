@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -305,14 +304,11 @@ func (h *EASMHandler) Changes(w http.ResponseWriter, r *http.Request) {
 		}
 		q.Kinds = kinds
 	}
-	if s := v.Get("limit"); s != "" {
-		n, perr := strconv.Atoi(s)
-		if perr != nil || n < 1 || n > easmchange.MaxPageSize {
-			apierror.BadRequest("limit must be between 1 and 200").WriteJSON(w)
-			return
-		}
-		q.Limit = n
+	limit, ok := listLimit(w, r, 50, easmchange.MaxPageSize)
+	if !ok {
+		return
 	}
+	q.Limit = limit
 	q.Cursor = v.Get("cursor")
 	page, err := h.changes.List(r.Context(), tenantID, q)
 	if err != nil {
