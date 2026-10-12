@@ -220,8 +220,11 @@ type Service struct {
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
 	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
 	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
-	// activeProof is the operator's SCOPE_ACTIVE_PROOF (active_proof.go).
-	activeProof      string
+	// revealResolved lets a refusal show what a hostname resolved to
+	// (WithRevealResolved).
+	revealResolved bool
+	// proofPolicy is the platform's proof requirement (active_proof.go).
+	proofPolicy      ProofPolicy
 	connectorScans   ConnectorScans            // optional; nil = a connector cannot be a scanner (RFC-047)
 	policySensors    AvailableSensorLister     // optional; nil = no policy preflight outside zones (policy_preflight.go)
 	privatePolicy    PrivateTargetPolicy       // optional; nil = the private-target switch is not read at trigger
