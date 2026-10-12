@@ -99,7 +99,8 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	gv := cirun.Evaluate(cirun.GateInput{
 		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: newSet,
 		BaselineBranch: baselineBranch, BaselineKnown: known, ScanFailures: in.ScanFailures,
-		Override: override, Now: now, FindingURL: s.findingURL,
+		DefaultBranch: run.IsDefaultBranch,
+		Override:      override, Now: now, FindingURL: s.findingURL,
 	})
 	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, Links: VerdictLinks{
 		Run:      s.webURL(RunPath(run.ID)),

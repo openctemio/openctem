@@ -20,5 +20,6 @@
     - CertMonitorController
     - EASMDNSController
     - EASMNetworkSeedController
+    - EASMWeeklyDigestController
     - GraphEnrichmentController
     - ScopeJoinController

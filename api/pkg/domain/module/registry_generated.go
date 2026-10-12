@@ -128,7 +128,7 @@ var Registry = []Definition{
 		},
 		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm"},
 		MCP:    []string{"get_exposure_chains"},
-		Jobs:   []string{"AssetEnrichmentController", "CertMonitorController", "EASMDNSController", "EASMNetworkSeedController", "GraphEnrichmentController", "ScopeJoinController"},
+		Jobs:   []string{"AssetEnrichmentController", "CertMonitorController", "EASMDNSController", "EASMNetworkSeedController", "EASMWeeklyDigestController", "GraphEnrichmentController", "ScopeJoinController"},
 	},
 	{
 		ID: ModuleScopeConfig, Slug: "scope-config", Name: "Scope Config",

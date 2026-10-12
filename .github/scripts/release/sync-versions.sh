@@ -45,12 +45,10 @@ CONSUMERS=(
   'sensor.latest|api/internal/config/config.go|"|^(const DefaultSensorLatestVersion = ")([^"]*)"'
   'sensor.latest|api/internal/infra/http/handler/sensor_handler.go|"|^(const DefaultSensorImage = "ghcr\.io/openctemio/sensor:)([^"]*)"'
   'sensor.latest|api/deploy/docker-compose.yml|}|(SENSOR_LATEST_VERSION: \$\{SENSOR_LATEST_VERSION:-)([^}]*)\}'
-  'sensor.latest|api/.env.example||^(# SENSOR_LATEST_VERSION=)(.*)$'
   'sensor.min|api/internal/config/config.go|"|^(const DefaultSensorMinVersion = ")([^"]*)"'
   'sensor.min|api/deploy/docker-compose.yml|}|(SENSOR_MIN_VERSION: \$\{SENSOR_MIN_VERSION:-)([^}]*)\}'
   'sdk.latest|api/internal/config/config.go|"|^(const DefaultSensorSDKLatestVersion = ")([^"]*)"'
   'sdk.latest|api/deploy/docker-compose.yml|}|(SENSOR_SDK_LATEST_VERSION: \$\{SENSOR_SDK_LATEST_VERSION:-)([^}]*)\}'
-  'sdk.latest|api/.env.example||^(# SENSOR_SDK_LATEST_VERSION=)(.*)$'
   'sdk.min|api/internal/config/config.go|"|^(const DefaultSensorSDKMinVersion = ")([^"]*)"'
   'sdk.min|api/deploy/docker-compose.yml|}|(SENSOR_SDK_MIN_VERSION: \$\{SENSOR_SDK_MIN_VERSION:-)([^}]*)\}'
 )
