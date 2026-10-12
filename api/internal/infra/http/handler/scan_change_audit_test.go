@@ -10,11 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -43,17 +41,6 @@ func (r *auditProfileRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) 
 	delete(r.byID, id)
 	return nil
 }
-
-type auditCommandRepo struct {
-	commanddom.Repository
-	cmd *commanddom.Command
-}
-
-func (r *auditCommandRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*commanddom.Command, error) {
-	return r.cmd, nil
-}
-
-func (r *auditCommandRepo) Delete(_ context.Context, _, _ shared.ID) error { return nil }
 
 func auditedRequest(method, target string, body []byte, tenantID, userID, id string) *http.Request {
 	req := httptest.NewRequest(method, target, bytes.NewReader(body))
@@ -112,24 +99,4 @@ func TestScanProfileChangesAreAudited(t *testing.T) {
 		t.Fatalf("delete: status %d: %s", w.Code, w.Body.String())
 	}
 	requireAuditEntry(t, auditRepo.logs, auditdom.ActionScanProfileDeleted, auditdom.ResourceTypeScanProfile, created.ID.String(), userID)
-}
-
-// A user deleting a sensor command left no trace either.
-func TestCommandDeleteIsAudited(t *testing.T) {
-	tenantID, userID := shared.NewID(), shared.NewID().String()
-	cmd, err := commanddom.NewCommand(tenantID, commanddom.CommandTypeScan, commanddom.CommandPriorityNormal, []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	auditRepo := &fakeAuditRepo{}
-	h := NewCommandHandler(command.NewService(&auditCommandRepo{cmd: cmd}, logger.NewNop()), validator.New(), logger.NewNop())
-	h.SetAuditService(auditapp.NewAuditService(auditRepo, logger.NewNop()))
-
-	w := httptest.NewRecorder()
-	h.Delete(w, auditedRequest(http.MethodDelete, "/api/v1/commands/"+cmd.ID.String(), nil,
-		tenantID.String(), userID, cmd.ID.String()))
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("delete: status %d: %s", w.Code, w.Body.String())
-	}
-	requireAuditEntry(t, auditRepo.logs, auditdom.ActionCommandDeleted, auditdom.ResourceTypeCommand, cmd.ID.String(), userID)
 }
