@@ -260,6 +260,14 @@ type StorageConfig struct {
 	// TenantQuotaMB bounds the attachment bytes of one organization, in MiB
 	// (STORAGE_TENANT_QUOTA_MB). 0 = no quota.
 	TenantQuotaMB int64
+	// OrphanGraceDays: evidence whose finding or campaign was deleted is
+	// purged this many days after the retention sweep noticed
+	// (STORAGE_ORPHAN_GRACE_DAYS). 0 = never purged.
+	OrphanGraceDays int
+	// UnlinkedRetentionHours: an upload never linked to a finding or
+	// campaign is purged this many hours after it was uploaded
+	// (STORAGE_UNLINKED_RETENTION_HOURS). 0 = never purged.
+	UnlinkedRetentionHours int
 }
 
 // AppConfig holds application-level configuration.
@@ -1233,7 +1241,9 @@ func Load() (*Config, error) {
 			SecretKey: getEnv("STORAGE_SECRET_KEY", ""),
 			// 20 GiB per organization by default: it bounds what one
 			// organization can put on a shared volume or bucket.
-			TenantQuotaMB: getEnvInt64("STORAGE_TENANT_QUOTA_MB", 20480),
+			TenantQuotaMB:          getEnvInt64("STORAGE_TENANT_QUOTA_MB", 20480),
+			OrphanGraceDays:        getEnvInt("STORAGE_ORPHAN_GRACE_DAYS", 7),
+			UnlinkedRetentionHours: getEnvInt("STORAGE_UNLINKED_RETENTION_HOURS", 24),
 		},
 		Server: ServerConfig{
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),
@@ -1581,6 +1591,9 @@ func (c *Config) Validate() error {
 func (c *Config) validateStorage() error {
 	if c.Storage.TenantQuotaMB < 0 {
 		return fmt.Errorf("STORAGE_TENANT_QUOTA_MB must be 0 (no quota) or more, got %d", c.Storage.TenantQuotaMB)
+	}
+	if c.Storage.OrphanGraceDays < 0 || c.Storage.UnlinkedRetentionHours < 0 {
+		return fmt.Errorf("STORAGE_ORPHAN_GRACE_DAYS and STORAGE_UNLINKED_RETENTION_HOURS must be 0 (keep) or more")
 	}
 	switch c.Storage.Provider {
 	case "", "local":

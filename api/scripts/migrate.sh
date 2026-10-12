@@ -27,8 +27,24 @@ DB_NAME=${DB_NAME:-openctem}
 DB_SSLMODE=${DB_SSLMODE:-disable}
 MIGRATIONS_DIR=${MIGRATIONS_DIR:-migrations}
 
+# Percent-encodes one URL part (user or password): a value with @ : / ? # or %
+# in it otherwise breaks the URL or changes what it means.
+urlenc() (
+  LC_ALL=C
+  s=$1
+  while [ -n "$s" ]; do
+    rest=${s#?}
+    c=${s%"$rest"}
+    s=$rest
+    case $c in
+      [A-Za-z0-9._~-]) printf '%s' "$c" ;;
+      *) printf '%%%02X' "'$c" ;;
+    esac
+  done
+)
+
 # Build connection string
-DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+DATABASE_URL="postgres://$(urlenc "${DB_USER}"):$(urlenc "${DB_PASSWORD}")@${DB_HOST}:${DB_PORT}/$(urlenc "${DB_NAME}")?sslmode=${DB_SSLMODE}"
 
 # Check if migrate is installed
 if ! command -v migrate &> /dev/null; then

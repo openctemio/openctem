@@ -50,7 +50,7 @@ import {
   runTriggeredByLabel,
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
-import { replaceUrlSearch } from '@/hooks/use-url-param'
+import { replaceUrlSearch, useUrlParam } from '@/hooks/use-url-param'
 import { useRunChannels } from '@/hooks/use-websocket'
 import {
   DEFAULT_RUN_SORT,
@@ -125,9 +125,11 @@ function ScanRunsTable() {
   const { pagination, sorting, perPage } = list
   // A link to one run (a retest's "View run") opens it: /scans/runs?run=<id>.
   // Opening a row does not touch the list's URL; closing drops ?run.
-  const [openRunId, setOpenRunId] = useState<string | null>(() =>
-    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('run')
-  )
+  // ?run is read on every render, not once: after an in-app navigation the
+  // first render still sees the previous page's URL.
+  const runFromUrl = useUrlParam('run')
+  const [pickedRunId, setOpenRunId] = useState<string | null>(null)
+  const openRunId = pickedRunId ?? runFromUrl
   const closeRun = () => {
     setOpenRunId(null)
     const params = new URLSearchParams(window.location.search)

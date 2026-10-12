@@ -121,6 +121,19 @@ origin for inline evidence images; and the bucket needs CORS for downloads
 the console starts with `fetch`. Until a deployment needs to offload download
 bandwidth, files keep streaming through the API, where every header is ours.
 
+### 3.5 Retention
+
+Evidence follows its parent. A sweep (controller, hourly, one replica)
+marks finding, retest and campaign attachments whose parent no longer exists
+in the attachment's own organization, and purges them
+`STORAGE_ORPHAN_GRACE_DAYS` (7) after the mark: the grace period covers a
+deletion that is undone or a restore. Uploads never linked to a parent are
+purged `STORAGE_UNLINKED_RETENTION_HOURS` (24) after upload. Each purge is
+one tenant-scoped operation (storage resolved first, row deleted only if
+still purgeable, then the file) and is audited `attachment.purged` in the
+file's organization with the reason and SHA-256. Authorization letters and
+other contexts are never purged.
+
 ## 4. Threat model
 
 Assets: evidence (may hold secrets, personal data, exploit material),
@@ -139,6 +152,8 @@ mistake.
 | Zip/XML bombs in imports | importer archive limits (entries, size, ratio), strict parsers |
 | Evidence tampering, repudiation | SHA-256 recorded; upload/delete audited |
 | Bucket misconfiguration | documentation: block public access, TLS only, least-privilege key, server-side encryption |
+| Evidence outliving its finding (secrets, personal data) | retention sweep purges it after the grace period, audited |
+| Retention deleting the wrong files | parent looked up in the file's own organization only; finding, retest and campaign contexts only (letters never); row deleted only while still purgeable; storage resolved before the row goes |
 | Malware distribution | files only reachable by authorized members, attachment disposition; scanning hook in P1 |
 
 ## 5. Decisions
