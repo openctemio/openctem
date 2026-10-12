@@ -338,6 +338,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
 		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
+		// The OpenCTEM gate check and pull request comments (RFC-077), when
+		// the deployment has a GitHub App.
+		if app := newGitHubApp(deps.Config, log); app != nil && repos.SCMApp != nil {
+			w.ControllerManager.Register(controller.NewCIDecorationController(
+				cirunapp.NewDecorationJob(repos.CIRun, repos.SCMApp, app, deps.Config.SMTP.BaseURL, log), 0))
+		}
 	}
 
 	jobRecovery := controller.NewJobRecoveryController(
