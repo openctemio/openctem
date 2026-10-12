@@ -30,6 +30,7 @@ import en_nav from './en/nav.json'
 import en_networkSeeds from './en/networkSeeds.json'
 import en_org from './en/org.json'
 import en_pentest from './en/pentest.json'
+import en_pentestCampaigns from './en/pentestCampaigns.json'
 import en_plan from './en/plan.json'
 import en_prioritization from './en/prioritization.json'
 import en_programs from './en/programs.json'
@@ -67,6 +68,7 @@ import vi_nav from './vi/nav.json'
 import vi_networkSeeds from './vi/networkSeeds.json'
 import vi_org from './vi/org.json'
 import vi_pentest from './vi/pentest.json'
+import vi_pentestCampaigns from './vi/pentestCampaigns.json'
 import vi_plan from './vi/plan.json'
 import vi_prioritization from './vi/prioritization.json'
 import vi_programs from './vi/programs.json'
@@ -109,6 +111,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   networkSeeds: en_networkSeeds,
   org: en_org,
   pentest: en_pentest,
+  pentestCampaigns: en_pentestCampaigns,
   plan: en_plan,
   prioritization: en_prioritization,
   programs: en_programs,
@@ -149,6 +152,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   networkSeeds: vi_networkSeeds,
   org: vi_org,
   pentest: vi_pentest,
+  pentestCampaigns: vi_pentestCampaigns,
   plan: vi_plan,
   prioritization: vi_prioritization,
   programs: vi_programs,
