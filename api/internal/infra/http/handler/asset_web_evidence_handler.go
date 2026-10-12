@@ -125,23 +125,23 @@ func (h *AssetWebEvidenceHandler) List(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-// Screenshot handles GET /api/v1/assets/{id}/web-evidence/{evidenceId}/screenshot
+// Screenshot handles GET /api/v1/assets/{id}/web-evidence/{evidence_id}/screenshot
 // @Summary      Screenshot of a web asset
 // @Description  The PNG screenshot of one capture (re-encoded by the platform; served with a sandboxing content security policy). 404 when the asset is outside the caller's data scope, the capture has no screenshot or it expired.
 // @Tags         Assets
 // @Produce      png
 // @Security     BearerAuth
 // @Param        id          path  string  true  "Asset ID"
-// @Param        evidenceId  path  string  true  "Capture ID"
+// @Param        evidence_id path  string  true  "Capture ID"
 // @Success      200
 // @Failure      404  {object}  apierror.Error
-// @Router       /assets/{id}/web-evidence/{evidenceId}/screenshot [get]
+// @Router       /assets/{id}/web-evidence/{evidence_id}/screenshot [get]
 func (h *AssetWebEvidenceHandler) Screenshot(w http.ResponseWriter, r *http.Request) {
 	tenantID, assetID, ok := h.asset(w, r)
 	if !ok {
 		return
 	}
-	rc, rec, err := h.svc.Screenshot(r.Context(), tenantID, assetID, r.PathValue("evidenceId"))
+	rc, rec, err := h.svc.Screenshot(r.Context(), tenantID, assetID, r.PathValue("evidence_id"))
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			apierror.NotFound("Screenshot").WriteJSON(w)

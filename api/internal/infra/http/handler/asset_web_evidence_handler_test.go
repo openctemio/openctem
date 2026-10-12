@@ -87,19 +87,19 @@ func TestAssetWebEvidenceHandler(t *testing.T) {
 		t.Fatalf("out-of-scope list: %d", w.Code)
 	}
 	w = httptest.NewRecorder()
-	h.Screenshot(w, webEvidenceReq(t, "/", tenantID, map[string]string{"id": other, "evidenceId": "e1"}))
+	h.Screenshot(w, webEvidenceReq(t, "/", tenantID, map[string]string{"id": other, "evidence_id": "e1"}))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("out-of-scope screenshot: %d", w.Code)
 	}
 
 	w = httptest.NewRecorder()
-	h.Screenshot(w, webEvidenceReq(t, "/", tenantID, map[string]string{"id": a.ID().String(), "evidenceId": "e1"}))
+	h.Screenshot(w, webEvidenceReq(t, "/", tenantID, map[string]string{"id": a.ID().String(), "evidence_id": "e1"}))
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" ||
 		w.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox") {
 		t.Fatalf("screenshot: %d %v", w.Code, w.Header())
 	}
 	w = httptest.NewRecorder()
-	h.Screenshot(w, webEvidenceReq(t, "/", tenantID, map[string]string{"id": a.ID().String(), "evidenceId": "nope"}))
+	h.Screenshot(w, webEvidenceReq(t, "/", tenantID, map[string]string{"id": a.ID().String(), "evidence_id": "nope"}))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("missing screenshot: %d", w.Code)
 	}

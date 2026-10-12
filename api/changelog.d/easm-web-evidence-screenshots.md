@@ -9,5 +9,5 @@
   default), re-encoded to PNG within 1 MiB and 1920x2400 px, stored in the
   organization's file storage and deleted after 30 days.
 - `GET /api/v1/assets/{id}/web-evidence` and
-  `GET /api/v1/assets/{id}/web-evidence/{evidenceId}/screenshot`
+  `GET /api/v1/assets/{id}/web-evidence/{evidence_id}/screenshot`
   (`assets:read`, the asset's data scope; the image is served sandboxed).

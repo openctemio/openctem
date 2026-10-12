@@ -435,7 +435,7 @@ screenshots go to the tenant's file storage only when the organization turned
 on `web_screenshots_enabled` (`/api/v1/easm/settings`, off by default) and
 expire after 30 days (`web-evidence-retention`; files of deleted rows are
 queued by a trigger). Routes: `GET /api/v1/assets/{id}/web-evidence` and
-`.../{evidenceId}/screenshot` (`assets:read`, the asset's data scope, 404
+`.../{evidence_id}/screenshot` (`assets:read`, the asset's data scope, 404
 otherwise; the PNG is served sandboxed and nosniff). Web: the **Web
 evidence** card on the asset page and the screenshot switch on the
 monitoring card. The `screenshot` tool is an optional sensor image (sensor
