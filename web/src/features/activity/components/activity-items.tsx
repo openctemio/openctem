@@ -245,6 +245,10 @@ export function CommentCard({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  // "Add reaction" in the actions menu opens the picker once the menu has
+  // closed: opening it while the menu hands focus back to its trigger
+  // closed it again at once.
+  const pickerFromMenu = useRef(false)
   const editRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -403,7 +407,7 @@ export function CommentCard({
                 type="button"
                 aria-label="Add reaction"
                 title="Add reaction"
-                className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [@media(hover:none)]:hidden"
+                className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [@media(hover:none)]:sr-only"
               >
                 <SmilePlus className="h-4 w-4" aria-hidden />
               </button>
@@ -419,9 +423,22 @@ export function CommentCard({
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuContent
+              align="end"
+              className="w-44"
+              onCloseAutoFocus={(e) => {
+                if (!pickerFromMenu.current) return
+                pickerFromMenu.current = false
+                e.preventDefault()
+                setPickerOpen(true)
+              }}
+            >
               {canReact && (
-                <DropdownMenuItem onSelect={() => setTimeout(() => setPickerOpen(true), 0)}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    pickerFromMenu.current = true
+                  }}
+                >
                   <SmilePlus className="h-4 w-4" />
                   Add reaction
                 </DropdownMenuItem>
