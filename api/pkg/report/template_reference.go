@@ -316,9 +316,9 @@ func TemplateReferenceMarkdown() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("### Labels\n\nBuilt-in text in the template language (`{labels.<key>}`).\n\n| Tag | en | vi |\n|---|---|---|\n")
+	b.WriteString("### Labels\n\nBuilt-in text in the template's language (`{labels.<key>}`); the English text is shown.\n\n| Tag | Text |\n|---|---|\n")
 	for _, k := range labelKeys() {
-		b.WriteString("| `{labels." + k + "}` | " + cell(label("en", k, k)) + " | " + cell(label("vi", k, k)) + " |\n")
+		b.WriteString("| `{labels." + k + "}` | " + cell(label("en", k, k)) + " |\n")
 	}
 	return b.String()
 }
