@@ -13,6 +13,8 @@ import {
   organizationFromIssuer,
   parseList,
   snippetFor,
+  CI_PROVIDERS,
+  CI_RELEASE,
 } from '../lib/ci'
 
 // Radix Select uses pointer capture and scrollIntoView, which jsdom lacks.
@@ -114,17 +116,51 @@ describe('lib', () => {
       audience: defaultAudience('t1'),
     })
     expect(gh).toContain('id-token: write')
-    expect(gh).toContain('OPENCTEM_TENANT_ID: t1')
+    expect(gh).toContain('tenant-id: t1')
+    expect(gh).toContain(`uses: openctemio/ci/.github/workflows/scan.yml@${CI_RELEASE}`)
     expect(gh).not.toMatch(/API_KEY|secrets\./)
     // The default audience is implied; a custom one is passed.
-    expect(gh).not.toContain('OPENCTEM_OIDC_AUDIENCE')
+    expect(gh).not.toContain('oidc-audience')
     expect(githubSnippet({ apiUrl: 'x', tenantId: 't1', audience: 'custom' })).toContain(
-      'OPENCTEM_OIDC_AUDIENCE: custom'
+      'oidc-audience: custom'
     )
-    const gl = gitlabSnippet({ apiUrl: 'https://ctem.example', tenantId: 't1', audience: 'aud-1' })
-    expect(gl).toContain('id_tokens:')
-    expect(gl).toContain('aud: aud-1')
+    const gl = gitlabSnippet({
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: defaultAudience('t1'),
+    })
+    expect(gl).toContain(`openctemio/ci/${CI_RELEASE}/gitlab/templates/all.yml`)
+    expect(gl).toContain('OPENCTEM_TENANT_ID: t1')
+    expect(gl).not.toContain('id_tokens')
     expect(gl).not.toMatch(/API_KEY/)
+    // A custom audience overrides every job's ID token request.
+    const custom = gitlabSnippet({
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: 'aud-1',
+    })
+    expect(custom).toContain('aud: aud-1')
+    for (const job of [
+      'openctem-sast',
+      'openctem-sca',
+      'openctem-secrets',
+      'openctem-iac',
+      'openctem-gate',
+    ]) {
+      expect(custom).toContain(`${job}: *openctem-audience`)
+    }
+  })
+
+  it('no snippet runs the sensor image or its removed CI flags', () => {
+    const input = {
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: defaultAudience('t1'),
+    }
+    for (const p of CI_PROVIDERS) {
+      const s = snippetFor(p, input)
+      expect(s).not.toMatch(/openctemio\/sensor|-auto-ci|-push\b/)
+    }
   })
 
   it('builds each provider issuer from what names the organization', () => {
@@ -319,7 +355,7 @@ describe('CITrustSettings', () => {
       }),
     })
     // The snippet opens after a new configuration is added.
-    expect(await screen.findByTestId('ci-snippet')).toHaveTextContent('OPENCTEM_TENANT_ID: t-123')
+    expect(await screen.findByTestId('ci-snippet')).toHaveTextContent('tenant-id: t-123')
   })
 
   it('warns while CI sensor keys are accepted and lets an administrator require OIDC', async () => {

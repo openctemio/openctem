@@ -25,3 +25,15 @@ func TestAcceptanceRate(t *testing.T) {
 		}
 	}
 }
+
+func TestRatePct(t *testing.T) {
+	if got := ratePct(0, 0); got != nil {
+		t.Fatalf("empty population: want nil (not measured), got %v", *got)
+	}
+	if got := ratePct(3, 4); got == nil || math.Abs(*got-75) > 1e-9 {
+		t.Fatalf("ratePct(3, 4): want 75, got %v", got)
+	}
+	if got := ratePct(0, 2); got == nil || *got != 0 {
+		t.Fatalf("ratePct(0, 2): want 0, got %v", got)
+	}
+}
