@@ -1,0 +1,628 @@
+#!/usr/bin/env python3
+"""security-gate: classify a pull request against .github/security-paths.yml,
+review its diff for high-risk patterns, collect new code-scanning alerts, and
+decide whether it may merge.
+
+Design and operator guide: openctemio/openctem api/docs/development/ci-cd.md#security-gate
+(this file is shared verbatim by the openctemio repositories that use the gate).
+
+Threat model. The gate routes security-sensitive changes to a deliberate human
+acknowledgement; it is not a sandbox. It never runs code from the pull request:
+the diff is read through the GitHub API as data, and the workflow runs this
+script and the path list from the base commit. It fails closed: any API error,
+an oversized pull request or an unknown merge-queue ref fails the check.
+Labels and the review comment are written only when the token can write (same
+repository pull requests); fork pull requests get the verdict in the job
+summary and the check result.
+
+Commands:
+  gate                     evaluate the pull request named by the GitHub event
+  codeowners --check       fail if CODEOWNERS' security block is out of date
+  codeowners --write       rewrite CODEOWNERS' security block
+Only the Python standard library is used.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import re
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+
+GUIDE = "https://github.com/openctemio/openctem/blob/develop/api/docs/development/ci-cd.md#security-gate"
+SENSITIVE_LABEL = "security-sensitive"
+ACK_LABEL = "security-ack"
+COMMENT_MARKER = "<!-- security-gate -->"
+MAX_FILES = 3000  # GitHub's pull request file list stops here
+CODEOWNERS_BEGIN = "# BEGIN security-paths (generated from .github/security-paths.yml; do not edit)"
+CODEOWNERS_END = "# END security-paths"
+
+
+
+# --------------------------------------------------------------------------
+# Path list
+
+
+def load_config(text: str) -> dict[str, list[str]]:
+    """Parse the `key:` + `  - item` subset used by security-paths.yml."""
+    out: dict[str, list[str]] = {}
+    current: str | None = None
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.split(" #", 1)[0].rstrip() if not raw.lstrip().startswith("#") else ""
+        if not line.strip():
+            continue
+        m = re.fullmatch(r"([A-Za-z0-9_-]+):", line)
+        if m:
+            current = m.group(1)
+            if current in out:
+                raise ValueError(f"line {n}: duplicate key {current}")
+            out[current] = []
+            continue
+        m = re.fullmatch(r"  - (.+)", line)
+        if m and current is not None:
+            item = m.group(1).strip()
+            if len(item) >= 2 and item[0] == item[-1] and item[0] in "'\"":
+                item = item[1:-1]
+            out[current].append(item)
+            continue
+        raise ValueError(f"line {n}: unsupported syntax: {raw!r}")
+    if not out.get("ackers"):
+        raise ValueError("security-paths.yml: `ackers` must list at least one user")
+    return out
+
+
+def glob_to_regex(glob: str) -> re.Pattern[str]:
+    i, out = 0, []
+    while i < len(glob):
+        c = glob[i]
+        if glob.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif glob.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif c == "*":
+            out.append("[^/]*")
+            i += 1
+        elif c == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(c))
+            i += 1
+    return re.compile("".join(out) + r"\Z")
+
+
+RESERVED = ("ackers", "removal-only")
+
+
+def categories(config: dict[str, list[str]]) -> dict[str, list[re.Pattern[str]]]:
+    return {k: [glob_to_regex(g) for g in v] for k, v in config.items() if k not in RESERVED}
+
+
+@dataclass
+class ChangedFile:
+    filename: str
+    status: str = "modified"
+    deletions: int = 0
+    patch: str | None = None
+    previous_filename: str | None = None
+
+
+def counts(f: ChangedFile, removal_only: list[re.Pattern[str]]) -> bool:
+    """A `removal-only` file counts only when the change removes lines."""
+    if any(p.match(f.filename) for p in removal_only):
+        return f.status == "removed" or f.deletions > 0
+    return True
+
+
+def classify(files: list[ChangedFile], config: dict[str, list[str]]) -> dict[str, list[str]]:
+    cats = categories(config)
+    removal_only = [glob_to_regex(g) for g in config.get("removal-only", [])]
+    hits: dict[str, list[str]] = {}
+    for f in files:
+        if not counts(f, removal_only):
+            continue
+        names = {f.filename} | ({f.previous_filename} if f.previous_filename else set())
+        for cat, pats in cats.items():
+            if any(p.match(name) for p in pats for name in names):
+                hits.setdefault(cat, []).append(f.filename)
+    return hits
+
+
+# --------------------------------------------------------------------------
+# Diff review: high-precision patterns on added lines only. A line can waive a
+# rule with `security-review: allow <RULE-ID> <reason>` in a comment, which
+# stays visible in the diff and in git history.
+
+
+@dataclass(frozen=True)
+class Rule:
+    id: str
+    severity: str  # HIGH (blocks), MEDIUM (reported), SENSITIVE (needs an ack, no finding)
+    path: re.Pattern[str]
+    line: re.Pattern[str]
+    message: str
+
+
+def _r(id_: str, sev: str, path: str, line: str, msg: str) -> Rule:
+    return Rule(id_, sev, re.compile(path), re.compile(line), msg)
+
+
+NOT_TEST = r"^(?!.*(?:_test\.go$|\.test\.tsx?$|\.spec\.tsx?$|/testdata/|/__tests__/))"
+WORKFLOW = r"^\.github/(workflows|actions)/.*\.ya?ml$"
+
+RULES: list[Rule] = [
+    _r("GO-TLS-NOVERIFY", "HIGH", NOT_TEST + r".*\.go$", r"InsecureSkipVerify\s*:\s*true",
+       "TLS certificate verification disabled"),
+    _r("JWT-UNVERIFIED", "HIGH", NOT_TEST + r".*\.go$", r"ParseUnverified\(|SigningMethodNone|UnsafeAllowNoneSignatureType",
+       "JWT parsed without signature verification"),
+    _r("GHA-PR-TARGET", "HIGH", WORKFLOW, r"\bpull_request_target\b",
+       "`pull_request_target` runs with a write token in the base context"),
+    _r("GHA-WRITE-ALL", "HIGH", WORKFLOW, r"permissions\s*:\s*write-all",
+       "workflow token with every write permission"),
+    _r("GHA-UNPINNED", "HIGH", WORKFLOW, r"^\s*-?\s*uses\s*:\s*(?!\./)(?!docker://)[^\s#@]+@(?![0-9a-f]{40}\b)",
+       "action not pinned to a full commit SHA"),
+    _r("GHA-INJECTION", "HIGH", WORKFLOW,
+       r"\$\{\{\s*github\.(event\.(pull_request\.(title|body|head\.ref|head\.label)|issue\.(title|body)|comment\.body|review\.body|head_commit\.message|commits)|head_ref)",
+       "untrusted event text interpolated into the workflow (use an env variable)"),
+    _r("WEB-RAW-HTML", "HIGH", NOT_TEST + r"^web/.*\.(tsx?|jsx?)$", r"dangerouslySetInnerHTML|\.innerHTML\s*=|\.outerHTML\s*=",
+       "raw HTML sink"),
+    _r("WEB-EVAL", "HIGH", NOT_TEST + r"^web/.*\.(tsx?|jsx?|mjs)$", r"\beval\(|new Function\(",
+       "dynamic code evaluation"),
+    _r("SQL-RLS-OFF", "HIGH", r"^api/migrations/.*\.up\.sql$", r"(?i)disable\s+row\s+level\s+security|\bbypassrls\b|grant\s+.*\bto\s+public\b",
+       "row-level security disabled or a grant to PUBLIC"),
+    _r("GO-RAW-HTTP", "MEDIUM", NOT_TEST + r"^api/(?!pkg/httpsec/).*\.go$", r"\bhttp\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|&http\.Client\{",
+       "outbound HTTP outside pkg/httpsec (SSRF guard)"),
+    _r("GO-RAW-CLIENT-IP", "MEDIUM", NOT_TEST + r"^api/(?!pkg/httpsec/).*\.go$", r"\"X-(Forwarded-For|Real-IP)\"",
+       "client IP read from a raw header (use pkg/httpsec)"),
+    _r("GO-EXEC", "MEDIUM", NOT_TEST + r"^api/.*\.go$", r"\"os/exec\"",
+       "process execution in the API"),
+    _r("GO-SQL-FORMAT", "MEDIUM", NOT_TEST + r"^api/.*\.go$", r"(?i)Sprintf\(\s*[`\"][^`\"]*\b(select|insert\s+into|update|delete\s+from)\s",
+       "SQL built with Sprintf (check every interpolated value is not user input)"),
+    _r("CORS-WILDCARD", "MEDIUM", NOT_TEST + r".*(\.(go|tsx?|jsx?|mjs|conf)|Caddyfile)$", r"Access-Control-Allow-Origin[\"']?\s*[,:]\s*[\"']\*|AllowedOrigins\s*:\s*\[\]string\{\s*\"\*\"",
+       "CORS allows every origin"),
+    _r("DOCKER-PRIVILEGED", "MEDIUM", r"(^|/)(Dockerfile[^/]*|docker-compose[^/]*\.ya?ml)$", r"privileged\s*:\s*true|--privileged|chmod\s+(-R\s+)?777",
+       "privileged container or world-writable files"),
+    _r("SQL-PERMISSIONS", "SENSITIVE", r"^api/migrations/.*\.up\.sql$",
+       r"(?i)row\s+level\s+security|\b(create|drop|alter)\s+policy\b|^\s*(grant|revoke)\s|\bbypassrls\b|\b(insert\s+into|update)\s+role_permissions\b",
+       "migration changes row-level security, database grants or which roles hold a permission"),
+    _r("CONFIG-SECURITY-DEFAULT", "SENSITIVE", r"^api/internal/config/config\.go$",
+       r"(?i)(cookie\w*secure|secure_?cookie|csrf|cors|allow\w*origin|app_?debug|insecure|allow\w*private|trusted\w*prox|skip\w*verif|hsts|require\w*(mfa|email|verif))",
+       "configuration default of a security control"),
+]
+
+ALLOW = re.compile(r"security-review:\s*allow\s+([A-Z0-9-]+)")
+COMMENT_LINE = re.compile(r"^\s*(//|--|#|/\*|\*)")
+
+
+@dataclass
+class Finding:
+    rule: str
+    severity: str
+    path: str
+    line: int
+    message: str
+    excerpt: str
+
+
+def added_lines(patch: str):
+    """Yield (new-file line number, text) for every added line of a unified diff."""
+    new = 0
+    for raw in patch.splitlines():
+        if raw.startswith("@@"):
+            m = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw)
+            new = int(m.group(1)) if m else 0
+            continue
+        if raw.startswith("+"):
+            yield new, raw[1:]
+            new += 1
+        elif raw.startswith("-") or raw.startswith("\\"):
+            continue
+        else:
+            new += 1
+
+
+def review(files: list[ChangedFile]) -> tuple[list[Finding], list[str]]:
+    """Return findings and the files whose patch GitHub did not include."""
+    findings: list[Finding] = []
+    unreviewed: list[str] = []
+    for f in files:
+        if f.status == "removed":
+            continue
+        if f.patch is None:
+            unreviewed.append(f.filename)
+            continue
+        rules = [r for r in RULES if r.path.search(f.filename)]
+        if not rules:
+            continue
+        for n, text in added_lines(f.patch):
+            if COMMENT_LINE.match(text):
+                continue
+            waived = set(ALLOW.findall(text))
+            for r in rules:
+                if r.id in waived or not r.line.search(text):
+                    continue
+                findings.append(Finding(r.id, r.severity, f.filename, n, r.message, text.strip()[:160]))
+    return findings, unreviewed
+
+
+# --------------------------------------------------------------------------
+# CODEOWNERS mirror
+
+
+def codeowners_block(config: dict[str, list[str]]) -> str:
+    owners = " ".join("@" + a for a in config["ackers"])
+    lines = [CODEOWNERS_BEGIN]
+    for cat, globs in config.items():
+        if cat in RESERVED:
+            continue
+        lines.append(f"# {cat}")
+        lines += [f"/{g.lstrip('/')} {owners}" for g in globs]
+    lines.append(CODEOWNERS_END)
+    return "\n".join(lines) + "\n"
+
+
+def splice_codeowners(text: str, block: str) -> str:
+    start, end = text.find(CODEOWNERS_BEGIN), text.find(CODEOWNERS_END)
+    if start == -1 or end == -1:
+        return text.rstrip("\n") + "\n\n" + block
+    end += len(CODEOWNERS_END)
+    if text[end:end + 1] == "\n":
+        end += 1
+    return text[:start] + block + text[end:]
+
+
+# --------------------------------------------------------------------------
+# GitHub API
+
+
+class GitHub:
+    def __init__(self, repo: str, token: str, api: str = "https://api.github.com"):
+        self.repo, self.token, self.api = repo, token, api.rstrip("/")
+
+    def request(self, method: str, path: str, body: object | None = None, ok404: bool = False):
+        url = path if path.startswith("http") else f"{self.api}/repos/{self.repo}/{path.lstrip('/')}"
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method, headers={
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "openctem-security-gate",
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+                link = resp.headers.get("Link", "")
+                return (json.loads(raw) if raw else None), link
+        except urllib.error.HTTPError as e:
+            if ok404 and e.code == 404:
+                return None, ""
+            detail = e.read().decode(errors="replace")[:300]
+            raise RuntimeError(f"GitHub API {method} {path}: HTTP {e.code}: {detail}") from None
+
+    def get(self, path: str, ok404: bool = False):
+        return self.request("GET", path, ok404=ok404)[0]
+
+    def paginate(self, path: str, ok404: bool = False) -> list:
+        sep = "&" if "?" in path else "?"
+        url: str | None = f"{path}{sep}per_page=100"
+        out: list = []
+        while url:
+            data, link = self.request("GET", url, ok404=ok404)
+            if data is None:
+                return out
+            out += data if isinstance(data, list) else data.get("check_runs", [])
+            m = re.search(r'<([^>]+)>;\s*rel="next"', link)
+            url = m.group(1) if m else None
+        return out
+
+
+def pr_files(gh: GitHub, number: int) -> list[ChangedFile]:
+    return [ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
+                        f.get("patch"), f.get("previous_filename"))
+            for f in gh.paginate(f"pulls/{number}/files")]
+
+
+def ack_state(gh: GitHub, number: int, labels: set[str], ackers: list[str]) -> tuple[bool, str]:
+    if ACK_LABEL not in labels:
+        return False, f"no `{ACK_LABEL}` label"
+    events = gh.paginate(f"issues/{number}/events")
+    last = None
+    for e in events:
+        if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == ACK_LABEL:
+            last = e
+    actor = ((last or {}).get("actor") or {}).get("login", "")
+    if actor.lower() in {a.lower() for a in ackers}:
+        return True, f"`{ACK_LABEL}` added by {actor}"
+    return False, f"`{ACK_LABEL}` was added by {actor or 'an unknown user'}, who is not listed under `ackers`"
+
+
+def new_code_scanning_alerts(gh: GitHub, number: int, base_ref: str) -> tuple[list[dict], str]:
+    """Open high/critical alerts on the PR's analysis that are not open on the base branch."""
+    pr = gh.paginate(f"code-scanning/alerts?ref=refs/pull/{number}/merge&state=open", ok404=True)
+    if not pr:
+        return [], "no code-scanning analysis of this pull request yet (or none found)"
+    base = gh.paginate(f"code-scanning/alerts?ref=refs/heads/{base_ref}&state=open", ok404=True)
+    known = {a["number"] for a in base}
+    high = []
+    for a in pr:
+        if a["number"] in known:
+            continue
+        rule = a.get("rule") or {}
+        if (rule.get("security_severity_level") or "").lower() in ("high", "critical"):
+            high.append(a)
+    return high, ""
+
+
+SECURITY_CHECK = re.compile(r"(?i)codeql|semgrep|govulncheck|go vulnerabilities|trivy|snyk|secret scanning|dependency review|api lint")
+
+
+def security_checks(gh: GitHub, sha: str) -> list[dict]:
+    runs = gh.paginate(f"commits/{sha}/check-runs")
+    latest: dict[str, dict] = {}
+    for r in runs:
+        name = r.get("name", "")
+        if SECURITY_CHECK.search(name) and name not in latest:
+            latest[name] = r
+    return sorted(latest.values(), key=lambda r: r["name"])
+
+
+# --------------------------------------------------------------------------
+# Verdict and report
+
+
+@dataclass
+class Result:
+    number: int
+    hits: dict[str, list[str]] = field(default_factory=dict)
+    findings: list[Finding] = field(default_factory=list)
+    unreviewed: list[str] = field(default_factory=list)
+    alerts: list[dict] = field(default_factory=list)
+    alerts_note: str = ""
+    checks: list[dict] = field(default_factory=list)
+    acked: bool = False
+    ack_note: str = ""
+    ack_dropped: bool = False
+
+    @property
+    def high(self) -> list[Finding]:
+        return [f for f in self.findings if f.severity == "HIGH"]
+
+    @property
+    def sensitive(self) -> bool:
+        return bool(self.hits) or any(f.severity in ("HIGH", "SENSITIVE") for f in self.findings)
+
+    @property
+    def passed(self) -> bool:
+        return not self.sensitive or (self.acked and not self.high and not self.alerts)
+
+
+def verdict_line(r: Result) -> str:
+    if not r.sensitive:
+        return "PASS: no security-sensitive change."
+    blockers = []
+    if r.high:
+        blockers.append(f"{len(r.high)} HIGH diff finding(s)")
+    if r.alerts:
+        blockers.append(f"{len(r.alerts)} new high/critical code-scanning alert(s)")
+    if not r.acked:
+        blockers.append(r.ack_note)
+    return "PASS: security-sensitive, acknowledged, no open HIGH." if not blockers else "BLOCKED: " + "; ".join(blockers) + "."
+
+
+def render(r: Result, repo: str, server: str) -> str:
+    out = [COMMENT_MARKER, "## Security gate", "", f"**{verdict_line(r)}**", ""]
+    if not r.sensitive:
+        out.append("This pull request no longer changes a security-sensitive path.")
+        return "\n".join(out) + "\n"
+    if r.ack_dropped:
+        out += [f"New commits changed security-sensitive files, so the previous `{ACK_LABEL}` was removed.", ""]
+    out += ["### Why this is security-sensitive", ""]
+    for cat, files in sorted(r.hits.items()):
+        shown = ", ".join(f"`{f}`" for f in files[:8]) + (f" and {len(files) - 8} more" if len(files) > 8 else "")
+        out.append(f"- **{cat}**: {shown}")
+    content = sorted({f.rule for f in r.findings if f.severity == "SENSITIVE"})
+    if content:
+        out.append(f"- **content**: {', '.join(content)}")
+    out += ["", "### Diff review", ""]
+    shown = [f for f in r.findings if f.severity != "SENSITIVE"]
+    if shown:
+        out += ["| Severity | Rule | Location | Finding |", "|---|---|---|---|"]
+        for f in sorted(shown, key=lambda f: (f.severity != "HIGH", f.path, f.line))[:50]:
+            url = f"{server}/{repo}/pull/{r.number}/files"
+            excerpt = f.excerpt.replace("|", "\\|").replace("`", "'")
+            out.append(f"| {f.severity} | {f.rule} | [`{f.path}:{f.line}`]({url}) | {f.message}: `{excerpt}` |")
+        out += ["", "A HIGH blocks the gate until the line changes, or carries a reviewed waiver comment "
+                "`security-review: allow <RULE-ID> <reason>`. MEDIUM findings are for the reviewer."]
+    else:
+        out.append("No high-risk pattern on the added lines.")
+    if r.unreviewed:
+        out += ["", f"GitHub sent no diff for {len(r.unreviewed)} file(s) (too large or binary); review them by hand: "
+                + ", ".join(f"`{f}`" for f in r.unreviewed[:10])]
+    out += ["", "### Code scanning", ""]
+    if r.alerts:
+        for a in r.alerts[:20]:
+            rule = a.get("rule") or {}
+            loc = ((a.get("most_recent_instance") or {}).get("location") or {})
+            out.append(f"- **{(rule.get('security_severity_level') or '').upper()}** {a.get('tool', {}).get('name', '')} "
+                       f"`{rule.get('id', '')}` at `{loc.get('path', '')}:{loc.get('start_line', '')}`: [alert {a['number']}]({a.get('html_url', '')})")
+        out.append("")
+        out.append("Fix them, or dismiss a false positive in the alert (the dismissal is audited).")
+    else:
+        out.append(r.alerts_note or "No new high or critical alert.")
+    if r.checks:
+        out += ["", "### Security checks on the head commit", ""]
+        for c in r.checks:
+            state = c.get("conclusion") or c.get("status")
+            out.append(f"- {c['name']}: {state}")
+    out += ["", "### Acknowledge", "",
+            f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label. The gate re-runs on the label. "
+            f"Status: {r.ack_note}.", "",
+            f"<sub>Path list: `.github/security-paths.yml` · [how the gate works]({GUIDE})</sub>"]
+    return "\n".join(out) + "\n"
+
+
+# --------------------------------------------------------------------------
+# Entry points
+
+
+def env(name: str) -> str:
+    v = os.environ.get(name, "")
+    if not v:
+        raise RuntimeError(f"{name} is not set")
+    return v
+
+
+def merge_group_pr(head_ref: str) -> int:
+    m = re.search(r"/pr-(\d+)-[0-9a-f]+$", head_ref)
+    if not m:
+        raise RuntimeError(f"cannot find the pull request number in merge group ref {head_ref!r}")
+    return int(m.group(1))
+
+
+def drop_stale_ack(gh: GitHub, event: dict, number: int, files: list[ChangedFile],
+                   config: dict[str, list[str]], labels: set[str]) -> bool:
+    """On a push to a sensitive PR, remove the ack when the new commits change a
+    sensitive file of this PR (a merge of the base branch alone does not)."""
+    if event.get("action") != "synchronize" or ACK_LABEL not in labels:
+        return False
+    before, after = event.get("before"), event.get("after")
+    sensitive_here = {f for fs in classify(files, config).values() for f in fs}
+    if not sensitive_here:
+        return False
+    cmp_ = gh.get(f"compare/{before}...{after}", ok404=True) if before and after else None
+    if cmp_ is None or cmp_.get("status") not in ("ahead", "identical") or len(cmp_.get("files", [])) >= 300:
+        stale = True  # force-push or rebase: the acknowledged commits are gone
+    else:
+        pushed = [ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
+                              None, f.get("previous_filename")) for f in cmp_.get("files", [])]
+        changed = {f for fs in classify(pushed, config).values() for f in fs}
+        stale = bool(changed & sensitive_here)
+    if stale:
+        gh.request("DELETE", f"issues/{number}/labels/{ACK_LABEL}", ok404=True)
+    return stale
+
+
+RELEASE_HEAD = re.compile(r"^release/v\d")
+
+
+def release_files(gh: GitHub, pr: dict) -> list[ChangedFile] | None:
+    """In a repository with an integration branch (INTEGRATION_BRANCH, e.g.
+    develop), a release PR (release/vX.Y.Z -> main) carries that branch, whose
+    commits already passed this gate: only what the release branch adds on top
+    of it is evaluated. None means "use the PR's own files"."""
+    integration = os.environ.get("INTEGRATION_BRANCH", "")
+    if not integration or pr["base"]["ref"] != "main" or not RELEASE_HEAD.match(pr["head"]["ref"]):
+        return None
+    cmp_ = gh.get(f"compare/{integration}...{pr['head']['sha']}")
+    files = cmp_.get("files", [])
+    if len(files) >= 300:
+        return None  # the compare API truncates; fall back to the full diff
+    return [ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
+                        f.get("patch"), f.get("previous_filename")) for f in files]
+
+
+def upsert_comment(gh: GitHub, number: int, body: str, create: bool) -> None:
+    for c in gh.paginate(f"issues/{number}/comments"):
+        if COMMENT_MARKER in (c.get("body") or ""):
+            if c["body"] != body:
+                gh.request("PATCH", f"issues/comments/{c['id']}", {"body": body})
+            return
+    if create:
+        gh.request("POST", f"issues/{number}/comments", {"body": body})
+
+
+def cmd_gate() -> int:
+    repo, token = env("GITHUB_REPOSITORY"), env("GITHUB_TOKEN")
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    event_name = env("GITHUB_EVENT_NAME")
+    event = json.loads(pathlib.Path(env("GITHUB_EVENT_PATH")).read_text())
+    config = load_config(pathlib.Path(os.environ.get("SECURITY_PATHS", ".github/security-paths.yml")).read_text())
+    gh = GitHub(repo, token, os.environ.get("GITHUB_API_URL", "https://api.github.com"))
+
+    if event_name == "pull_request":
+        number = int(event["pull_request"]["number"])
+    elif event_name == "merge_group":
+        number = merge_group_pr(event["merge_group"]["head_ref"])
+    else:
+        raise RuntimeError(f"unsupported event {event_name}")
+
+    pr = gh.get(f"pulls/{number}")
+    if int(pr.get("changed_files", 0)) > MAX_FILES:
+        raise RuntimeError(f"pull request changes more than {MAX_FILES} files; split it")
+    labels = {lbl["name"] for lbl in pr.get("labels", [])}
+    same_repo = (pr["head"].get("repo") or {}).get("full_name") == repo
+    files = release_files(gh, pr) if same_repo else None
+    if files is None:
+        files = pr_files(gh, number)
+    # Writes need a same-repository head and a pull_request event: fork tokens are read-only.
+    can_write = event_name == "pull_request" and same_repo
+
+    r = Result(number)
+    r.hits = classify(files, config)
+    r.findings, r.unreviewed = review(files)
+    if r.sensitive:
+        if can_write and drop_stale_ack(gh, event, number, files, config, labels):
+            labels.discard(ACK_LABEL)
+            r.ack_dropped = True
+        r.acked, r.ack_note = ack_state(gh, number, labels, config["ackers"])
+        r.alerts, r.alerts_note = new_code_scanning_alerts(gh, number, pr["base"]["ref"])
+        r.checks = security_checks(gh, pr["head"]["sha"])
+
+    body = render(r, repo, server)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as fh:
+            fh.write(body.replace(COMMENT_MARKER, ""))
+    print(verdict_line(r))
+
+    if can_write:
+        # Best effort: some same-repository runs (Dependabot) get a read-only
+        # token. The verdict above never depends on these writes.
+        try:
+            if r.sensitive and SENSITIVE_LABEL not in labels:
+                gh.request("POST", f"issues/{number}/labels", {"labels": [SENSITIVE_LABEL]})
+            if not r.sensitive and SENSITIVE_LABEL in labels:
+                gh.request("DELETE", f"issues/{number}/labels/{SENSITIVE_LABEL}", ok404=True)
+            upsert_comment(gh, number, body, create=r.sensitive)
+        except RuntimeError as e:
+            print(f"::warning::security-gate could not label or comment: {e}")
+    return 0 if r.passed else 1
+
+
+def cmd_codeowners(argv: list[str]) -> int:
+    root = pathlib.Path(os.environ.get("REPO_ROOT", "."))
+    config = load_config((root / ".github/security-paths.yml").read_text())
+    path = root / ".github/CODEOWNERS"
+    text = path.read_text()
+    want = splice_codeowners(text, codeowners_block(config))
+    if argv[:1] == ["--write"]:
+        path.write_text(want)
+        return 0
+    if want != text:
+        print("CODEOWNERS security block differs from .github/security-paths.yml; run:\n"
+              "  python3 .github/scripts/security_gate.py codeowners --write", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    try:
+        if argv[:1] == ["gate"]:
+            return cmd_gate()
+        if argv[:1] == ["codeowners"]:
+            return cmd_codeowners(argv[1:])
+    except (RuntimeError, ValueError, KeyError) as e:
+        print(f"security-gate: {e}", file=sys.stderr)
+        return 2
+    print(__doc__, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

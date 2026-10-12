@@ -56,6 +56,16 @@ func NewAssetImportHandler(svc *asset.AssetImportService, log *logger.Logger) *A
 }
 
 // ImportCSV handles POST /api/v1/assets/import/csv
+// @Summary      Import assets from CSV
+// @Description  Creates or updates assets from a CSV body (at most 50 MB). Needs assets:write and assets:import.
+// @Tags         Assets
+// @Accept       text/csv
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  asset.AssetImportResult
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Router       /assets/import/csv [post]
 func (h *AssetImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
