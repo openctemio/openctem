@@ -85,7 +85,7 @@ services:
       - signer-socket:/run/openctem-signer
       # - ./keyset.json:/etc/openctem-signer/keyset.json:ro
     healthcheck:
-      test: ["CMD", "test", "-S", "/run/openctem-signer/signer.sock"]
+      test: ["CMD", "/app/openctem-signer", "healthcheck"]
       interval: 10s
       timeout: 3s
       retries: 3
