@@ -156,6 +156,9 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 			if rt.TestedAt != "" {
 				line += "  (" + rt.TestedAt + ")"
 			}
+			if rt.Environment != "" {
+				line += "  " + rt.Environment
+			}
 			bulletLine(pdf, tr, line)
 			if strings.TrimSpace(rt.Notes) != "" {
 				bodyText(pdf, tr, rt.Notes)
