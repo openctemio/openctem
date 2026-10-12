@@ -567,7 +567,7 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 // The scope id is the repository or the business unit, each its own column
 // with a foreign key (migration 001144).
 const ciPolicyColumns = `id, tenant_id, scope_type, COALESCE(repository_asset_id, business_unit_id), enabled, mode,
-	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at, modes`
+	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at, modes, allow_repo_policy`
 
 func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	var (
@@ -579,7 +579,7 @@ func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 		modes                []byte
 	)
 	if err := row.Scan(&id, &tid, &p.ScopeType, &scopeID, &p.Enabled, &p.Mode, &p.FailOnSeverity,
-		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes); err != nil {
+		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes, &p.AllowRepoPolicy); err != nil {
 		return p, err
 	}
 	if len(modes) > 0 {
@@ -673,11 +673,11 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_policies (id, tenant_id, scope_type, repository_asset_id,
 		business_unit_id, enabled, mode, fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by,
-		updated_by, created_at, updated_at, modes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14)`,
+		updated_by, created_at, updated_at, modes, allow_repo_policy)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14, $15)`,
 		p.ID.String(), p.TenantID.String(), p.ScopeType, nullID(repoID), nullID(unitID), p.Enabled, p.Mode,
 		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt,
-		modesJSON(p.Modes))
+		modesJSON(p.Modes), p.AllowRepoPolicy)
 	if isUniqueViolation(err) {
 		return cirun.ErrPolicyExists
 	}
@@ -687,10 +687,11 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 // UpdateGatePolicy changes a policy of the tenant (not its scope).
 func (r *CIRunRepository) UpdateGatePolicy(ctx context.Context, p *cirun.GatePolicy) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_gate_policies SET enabled = $3, mode = $4, fail_on_severity = $5,
-		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, modes = $10, updated_at = NOW()
+		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, modes = $10,
+		allow_repo_policy = $11, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2`,
 		p.TenantID.String(), p.ID.String(), p.Enabled, p.Mode, p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV,
-		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes))
+		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes), p.AllowRepoPolicy)
 	if err != nil {
 		return err
 	}
@@ -832,6 +833,43 @@ func (r *CIRunRepository) BusinessUnitExists(ctx context.Context, tenantID, id s
 	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM business_units WHERE tenant_id = $1 AND id = $2)`,
 		tenantID.String(), id.String()).Scan(&ok)
 	return ok, err
+}
+
+// RequestRepoExceptions stores a repository file's exceptions as pending
+// suppression rules on the repository asset (tenant-scoped). An exception
+// with the same rule and path already pending or approved on the asset is
+// skipped, so a file seen on every run asks once.
+func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []cirun.RepoException) (int, error) {
+	created := 0
+	for _, e := range exceptions {
+		expires, err := time.Parse("2006-01-02", e.Expires)
+		if err != nil {
+			continue
+		}
+		var path sql.NullString
+		if e.Path != "" {
+			path = sql.NullString{String: e.Path, Valid: true}
+		}
+		name := e.RuleID + " in " + repository
+		if len(name) > 255 {
+			name = name[:255]
+		}
+		res, err := r.db.ExecContext(ctx, `INSERT INTO suppression_rules (id, tenant_id, rule_id, path_pattern, asset_id,
+				name, description, suppression_type, status, expires_at)
+			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz
+			WHERE NOT EXISTS (SELECT 1 FROM suppression_rules
+				WHERE tenant_id = $2::uuid AND asset_id = $5::uuid AND rule_id = $3::varchar
+				  AND path_pattern IS NOT DISTINCT FROM $4::varchar AND status IN ('pending', 'approved'))`,
+			shared.NewID().String(), tenantID.String(), e.RuleID, path, assetID.String(), name,
+			"Requested by the repository's .openctem.yml: "+e.Reason, expires.Add(24*time.Hour-time.Second))
+		if err != nil {
+			return created, err
+		}
+		if n, _ := res.RowsAffected(); n == 1 {
+			created++
+		}
+	}
+	return created, nil
 }
 
 // ------------------------------------------------------------ decoration ---
