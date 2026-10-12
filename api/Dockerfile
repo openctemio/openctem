@@ -6,7 +6,7 @@
 # -----------------------------------------------------------------------------
 # Development stage - Standalone, no deps copy needed (uses volumes)
 # -----------------------------------------------------------------------------
-FROM golang:1.27.0-alpine AS development
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS development
 
 WORKDIR /app
 
@@ -41,7 +41,7 @@ CMD ["/usr/local/bin/dev-entrypoint.sh"]
 # SDK is fetched from GitHub as a released module (not local)
 # Build context: api/ folder (not parent)
 # -----------------------------------------------------------------------------
-FROM golang:1.27.0-alpine AS base
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS base
 
 WORKDIR /app
 
@@ -65,7 +65,7 @@ RUN go mod download
 # /app/api/openapi/swagger.yaml. It is the same on every architecture, so it
 # runs on the build platform (no emulation). Same swag version and flags as
 # `make swagger` (SWAG_VERSION there and in scripts/check-openapi.sh).
-FROM --platform=$BUILDPLATFORM golang:1.27.0-alpine AS openapi
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS openapi
 ARG SWAG_VERSION=v1.16.4
 WORKDIR /app
 ENV GOWORK=off
@@ -180,6 +180,11 @@ COPY --from=builder /app/configs ./configs
 COPY --from=runtime-fs --chown=1000:1000 /out/app-data /app/data
 COPY --from=runtime-fs --chown=1001:1000 /out/signer-lib /var/lib/openctem-signer
 COPY --from=runtime-fs --chown=1001:1000 /out/signer-run /run/openctem-signer
+
+LABEL org.opencontainers.image.title="OpenCTEM API" \
+      org.opencontainers.image.description="OpenCTEM API server, job signer and bootstrap-admin (distroless, non-root)" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
 
 USER 1000:1000
 

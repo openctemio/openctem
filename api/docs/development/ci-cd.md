@@ -466,7 +466,10 @@ README) `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` receive the same
 manifests as `openctem-api` and `openctem-web` (`crane copy`), so existing
 compose files, Helm values and `docker pull` lines keep working. The window
 ends when the `legacy` field of the matrix entry in `docker-publish.yml` is blanked.
-The legacy names are also the only ones that hold v0.8.0 and earlier.
+The legacy names are also the only ones that hold v0.8.0 and earlier. The copy
+is best effort: when it is refused the step warns and the release goes on
+(v0.9.0 has no `ui` copy). The shipped Compose file and Helm values use the
+current names.
 
 **Docker Hub** mirroring (`mirror-to-dockerhub`) runs only when the
 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` secrets are set. They currently are not,
@@ -540,7 +543,8 @@ against `develop`: gomod for `/api` (and monthly for the compat harness), npm fo
 | `vars.RELEASE_TRAIN_ANCHOR` | variable (optional) | The first train Monday (`YYYY-MM-DD`, default `2026-10-05`) |
 
 The legacy `ui` GHCR package was created by `openctemio/ui`; this repository needs
-**Write** in that package's "Manage Actions access" for the legacy copy to succeed.
+**Write** in that package's "Manage Actions access" for the legacy copy to succeed
+(without it the copy step warns and the release continues).
 
 ## Troubleshooting
 
