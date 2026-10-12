@@ -12,7 +12,7 @@ name: CI image mirror
 
 on:
   push:
-    branches: [develop, ci/ghcr-image-mirror]
+    branches: [develop]
     paths:
       - '.github/ci-images.txt'
       - '.github/scripts/mirror-ci-images.sh'
