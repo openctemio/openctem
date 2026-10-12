@@ -30,9 +30,11 @@ kubectl create secret generic {{$slug}}-key \
 #    the policy and scan without one.
 
 # 3. Turn the bundled sensor on (release "openctem"; use yours). Use chart
-#    0.15.0 or later: the sensor runs hardened (non-root, read-only root
+#    0.19.0 or later: the sensor runs hardened (non-root, read-only root
 #    filesystem, no capabilities, seccomp RuntimeDefault), mounts the policy
-#    read-only, and keeps the nuclei-templates baked into its image.
+#    read-only, keeps the nuclei-templates baked into its image, and keeps
+#    its state, outbox and content cache on one data volume (a release that
+#    already has the sensor's per-directory volumes keeps them).
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \
@@ -41,9 +43,7 @@ helm upgrade openctem openctem/openctem --reuse-values \
 {{- with toolList .Sensor.EffectiveTools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
-  --set sensor.outbox.persistence.enabled=true \
-  --set sensor.state.persistence.enabled=true \
-  --set sensor.content.persistence.enabled=true \
+  --set sensor.data.persistence.enabled=true \
   --set sensor.localPolicy.enabled=true \
   --set-file sensor.localPolicy.policy=sensor-policy.yaml
 {{- end}}
