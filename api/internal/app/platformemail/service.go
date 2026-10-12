@@ -197,9 +197,9 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	}
 	next := stored{Enabled: in.Enabled, Host: in.Host, Port: in.Port, Username: in.Username,
 		From: in.From, FromName: in.FromName, StartTLS: in.StartTLS, PasswordEncrypted: prev.PasswordEncrypted}
-	passwordChanged := false
+	credentialChanged := false
 	if in.Password != nil {
-		passwordChanged = true
+		credentialChanged = true
 		next.PasswordEncrypted = ""
 		if *in.Password != "" {
 			enc, err := s.encryptor.EncryptString(*in.Password)
@@ -231,7 +231,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 		}
 		s.remember(next, st.Version, now)
 	}
-	s.record(ctx, actor, prev, next, passwordChanged, ip, userAgent)
+	s.record(ctx, actor, prev, next, credentialChanged, ip, userAgent)
 	return s.Get(ctx)
 }
 
@@ -242,9 +242,9 @@ func (s *Service) loadFresh(ctx context.Context) (stored, int, time.Time, error)
 	return s.load(ctx)
 }
 
-func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev, next stored, passwordChanged bool, ip, userAgent string) {
+func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev, next stored, credentialChanged bool, ip, userAgent string) {
 	s.log.Warn("platform e-mail settings changed", "admin_id", actor.ID().String(),
-		"enabled", next.Enabled, "host", logger.SanitizeValue(next.Host), "password_changed", passwordChanged)
+		"enabled", next.Enabled, "host", logger.SanitizeValue(next.Host), "credential_changed", credentialChanged)
 	if s.audit == nil {
 		return
 	}
@@ -256,7 +256,7 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev, next
 			"enabled": next.Enabled, "host": next.Host, "port": next.Port, "username": next.Username,
 			"from": next.From, "from_name": next.FromName, "starttls": next.StartTLS,
 			// Never the value: only that it changed.
-			"password_changed": passwordChanged,
+			"password_changed": credentialChanged,
 		}).
 		Critical().
 		Build()
