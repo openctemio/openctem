@@ -143,11 +143,12 @@ The gRPC binding shares port 443 with the web UI and the API in every setup
 (an IP address, one host name, no DNS at all; RFC-059 T16):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d
 ```
 
-- The override builds the gateway with the layer4 module (`deploy/gateway/Dockerfile`,
-  caddy-l4 pinned) and sets `OPENCTEM_SENSOR_GATEWAY=alpn`
+- The stack's gateway image (`ghcr.io/openctemio/openctem-gateway`, built from
+  `deploy/gateway/Dockerfile` with caddy-l4 pinned) has the layer4 module; the
+  override sets `OPENCTEM_SENSOR_GATEWAY=alpn`
   (`sensors/alpn.wrappers`): a TLS connection whose ClientHello offers the ALPN
   id `openctem-sensor/3` is not terminated; its bytes go to `api:8443` behind a
   PROXY protocol v2 header. Every other connection (browsers on h2 or

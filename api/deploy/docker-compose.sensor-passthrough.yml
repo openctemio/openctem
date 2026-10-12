@@ -6,22 +6,23 @@
 # no DNS at all; no extra port. The API derives the endpoint from its public
 # URL (APP_URL) and advertises it once its self-probe passes through here.
 #
-#   docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d
 #
 # Optional dedicated sensor host name, also routed by SNI (sensors that do not
 # offer the ALPN id yet). It must resolve to this host and differ from
 # OPENCTEM_HOSTNAME:
 #
 #   OPENCTEM_SENSOR_GATEWAY=passthrough SENSOR_PUBLIC_HOSTNAME=sensors.example.com \
-#   SENSOR_PUBLIC_HOST=sensors.example.com:443 docker compose ... up -d --build
+#   SENSOR_PUBLIC_HOST=sensors.example.com:443 docker compose ... up -d
 #
 # No public certificate is needed for the sensor endpoint: the API mints the
 # server certificate from its sensor CA, and sensors pin that CA.
+#
+# The published gateway image (ghcr.io/openctemio/openctem-gateway, the
+# default in docker-compose.yml) already has the layer4 module; nothing is
+# built here.
 services:
   gateway:
-    build:
-      context: ./gateway
-    image: ${GATEWAY_L4_IMAGE:-openctem-gateway-l4:local}
     environment:
       OPENCTEM_SENSOR_GATEWAY: ${OPENCTEM_SENSOR_GATEWAY:-alpn}
       SENSOR_PUBLIC_HOSTNAME: ${SENSOR_PUBLIC_HOSTNAME:-}
