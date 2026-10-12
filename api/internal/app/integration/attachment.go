@@ -14,7 +14,6 @@ import (
 
 	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -44,7 +43,24 @@ type AttachmentService struct {
 	storageResolver TenantStorageResolver     // Optional: per-tenant config lookup
 	storageFactory  StorageFactory            // Optional: creates provider from config
 	storageCache    sync.Map                  // tenantID → *storageCacheEntry
+	quotaBytes      int64                     // per-tenant total of attachment bytes; 0 = no quota
 	logger          *logger.Logger
+}
+
+// SetTenantQuota bounds the bytes one organization's attachments may hold
+// (STORAGE_TENANT_QUOTA_MB). 0 or less: no quota.
+func (s *AttachmentService) SetTenantQuota(bytes int64) { s.quotaBytes = bytes }
+
+// InvalidateTenantStorage drops the cached storage providers of a tenant, so
+// a changed storage setting applies to the next upload, not after the cache
+// expires.
+func (s *AttachmentService) InvalidateTenantStorage(tenantID string) {
+	s.storageCache.Range(func(k, _ any) bool {
+		if key, ok := k.(string); ok && (key == tenantID || strings.HasPrefix(key, tenantID+":")) {
+			s.storageCache.Delete(k)
+		}
+		return true
+	})
 }
 
 // NewAttachmentService creates a new service.
@@ -69,73 +85,116 @@ func (s *AttachmentService) SetTenantStorageResolver(resolver TenantStorageResol
 	s.storageFactory = factory
 }
 
-// resolveStorage returns the FileStorage and provider name for a given tenant.
-// Falls back to the default provider if no tenant-specific config exists.
-func (s *AttachmentService) resolveStorage(ctx context.Context, tenantID string) (attachmentdom.FileStorage, string) {
+// resolveStorage returns the FileStorage new files of a tenant go to, and its
+// provider name. A tenant without its own bucket uses the server-wide
+// storage ("local"). A tenant that chose its own bucket gets that bucket or
+// an error, never the server-wide storage: its files must not land on a
+// shared disk because its bucket's keys broke or its setting is unreadable.
+func (s *AttachmentService) resolveStorage(ctx context.Context, tenantID string) (attachmentdom.FileStorage, string, error) {
 	if s.storageResolver == nil || s.storageFactory == nil {
-		return s.storage, "local"
+		return s.storage, attachmentdom.ProviderLocal, nil
 	}
-	// Check cache first
 	if v, ok := s.storageCache.Load(tenantID); ok {
 		entry := v.(*storageCacheEntry)
 		if time.Now().Before(entry.expiry) {
-			return entry.storage, entry.provider
+			return entry.storage, entry.provider, nil
 		}
 		s.storageCache.Delete(tenantID)
 	}
 	cfg, err := s.storageResolver.GetTenantStorageConfig(ctx, tenantID)
-	if err != nil || cfg == nil {
-		return s.storage, "local"
+	if err != nil {
+		s.logger.Warn("tenant storage setting unreadable", "tenant_id", tenantID, "error", err)
+		return nil, "", attachmentdom.ErrStorageUnavailable
+	}
+	if cfg == nil || cfg.Provider == "" || cfg.Provider == attachmentdom.ProviderLocal {
+		return s.storage, attachmentdom.ProviderLocal, nil
 	}
 	provider, err := s.storageFactory(*cfg)
 	if err != nil {
-		s.logger.Warn("failed to create tenant storage provider, using default",
+		s.logger.Warn("tenant storage provider cannot be built",
 			"tenant_id", tenantID, "provider", cfg.Provider, "error", err)
-		return s.storage, "local"
+		return nil, "", attachmentdom.ErrStorageUnavailable
 	}
-	// Cache the resolved provider
 	s.storageCache.Store(tenantID, &storageCacheEntry{
 		storage: provider, provider: cfg.Provider, expiry: time.Now().Add(storageCacheTTL),
 	})
-	return provider, cfg.Provider
+	return provider, cfg.Provider, nil
 }
 
-// resolveStorageByProvider creates a FileStorage for a specific provider name.
-// Used by Download/Delete to access files on the provider they were uploaded to.
-func (s *AttachmentService) resolveStorageByProvider(ctx context.Context, tenantID, provider string) attachmentdom.FileStorage {
-	if provider == "" || provider == "local" {
-		return s.storage
+// resolveStorageByProvider returns the FileStorage a file recorded with the
+// given provider lives on. A file in the tenant's own bucket is read from
+// that bucket or not at all: when the setting is gone (or no longer names
+// a bucket) the answer is ErrStorageUnavailable, never the server-wide
+// storage.
+func (s *AttachmentService) resolveStorageByProvider(ctx context.Context, tenantID, provider string) (attachmentdom.FileStorage, error) {
+	if provider == "" || provider == attachmentdom.ProviderLocal {
+		return s.storage, nil
 	}
 	if s.storageFactory == nil || s.storageResolver == nil {
-		s.logger.Warn("file stored on cloud but no storage factory configured",
+		s.logger.Warn("file stored in a tenant bucket but no storage factory configured",
 			"tenant_id", tenantID, "provider", provider)
-		return s.storage
+		return nil, attachmentdom.ErrStorageUnavailable
 	}
-	// Check cache first
 	cacheKey := tenantID + ":" + provider
 	if v, ok := s.storageCache.Load(cacheKey); ok {
 		entry := v.(*storageCacheEntry)
 		if time.Now().Before(entry.expiry) {
-			return entry.storage
+			return entry.storage, nil
 		}
 		s.storageCache.Delete(cacheKey)
 	}
 	cfg, err := s.storageResolver.GetTenantStorageConfig(ctx, tenantID)
-	if err != nil || cfg == nil {
-		s.logger.Warn("file stored on cloud but tenant storage config removed — file may be inaccessible",
+	if err != nil || cfg == nil || cfg.Provider == "" || cfg.Provider == attachmentdom.ProviderLocal {
+		s.logger.Warn("file stored in a tenant bucket that is no longer configured",
 			"tenant_id", tenantID, "provider", provider)
-		return s.storage
+		return nil, attachmentdom.ErrStorageUnavailable
 	}
 	p, err := s.storageFactory(*cfg)
 	if err != nil {
-		s.logger.Warn("failed to create storage provider for download",
+		s.logger.Warn("tenant storage provider cannot be built",
 			"tenant_id", tenantID, "provider", provider, "error", err)
-		return s.storage
+		return nil, attachmentdom.ErrStorageUnavailable
 	}
 	s.storageCache.Store(cacheKey, &storageCacheEntry{
 		storage: p, provider: provider, expiry: time.Now().Add(storageCacheTTL),
 	})
-	return p
+	return p, nil
+}
+
+// errFileTooLarge stops a streamed upload that passes the file size limit.
+var errFileTooLarge = errors.New("file exceeds the size limit")
+
+// cappedReader counts what passes through and fails once more than max
+// bytes went by, so the size limit holds whatever the client declared.
+type cappedReader struct {
+	r   io.Reader
+	n   int64
+	max int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	if c.n > c.max {
+		return n, errFileTooLarge
+	}
+	return n, err
+}
+
+// checkQuota refuses an upload of size bytes that would take the tenant's
+// attachments over the quota.
+func (s *AttachmentService) checkQuota(ctx context.Context, tenantID shared.ID, size int64) error {
+	if s.quotaBytes <= 0 {
+		return nil
+	}
+	used, err := s.repo.TotalSize(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("read storage usage: %w", err)
+	}
+	if used+size > s.quotaBytes {
+		return fmt.Errorf("%w: %d MiB used of %d MiB", attachmentdom.ErrQuotaExceeded, used>>20, s.quotaBytes>>20)
+	}
+	return nil
 }
 
 // UploadInput contains the parameters for uploading a file.
@@ -151,11 +210,15 @@ type UploadInput struct {
 }
 
 // Upload validates, stores the file, and creates a metadata record.
-// Returns the attachment with its download URL.
+// The content is streamed to the storage (hashed and counted on the way,
+// never held in memory); the recorded size is what was read, not what the
+// client declared. Returns the attachment with its download URL.
+//
+//nolint:cyclop // validation, quota, store, dedup and record, one step each
 func (s *AttachmentService) Upload(ctx context.Context, input UploadInput) (*attachmentdom.Attachment, error) {
-	// Validate
+	tooLarge := fmt.Errorf("%w: file exceeds %dMB limit", attachmentdom.ErrTooLarge, attachmentdom.MaxFileSize/1024/1024)
 	if input.Size > attachmentdom.MaxFileSize {
-		return nil, fmt.Errorf("%w: file exceeds %dMB limit", attachmentdom.ErrTooLarge, attachmentdom.MaxFileSize/1024/1024)
+		return nil, tooLarge
 	}
 
 	ct := strings.ToLower(strings.TrimSpace(input.ContentType))
@@ -171,49 +234,54 @@ func (s *AttachmentService) Upload(ctx context.Context, input UploadInput) (*att
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid uploaded_by", shared.ErrValidation)
 	}
-
-	// Read file into buffer for hashing + upload. input.Size is the client's
-	// claim; the read itself is capped too.
-	buf, err := httpsec.ReadLimited(input.Reader, attachmentdom.MaxFileSize)
-	if errors.Is(err, httpsec.ErrBodyTooLarge) {
-		return nil, fmt.Errorf("%w: file exceeds %dMB limit", attachmentdom.ErrTooLarge, attachmentdom.MaxFileSize/1024/1024)
+	// Refuse early on the declared size; checked again on the bytes read.
+	if err := s.checkQuota(ctx, tenantID, max(input.Size, 0)); err != nil {
+		return nil, err
 	}
+
+	store, providerName, err := s.resolveStorage(ctx, input.TenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, err
 	}
-
-	// Compute SHA-256 hash for dedup
-	hash := sha256.Sum256(buf)
-	contentHash := hex.EncodeToString(hash[:])
-
-	// Dedup: check if same file already exists in this context (finding)
-	if input.ContextType != "" && input.ContextID != "" {
-		existing, _ := s.repo.FindByHash(ctx, tenantID, input.ContextType, input.ContextID, contentHash)
-		if existing != nil {
-			s.logger.Info("duplicate file skipped",
-				"filename", input.Filename, "hash", contentHash[:12],
-				"existing_id", existing.ID().String())
-			return existing, nil // Return existing — no re-upload
+	hasher := sha256.New()
+	counted := &cappedReader{r: input.Reader, max: attachmentdom.MaxFileSize}
+	storageKey, err := store.Upload(ctx, input.TenantID, input.Filename, ct, io.TeeReader(counted, hasher))
+	if counted.n > attachmentdom.MaxFileSize {
+		if err == nil {
+			_ = store.Delete(ctx, input.TenantID, storageKey)
 		}
+		return nil, tooLarge
 	}
-
-	// Store file bytes via the storage provider (tenant-specific or default)
-	store, providerName := s.resolveStorage(ctx, input.TenantID)
-	storageKey, err := store.Upload(ctx, input.TenantID, input.Filename, ct, bytes.NewReader(buf))
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload file: %w", err)
 	}
+	size := counted.n
+	contentHash := hex.EncodeToString(hasher.Sum(nil))
 
-	// Create metadata record
+	// Dedup: the same file already in this context is returned instead.
+	if input.ContextType != "" && input.ContextID != "" {
+		existing, _ := s.repo.FindByHash(ctx, tenantID, input.ContextType, input.ContextID, contentHash)
+		if existing != nil {
+			_ = store.Delete(ctx, input.TenantID, storageKey)
+			s.logger.Info("duplicate file skipped",
+				"filename", input.Filename, "hash", contentHash[:12],
+				"existing_id", existing.ID().String())
+			return existing, nil
+		}
+	}
+	if err := s.checkQuota(ctx, tenantID, size); err != nil {
+		_ = store.Delete(ctx, input.TenantID, storageKey)
+		return nil, err
+	}
+
 	att := attachmentdom.NewAttachment(
-		tenantID, input.Filename, ct, input.Size, storageKey,
+		tenantID, input.Filename, ct, size, storageKey,
 		uploadedBy, input.ContextType, input.ContextID,
 	)
 	att.SetContentHash(contentHash)
 	att.SetStorageProvider(providerName)
 
 	if err := s.repo.Create(ctx, att); err != nil {
-		// Cleanup storage on DB failure
 		_ = store.Delete(ctx, input.TenantID, storageKey)
 		return nil, fmt.Errorf("failed to save attachment metadata: %w", err)
 	}
@@ -246,7 +314,10 @@ func (s *AttachmentService) Download(ctx context.Context, tenantID, attachmentID
 		return nil, "", "", err
 	}
 
-	store := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
+	store, err := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
+	if err != nil {
+		return nil, "", "", err
+	}
 	reader, _, err := store.Download(ctx, tenantID, att.StorageKey())
 	if err != nil {
 		return nil, "", "", err
@@ -266,7 +337,10 @@ func (s *AttachmentService) ReadAttachment(ctx context.Context, tenantID, attach
 	if att.Size() > maxBytes {
 		return nil, nil, attachmentdom.ErrTooLarge
 	}
-	store := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
+	store, err := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
+	if err != nil {
+		return nil, nil, err
+	}
 	reader, _, err := store.Download(ctx, tenantID, att.StorageKey())
 	if err != nil {
 		return nil, nil, err
@@ -298,9 +372,15 @@ func (s *AttachmentService) Delete(ctx context.Context, tenantID, attachmentID s
 		return err
 	}
 
-	// Delete from storage first (idempotent)
-	store := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
-	_ = store.Delete(ctx, tenantID, att.StorageKey())
+	// Delete from storage first (idempotent). A file whose bucket cannot be
+	// reached keeps its row, so the deletion can be retried.
+	store, err := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
+	if err != nil {
+		return err
+	}
+	if err := store.Delete(ctx, tenantID, att.StorageKey()); err != nil {
+		return fmt.Errorf("delete stored file: %w", err)
+	}
 
 	// Delete metadata
 	return s.repo.Delete(ctx, tid, aid)
@@ -316,14 +396,8 @@ func (s *AttachmentService) EraseTenant(ctx context.Context, tenantID string) (i
 	if err := attachmentdom.ValidateTenantNamespace(tenantID); err != nil {
 		return 0, err
 	}
-	// Drop cached providers of this tenant (keys "tenantID" and
-	// "tenantID:provider"), whatever happens next.
-	s.storageCache.Range(func(k, _ any) bool {
-		if key, ok := k.(string); ok && (key == tenantID || strings.HasPrefix(key, tenantID+":")) {
-			s.storageCache.Delete(k)
-		}
-		return true
-	})
+	// Drop cached providers of this tenant, whatever happens next.
+	s.InvalidateTenantStorage(tenantID)
 
 	erased, err := s.storage.EraseTenant(ctx, tenantID)
 	if err != nil {
@@ -402,7 +476,10 @@ func (s *AttachmentService) StoreBlob(ctx context.Context, tenantID, filename, c
 	if int64(len(data)) > attachmentdom.MaxFileSize {
 		return "", "", attachmentdom.ErrTooLarge
 	}
-	store, provider := s.resolveStorage(ctx, tenantID)
+	store, provider, err := s.resolveStorage(ctx, tenantID)
+	if err != nil {
+		return "", "", err
+	}
 	key, err := store.Upload(ctx, tenantID, filename, contentType, bytes.NewReader(data))
 	if err != nil {
 		return "", "", fmt.Errorf("store blob: %w", err)
@@ -412,11 +489,19 @@ func (s *AttachmentService) StoreBlob(ctx context.Context, tenantID, filename, c
 
 // OpenBlob opens content stored with StoreBlob.
 func (s *AttachmentService) OpenBlob(ctx context.Context, tenantID, provider, key string) (io.ReadCloser, error) {
-	rc, _, err := s.resolveStorageByProvider(ctx, tenantID, provider).Download(ctx, tenantID, key)
+	store, err := s.resolveStorageByProvider(ctx, tenantID, provider)
+	if err != nil {
+		return nil, err
+	}
+	rc, _, err := store.Download(ctx, tenantID, key)
 	return rc, err
 }
 
 // DeleteBlob deletes content stored with StoreBlob (idempotent).
 func (s *AttachmentService) DeleteBlob(ctx context.Context, tenantID, provider, key string) error {
-	return s.resolveStorageByProvider(ctx, tenantID, provider).Delete(ctx, tenantID, key)
+	store, err := s.resolveStorageByProvider(ctx, tenantID, provider)
+	if err != nil {
+		return err
+	}
+	return store.Delete(ctx, tenantID, key)
 }
