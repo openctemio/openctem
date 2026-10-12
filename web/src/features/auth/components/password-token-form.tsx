@@ -3,9 +3,9 @@
  *
  * Two flows share this form and the same API call
  * (POST /auth/reset-password {token, new_password}):
- * - "reset": the forgot-password email link (/reset-password?token=...)
+ * - "reset": the forgot-password email link (/reset-password#token=...)
  * - "setup": the one-time link an administrator gives a user they created
- *   (/set-password?token=...)
+ *   (/set-password#token=...)
  * Only the wording and the "get a new link" advice differ.
  */
 
