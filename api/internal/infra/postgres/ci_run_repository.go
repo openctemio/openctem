@@ -498,7 +498,7 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 // so the link alone must not let a finding pass the gate.
 func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]cirun.RunFinding, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(f.rule_id, ''),
-			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
+			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.source, ''), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
 			COALESCE(f.is_in_kev, FALSE), f.epss_score,
 			EXISTS (SELECT 1 FROM finding_suppressions s
 				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
@@ -522,7 +522,7 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 			epss                       sql.NullFloat64
 			accExp, firstDet, reopened sql.NullTime
 		)
-		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType,
+		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source,
 			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.Suppressed, &accExp, &firstDet, &reopened); err != nil {
 			return nil, err
 		}
@@ -567,7 +567,7 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 // The scope id is the repository or the business unit, each its own column
 // with a foreign key (migration 001144).
 const ciPolicyColumns = `id, tenant_id, scope_type, COALESCE(repository_asset_id, business_unit_id), enabled, mode,
-	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at`
+	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at, modes`
 
 func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	var (
@@ -576,10 +576,14 @@ func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 		scopeID, cby, uby    sql.NullString
 		epss                 sql.NullFloat64
 		createdAt, updatedAt time.Time
+		modes                []byte
 	)
 	if err := row.Scan(&id, &tid, &p.ScopeType, &scopeID, &p.Enabled, &p.Mode, &p.FailOnSeverity,
-		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt); err != nil {
+		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes); err != nil {
 		return p, err
+	}
+	if len(modes) > 0 {
+		_ = json.Unmarshal(modes, &p.Modes)
 	}
 	p.ID, _ = shared.IDFromString(id)
 	p.TenantID, _ = shared.IDFromString(tid)
@@ -591,6 +595,15 @@ func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	p.CreatedBy, p.UpdatedBy = parseOptID(cby), parseOptID(uby)
 	p.CreatedAt, p.UpdatedAt = createdAt, updatedAt
 	return p, nil
+}
+
+// modesJSON stores a policy's modes ('{}' when none).
+func modesJSON(m cirun.PolicyModes) []byte {
+	b, err := json.Marshal(m)
+	if err != nil || len(b) == 0 {
+		return []byte("{}")
+	}
+	return b
 }
 
 func nullFloat(v *float64) sql.NullFloat64 {
@@ -660,10 +673,11 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_policies (id, tenant_id, scope_type, repository_asset_id,
 		business_unit_id, enabled, mode, fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by,
-		updated_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13)`,
+		updated_by, created_at, updated_at, modes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14)`,
 		p.ID.String(), p.TenantID.String(), p.ScopeType, nullID(repoID), nullID(unitID), p.Enabled, p.Mode,
-		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt)
+		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt,
+		modesJSON(p.Modes))
 	if isUniqueViolation(err) {
 		return cirun.ErrPolicyExists
 	}
@@ -673,10 +687,10 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 // UpdateGatePolicy changes a policy of the tenant (not its scope).
 func (r *CIRunRepository) UpdateGatePolicy(ctx context.Context, p *cirun.GatePolicy) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_gate_policies SET enabled = $3, mode = $4, fail_on_severity = $5,
-		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, updated_at = NOW()
+		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, modes = $10, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2`,
 		p.TenantID.String(), p.ID.String(), p.Enabled, p.Mode, p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV,
-		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy))
+		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes))
 	if err != nil {
 		return err
 	}
@@ -818,6 +832,80 @@ func (r *CIRunRepository) BusinessUnitExists(ctx context.Context, tenantID, id s
 	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM business_units WHERE tenant_id = $1 AND id = $2)`,
 		tenantID.String(), id.String()).Scan(&ok)
 	return ok, err
+}
+
+// ------------------------------------------------------------ decoration ---
+
+// MarkDecorationPending queues a GitHub or GitLab run's verdict for posting
+// to the code host (RFC-077 phase C). Other providers have nothing to post.
+func (r *CIRunRepository) MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET decoration_state = 'pending', decoration_attempts = 0,
+			decoration_detail = '', decoration_updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND provider IN ('github', 'gitlab') AND status = 'evaluated'`,
+		tenantID.String(), runID.String())
+	return err
+}
+
+// ClaimDecorations takes up to limit runs waiting to be posted, across
+// tenants (a system job; each run carries its tenant). A claim older than
+// ten minutes (a crashed replica) is taken again; runs evaluated more than a
+// day ago are no longer posted.
+func (r *CIRunRepository) ClaimDecorations(ctx context.Context, limit int) ([]cirun.Run, error) {
+	rows, err := r.db.QueryContext(ctx, `UPDATE ci_runs SET decoration_state = 'posting',
+			decoration_attempts = decoration_attempts + 1, decoration_updated_at = NOW()
+		WHERE id IN (
+			SELECT id FROM ci_runs
+			WHERE (decoration_state = 'pending'
+			    OR (decoration_state = 'posting' AND decoration_updated_at < NOW() - INTERVAL '10 minutes'))
+			  AND evaluated_at > NOW() - INTERVAL '1 day'
+			ORDER BY decoration_updated_at
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED)
+		RETURNING `+ciRunColumns, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []cirun.Run{}
+	for rows.Next() {
+		run, err := scanCIRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, run)
+	}
+	return out, rows.Err()
+}
+
+// FinishDecoration records how posting a run went (tenant-scoped). The state
+// cirun.DecorationRetry queues the run again, up to cirun.MaxDecorationAttempts
+// attempts, then marks it failed.
+func (r *CIRunRepository) FinishDecoration(ctx context.Context, tenantID, runID shared.ID, state, detail string) error {
+	if len(detail) > 255 {
+		detail = detail[:255]
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET
+			decoration_state = CASE WHEN $3 <> 'retry' THEN $3
+				WHEN decoration_attempts >= $5 THEN 'failed' ELSE 'pending' END,
+			decoration_detail = $4, decoration_updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), runID.String(), state, detail, cirun.MaxDecorationAttempts)
+	return err
+}
+
+// PullRequestPassed reports whether the last evaluated non-fork run of a
+// pull request on the repository passed the gate (tenant-scoped).
+func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, assetID shared.ID, pullRequest string) (bool, error) {
+	var verdict sql.NullString
+	err := r.db.QueryRowContext(ctx, `SELECT verdict FROM ci_runs
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND pull_request = $3 AND status = 'evaluated' AND NOT fork
+		ORDER BY evaluated_at DESC LIMIT 1`, tenantID.String(), assetID.String(), pullRequest).Scan(&verdict)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return verdict.String == cirun.VerdictPass, nil
 }
 
 // AssetsWithImageDigest returns up to limit of the tenant's assets whose

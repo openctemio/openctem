@@ -10,6 +10,7 @@
 import type {
   ApiResponse,
   Schemas,
+  BulkCreateScopeTargetsResponse,
   ScopeBulkOperationResponse,
   ScopeExclusionResponse,
   CheckScopeResponse,
@@ -38,6 +39,8 @@ export type ApiScopeExclusion = ScopeExclusionResponse
 export type ApiScopeStats = ScopeStatsResponse
 // POST /scope/check is a dry run of the active-probe gate (RFC-054 §6.4).
 export type ApiCheckScopeResponse = CheckScopeResponse
+// POST /scope/targets/bulk: one result per item (RFC-054 §14).
+export type ApiBulkScopeTargetsResponse = BulkCreateScopeTargetsResponse
 export type BulkOperationResponse = ScopeBulkOperationResponse
 
 export type PaginationLinks = Schemas['internal_infra_http_handler.PaginationLinks']
@@ -82,6 +85,20 @@ export interface CreateScopeTargetInput {
    */
   authorization_source?: 'ownership' | 'authorization_letter'
   letter_id?: string
+}
+
+/** One entry of POST /scope/targets/bulk. */
+export interface BulkScopeTargetItemInput {
+  target_type: string
+  pattern: string
+}
+
+/** Input of POST /scope/targets/bulk: 1..200 permanent entries. */
+export interface BulkCreateScopeTargetsInput {
+  items: BulkScopeTargetItemInput[]
+  reason?: string
+  /** refusal_fix when the entries fix the targets a scan refused. */
+  origin?: 'refusal_fix'
 }
 
 /** Probe tiers (RFC-036): t0 passive, t1 safe active, t2 intrusive. */

@@ -325,3 +325,11 @@ func IssuerHost(issuer string) string {
 	}
 	return strings.ToLower(u.Host)
 }
+
+// OwnerPin is the immutable id a trust configuration pinned for an
+// organization or namespace name at its first admitted exchange.
+type OwnerPin struct {
+	OwnerName string    `json:"owner_name"`
+	OwnerID   string    `json:"owner_id"`
+	PinnedAt  time.Time `json:"pinned_at"`
+}

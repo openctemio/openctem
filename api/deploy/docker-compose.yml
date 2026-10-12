@@ -16,7 +16,7 @@
 #   docker-compose.plain-http.yml     OPENCTEM_TLS_MODE=http behind your own
 #                                     TLS proxy (explicit opt-in)
 #
-# Never published: API :8080, gRPC/metrics :9090, web :3000, Postgres, Redis.
+# Never published: API :8080, web :3000, Postgres, Redis.
 # =============================================================================
 
 name: openctem
@@ -237,7 +237,6 @@ services:
     environment:
       APP_NAME: openctem
       APP_ENV: ${APP_ENV:-production}
-      APP_DEBUG: "false"
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
       # Only the gateway and the web UI may assert a client address
@@ -288,15 +287,15 @@ services:
       # Sensors: the install snippets on the Sensors page pin this image
       # release and install the gateway's internal CA (TLS mode internal; the
       # file is absent in the other modes and the snippets then skip it).
-      SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.15.0}
+      SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.17.0}
       SENSOR_MIN_VERSION: ${SENSOR_MIN_VERSION:-v0.9.0}
       # SDK policy: a sensor built with an SDK below the minimum shows as
       # degraded ("SDK below minimum"); below the latest it is "outdated".
       SENSOR_SDK_MIN_VERSION: ${SENSOR_SDK_MIN_VERSION:-}
-      SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.21.0}
+      SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.23.0}
       SENSOR_CA_CERT_FILE: /ca/openctem-root-ca.crt
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "/app/server", "-healthcheck"]
       interval: 15s
       timeout: 5s
       retries: 5

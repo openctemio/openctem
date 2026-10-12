@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/easmchange"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -57,7 +58,19 @@ type EASMSettingsHandler struct {
 	sweeper   EASMSweeper
 	platform  EASMPlatform
 	audit     AttributionAuditor
+	digests   EASMDigestHistory
 	logger    *logger.Logger
+}
+
+// EASMDigestHistory says when the organization's last weekly digest went out.
+type EASMDigestHistory interface {
+	LastDigestAt(ctx context.Context, tenantID shared.ID) (*time.Time, error)
+}
+
+// SetDigests wires the weekly digest history (RFC-080).
+func (h *EASMSettingsHandler) SetDigests(d EASMDigestHistory) *EASMSettingsHandler {
+	h.digests = d
+	return h
 }
 
 // NewEASMSettingsHandler creates the handler.
@@ -97,6 +110,17 @@ type EASMSettingsResponse struct {
 	LastCTSweepAt     *time.Time `json:"last_ct_sweep_at,omitempty"`
 	LastDNSCheckAt    *time.Time `json:"last_dns_check_at,omitempty"`
 	RunNowAvailableAt *time.Time `json:"run_now_available_at,omitempty"`
+	// WebScreenshotsEnabled: screenshots sent with web evidence are kept
+	// (30 days); off by default.
+	WebScreenshotsEnabled bool `json:"web_screenshots_enabled"`
+	// WeeklyDigestEnabled: the weekly "what changed" digest goes out.
+	WeeklyDigestEnabled bool `json:"weekly_digest_enabled"`
+	// DigestWeekday is the UTC weekday of the digest, 1..7 = Monday..Sunday.
+	DigestWeekday int `json:"digest_weekday"`
+	// DigestHourUTC is the hour (UTC) the digest goes out.
+	DigestHourUTC int `json:"digest_hour_utc"`
+	// LastDigestAt is when the latest digest was recorded.
+	LastDigestAt *time.Time `json:"last_digest_at,omitempty"`
 }
 
 // EASMSettingsUpdateRequest replaces the settings.
@@ -108,6 +132,12 @@ type EASMSettingsUpdateRequest struct {
 	// 0 = platform default; otherwise 6..168.
 	CTIntervalHours  int `json:"ct_interval_hours"`
 	DNSIntervalHours int `json:"dns_interval_hours"`
+	// WebScreenshotsEnabled omitted keeps it as it is.
+	WebScreenshotsEnabled *bool `json:"web_screenshots_enabled,omitempty"`
+	// WeeklyDigestEnabled omitted keeps it as it is.
+	WeeklyDigestEnabled *bool `json:"weekly_digest_enabled,omitempty"`
+	// DigestWeekday omitted keeps it; 1..7 = Monday..Sunday.
+	DigestWeekday *int `json:"digest_weekday,omitempty"`
 }
 
 func (h *EASMSettingsHandler) tenant(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
@@ -143,6 +173,17 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		DNSEffectiveIntervalHours: effective(es.DNSIntervalHours, h.platform.DNSDefaultHrs),
 		MinIntervalHours:          tenant.MinEASMIntervalHours, MaxIntervalHours: tenant.MaxEASMIntervalHours,
 		CTAvailable: h.platform.CTAvailable, DNSAvailable: h.platform.DNSAvailable,
+		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
+		WeeklyDigestEnabled:   !es.WeeklyDigestDisabled,
+		DigestWeekday:         isoWeekday(easmchange.Weekday(es.DigestWeekday)),
+		DigestHourUTC:         easmchange.DigestHourUTC,
+	}
+	if h.digests != nil {
+		if last, err := h.digests.LastDigestAt(ctx, tenantID); err == nil {
+			out.LastDigestAt = last
+		} else {
+			h.logger.Warn("easm digest history unreadable", "error", logger.SanitizeError(err))
+		}
 	}
 	if h.freshness != nil {
 		if ct, dns, err := h.freshness.Freshness(ctx, tenantID); err == nil {
@@ -204,20 +245,31 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	es := tenant.EASMSettings{
-		CTDisabled: !req.CTEnabled, DNSChecksDisabled: !req.DNSChecksEnabled,
-		CTIntervalHours: req.CTIntervalHours, DNSIntervalHours: req.DNSIntervalHours,
+	current, err := h.store.GetEASMSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.logger.Error("easm settings: read", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+		return
 	}
+	// Optional fields left out keep their current value.
+	es := *current
+	es.CTDisabled, es.DNSChecksDisabled = !req.CTEnabled, !req.DNSChecksEnabled
+	es.CTIntervalHours, es.DNSIntervalHours = req.CTIntervalHours, req.DNSIntervalHours
 	if req.EnrichmentEnabled != nil {
 		es.EnrichmentDisabled = !*req.EnrichmentEnabled
-	} else {
-		current, err := h.store.GetEASMSettings(r.Context(), tenantID.String())
-		if err != nil {
-			h.logger.Error("easm settings: read", "error", logger.SanitizeError(err))
-			apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+	}
+	if req.WebScreenshotsEnabled != nil {
+		es.WebScreenshotsEnabled = *req.WebScreenshotsEnabled
+	}
+	if req.WeeklyDigestEnabled != nil {
+		es.WeeklyDigestDisabled = !*req.WeeklyDigestEnabled
+	}
+	if req.DigestWeekday != nil {
+		if *req.DigestWeekday < 1 || *req.DigestWeekday > 7 {
+			apierror.BadRequest("digest_weekday must be between 1 (Monday) and 7 (Sunday)").WriteJSON(w)
 			return
 		}
-		es.EnrichmentDisabled = current.EnrichmentDisabled
+		es.DigestWeekday = *req.DigestWeekday
 	}
 	if err := es.Validate(); err != nil {
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
@@ -283,4 +335,12 @@ func (h *EASMSettingsHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(ticket)
+}
+
+// isoWeekday maps a time.Weekday to ISO 8601 (1 = Monday .. 7 = Sunday).
+func isoWeekday(d time.Weekday) int {
+	if d == time.Sunday {
+		return 7
+	}
+	return int(d)
 }

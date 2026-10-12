@@ -255,6 +255,33 @@ func (s *AttachmentService) Download(ctx context.Context, tenantID, attachmentID
 	return reader, att.ContentType(), att.Filename(), nil
 }
 
+// ReadAttachment returns an attachment's record and at most maxBytes of its
+// content, tenant-scoped. A larger file answers ErrTooLarge. Used to embed
+// evidence images in reports.
+func (s *AttachmentService) ReadAttachment(ctx context.Context, tenantID, attachmentID string, maxBytes int64) (*attachmentdom.Attachment, []byte, error) {
+	att, err := s.GetByID(ctx, tenantID, attachmentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if att.Size() > maxBytes {
+		return nil, nil, attachmentdom.ErrTooLarge
+	}
+	store := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
+	reader, _, err := store.Download(ctx, tenantID, att.StorageKey())
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = reader.Close() }()
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, nil, attachmentdom.ErrTooLarge
+	}
+	return att, data, nil
+}
+
 // Delete removes both the file and its metadata record.
 func (s *AttachmentService) Delete(ctx context.Context, tenantID, attachmentID string) error {
 	tid, err := shared.IDFromString(tenantID)
@@ -362,4 +389,34 @@ func (s *AttachmentService) GetByID(ctx context.Context, tenantID, attachmentID 
 		return nil, fmt.Errorf("%w: invalid attachment_id", shared.ErrValidation)
 	}
 	return s.repo.GetByID(ctx, tid, aid)
+}
+
+// StoreBlob stores platform-generated content (no attachment row) in the
+// tenant's storage and returns its key and provider. Used for web evidence
+// screenshots (RFC-081): they are served by their own data-scoped route,
+// never by /api/v1/attachments.
+func (s *AttachmentService) StoreBlob(ctx context.Context, tenantID, filename, contentType string, data []byte) (string, string, error) {
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return "", "", fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
+	}
+	if int64(len(data)) > attachmentdom.MaxFileSize {
+		return "", "", attachmentdom.ErrTooLarge
+	}
+	store, provider := s.resolveStorage(ctx, tenantID)
+	key, err := store.Upload(ctx, tenantID, filename, contentType, bytes.NewReader(data))
+	if err != nil {
+		return "", "", fmt.Errorf("store blob: %w", err)
+	}
+	return key, provider, nil
+}
+
+// OpenBlob opens content stored with StoreBlob.
+func (s *AttachmentService) OpenBlob(ctx context.Context, tenantID, provider, key string) (io.ReadCloser, error) {
+	rc, _, err := s.resolveStorageByProvider(ctx, tenantID, provider).Download(ctx, tenantID, key)
+	return rc, err
+}
+
+// DeleteBlob deletes content stored with StoreBlob (idempotent).
+func (s *AttachmentService) DeleteBlob(ctx context.Context, tenantID, provider, key string) error {
+	return s.resolveStorageByProvider(ctx, tenantID, provider).Delete(ctx, tenantID, key)
 }

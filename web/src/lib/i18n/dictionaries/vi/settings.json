@@ -186,7 +186,7 @@
   "settings.desc.my-notifications": "Bạn nhận những thông báo nào và nhận bằng cách nào.",
   "settings.desc.notification-channels": "Cảnh báo Slack, Teams, Telegram và webhook cho tổ chức.",
   "settings.desc.org-general": "Tên tổ chức, nhận diện thương hiệu, bản địa hóa và lưu trữ tệp.",
-  "settings.desc.pentest-methodology": "Loại chiến dịch và phương pháp kiểm thử.",
+  "settings.desc.pentest-methodology": "Loại chiến dịch, phương pháp kiểm thử, thư viện phát hiện và mẫu báo cáo.",
   "settings.desc.plan": "Gói của bạn, các giới hạn và mức tổ chức đang sử dụng.",
   "settings.desc.preferences": "Giao diện, ngôn ngữ, múi giờ và định dạng ngày.",
   "settings.desc.profile": "Tên, email và ảnh đại diện của bạn.",
