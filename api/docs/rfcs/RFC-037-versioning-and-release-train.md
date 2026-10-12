@@ -119,7 +119,7 @@ checkouts should set `git config remote.origin.tagOpt --tags`.
 ```yaml
 # versions.yaml (repository root)
 platform:
-  release: v0.8.0   # newest released tag; bumped by the release workflow after tagging
+  release: v0.8.0   # newest released tag; on release/vX.Y.Z: vX.Y.Z (set by the cut)
 sensor:
   latest: v0.6.4    # install snippets pin it; older sensors show "update available"
   min: ""           # older sensors are degraded "version unsupported"; "" = none
@@ -137,17 +137,22 @@ sensor handler, the `SENSOR_*` defaults in `api/deploy/docker-compose.yml`,
 `api/.env.example`. The consumer table in the script is the only place a
 versioned default may live. With `--check` it is the **Version consistency**
 CI job, which also fails when `web/package.json` is not `0.0.0` or when
-`platform.release` names a tag that does not exist.
+`platform.release` names a tag that does not exist. The one exception is the
+release branch: on `release/vX.Y.Z` (and on `main` right after it merges, before
+the tag exists) the job runs with `--release vX.Y.Z`, and `platform.release`
+must be exactly `vX.Y.Z`. A tag's checkout therefore defaults to its own
+version: `api/deploy/.env.example` and `docker-compose.yml` on `v0.9.0` install
+`v0.9.0`, not the release before it.
 
 Who bumps what:
 
 | Field | Bumped by |
 |---|---|
-| `platform.release` | the platform release workflow, in the post-release PR to `develop` |
+| `platform.release` | the platform release workflow: one commit on the release branch (`cut-release.sh`); `develop` gets it when `main` is merged back (a hotfix: the post-release PR sets it) |
 | `sensor.latest` | the sensor release workflow, in a PR to `openctem` after it tags (until that exists: by hand) |
 | `sdk.latest` | the sdk-go release workflow, same way |
 | `*.min` | a person, deliberately: raising a minimum degrades fleets |
-| `chart.version` | the platform release workflow, together with the helm-charts PR it opens |
+| `chart.version` | the platform release workflow, in the post-release PR to `develop`, together with the helm-charts PR it opens (the chart is published after the tag, so a tag names the previous chart) |
 
 The Helm chart repository keeps its own `values.yaml` defaults; its CI checks
 that `appVersion` names a published platform tag (§9, P4).
@@ -192,17 +197,21 @@ Release Train      plan   last tag → proposed version (or the override, valida
                           newest develop commit with every required check green
                           (or the given SHA, which must be green)
                           changelog preview → run summary
-                   cut    release/vX.Y.Z = that SHA + `merge -s ours origin/main`
-                          (tree == develop's, main recorded as a parent)
+                   cut    release/vX.Y.Z = that SHA
+                          + version commit (versions.yaml platform.release = vX.Y.Z, synced)
+                          + `merge -s ours origin/main`
+                          (tree == develop's + the version commit, main recorded as a parent)
                           PR release/vX.Y.Z → main, queued for merge (MERGE)
 Merge queue        required checks on the merge group → merge into main
-Release Publish    (on that PR's merge) verify main's tree == the release branch's,
+Release Publish    (on that PR's merge) verify main's tree == the release branch's
+                   and its versions.yaml says vX.Y.Z,
                    annotated tag vX.Y.Z on the merge commit
                    → Docker Publish + Release (images, GitHub Release, notes
                      with @mentions escaped and emails dropped)
                    follow-ups:
-                   - PR to develop: merge main back (tags become reachable),
-                     versions.yaml platform.release = vX.Y.Z (+ sync)
+                   - PR to develop: merge main back (tags become reachable; it
+                     brings only the version commit, else refused),
+                     versions.yaml chart.version (+ sync)
                    - PR to helm-charts: appVersion vX.Y.Z, chart version bump
                    - docs: release notes / upgrade page stay a person's job
 ```
@@ -221,9 +230,9 @@ For a security or critical fix that cannot wait for the train:
 2. Run **Release Train** with `mode: hotfix` and `cherry_picks: <sha> …`
    (the `develop` commits). The version is the last tag's patch + 1.
 3. The workflow builds `release/vX.Y.Z` from the last tag, cherry-picks the
-   commits (`-x`), and continues as in §4.2. The post-release PR to `develop`
-   only bumps `versions.yaml`; it does not merge `main` back (the fix is
-   already on `develop`).
+   commits (`-x`), adds the version commit, and continues as in §4.2. The
+   post-release PR to `develop` only bumps `versions.yaml`; it does not merge
+   `main` back (the fix is already on `develop`).
 
 ### 4.4 Gates
 
@@ -232,9 +241,10 @@ For a security or critical fix that cannot wait for the train:
   chosen `develop` commit; a cancelled or missing check counts as red.
 - The version is a `vX.Y.Z` greater than the last tag, and the tag and the
   release branch do not exist yet.
-- The release branch's tree equals the chosen commit's tree (train), and
-  `main`'s tree after the merge equals the release branch's; otherwise no tag
-  is pushed.
+- The release branch's tree equals the chosen commit's tree plus the version
+  commit (train), `main`'s tree after the merge equals the release branch's,
+  and its `versions.yaml` says `platform.release: vX.Y.Z`; otherwise no tag is
+  pushed.
 - Dry run (`dry_run: true`, the default) computes and reports everything and
   pushes nothing.
 
