@@ -495,11 +495,6 @@ vars:
     type: duration
     default: "720h"
     description: "Session lifetime (30 days)."
-  - name: SCOPE_ACTIVE_PROOF
-    component: api
-    group: "Organizations and scope guardrails"
-    type: string
-    description: "When an active probe needs a verified domain of the organization: `off`, `platform_sensors` (jobs on shared platform sensors) or `all`. Intrusive probes always need one. Unset: `off`."
   - name: SCOPE_DENY_EXTRA
     component: api
     group: "Organizations and scope guardrails"
