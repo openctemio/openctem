@@ -395,11 +395,6 @@ func Register(
 	registerHealthRoutes(router, h.Health, middleware.MetricsAuth(cfg.Metrics.Public, cfg.Metrics.Token, log))
 	registerClientErrorRoute(router, h.ClientErrors, log)
 
-	// API Documentation routes (public)
-	if h.Docs != nil {
-		registerDocsRoutes(router, h.Docs)
-	}
-
 	// Initialize per-user read endpoint rate limiter to prevent enumeration and scraping.
 	// Applied to all GET requests on authenticated tenant-scoped routes via
 	// buildTokenTenantMiddlewares (package-level variable).
@@ -503,6 +498,15 @@ func Register(
 
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
+	// API documentation: public outside production; in production the spec
+	// needs a signed-in user and the reference page a platform administrator.
+	if h.Docs != nil {
+		var consoleAuth Middleware
+		if h.AdminAuthMiddleware != nil {
+			consoleAuth = h.AdminAuthMiddleware.Authenticate
+		}
+		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth)
+	}
 	if h.Announcement != nil {
 		registerAnnouncementRoute(router, h.Announcement, authMiddleware)
 	}
