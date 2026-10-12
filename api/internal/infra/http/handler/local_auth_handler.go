@@ -38,7 +38,21 @@ type LocalAuthHandler struct {
 	// signupPolicy answers registration_enabled on /auth/info (the console
 	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
 	signupPolicy signupdom.PolicySource
+	// captcha, when set (CAPTCHA_TURNSTILE_SECRET), must pass before a
+	// registration is looked at.
+	captcha Captcha
 }
+
+// Captcha verifies a CAPTCHA token from the browser (Cloudflare Turnstile).
+type Captcha interface {
+	Verify(ctx context.Context, token, remoteIP string) (bool, error)
+}
+
+// SetCaptcha requires a passing CAPTCHA on registration.
+func (h *LocalAuthHandler) SetCaptcha(c Captcha) { h.captcha = c }
+
+// CodeCaptchaFailed is the error code of a missing or failed CAPTCHA.
+const CodeCaptchaFailed apierror.Code = "CAPTCHA_FAILED"
 
 // SetSignupPolicy wires the platform sign-up policy.
 func (h *LocalAuthHandler) SetSignupPolicy(p signupdom.PolicySource) { h.signupPolicy = p }
@@ -97,6 +111,8 @@ type RegisterRequest struct {
 	// invitation links would fall back to the platform default and
 	// silently ignore an admin's per-tenant "never" setting.
 	InvitationToken string `json:"invitation_token,omitempty" validate:"omitempty,max=200"`
+	// CaptchaToken is the Turnstile token when a CAPTCHA is configured.
+	CaptchaToken string `json:"captcha_token,omitempty" validate:"omitempty,max=2048"`
 }
 
 // RegisterResponse is the response body for user registration.
@@ -131,6 +147,20 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The CAPTCHA is checked before the account lookup and the same way for
+	// every address, so it says nothing about the email. A verifier error
+	// (Turnstile unreachable) refuses: sign-up is not worth an open door.
+	if h.captcha != nil {
+		ok, cerr := h.captcha.Verify(r.Context(), req.CaptchaToken, getClientIP(r))
+		if cerr != nil || !ok {
+			if cerr != nil {
+				h.logger.Warn("captcha verification failed", "error", logger.SanitizeError(cerr))
+			}
+			apierror.New(http.StatusBadRequest, CodeCaptchaFailed, "Complete the check and try again.").WriteJSON(w)
+			return
+		}
+	}
+
 	result, err := h.authService.Register(r.Context(), auth.RegisterInput{
 		Email:           req.Email,
 		Password:        req.Password,
@@ -153,6 +183,15 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Name:                 strings.TrimSpace(req.Name),
 		RequiresVerification: result.RequiresVerification,
 		Message:              registerMessage(result.RequiresVerification),
+	}
+
+	// Registering again with an address whose account never verified emails
+	// a set-password link instead of a new verification link: following it
+	// verifies the address AND replaces the password, so an account someone
+	// else registered first with this address cannot be kept by them. This is
+	// the way back for a user whose verification email was lost or expired.
+	if result.EmailExisted && result.ExistingUnverified {
+		h.sendResetLinkAsync(r, req.Email)
 	}
 
 	if !result.EmailExisted && result.User != nil && result.RequiresVerification &&
@@ -900,8 +939,20 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 	// not the email has an account, and so is its latency: the whole lookup,
 	// the token write and the email run after the response, detached from
 	// the request.
+	h.sendResetLinkAsync(r, req.Email)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "If the email exists, a password reset link has been sent",
+	})
+}
+
+// sendResetLinkAsync issues a password reset token for email (when it has a
+// local account) and emails the link, after the response and detached from
+// the request, so neither the lookup nor the email shows in the latency.
+func (h *LocalAuthHandler) sendResetLinkAsync(r *http.Request, email string) {
 	ipAddress := getClientIP(r)
-	email := req.Email
 	resetDuration := h.authConfig.PasswordResetDuration
 	go func() {
 		// Detach from the request context (which is canceled once we
@@ -916,26 +967,13 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 		if result == nil || result.Token == "" || h.emailService == nil {
 			return
 		}
-		if err := h.emailService.SendPasswordResetEmail(
-			ctx,
-			email,
-			"", // empty name for privacy
-			result.Token,
-			resetDuration,
-			ipAddress,
-		); err != nil {
+		if err := h.emailService.SendPasswordResetEmail(ctx, email, "", result.Token, resetDuration, ipAddress); err != nil {
 			h.logger.Error("failed to send password reset email",
 				"email", logger.SanitizeValue(email),
 				"error", logger.SanitizeError(err),
 			)
 		}
 	}()
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "If the email exists, a password reset link has been sent",
-	})
 }
 
 // ResetPasswordRequest is the request body for password reset.
@@ -969,6 +1007,8 @@ func (h *LocalAuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request)
 	if err := h.authService.ResetPassword(r.Context(), auth.ResetPasswordInput{
 		Token:       req.Token,
 		NewPassword: req.NewPassword,
+		IPAddress:   getClientIP(r),
+		UserAgent:   r.UserAgent(),
 	}); err != nil {
 		h.handleAuthError(w, err)
 		return
@@ -1253,6 +1293,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	// Password validation errors
 	case errors.Is(err, password.ErrPasswordTooShort):
 		apierror.BadRequest(fmt.Sprintf("Password is too short (minimum %d characters)", h.minPasswordLength())).WriteJSON(w)
+	case errors.Is(err, password.ErrPasswordTooLong):
+		apierror.BadRequest(fmt.Sprintf("Password is too long (maximum %d bytes; a letter with an accent counts as 2 or more)", password.MaxBytes)).WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordCommon):
 		apierror.BadRequest("This password appears in lists of breached passwords. Choose another one.").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoUppercase):

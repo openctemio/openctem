@@ -326,3 +326,21 @@ func TestRepositoryFromURL(t *testing.T) {
 		}
 	}
 }
+
+func TestBaseRefFromTokenOrHint(t *testing.T) {
+	gh := ParseClaims(ProviderGitHub, map[string]any{"repository": "acme/api", "ref": "refs/pull/7/merge", "base_ref": "release/2", "head_ref": "fix"})
+	gh.ApplyHints(Hints{BaseRef: "main"})
+	if gh.BaseRef != "release/2" {
+		t.Fatalf("a signed base_ref is kept: %q", gh.BaseRef)
+	}
+	gl := ParseClaims(ProviderGitLab, map[string]any{"project_path": "acme/api", "ref": "fix", "ref_type": "branch"})
+	gl.ApplyHints(Hints{BaseRef: "refs/heads/release/3"})
+	if gl.BaseRef != "release/3" {
+		t.Fatalf("hint: %q", gl.BaseRef)
+	}
+	for _, bad := range []string{"", "  ", "a\nb", strings.Repeat("x", 256)} {
+		if got := CleanBranchName(bad); got != "" {
+			t.Fatalf("CleanBranchName(%q) = %q", bad, got)
+		}
+	}
+}

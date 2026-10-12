@@ -88,11 +88,23 @@ export function buildCsp(options: CspOptions): string {
     "font-src 'self' data: https://fonts.gstatic.com",
     connectSrc(options),
     "object-src 'none'",
-    "frame-src 'none'",
+    // Cloudflare Turnstile, the CAPTCHA on the public sign-up forms, runs in
+    // an iframe from this origin. Nothing else may be framed.
+    'frame-src https://challenges.cloudflare.com',
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
   ].join('; ')
+}
+
+/**
+ * Reads a variable from the running server's environment. A literal
+ * process.env.NEXT_PUBLIC_X is replaced at build time, so a published image
+ * would carry the build's value; a computed key is read at run time, so the
+ * deployment's value applies.
+ */
+function runtimeEnv(key: string): string | undefined {
+  return process.env[key]
 }
 
 /** The policy for this process, from its environment. */
@@ -100,8 +112,8 @@ export function cspForRequest(nonce: string): string {
   return buildCsp({
     nonce,
     isDev: process.env.NODE_ENV === 'development',
-    appUrl: process.env.NEXT_PUBLIC_APP_URL,
-    backendUrl: process.env.BACKEND_API_URL,
-    wsUrl: process.env.NEXT_PUBLIC_WS_BASE_URL,
+    appUrl: runtimeEnv('NEXT_PUBLIC_APP_URL'),
+    backendUrl: runtimeEnv('BACKEND_API_URL'),
+    wsUrl: runtimeEnv('NEXT_PUBLIC_WS_BASE_URL'),
   })
 }

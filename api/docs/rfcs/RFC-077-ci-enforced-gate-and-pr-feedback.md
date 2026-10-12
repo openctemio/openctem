@@ -166,5 +166,13 @@ when a lock file changed). The run records `scan_mode` (`full`, `diff`) and
 | E | Diff-aware runs in `openctem-ci` (G-6) | Open |
 | F | Policy modes and `.openctem.yml` (G-7, G-8) | Open |
 
-Not in this RFC: container image assets linking repositories to running
-workloads, and platform-run pull request scans (RFC-051 R4).
+Code to cloud, first step (implemented): a CI `container` report carries the
+image's content digest (`metadata.properties.image_digest`); the platform
+suggests relationships from the run's repository to the tenant's assets whose
+properties carry the same digest (`contains` for a container image asset,
+`deployed_to` for a Kubernetes workload or cluster, or a host), confidence
+0.8, for an administrator to approve in the relationship review. The digest
+is the job's own report, so nothing is linked without review.
+
+Not in this RFC: image assets of their own with findings filed on them, and
+platform-run pull request scans (RFC-051 R4).
