@@ -92,6 +92,8 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-074](RFC-074-adaptive-sensor-control.md) | Adaptive sensor control (measured values instead of configured numbers) | Proposed (2026-10-11) |
 | [RFC-075](RFC-075-asset-freshness.md) | Asset freshness and automatic enrichment | Proposed (2026-10-11); P0 in implementation |
 | [RFC-077](RFC-077-ci-enforced-gate-and-pr-feedback.md) | CI enforced gate, pull request feedback and diff-aware runs | Proposed (decisions G-1..G-10 adopted as recommended, 2026-10-11; owner may veto) |
+| [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Proposed (2026-10-11) |
+| [RFC-079](RFC-079-console-platform-settings.md) | Run-time settings in the console instead of environment variables | Proposed (2026-10-11) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
