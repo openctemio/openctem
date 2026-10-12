@@ -55,6 +55,10 @@ func NewAssetImportHandler(svc *asset.AssetImportService, log *logger.Logger) *A
 	return &AssetImportHandler{service: svc, logger: log}
 }
 
+// MaxAssetCSVImportBody bounds the CSV body of POST /assets/import/csv. The
+// route declares it as its body limit, which replaces the global one.
+const MaxAssetCSVImportBody = 50 << 20
+
 // ImportCSV handles POST /api/v1/assets/import/csv
 // @Summary      Import assets from CSV
 // @Description  Creates or updates assets from a CSV body (at most 50 MB). Needs assets:write and assets:import.
@@ -66,10 +70,6 @@ func NewAssetImportHandler(svc *asset.AssetImportService, log *logger.Logger) *A
 // @Failure      400  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error
 // @Router       /assets/import/csv [post]
-// MaxAssetCSVImportBody bounds the CSV body of POST /assets/import/csv. The
-// route declares it as its body limit, which replaces the global one.
-const MaxAssetCSVImportBody = 50 << 20
-
 func (h *AssetImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
