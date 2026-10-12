@@ -2,6 +2,7 @@ package docx
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"sort"
 	"strings"
@@ -54,24 +55,36 @@ type tagSpan struct {
 	tag        tagInfo
 }
 
+// literalHit is text with a brace that is not a well-formed tag.
+type literalHit struct {
+	text     string
+	unclosed bool   // a '{' with no '}' after it in the paragraph
+	context  string // the paragraph's text
+}
+
 // findTags returns the tags in a paragraph's text. A '{' that does not start
 // a well-formed tag is literal text; it is reported so the template author
 // can see a likely typo.
-func findTags(text string) (spans []tagSpan, literal []string) {
+func findTags(text string) (spans []tagSpan, literal []literalHit) {
 	for i := 0; i < len(text); i++ {
 		if text[i] != '{' {
 			continue
 		}
 		j := strings.IndexByte(text[i+1:], '}')
 		k := strings.IndexByte(text[i+1:], '{')
-		if j < 0 || (k >= 0 && k < j) || j+2 > maxTagLen {
-			literal = append(literal, snippet(text, i))
+		if j < 0 {
+			literal = append(literal, literalHit{text: snippet(text, i), unclosed: true})
+			continue
+		}
+		if (k >= 0 && k < j) || j+2 > maxTagLen {
+			literal = append(literal, literalHit{text: snippet(text, i)})
 			continue
 		}
 		candidate := text[i : i+j+2]
 		m := tagRe.FindStringSubmatch(candidate)
 		if m == nil {
-			literal = append(literal, candidate)
+			literal = append(literal, literalHit{text: candidate})
+			i += j + 1
 			continue
 		}
 		kind := tagValue
@@ -94,30 +107,39 @@ func snippet(s string, i int) string {
 
 // prepare turns a parsed part into the renderable tree: tags split across
 // runs are merged, every tag gets a run of its own, sections are matched and
-// wrapped, and Markdown paragraphs are marked. It returns the tags found and
-// warnings about literal braces.
-func prepare(root *node) (tags []tagInfo, warnings []string, err error) {
-	literal := mergeSplitTags(root)
-	for _, l := range literal {
-		warnings = append(warnings, fmt.Sprintf("text %q contains a brace that is not a template tag", l))
+// wrapped, and Markdown paragraphs are marked. Every problem is recorded in
+// c (the tree is only renderable when c holds no error). It returns the tags
+// found, in document order.
+func prepare(root *node, c *checker) []tagInfo {
+	c.checkTrackedChanges(root)
+	for _, l := range mergeSplitTags(root) {
+		if l.unclosed {
+			c.add(Issue{Level: LevelWarning, Code: CodeUnclosedBrace, Tag: l.text, Context: l.context,
+				Message: fmt.Sprintf("%q opens a brace that is not closed in the same paragraph; a tag must be typed whole within one paragraph", l.text)})
+			continue
+		}
+		sugg := c.literalSuggestion(l.text)
+		msg := fmt.Sprintf("%q is not a template tag and prints as typed", l.text)
+		if sugg != "" {
+			msg += fmt.Sprintf("; did you mean %s?", sugg)
+		}
+		c.add(Issue{Level: LevelWarning, Code: CodeLiteralBrace, Tag: l.text, Context: l.context, Suggestion: sugg, Message: msg})
 	}
-	tagNodes, err := isolateTags(root)
-	if err != nil {
-		return nil, nil, err
-	}
+	tagNodes := isolateTags(root)
+	refs := make([]tagRef, 0, len(tagNodes))
+	tags := make([]tagInfo, 0, len(tagNodes))
 	for _, t := range tagNodes {
+		refs = append(refs, tagRef{tag: t.tag, context: paragraphContext(t)})
 		tags = append(tags, t.tag)
 		if t.tag.kind == tagImage {
-			return nil, nil, fmt.Errorf("%w: image tags such as %s are not supported yet", ErrInvalidTemplate, t.tag)
+			c.add(Issue{Level: LevelError, Code: CodeImageTag, Tag: t.tag.String(), Context: paragraphContext(t),
+				Message: fmt.Sprintf("image tags such as %s are not supported; insert a fixed picture (a logo) in Word, and evidence screenshots through the finding's Markdown fields", t.tag)})
 		}
 	}
-	if err := markMarkdown(tagNodes); err != nil {
-		return nil, nil, err
-	}
-	if err := buildSections(tagNodes); err != nil {
-		return nil, nil, err
-	}
-	return tags, warnings, nil
+	markMarkdown(tagNodes, c)
+	buildSections(tagNodes, c)
+	c.checkPaths(refs)
+	return tags
 }
 
 // paragraphTexts groups the w:t elements of each innermost paragraph.
@@ -147,7 +169,7 @@ func paragraphTexts(root *node) [][]*node {
 // mergeSplitTags moves each tag that Word split over several w:t elements
 // (spell check, edits, formatting changes) into the first of them, so every
 // tag sits whole in one w:t. Returns literal-brace snippets.
-func mergeSplitTags(root *node) (literal []string) {
+func mergeSplitTags(root *node) (literal []literalHit) {
 	for _, ts := range paragraphTexts(root) {
 		texts := make([]string, len(ts))
 		offsets := make([]int, len(ts))
@@ -158,7 +180,11 @@ func mergeSplitTags(root *node) (literal []string) {
 			all.WriteString(texts[i])
 		}
 		spans, lit := findTags(all.String())
-		literal = append(literal, lit...)
+		for _, l := range lit {
+			l.text = html.UnescapeString(l.text)
+			l.context = shorten(html.UnescapeString(all.String()))
+			literal = append(literal, l)
+		}
 		if len(spans) == 0 {
 			continue
 		}
@@ -210,7 +236,7 @@ func minInt(a, b int) int {
 // isolateTags splits every run holding tags so that each tag becomes a node
 // of its own (kindTag) keeping the run's formatting, and returns the tag
 // nodes in document order.
-func isolateTags(root *node) ([]*node, error) {
+func isolateTags(root *node) []*node {
 	var runs []*node
 	walk(root, func(n *node) {
 		if !n.isElem("w:r") {
@@ -226,9 +252,7 @@ func isolateTags(root *node) ([]*node, error) {
 		}
 	})
 	for _, r := range runs {
-		if err := splitRun(r); err != nil {
-			return nil, err
-		}
+		splitRun(r)
 	}
 	var tags []*node
 	walk(root, func(n *node) {
@@ -236,14 +260,14 @@ func isolateTags(root *node) ([]*node, error) {
 			tags = append(tags, n)
 		}
 	})
-	return tags, nil
+	return tags
 }
 
-func splitRun(r *node) error {
+func splitRun(r *node) {
 	parent := r.parent
 	idx := indexOf(parent, r)
 	if idx < 0 {
-		return fmt.Errorf("%w: internal: run not in its parent", ErrInvalidTemplate)
+		return
 	}
 	rPrNode := childElem(r, "w:rPr")
 	rPr := serializeOrEmpty(rPrNode)
@@ -299,7 +323,6 @@ func splitRun(r *node) error {
 	children = append(children, out...)
 	children = append(children, parent.children[idx+1:]...)
 	parent.children = children
-	return nil
 }
 
 func textElem(proto *node, text string, parent *node) *node {
@@ -329,20 +352,21 @@ func soleTagInParagraph(t *node) (*node, bool) {
 
 // markMarkdown replaces each paragraph holding a {@path} tag with a Markdown
 // node. The tag must be the paragraph's only content.
-func markMarkdown(tags []*node) error {
+func markMarkdown(tags []*node, c *checker) {
 	for _, t := range tags {
 		if t.tag.kind != tagMarkdown {
 			continue
 		}
 		p, sole := soleTagInParagraph(t)
 		if !sole {
-			return fmt.Errorf("%w: %s must be alone in its paragraph", ErrInvalidTemplate, t.tag)
+			c.add(Issue{Level: LevelError, Code: CodeMarkdownNotAlone, Tag: t.tag.String(), Context: paragraphContext(t),
+				Message: fmt.Sprintf("%s must be alone in its paragraph: it becomes several paragraphs; move other text to a paragraph before or after it", t.tag)})
+			continue
 		}
 		md := &node{kind: kindMarkdown, tag: t.tag, rPr: t.rPr, pPr: serializeOrEmpty(childElem(p, "w:pPr")), parent: p.parent}
 		i := indexOf(p.parent, p)
 		p.parent.children[i] = md
 	}
-	return nil
 }
 
 // maxSectionDepth bounds section nesting.
@@ -354,37 +378,65 @@ const maxSectionDepth = 8
 //   - each tag alone in its paragraph, paragraphs of the same level: the
 //     paragraphs and tables between;
 //   - both tags in the same table row: the row.
-func buildSections(tags []*node) error {
+func buildSections(tags []*node, c *checker) {
 	var stack []*node
 	var pairs [][2]*node
+	tooDeep := false
 	for _, t := range tags {
 		switch t.tag.kind {
 		case tagOpen, tagInverted:
 			stack = append(stack, t)
-			if len(stack) > maxSectionDepth {
-				return fmt.Errorf("%w: sections are nested deeper than %d", ErrInvalidTemplate, maxSectionDepth)
+			if len(stack) > maxSectionDepth && !tooDeep {
+				tooDeep = true
+				c.add(Issue{Level: LevelError, Code: CodeNestingTooDeep, Tag: t.tag.String(), Context: paragraphContext(t),
+					Message: fmt.Sprintf("sections are nested more than %d deep at %s", maxSectionDepth, t.tag)})
 			}
 		case tagClose:
-			if len(stack) == 0 {
-				return fmt.Errorf("%w: %s has no matching opening tag", ErrInvalidTemplate, t.tag)
+			match := -1
+			for i := len(stack) - 1; i >= 0; i-- {
+				if stack[i].tag.path == t.tag.path {
+					match = i
+					break
+				}
 			}
-			open := stack[len(stack)-1]
-			if open.tag.path != t.tag.path {
-				return fmt.Errorf("%w: %s is closed by %s", ErrInvalidTemplate, open.tag, t.tag)
+			switch {
+			case match < 0 && len(stack) == 0:
+				c.add(Issue{Level: LevelError, Code: CodeStrayClose, Tag: t.tag.String(), Context: paragraphContext(t),
+					Suggestion: "{#" + t.tag.path + "}",
+					Message:    fmt.Sprintf("%s closes a section that was never opened; add {#%s} before it or delete it", t.tag, t.tag.path)})
+			case match < 0:
+				open := stack[len(stack)-1]
+				c.add(Issue{Level: LevelError, Code: CodeMismatchedClose, Tag: t.tag.String(), Context: paragraphContext(t),
+					Suggestion: "{/" + open.tag.path + "}",
+					Message:    fmt.Sprintf("%s does not match the open section %s; did you mean {/%s}?", t.tag, open.tag, open.tag.path)})
+			default:
+				for _, open := range stack[match+1:] {
+					reportUnclosed(c, open)
+				}
+				pairs = append(pairs, [2]*node{stack[match], t}) // inner pairs first
+				stack = stack[:match]
 			}
-			stack = stack[:len(stack)-1]
-			pairs = append(pairs, [2]*node{open, t}) // inner pairs first
 		}
 	}
-	if len(stack) > 0 {
-		return fmt.Errorf("%w: %s is not closed", ErrInvalidTemplate, stack[len(stack)-1].tag)
+	for _, open := range stack {
+		reportUnclosed(c, open)
 	}
-	for _, p := range pairs {
+	contexts := make([]string, len(pairs))
+	for i, p := range pairs {
+		contexts[i] = paragraphContext(p[0])
+	}
+	for i, p := range pairs {
 		if err := wrapSection(p[0], p[1]); err != nil {
-			return err
+			c.add(Issue{Level: LevelError, Code: CodeSectionPlacement, Tag: p[0].tag.String(), Context: contexts[i],
+				Suggestion: "{/" + p[0].tag.path + "}", Message: err.Error()})
 		}
 	}
-	return nil
+}
+
+func reportUnclosed(c *checker, open *node) {
+	c.add(Issue{Level: LevelError, Code: CodeUnclosedSection, Tag: open.tag.String(), Context: paragraphContext(open),
+		Suggestion: "{/" + open.tag.path + "}",
+		Message:    fmt.Sprintf("%s is never closed; add {/%s} where the repeated or conditional content ends", open.tag, open.tag.path)})
 }
 
 func wrapSection(open, closeTag *node) error {
@@ -419,7 +471,14 @@ func wrapSection(open, closeTag *node) error {
 		parent.children[i] = section
 		return nil
 	}
-	return fmt.Errorf("%w: %s must open and close in the same paragraph, each alone in a paragraph of the same level, or in the same table row", ErrInvalidTemplate, open.tag)
+	hint := "put {#x} and {/x} each alone in its own paragraph at the same level (not one inside a table and the other outside), both in the same table row, or both in the same paragraph"
+	switch {
+	case soleO && soleC && po != nil && pc != nil && po.parent != pc.parent:
+		hint = "one is inside a table (or text box) and the other is not; move both into the body, or both into the same table row"
+	case !soleO || !soleC:
+		hint = "when the section spans several paragraphs, each of the two tags must be alone in its paragraph; move the other text to a separate paragraph"
+	}
+	return fmt.Errorf("%s and %s cannot enclose this content: %s", open.tag, closeTag.tag, strings.NewReplacer("{#x}", open.tag.String(), "{/x}", closeTag.tag.String()).Replace(hint))
 }
 
 // replaceRange replaces parent.children[i..j] (inclusive, the two tag
