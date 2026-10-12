@@ -13,8 +13,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import {
+  Bot,
   ChevronDown,
   Copy,
+  Eye,
   Layers,
   Lock,
   MoreHorizontal,
@@ -23,6 +25,7 @@ import {
   RotateCcw,
   SmilePlus,
   Trash2,
+  Users,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -308,6 +311,45 @@ export function CommentCard({
             title={`Edited ${new Date(item.editedAt).toLocaleString()}`}
           >
             · edited
+          </span>
+        )}
+        {item.visibility === 'client' && (
+          <span
+            data-testid="comment-visibility-client"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-info/15 px-2 py-0.5 text-[11px] font-medium text-info"
+            title={t(
+              'findings.commentVisibility.clientHint',
+              'The campaign client reads this comment.'
+            )}
+          >
+            <Eye className="h-3 w-3" aria-hidden />
+            {t('findings.commentVisibility.client', 'Client can see')}
+          </span>
+        )}
+        {item.visibility === 'team' && (
+          <span
+            data-testid="comment-visibility-team"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+            title={t(
+              'findings.commentVisibility.teamHint',
+              'Only the campaign team reads this comment; the client does not.'
+            )}
+          >
+            <Users className="h-3 w-3" aria-hidden />
+            {t('findings.commentVisibility.team', 'Team only')}
+          </span>
+        )}
+        {item.via && (
+          <span
+            data-testid="comment-via"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+            title={t(
+              'findings.commentVisibility.viaHint',
+              'Written by an AI client acting for this person, after they confirmed it.'
+            )}
+          >
+            <Bot className="h-3 w-3" aria-hidden />
+            {t('findings.commentVisibility.via', 'via {client}', { client: item.via })}
           </span>
         )}
         {item.internal && (

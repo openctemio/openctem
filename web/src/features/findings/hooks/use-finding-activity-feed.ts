@@ -36,6 +36,12 @@ export interface UseFindingActivityFeedOptions {
   fromFinding?: Activity[]
   /** Called for AI-triage activities, so the page can refresh its triage card. */
   onTriageActivity?: () => void
+  /**
+   * A pentest finding: comments are posted through the pentest route (every
+   * campaign member, clients included) with their client visibility, and
+   * carry a visibility badge.
+   */
+  pentest?: boolean
 }
 
 const TRIAGE: ActivityType[] = ['ai_triage', 'ai_triage_failed']
@@ -44,9 +50,20 @@ export function commentsKey(findingId: string) {
   return `/api/v1/findings/${findingId}/comments`
 }
 
+/** POST: a comment on a pentest finding by any campaign member. */
+export function pentestCommentsKey(findingId: string) {
+  return `/api/v1/pentest/findings/${findingId}/comments`
+}
+
 export function useFindingActivityFeed(
   findingId: string | null,
-  { enabled = true, live = true, fromFinding, onTriageActivity }: UseFindingActivityFeedOptions = {}
+  {
+    enabled = true,
+    live = true,
+    fromFinding,
+    onTriageActivity,
+    pentest = false,
+  }: UseFindingActivityFeedOptions = {}
 ) {
   const { currentTenant } = useTenant()
   const id = enabled && findingId ? findingId : null
@@ -91,8 +108,11 @@ export function useFindingActivityFeed(
   })
 
   const items: ActivityItem[] = useMemo(
-    () => toFindingActivityItems(activities, commentsError ? undefined : commentList?.data),
-    [activities, commentList, commentsError]
+    () =>
+      toFindingActivityItems(activities, commentsError ? undefined : commentList?.data, {
+        visibility: pentest,
+      }),
+    [activities, commentList, commentsError, pentest]
   )
 
   const refresh = useCallback(async () => {
@@ -101,15 +121,16 @@ export function useFindingActivityFeed(
   }, [mutateActivities, mutateComments, clearActivities])
 
   const sendComment = useCallback(
-    async (body: string, opts: { internal: boolean }) => {
+    async (body: string, opts: { internal: boolean; clientVisible?: boolean }) => {
       if (!findingId) return
-      await post(commentsKey(findingId), {
+      await post(pentest ? pentestCommentsKey(findingId) : commentsKey(findingId), {
         content: body,
         ...(opts.internal ? { is_internal: true } : {}),
+        ...(pentest ? { visibility: opts.clientVisible ? 'client' : 'team' } : {}),
       })
       await refresh()
     },
-    [findingId, refresh]
+    [findingId, refresh, pentest]
   )
 
   const editComment = useCallback(
@@ -162,7 +183,8 @@ export function useFindingActivityFeed(
     /** Events + comments the feed knows of (the header count). */
     total: count,
     loading: isLoading || commentsLoading,
-    error: activitiesError ?? undefined,
+    // Either request failing is an error, never an empty history.
+    error: activitiesError ?? commentsError ?? undefined,
     retry: refresh,
     hasOlder: !isReachingEnd,
     loadingOlder: !!isLoadingMore,
