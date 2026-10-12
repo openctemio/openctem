@@ -606,11 +606,11 @@ def test_finding_crud():
     else:
         return False
 
-    # Triage finding
-    data = {"triageStatus": "confirmed", "triageReason": "Verified by security team"}
-    result = api_request("PATCH", f"/findings/{finding_id}/triage", data)
+    # Confirm the finding (triage is a status change)
+    data = {"status": "confirmed", "reason": "Verified by security team"}
+    result = api_request("PATCH", f"/findings/{finding_id}/status", data)
     if result:
-        log_success(f"PATCH /findings/{finding_id}/triage - Finding triaged")
+        log_success(f"PATCH /findings/{finding_id}/status - Finding confirmed")
     else:
         return False
 

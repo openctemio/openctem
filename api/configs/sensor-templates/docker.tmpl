@@ -61,9 +61,7 @@ docker run -d --name {{$slug}} --restart unless-stopped \
   -e SSL_CERT_DIR=/etc/openctem/certs \
 {{- end}}
   -v /etc/openctem:/etc/openctem:ro \
-  -v {{$slug}}-outbox:/var/lib/openctem/outbox \
-  -v {{$slug}}-state:/var/lib/openctem/state \
-  -v {{$slug}}-content:/var/lib/openctem/content \
+  -v {{$slug}}-data:/var/lib/openctem \
   {{.Image}}
 
 # Check it: docker logs -f {{$slug}}   (the Sensors page shows it online
