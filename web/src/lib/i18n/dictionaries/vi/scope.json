@@ -257,5 +257,22 @@
   "scope.cycles.noCycle": "Một chu kỳ gồm điều lệ, phạm vi được cố định và kết quả dùng để đánh giá.",
   "scope.cycles.noServices": "Chưa có dịch vụ nghiệp vụ. Hãy tạo trong Phạm vi › Dịch vụ nghiệp vụ.",
   "scope.cycles.profilesLoadFailed": "Không tải được hồ sơ kẻ tấn công.",
-  "scope.cycles.exclusionsLoadFailed": "Không tải được các loại trừ phạm vi."
+  "scope.cycles.exclusionsLoadFailed": "Không tải được các loại trừ phạm vi.",
+  "scope.check.inScope": "Trong phạm vi",
+  "scope.check.column": "Phạm vi",
+  "scope.bulk.action": "Thêm vào phạm vi",
+  "scope.bulk.title": "Thêm {count} mục vào phạm vi",
+  "scope.bulk.description": "Mỗi tên miền hoặc địa chỉ trở thành một mục phạm vi chính xác để các lần quét có thể tới được. Ngoại lệ vẫn được ưu tiên, và mục nào đã có trong phạm vi được giữ nguyên.",
+  "scope.bulk.more": "và {count} mục khác",
+  "scope.bulk.nothing": "Không tài sản nào đã chọn cần mục phạm vi.",
+  "scope.bulk.tooMany": "Chỉ chọn tối đa {max} mục mỗi lần.",
+  "scope.bulk.adding": "Đang thêm…",
+  "scope.bulk.confirm": "Thêm vào phạm vi",
+  "scope.bulk.failed": "Không thể thêm vào phạm vi",
+  "scope.bulk.created": "Đã thêm {count}",
+  "scope.bulk.existing": "{count} đã có trong phạm vi",
+  "scope.bulk.refused": "{count} bị từ chối",
+  "scope.bulk.skip.internal": "{count} địa chỉ riêng hoặc nội bộ (do vùng quét quyết định)",
+  "scope.bulk.skip.no_entry_needed": "{count} không cần mục phạm vi (kho mã, tài khoản đám mây)",
+  "scope.bulk.skip.unrecognized": "{count} không phải tên miền hay địa chỉ"
 }

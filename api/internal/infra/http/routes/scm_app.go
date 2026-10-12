@@ -28,9 +28,12 @@ func registerSCMAppRoutes(router Router, h *handler.SCMAppHandler, authMiddlewar
 	router.POST("/api/v1/hooks/github-app", h.GitHubWebhook, webhookRL)
 
 	router.Group("/api/v1/ci/scm-apps", func(r Router) {
-		r.GET("", h.List, middleware.Require(permission.CIRead))
+		r.GET("/", h.List, middleware.Require(permission.CIRead))
 		r.POST("/github/install-url", h.GitHubInstallURL, middleware.Require(permission.CIWrite))
 		r.POST("/github/installations", h.CompleteGitHubInstall, middleware.Require(permission.CIWrite))
 		r.DELETE("/installations/{id}", h.Remove, middleware.Require(permission.CIWrite))
+		// A stored GitLab token: an administrator's act, with a fresh second factor.
+		r.POST("/gitlab-connections", h.ConnectGitLab, middleware.Require(permission.CIWrite), requireStepUp())
+		r.DELETE("/gitlab-connections/{id}", h.RemoveGitLab, middleware.Require(permission.CIWrite))
 	}, append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)...)
 }
