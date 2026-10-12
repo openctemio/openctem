@@ -64,6 +64,7 @@ type Repositories struct {
 	// Pentest
 	PentestCampaign       *postgres.PentestCampaignRepository
 	PentestCampaignMember *postgres.PentestCampaignMemberRepository
+	PentestSignoff        *postgres.PentestCampaignSignoffRepository
 	PentestRetest         *postgres.PentestRetestRepository
 	PentestTemplate       *postgres.PentestTemplateRepository
 	PentestReport         *postgres.PentestReportRepository
@@ -367,6 +368,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Pentest
 		PentestCampaign:       postgres.NewPentestCampaignRepository(db),
 		PentestCampaignMember: postgres.NewPentestCampaignMemberRepository(db),
+		PentestSignoff:        postgres.NewPentestCampaignSignoffRepository(db),
 		PentestRetest:         postgres.NewPentestRetestRepository(db),
 		PentestTemplate:       postgres.NewPentestTemplateRepository(db),
 		PentestReport:         postgres.NewPentestReportRepository(db),
