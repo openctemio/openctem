@@ -4,8 +4,8 @@
  *
  * Every page of the app shell used to ask, on each load, for the caller's
  * profile (/users/me), their organizations (/users/me/tenants), the unread
- * notification count, the review-queue badge and the organization policy
- * (/auth/providers). The bootstrap now returns all of them in one response
+ * notification count, the review-queue badge, the organization policy
+ * (/auth/providers) and the platform announcements. The bootstrap now returns all of them in one response
  * (research/81). Seeding the cache keeps every existing consumer (`useProfile`,
  * `useMyTenants`, the bell, the sidebar badge) working unchanged: they read
  * the seeded value, and those hooks do not revalidate a cached value on mount
@@ -26,12 +26,25 @@ export interface BootstrapBadges {
   easm_review?: number
 }
 
+/** One platform announcement (GET /api/v1/announcements). */
+export interface PlatformAnnouncement {
+  id: string
+  message: string
+  severity: 'info' | 'warning' | 'maintenance'
+  starts_at: string
+  ends_at?: string
+}
+
 export interface BootstrapSessionData {
   user?: UserProfile
   tenants?: TenantMembership[]
   tenant_creation_mode?: string
   badges?: BootstrapBadges
+  announcements?: PlatformAnnouncement[]
 }
+
+/** The platform notices the announcement banner reads. */
+export const ANNOUNCEMENTS_URL = '/api/v1/announcements'
 
 /** The review-queue count the sidebar badge reads (one row, `total` only). */
 export const EASM_REVIEW_COUNT_URL =
@@ -49,6 +62,7 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
     seed(notificationEndpoints.unreadCount(), { count: data.badges.unread_notifications })
   if (typeof data.badges?.easm_review === 'number')
     seed(EASM_REVIEW_COUNT_URL, { data: [], total: data.badges.easm_review })
+  if (Array.isArray(data.announcements)) seed(ANNOUNCEMENTS_URL, { data: data.announcements })
 
   await Promise.all(writes)
 }

@@ -7,17 +7,9 @@ import { Button } from '@/components/ui/button'
 import { get } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
+import { useBootstrapPending } from '@/context/bootstrap-provider'
+import { ANNOUNCEMENTS_URL, type PlatformAnnouncement } from '@/context/bootstrap-session'
 
-/** One platform announcement (GET /api/v1/announcements). */
-export interface PlatformAnnouncement {
-  id: string
-  message: string
-  severity: 'info' | 'warning' | 'maintenance'
-  starts_at: string
-  ends_at?: string
-}
-
-export const ANNOUNCEMENTS_URL = '/api/v1/announcements'
 const DISMISSED_KEY = 'openctem.dismissedAnnouncements'
 
 function readDismissed(): string[] {
@@ -48,15 +40,20 @@ const STYLE = {
  * The platform operator's notices (planned maintenance, warnings), shown to
  * every signed-in user under the header while they are active. The text is
  * plain and rendered as text, never HTML. A user can dismiss one; the choice
- * is kept in this browser only. Loaded once per page load (a notice is
- * written minutes or hours ahead), so it adds no polling.
+ * is kept in this browser only. Loaded once per page load with the session
+ * bootstrap (a notice is written minutes or hours ahead), so it adds no
+ * request and no polling.
  */
 export function PlatformAnnouncementBanner() {
   const { t } = useTranslation()
+  // The session bootstrap carries the notices and seeds this key
+  // (context/bootstrap-session.ts): wait for it rather than ask in parallel,
+  // and do not fetch a seeded value again on mount.
+  const bootstrapPending = useBootstrapPending()
   const { data } = useSWR<{ data: PlatformAnnouncement[] }>(
-    ANNOUNCEMENTS_URL,
+    bootstrapPending ? null : ANNOUNCEMENTS_URL,
     (url: string) => get<{ data: PlatformAnnouncement[] }>(url),
-    { revalidateOnFocus: false, shouldRetryOnError: false }
+    { revalidateOnFocus: false, revalidateIfStale: false, shouldRetryOnError: false }
   )
   const [dismissed, setDismissed] = useState<string[]>(() =>
     typeof window === 'undefined' ? [] : readDismissed()
