@@ -126,17 +126,41 @@ bounded by their own limits and retention, not by this quota.
 - `attachment.uploaded` and `attachment.deleted` audit events record the
   file's name, type, size, SHA-256 and context.
 
+## Retention
+
+The `attachment-retention` controller runs hourly on one replica:
+
+1. It marks (`attachments.orphaned_at`) finding, retest and campaign evidence
+   whose finding or campaign no longer exists **in the file's own
+   organization**, and clears the mark if the parent exists again. A
+   context id that is not a UUID names no parent and counts as deleted.
+2. It deletes, oldest first and at most 500 per run, evidence marked more
+   than `STORAGE_ORPHAN_GRACE_DAYS` (default 7) ago, and uploads never linked
+   to a finding or campaign older than `STORAGE_UNLINKED_RETENTION_HOURS`
+   (default 24; the console links files uploaded while a finding is being
+   written as soon as it is created). 0 keeps that class.
+
+Each file is handled on its own, in its organization: the storage is
+resolved first (a file in an organization bucket that cannot be reached
+keeps its row and is retried), then the row is deleted only if it is still
+purgeable (linked or parent back in the meantime: kept), then the file.
+Every purge is audited `attachment.purged` in the file's organization with
+the reason (`parent_deleted`, `never_linked`), name, size and SHA-256.
+Authorization letter files and contexts other than finding, retest and
+campaign are never purged. Web evidence screenshots keep their own 30-day
+retention.
+
 ## Shipped and planned
 
 Shipped: local and S3 drivers, an organization's own bucket (fail closed),
 tenant erasure, content-sniffed types, streamed uploads, the quota, upload
-and delete audit, effective import limits with a streaming web proxy.
+and delete audit, effective import limits with a streaming web proxy,
+retention of evidence whose parent was deleted and of never-linked uploads.
 
-Planned (RFC-084 §6): short-lived direct downloads from a bucket; retention for
-evidence whose finding or campaign is deleted and for uploads never linked;
-report bytes moved out of Postgres; asynchronous large imports; image
-metadata stripping; a malware scanning hook; S3 server-side encryption
-options; a `local`↔`s3` migration command.
+Planned (RFC-084 §6): short-lived direct downloads from a bucket; report
+bytes moved out of Postgres; asynchronous large imports; image metadata
+stripping; a malware scanning hook; S3 server-side encryption options; a
+`local`↔`s3` migration command.
 
 ## Key files
 
@@ -145,6 +169,9 @@ options; a `local`↔`s3` migration command.
 - `pkg/domain/attachment/sniff.go`: `DetectContentType`.
 - `internal/app/integration/attachment.go`: upload (stream, hash, quota,
   dedup), storage resolution per organization, erasure.
+- `internal/app/integration/attachment_retention.go`,
+  `internal/infra/postgres/attachment_retention.go`,
+  `internal/infra/controller/attachment_retention.go`: the retention sweep.
 - `internal/infra/storage/local.go`, `s3.go`, `tenant.go`: drivers and the
   organization bucket factory.
 - `internal/infra/http/handler/attachment_handler.go`,
