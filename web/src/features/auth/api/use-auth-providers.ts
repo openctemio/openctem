@@ -38,6 +38,8 @@ export interface AuthProvidersResponse {
   request_access?: boolean
   /** The password rules the server enforces and the reset-link lifetime. */
   password_policy?: PasswordPolicy
+  /** Turnstile site key; set when the sign-up forms must pass a CAPTCHA. */
+  captcha_site_key?: string
 }
 
 // ============================================
