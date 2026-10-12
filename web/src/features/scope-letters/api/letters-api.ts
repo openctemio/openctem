@@ -48,13 +48,13 @@ export interface LetterUploadInput {
 
 const BASE = '/api/v1/scope/letters'
 
-export function useLetters() {
+export function useLetters(active = true) {
   const { currentTenant } = useTenant()
   const can = useHasPermission(Permission.ScopeRead)
-  const key = currentTenant && can ? ['scope-letters', currentTenant.id] : null
+  const key = active && currentTenant && can ? ['scope-letters', currentTenant.id] : null
   return useSWR<AuthorizationLetter[]>(
     key,
-    async () => (await get<{ data: AuthorizationLetter[] }>(`${BASE}/`))?.data ?? [],
+    async () => (await get<{ data: AuthorizationLetter[] }>(BASE))?.data ?? [],
     { revalidateOnFocus: false }
   )
 }
@@ -78,7 +78,7 @@ export async function uploadLetter(input: LetterUploadInput): Promise<Authorizat
   form.append('valid_from', input.validFrom)
   form.append('valid_until', input.validUntil)
   form.append('file', input.file)
-  const res = await csrfFetch(`${BASE}/`, { method: 'POST', body: form })
+  const res = await csrfFetch(BASE, { method: 'POST', body: form })
   if (!res.ok) throw await errorFrom(res, `Upload failed (HTTP ${res.status})`)
   return (await res.json()) as AuthorizationLetter
 }

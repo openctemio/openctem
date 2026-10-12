@@ -64,6 +64,29 @@ describe('session bootstrap cache', () => {
     expect(get).not.toHaveBeenCalled()
   })
 
+  it('seeded announcements render in the banner without a request', async () => {
+    const { PlatformAnnouncementBanner } =
+      await import('@/features/announcements/components/platform-announcement-banner')
+    function Seeded({ children }: { children: React.ReactNode }) {
+      const [ready, setReady] = React.useState(false)
+      React.useEffect(() => {
+        void seedSessionCache({
+          announcements: [
+            { id: 'n1', message: 'Maintenance tonight', severity: 'maintenance', starts_at: '' },
+          ],
+        }).then(() => setReady(true))
+      }, [])
+      return ready ? <>{children}</> : null
+    }
+    const { findByText } = render(
+      <Seeded>
+        <PlatformAnnouncementBanner />
+      </Seeded>
+    )
+    expect(await findByText('Maintenance tonight')).toBeTruthy()
+    expect(get).not.toHaveBeenCalled()
+  })
+
   it('without a seed the profile is fetched as before', async () => {
     const { useProfile } = await import('@/features/account/api/use-profile')
     get.mockResolvedValue({ id: 'u2', email: 'b@example.test', name: 'B' })
