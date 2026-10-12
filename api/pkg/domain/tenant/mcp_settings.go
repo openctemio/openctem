@@ -3,6 +3,7 @@ package tenant
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -52,6 +53,24 @@ type MCPSettings struct {
 	// RequireDPoP accepts only DPoP-bound tokens (RFC 9449): a stolen token
 	// is useless without the client's private key.
 	RequireDPoP bool `json:"require_dpop,omitempty"`
+	// MaxTLP is the most restrictive TLP level of a pentest campaign whose
+	// content may be sent to AI applications; "" means amber. A campaign
+	// above it is refused by every MCP pentest tool and prompt.
+	MaxTLP string `json:"max_tlp,omitempty"`
+}
+
+// DefaultMCPMaxTLP is the TLP limit for AI applications when none is set.
+const DefaultMCPMaxTLP = "amber"
+
+// mcpTLPLevels are the TLP levels (FIRST TLP 2.0), widest sharing first.
+var mcpTLPLevels = []string{"clear", "green", "amber", "amber_strict", "red"}
+
+// AIMaxTLP is the effective TLP limit for AI applications.
+func (s MCPSettings) AIMaxTLP() string {
+	if s.MaxTLP == "" {
+		return DefaultMCPMaxTLP
+	}
+	return s.MaxTLP
 }
 
 // Validate checks the policy and normalizes host names to lower case.
@@ -76,6 +95,9 @@ func (s *MCPSettings) Validate() error {
 		if !mcpScopeRe.MatchString(sc) {
 			return fmt.Errorf("%w: unknown scope %q", shared.ErrValidation, sc)
 		}
+	}
+	if s.MaxTLP != "" && !slices.Contains(mcpTLPLevels, s.MaxTLP) {
+		return fmt.Errorf("%w: max_tlp must be one of clear, green, amber, amber_strict, red", shared.ErrValidation)
 	}
 	if s.RefreshDays < 0 || s.RefreshDays > MaxMCPRefreshDays {
 		return fmt.Errorf("%w: refresh_days must be between 1 and %d (or 0 for %s)", shared.ErrValidation, MaxMCPRefreshDays, mcpSettingsDefault)
