@@ -2974,3 +2974,25 @@ func (m *mockAuthUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ 
 	m.updateCalls++
 	return m.updateErr
 }
+
+// A password longer than bcrypt hashes (72 bytes) is refused the same way
+// for a new and an already registered email. It used to pass validation,
+// return the fake success for an existing email (no hash computed) and fail
+// as a server error for a new one (the hash call refused it): an account
+// enumeration oracle.
+func TestAuthService_PasswordOverBcryptLimit(t *testing.T) {
+	long := strings.Repeat("Zr7uqLakeTun", 6) + "x" // 73 bytes
+
+	svc, deps := newTestAuthService()
+	seedAuthLocalUser(deps.userRepo, "existing@example.com", "hash")
+
+	for _, email := range []string{"existing@example.com", "new@example.com"} {
+		_, err := svc.Register(context.Background(), auth.RegisterInput{Email: email, Password: long, Name: "N"})
+		if !errors.Is(err, password.ErrPasswordTooLong) {
+			t.Fatalf("register %s: expected ErrPasswordTooLong, got %v", email, err)
+		}
+	}
+	if deps.userRepo.createCalls != 0 {
+		t.Fatalf("no account may be created, got %d create calls", deps.userRepo.createCalls)
+	}
+}
