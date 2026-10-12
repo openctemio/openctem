@@ -34,6 +34,10 @@ vi.mock('@/features/repositories/components/repository-workspace', () => ({
   ),
 }))
 vi.mock('@/features/scan-windows', () => ({ AssetScanWindowCard: () => null }))
+vi.mock('@/features/attack-surface', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  AssetWebEvidenceCard: () => null,
+}))
 vi.mock('@/features/assets', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   const sections = Object.keys(actual)
