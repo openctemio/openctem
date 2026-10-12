@@ -13,6 +13,12 @@
      them with the old key while it is listed in
      `APP_ENCRYPTION_KEY_PREVIOUS`, and re-hashes each one with the new key
      the next time it is used.
+3. **It is the source of derived secrets** when their variables are unset.
+   The session secret (`AUTH_JWT_SECRET`) and the OAuth state secret are
+   derived from it, so a rotation **signs every user out** (and fails any
+   social sign-in in flight). To rotate the encryption key without that, set
+   `AUTH_JWT_SECRET` to its own value (`openssl rand -hex 64`) before the
+   rotation; it then no longer follows the key.
 
 ## What is covered
 

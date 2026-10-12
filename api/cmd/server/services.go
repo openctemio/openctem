@@ -2818,21 +2818,9 @@ func initContentSigner(cfg *config.Config, log *logger.Logger) *contentpackdom.S
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {
 	if !cfg.Encryption.IsConfigured() {
-		// Refuse to start in production without encryption key.
-		// Plaintext credentials in production is a CRITICAL security risk.
-		if cfg.App.Env == config.EnvProduction {
-			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is required in production (APP_ENV=production); refusing to start with plaintext credentials")
-		}
-		// Even in non-production, require an EXPLICIT opt-in to use
-		// plaintext storage. Audit finding: silent fallback meant
-		// developers could ship credentials to staging/test environments
-		// thinking they were encrypted. Now an env var must be set
-		// intentionally — making the security trade-off visible.
-		if !cfg.Encryption.AllowPlaintext {
-			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is not set; to use plaintext credential storage in non-production set APP_ALLOW_PLAINTEXT_CREDENTIALS=true explicitly (NEVER do this in production)")
-		}
-		log.Warn("APP_ENCRYPTION_KEY not configured - credentials will be stored in plaintext (DEVELOPMENT ONLY, ALLOW_PLAINTEXT_CREDENTIALS=true)")
-		return crypto.NewNoOpEncryptor(), nil
+		// Credentials are never stored in plaintext, in any environment. A
+		// development checkout uses the published key in api/.env.example.
+		return nil, fmt.Errorf("APP_ENCRYPTION_KEY is required (development: copy the key from api/.env.example; anywhere else: openssl rand -hex 32)")
 	}
 
 	current, err := crypto.NewCipherFromKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)
