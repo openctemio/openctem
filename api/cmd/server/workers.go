@@ -879,6 +879,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.Evidence, time.Hour, log.With("controller", "finding-evidence-retention")))
 	}
 
+	// Attachment retention: evidence of deleted findings/campaigns after
+	// STORAGE_ORPHAN_GRACE_DAYS, never-linked uploads after
+	// STORAGE_UNLINKED_RETENTION_HOURS (file-storage.md).
+	if svc.Attachment != nil {
+		w.ControllerManager.Register(controller.NewAttachmentRetentionController(
+			svc.Attachment, time.Hour, log.With("controller", "attachment-retention")))
+	}
+
 	// Sensor activity timeline retention: sensor_events past 90 days.
 	if repos.SensorEvent != nil {
 		w.ControllerManager.Register(controller.NewSensorEventRetentionController(

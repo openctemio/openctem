@@ -805,6 +805,18 @@ vars:
     type: int
     default: "20480"
     description: "Most attachment bytes one organization may hold, in MiB (20480 = 20 GiB). An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota."
+  - name: STORAGE_ORPHAN_GRACE_DAYS
+    component: api
+    group: "Attachment storage"
+    type: int
+    default: "7"
+    description: "Days evidence files stay after their finding or campaign is deleted; then the retention sweep deletes them (audited `attachment.purged`). 0 = keep them."
+  - name: STORAGE_UNLINKED_RETENTION_HOURS
+    component: api
+    group: "Attachment storage"
+    type: int
+    default: "24"
+    description: "Hours an upload never linked to a finding or campaign stays before the retention sweep deletes it. Authorization letter files are never purged. 0 = keep them."
   - name: STORAGE_PROVIDER
     component: api
     group: "Attachment storage"
