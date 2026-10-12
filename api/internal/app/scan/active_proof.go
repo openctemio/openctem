@@ -1,11 +1,13 @@
 package scan
 
-// Ownership proof for active probes (RFC-054 §8.1, owner decision S2): the
-// operator's SCOPE_ACTIVE_PROOF decides when a target must sit at or under a
-// verified domain of the tenant. Platform sensors send packets from the
-// platform's own addresses, so in SaaS (platform_sensors) a job goes to them
-// only when every target is proven; intrusive (T2) scans need proof always.
-// No tenant setting changes this.
+// Ownership proof for active probes (RFC-054 §8.1): the platform setting
+// "Require a verified domain before platform sensors scan a target"
+// (Console > System > Platform scanning, scanpolicy.ProofSettingKey)
+// decides whether a target must sit at or under a verified domain of the
+// tenant. Default off: the tenant's scope entry is the authorization. On:
+// platform sensors send packets from the platform's own addresses, so a job
+// goes to them only when every target is proven, and intrusive (T2) scans
+// need proof on any sensor. No tenant setting changes this.
 
 import (
 	"context"
@@ -17,13 +19,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
-// Active-proof modes (config.ScopeProof*).
-const (
-	ActiveProofOff             = "off"
-	ActiveProofPlatformSensors = "platform_sensors"
-	ActiveProofAll             = "all"
-)
-
 // ProofVerifier lists the targets that are not at or under a verified
 // domain of the tenant (*easm.ActiveGate). Private and internal targets are
 // never listed (scan zones gate them).
@@ -31,10 +26,25 @@ type ProofVerifier interface {
 	UnverifiedTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error)
 }
 
-// WithActiveProof sets the operator's active-proof mode ("" = off).
-func WithActiveProof(mode string) ServiceOption {
-	return func(s *Service) { s.activeProof = mode }
+// ProofPolicy answers whether the platform requires ownership proof now
+// (*scanpolicy.Service; an unreadable setting answers true).
+type ProofPolicy interface {
+	PlatformProofRequired(ctx context.Context) bool
 }
+
+// StaticProofPolicy is a fixed answer (tests, tools).
+type StaticProofPolicy bool
+
+// PlatformProofRequired implements ProofPolicy.
+func (p StaticProofPolicy) PlatformProofRequired(context.Context) bool { return bool(p) }
+
+// WithProofPolicy sets where the proof requirement is read (nil = off).
+func WithProofPolicy(p ProofPolicy) ServiceOption {
+	return func(s *Service) { s.proofPolicy = p }
+}
+
+// SetProofPolicy wires the platform setting after construction.
+func (s *Service) SetProofPolicy(p ProofPolicy) { s.proofPolicy = p }
 
 // codeProofRequired refuses a probe that needs a verified domain.
 const codeProofRequired = "PROOF_REQUIRED"
@@ -52,10 +62,10 @@ func (s *Service) unverified(ctx context.Context, tenantID shared.ID, targets []
 	return pv.UnverifiedTargets(ctx, tenantID, targets)
 }
 
-// platformNeedsProof reports whether the operator requires proof for jobs on
-// platform sensors.
-func (s *Service) platformNeedsProof() bool {
-	return s.activeProof == ActiveProofPlatformSensors || s.activeProof == ActiveProofAll
+// platformNeedsProof reports whether the platform requires proof: for jobs
+// on platform sensors, and for intrusive probes on any sensor.
+func (s *Service) platformNeedsProof(ctx context.Context) bool {
+	return s.proofPolicy != nil && s.proofPolicy.PlatformProofRequired(ctx)
 }
 
 // isIntrusiveTool reports whether every stage the scanner implements is
@@ -74,11 +84,11 @@ func isIntrusiveTool(tool string) bool {
 	return true
 }
 
-// refuseUnprovenIntrusive refuses an intrusive (T2) scan when any target is
-// not at or under a verified domain (RFC-054 §8.1): intrusive probes always
-// need proof, whatever the mode.
+// refuseUnprovenIntrusive refuses an intrusive (T2) scan when the platform
+// requires proof and any target is not at or under a verified domain
+// (RFC-054 §8.1).
 func (s *Service) refuseUnprovenIntrusive(ctx context.Context, tenantID shared.ID, scanner string, targets []string) error {
-	if !isIntrusiveTool(scanner) || len(targets) == 0 {
+	if !isIntrusiveTool(scanner) || len(targets) == 0 || !s.platformNeedsProof(ctx) {
 		return nil
 	}
 	missing, err := s.unverified(ctx, tenantID, targets)

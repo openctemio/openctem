@@ -134,7 +134,6 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SCOPE_ACTIVE_PROOF` | string | empty |  |  | When an active probe needs a verified domain of the organization: `off`, `platform_sensors` (jobs on shared platform sensors) or `all`. Intrusive probes always need one. Unset: `off`. |
 | `SCOPE_DENY_EXTRA` | list | empty |  |  | Comma-separated domains and CIDRs that no organization may target, in addition to the built-in deny list (for example the platform's own names and ranges). |
 | `SCOPE_MAX_PUBLIC_CIDR_V4` | int | `16` |  |  | Largest public IPv4 range (prefix length) one scope entry may cover. Private ranges are not capped. |
 | `SCOPE_MAX_PUBLIC_CIDR_V6` | int | `32` |  |  | Largest public IPv6 range one scope entry may cover. |
@@ -534,6 +533,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AGENT_LB_MAX_DISK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS` |
 | `AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS` |
 | `SENSOR_TRANSPORT_V3_ENABLED` | rename it to `SENSOR_TRANSPORT_V3=auto|off` |
+| `SCOPE_ACTIVE_PROOF` | rename it to `` |
 | `APP_DEBUG` | unset it; it switched nothing on (use LOG_LEVEL=debug outside production) |
 | `GRPC_PORT` | unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR |
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
