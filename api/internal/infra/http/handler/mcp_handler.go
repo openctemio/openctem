@@ -104,7 +104,7 @@ type mcpPentestReader interface {
 	GetUserCampaignRole(ctx context.Context, tenantID, campaignID, userID string) (pentestdom.CampaignRole, error)
 	GetCampaign(ctx context.Context, tenantID, campaignID string) (*pentestdom.Campaign, error)
 	ListCampaignMembers(ctx context.Context, tenantID, campaignID string) ([]*pentestdom.CampaignMember, error)
-	GetCampaignStats(ctx context.Context, tenantID, campaignID string) (*pentestdom.CampaignStats, error)
+	GetCampaignStats(ctx context.Context, tenantID, campaignID string, publishedOnly bool) (*pentestdom.CampaignStats, error)
 	QueryCampaignFindings(ctx context.Context, q appcompliance.PentestFindingQuery) (pagination.Result[*vulnerability.Finding], error)
 	ReportFindings(ctx context.Context, tenantID, campaignID string) ([]*vulnerability.Finding, report.StatsData, error)
 	ListMemberCampaigns(ctx context.Context, q appcompliance.MemberCampaignQuery) (pagination.Result[appcompliance.MemberCampaign], error)
