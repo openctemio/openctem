@@ -160,6 +160,12 @@ func (h *VulnerabilityHandler) RemoveCommentReaction(w http.ResponseWriter, r *h
 		}
 		emoji = unescaped
 	}
+	h.removeReaction(w, r, emoji)
+}
+
+// removeReaction removes the emoji reaction named by the route (the caller's,
+// or ?user_id='s for an admin) and writes the comment's reactions.
+func (h *VulnerabilityHandler) removeReaction(w http.ResponseWriter, r *http.Request, emoji string) {
 	in := h.reactionInput(r, emoji)
 	in.TargetUserID = r.URL.Query().Get("user_id")
 	summaries, err := h.service.RemoveCommentReaction(r.Context(), in)

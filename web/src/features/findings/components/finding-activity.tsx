@@ -81,12 +81,13 @@ export const FindingActivityView = forwardRef<EntityActivityHandle, FindingActiv
     // POST /findings/{id}/comments needs findings:comment; without it the
     // composer is not offered (instead of a 403 on Send). Edits, deletes and
     // reactions use the same permission.
-    const canManage = useCanMutate('POST /api/v1/findings/{id}/comments') && !readOnly
-    // A pentest finding takes comments from every campaign member (the
-    // pentest route needs pentest:findings:read; the API checks the role).
+    const canManageFinding = useCanMutate('POST /api/v1/findings/{id}/comments') && !readOnly
+    // A pentest finding takes comments, edits of one's own comments and
+    // reactions from every campaign member, clients included (the pentest
+    // routes need pentest:findings:read; the API checks the campaign role).
     const canPentestComment =
       useCanMutate('POST /api/v1/pentest/findings/{id}/comments') && !readOnly
-    const canComment = pentest ? canPentestComment : canManage
+    const canComment = pentest ? canPentestComment : canManageFinding
 
     return (
       <EntityActivity
@@ -111,9 +112,9 @@ export const FindingActivityView = forwardRef<EntityActivityHandle, FindingActiv
               }
             : undefined
         }
-        onEditComment={canManage ? feed.editComment : undefined}
-        onDeleteComment={canManage ? feed.deleteComment : undefined}
-        onToggleReaction={canManage ? feed.toggleReaction : undefined}
+        onEditComment={canComment ? feed.editComment : undefined}
+        onDeleteComment={canComment ? feed.deleteComment : undefined}
+        onToggleReaction={canComment ? feed.toggleReaction : undefined}
         urlParam={urlParam}
         legacyTab={legacyTab}
         shortcut={shortcut}
