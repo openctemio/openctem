@@ -45,6 +45,13 @@ import (
 //	                          any admin         ops_admin+ (grant/deny; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
+//	/admin/settings/legal     any admin         super_admin + fresh TOTP code
+//	                                            (critical audit; read publicly
+//	                                            at GET /api/v1/legal)
+//	/admin/settings/email     any admin         super_admin + fresh TOTP code
+//	                                            (critical audit, password never
+//	                                            returned); test: super_admin,
+//	                                            to the caller's address only
 //	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
@@ -179,6 +186,28 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// Platform e-mail (Console > System > E-mail, RFC-079): any admin reads;
+	// a super admin changes it with a fresh authenticator code and sends the
+	// test message (to their own address only).
+	if h.AdminEmail != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/email", func(r Router) {
+			r.GET("/", h.AdminEmail.Get)
+			r.PUT("/", h.AdminEmail.Update, requireSuper)
+			r.POST("/test", h.AdminEmail.SendTest, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// Legal information (Console > System > Legal, RFC-079): any admin reads;
+	// a super admin changes it with a fresh authenticator code.
+	if h.AdminLegal != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/legal", func(r Router) {
+			r.GET("/", h.AdminLegal.Get)
+			r.PUT("/", h.AdminLegal.Update, requireSuper)
 		}, adminMiddlewares...)
 	}
 

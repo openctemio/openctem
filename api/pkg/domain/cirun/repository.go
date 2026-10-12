@@ -130,6 +130,10 @@ type PipelineRepository interface {
 	// on the repository asset of that name: a name the token does not sign
 	// stays with the first repository id that used it.
 	RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider Provider, issuer, repositoryName, externalRepoID string) (bool, error)
+	// RequestRepoExceptions stores a repository file's exceptions as pending
+	// suppression rules on the repository asset, skipping any already open,
+	// and returns how many it created.
+	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []RepoException) (int, error)
 	// MarkDecorationPending queues an evaluated run's verdict for posting to
 	// the code host (RFC-077).
 	MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error

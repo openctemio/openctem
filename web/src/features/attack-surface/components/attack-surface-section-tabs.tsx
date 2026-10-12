@@ -8,9 +8,10 @@ import { useVisibleSectionTabs } from '@/lib/permissions'
 import { useEASMReviewCount } from '../hooks/use-easm-review'
 
 const REVIEW_HREF = '/attack-surface/review'
+const LOOKALIKES_HREF = '/attack-surface/lookalikes'
 
 /**
- * Overview | Review | Changes, the route tabs of Discovery > Attack surface.
+ * Overview | Review | Changes | Lookalikes, the route tabs of Discovery > Attack surface.
  * Review shows how many names wait for an ownership decision (the queue's
  * own count), fetched only when that tab is visible.
  */
@@ -29,6 +30,8 @@ export function AttackSurfaceSectionTabs() {
             return { ...tab, label: t('attackSurface.tab.review', tab.label) }
           case '/attack-surface/changes':
             return { ...tab, label: t('attackSurface.tab.changes', tab.label) }
+          case LOOKALIKES_HREF:
+            return { ...tab, label: t('lookalikes.tab', tab.label) }
           default:
             return tab
         }

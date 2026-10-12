@@ -8,8 +8,9 @@ import (
 	"net"
 	"time"
 
-	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 	"github.com/prometheus/client_golang/prometheus"
+
+	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
@@ -73,6 +74,7 @@ import (
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/platformemail"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
@@ -122,7 +124,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -721,6 +722,10 @@ type Services struct {
 	// Pentest
 	Pentest    *compliance.PentestService
 	Attachment *integration.AttachmentService
+	// EASMLookalikes runs passive lookalike-domain monitoring (RFC-083).
+	EASMLookalikes *easmapp.LookalikeService
+	// EASMNetworkSeeds manages AS number and organization seeds (RFC-082).
+	EASMNetworkSeeds *easmapp.NetworkSeedService
 	// WebEvidence stores and serves web assets' captures (RFC-081).
 	WebEvidence *webevidenceapp.Service
 
@@ -802,6 +807,9 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// PlatformEmail is the platform's SMTP settings, set in the admin console
+	// (RFC-079); its Sender backs Email.
+	PlatformEmail *platformemail.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -896,6 +904,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Encryptor, err = initEncryptor(cfg, log)
 	if err != nil {
 		return nil, err
+	}
+	if repos.PlatformSetting != nil {
+		s.PlatformEmail = platformemail.NewService(repos.PlatformSetting, s.Encryptor, repos.AdminAuditLog, log)
 	}
 
 	// Initialize audit service first (used by others)
@@ -1154,6 +1165,26 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	var sweepDNS easmapp.SweepDNS
 	if s.EASMDNS != nil {
 		sweepDNS = s.EASMDNS
+	}
+	// Passive lookalike-domain monitoring (RFC-083): its own resolver client
+	// (low rate), crt.sh through the SSRF guard, exposures through the EASM
+	// writer (alerts) and the DNS repository's auto-resolve.
+	var (
+		lookalikeDNS       easmapp.LookalikeDNS
+		lookalikeCT        easmapp.CTCounter
+		lookalikeExposures easmapp.LookalikeExposures
+		lookalikeResolver  easmapp.LookalikeResolver
+		lookalikeLog       = log
+	)
+	if d, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: 5}); err != nil {
+		log.Warn("lookalike checks disabled: no resolver", "error", err)
+	} else {
+		lookalikeDNS, lookalikeCT, lookalikeExposures, lookalikeResolver = d, easmapp.NewCrtSh(), easmExposures, repos.EASMDNS
+		lookalikeLog = log.With("service", "easm-lookalikes")
+	}
+	s.EASMLookalikes = easmapp.NewLookalikeService(repos.EASMLookalike, lookalikeDNS, lookalikeCT, lookalikeExposures, lookalikeResolver, lookalikeLog)
+	if lookalikeDNS != nil {
+		s.EASMLookalikes.SetSettings(s.Tenant) // per-organization opt-out of crt.sh queries
 	}
 	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
 	s.CredentialImport = integration.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
@@ -2487,6 +2518,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Every asset an ingest wrote moves the freshness clock of the attribute
 	// classes the report's tool observes (docs/architecture/asset-freshness.md).
 	s.Ingest.SetAssetsObservedCallback(assetfreshnessapp.NewRecorder(repos.AssetFreshness, log).AssetsObserved)
+	// Network seeds (RFC-082): expanded from RIPEstat through the SSRF guard.
+	s.EASMNetworkSeeds = easmapp.NewNetworkSeedService(repos.EASMNetworkSeed, easmapp.NewRIPEstat(), s.ScopeGuardrails, log.With("service", "easm-network-seeds"))
+	s.EASMNetworkSeeds.SetSettings(s.Tenant) // per-organization opt-out of RIPEstat lookups
 	// Web evidence (RFC-081): status, title and masked snippet of web
 	// assets; screenshots only for organizations that turned them on,
 	// stored in the tenant's file storage.
@@ -2726,27 +2760,19 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	}
 }
 
-// InitEmailServices initializes email-related services.
+// InitEmailServices builds the e-mail service on the platform e-mail
+// settings (admin console, System > E-mail). It always exists once those
+// settings can be read; whether it can send is decided per message, so a
+// change in the console applies without a restart.
 func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) error {
-	if !cfg.SMTP.IsConfigured() {
-		log.Warn("email service not configured - email features will be disabled")
+	if s.PlatformEmail == nil {
+		log.Warn("platform e-mail settings unavailable - email features will be disabled")
 		return nil
 	}
-
-	emailSender := email.NewSMTPSender(email.Config{
-		Host:       cfg.SMTP.Host,
-		Port:       cfg.SMTP.Port,
-		User:       cfg.SMTP.User,
-		Password:   cfg.SMTP.Password,
-		From:       cfg.SMTP.From,
-		FromName:   cfg.SMTP.FromName,
-		TLS:        cfg.SMTP.TLS,
-		SkipVerify: cfg.SMTP.SkipVerify,
-		Timeout:    cfg.SMTP.Timeout,
-	})
-	s.Email = auth.NewEmailService(emailSender, cfg.SMTP, cfg.App.Name, log)
-	log.Info("email service initialized", "host", cfg.SMTP.Host, "from", cfg.SMTP.From)
-
+	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.App.Name, log)
+	if !s.Email.IsConfigured() {
+		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
+	}
 	return nil
 }
 
@@ -2818,21 +2844,9 @@ func initContentSigner(cfg *config.Config, log *logger.Logger) *contentpackdom.S
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {
 	if !cfg.Encryption.IsConfigured() {
-		// Refuse to start in production without encryption key.
-		// Plaintext credentials in production is a CRITICAL security risk.
-		if cfg.App.Env == config.EnvProduction {
-			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is required in production (APP_ENV=production); refusing to start with plaintext credentials")
-		}
-		// Even in non-production, require an EXPLICIT opt-in to use
-		// plaintext storage. Audit finding: silent fallback meant
-		// developers could ship credentials to staging/test environments
-		// thinking they were encrypted. Now an env var must be set
-		// intentionally — making the security trade-off visible.
-		if !cfg.Encryption.AllowPlaintext {
-			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is not set; to use plaintext credential storage in non-production set APP_ALLOW_PLAINTEXT_CREDENTIALS=true explicitly (NEVER do this in production)")
-		}
-		log.Warn("APP_ENCRYPTION_KEY not configured - credentials will be stored in plaintext (DEVELOPMENT ONLY, ALLOW_PLAINTEXT_CREDENTIALS=true)")
-		return crypto.NewNoOpEncryptor(), nil
+		// Credentials are never stored in plaintext, in any environment. A
+		// development checkout uses the published key in api/.env.example.
+		return nil, fmt.Errorf("APP_ENCRYPTION_KEY is required (development: copy the key from api/.env.example; anywhere else: openssl rand -hex 32)")
 	}
 
 	current, err := crypto.NewCipherFromKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)

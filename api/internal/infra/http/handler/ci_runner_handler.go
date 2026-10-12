@@ -318,6 +318,11 @@ type CIEvaluateRequest struct {
 	// ScanFailures counts scanners that failed to run or whose output could
 	// not be parsed. Any failure fails the gate.
 	ScanFailures int `json:"scan_failures"`
+	// RepoPolicy is the gate part of the repository's .openctem.yml. It can
+	// only tighten the central policy; its exceptions become pending
+	// suppression requests (default-branch runs only). An invalid file is
+	// refused (400).
+	RepoPolicy *cirun.RepoPolicy `json:"repo_policy,omitempty"`
 }
 
 // Evaluate handles POST /api/v1/ci/runs/{id}/evaluate
@@ -347,7 +352,7 @@ func (h *CIRunnerHandler) Evaluate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	v, err := h.svc.Evaluate(r.Context(), run, cirunapp.EvaluateInput{ScanFailures: req.ScanFailures,
+	v, err := h.svc.Evaluate(r.Context(), run, cirunapp.EvaluateInput{ScanFailures: req.ScanFailures, RepoPolicy: req.RepoPolicy,
 		ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
 	if err != nil {
 		h.writeErr(w, "evaluate CI run", err)

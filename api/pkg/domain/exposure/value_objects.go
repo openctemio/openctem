@@ -38,6 +38,9 @@ const (
 	// EventTypeSubdomainTakeover: a dangling CNAME a sensor takeover check
 	// (nuclei takeover template, tenant scan) confirmed (RFC-036 P1).
 	EventTypeSubdomainTakeover EventType = "subdomain_takeover"
+	// EventTypeLookalikeDomain: a registered lookalike of one of the
+	// organization's root domains, found by passive checks (RFC-083).
+	EventTypeLookalikeDomain EventType = "lookalike_domain"
 
 	// Identity exposures (CTEM Discovery "exposure ≠ vulnerability" — the
 	// identity attack surface). Emitted by the EntraID/IdP identity-exposure
@@ -82,6 +85,7 @@ func AllEventTypes() []EventType {
 		EventTypeDanglingNS,
 		EventTypeEmailSecurityWeak,
 		EventTypeSubdomainTakeover,
+		EventTypeLookalikeDomain,
 		EventTypeCustom,
 	}
 }
@@ -116,7 +120,7 @@ func (t EventType) IsPositiveExposure() bool {
 		EventTypeIdentityMFAGap, EventTypeIdentityStalePrincipal,
 		EventTypeIdentityOverprivileged,
 		EventTypeDanglingCNAME, EventTypeDanglingNS, EventTypeEmailSecurityWeak,
-		EventTypeSubdomainTakeover:
+		EventTypeSubdomainTakeover, EventTypeLookalikeDomain:
 		return true
 	default:
 		return false

@@ -137,6 +137,7 @@ export interface UpdateScopeSettingsInput {
 
 /** One result of POST /scope/check. */
 export type ApiScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
+export type ApiScopeCheckRouting = Schemas['internal_infra_http_handler.ScopeCheckRouting']
 /** A fix the API offers for a refused target (RFC-054 §6.5). */
 export type ApiScopeFix = Schemas['github_com_openctemio_openctem_api_pkg_domain_scope.Fix']
 

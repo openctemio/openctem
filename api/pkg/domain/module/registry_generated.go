@@ -128,7 +128,7 @@ var Registry = []Definition{
 		},
 		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm", "/api/v1/assets/{id}/web-evidence"},
 		MCP:    []string{"get_exposure_chains"},
-		Jobs:   []string{"AssetEnrichmentController", "CertMonitorController", "EASMDNSController", "WebEvidenceRetentionController", "EASMWeeklyDigestController", "GraphEnrichmentController", "ScopeJoinController"},
+		Jobs:   []string{"AssetEnrichmentController", "CertMonitorController", "EASMDNSController", "EASMLookalikeController", "EASMNetworkSeedController", "WebEvidenceRetentionController", "EASMWeeklyDigestController", "GraphEnrichmentController", "ScopeJoinController"},
 	},
 	{
 		ID: ModuleScopeConfig, Slug: "scope-config", Name: "Scope Config",
