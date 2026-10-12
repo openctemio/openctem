@@ -175,7 +175,7 @@ func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.ssoService.HandleCallback(r.Context(), auth.SSOCallbackInput{
+	result, err := h.ssoService.HandleCallback(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), auth.SSOCallbackInput{
 		Provider:    provider,
 		Code:        req.Code,
 		State:       req.State,

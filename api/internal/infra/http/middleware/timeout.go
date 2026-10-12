@@ -47,6 +47,7 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 			tw := &timeoutWriter{
 				ResponseWriter: w,
 				done:           done,
+				h:              w.Header().Clone(),
 			}
 
 			go func() {
@@ -101,12 +102,40 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 }
 
 // timeoutWriter wraps http.ResponseWriter to handle timeout scenarios.
+//
+// The handler gets its OWN header map (h). It runs on another goroutine than
+// the timeout path, which writes the 504 into the real header map; sharing
+// that map made a handler that set a header after the timeout fire a
+// concurrent map write, a fatal error that kills the process. h is copied to
+// the real header under mu when the handler first writes, and never after a
+// timeout.
 type timeoutWriter struct {
 	http.ResponseWriter
 	done     chan struct{}
 	mu       sync.Mutex
+	h        http.Header
 	written  bool
 	timedOut bool
+}
+
+// Header returns the handler's own header map (see timeoutWriter).
+func (tw *timeoutWriter) Header() http.Header { return tw.h }
+
+// commitHeaderLocked copies the handler's headers to the real response once,
+// before its first write. Callers hold tw.mu.
+func (tw *timeoutWriter) commitHeaderLocked() {
+	if tw.written {
+		return
+	}
+	dst := tw.ResponseWriter.Header()
+	for k := range dst {
+		if _, ok := tw.h[k]; !ok {
+			delete(dst, k)
+		}
+	}
+	for k, v := range tw.h {
+		dst[k] = v
+	}
 }
 
 // Write implements http.ResponseWriter. Same CodeQL
@@ -122,6 +151,7 @@ func (tw *timeoutWriter) Write(b []byte) (int, error) {
 		return 0, context.DeadlineExceeded
 	}
 
+	tw.commitHeaderLocked()
 	tw.written = true
 	return tw.ResponseWriter.Write(b)
 }
@@ -134,6 +164,7 @@ func (tw *timeoutWriter) WriteHeader(code int) {
 		return
 	}
 
+	tw.commitHeaderLocked()
 	tw.written = true
 	tw.ResponseWriter.WriteHeader(code)
 }
