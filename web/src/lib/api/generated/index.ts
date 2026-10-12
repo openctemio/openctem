@@ -213,6 +213,10 @@ export type DeleteModuleGrantRequest =
 export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
 export type UpdateSignupPolicyRequest =
   Schemas['internal_infra_http_handler.UpdateSignupPolicyRequest']
+// Admin console: the platform e-mail settings (System > E-mail, RFC-079)
+export type EmailSettingsResponse = Schemas['internal_infra_http_handler.EmailSettingsResponse']
+export type UpdateEmailSettingsRequest =
+  Schemas['internal_infra_http_handler.UpdateEmailSettingsRequest']
 export type AuditChainSample =
   Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample']
 export type AuditChainClass =

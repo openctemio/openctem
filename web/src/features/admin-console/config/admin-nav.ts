@@ -8,6 +8,7 @@ import {
   MonitorSmartphone,
   KeyRound,
   LayoutDashboard,
+  Mail,
   Megaphone,
   Radar,
   Package,
@@ -144,6 +145,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/sign-up',
         icon: UserPlus,
         keywords: ['registration', 'self-service', 'policy'],
+      },
+      {
+        title: 'E-mail',
+        i18nKey: 'admin.nav.email',
+        url: '/admin/system/email',
+        icon: Mail,
+        keywords: ['smtp', 'mail', 'invitations', 'notifications', 'sender'],
       },
       {
         title: 'Scan approval',
