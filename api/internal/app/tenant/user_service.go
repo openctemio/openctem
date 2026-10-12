@@ -186,6 +186,11 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID string, input Up
 
 	avatarURL := u.AvatarURL()
 	if input.AvatarURL != nil {
+		// A picture is shown to teammates: an arbitrary host could log
+		// their IP addresses, so only known avatar hosts are accepted.
+		if !userdom.AllowedAvatarURL(*input.AvatarURL) {
+			return nil, fmt.Errorf("%w: avatar_url must be an https URL on a known avatar host (GitHub, Google, Gravatar, GitLab)", shared.ErrValidation)
+		}
 		avatarURL = *input.AvatarURL
 	}
 
