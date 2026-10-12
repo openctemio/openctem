@@ -24,6 +24,13 @@ import { SUMMARY_SCOPE_DEBOUNCE_MS } from '../components/target-picker/selection
 export interface ScanReview {
   /** Why the scan cannot be created as it is; empty when it can. */
   blockers: string[]
+  /**
+   * The blockers other than refused targets: empty when the scan can start
+   * for its allowed targets with the refused ones skipped.
+   */
+  otherBlockers: string[]
+  /** Direct targets the scope check allows. */
+  allowedCount: number
   /** What the user should know before starting. */
   warnings: string[]
   /** Direct targets the scope check refused (by name). */
@@ -54,13 +61,17 @@ export function useScanReview(
 
   return useMemo(() => {
     const blockers: string[] = []
+    const otherBlockers: string[] = []
     const warnings: string[] = []
     for (const problem of [
       basicInfoError(form, t),
       targetsError(form, t),
       scheduleError(form, { requireFuture: true }, t),
     ]) {
-      if (problem) blockers.push(problem)
+      if (problem) {
+        blockers.push(problem)
+        otherBlockers.push(problem)
+      }
     }
     const refused = (scope.results ?? []).filter((r) => !r.allowed).map((r) => r.target ?? '')
     if (refused.length > 0) {
@@ -79,22 +90,22 @@ export function useScanReview(
         .map((n) => n.blocking?.message)
         .filter((m): m is string => !!m)
       const why = reasons[0] ?? wf.targets?.error?.message
-      blockers.push(
-        why
-          ? t('scans.review.workflowWouldNotStartWhy', undefined, { why })
-          : t('scans.review.workflowWouldNotStart')
-      )
+      const msg = why
+        ? t('scans.review.workflowWouldNotStartWhy', undefined, { why })
+        : t('scans.review.workflowWouldNotStart')
+      blockers.push(msg)
+      otherBlockers.push(msg)
     }
     const windows = wf?.targets?.windows
     if ((windows?.never_count ?? 0) > 0) {
       // The trigger refuses a run with a target whose windows never open.
-      blockers.push(
-        t(
-          'scanWindows.review.never',
-          '{n} targets have scan windows that never open: starting the scan is refused until a policy changes',
-          { n: windows?.never_count ?? 0 }
-        )
+      const msg = t(
+        'scanWindows.review.never',
+        '{n} targets have scan windows that never open: starting the scan is refused until a policy changes',
+        { n: windows?.never_count ?? 0 }
       )
+      blockers.push(msg)
+      otherBlockers.push(msg)
     }
     if ((windows?.waiting_count ?? 0) > 0) {
       warnings.push(
@@ -111,6 +122,7 @@ export function useScanReview(
     if (scope.error) {
       warnings.push(t('scans.scope.unavailable'))
     }
-    return { blockers, warnings, refused, scope, workflow, targets }
+    const allowedCount = (scope.results ?? []).filter((r) => r.allowed).length
+    return { blockers, otherBlockers, allowedCount, warnings, refused, scope, workflow, targets }
   }, [form, scope, workflow, targets, t])
 }
