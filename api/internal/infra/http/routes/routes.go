@@ -621,7 +621,7 @@ func Register(
 	// Public GitHub webhook endpoint — verified in the handler via GitHub's
 	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
 	if h.GitHubWebhook != nil {
-		router.POST("/api/v1/webhooks/incoming/github", h.GitHubWebhook.IncomingGitHubWebhook)
+		registerGitHubWebhookRoute(router, h.GitHubWebhook, log)
 	}
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
