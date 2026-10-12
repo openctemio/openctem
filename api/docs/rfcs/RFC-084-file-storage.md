@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Implemented: P0 (#1900, #1901) and P1 (#1934, #1936, #1939, PR4_NUMBER), 2026-10-12; logo upload, asynchronous imports and exports later (§6) |
+| Status | Implemented: P0 (#1900, #1901) and P1 (#1934, #1936, #1939, #1942), 2026-10-12; logo upload, asynchronous imports and exports later (§6) |
 | Scope | api (`pkg/domain/attachment`, `internal/app/integration/attachment.go`, `internal/infra/storage`, upload routes and handlers, config), web (`/api/v1` proxy request bodies), deployment docs |
 | Architecture | [file-storage.md](../architecture/file-storage.md) |
 | Related | RFC-065 (authorization letters), RFC-076 (report templates), RFC-081 (web evidence screenshots), RFC-061 (content packs), finding-evidence.md, finding-import.md |
@@ -274,7 +274,7 @@ and a pixel limit (§3.6), malware scanning with an optional ClamAV daemon,
 marking, not blocking, evidence (§3.7, #1936); report templates and stored
 reports moved from Postgres to the storage (§3.8, #1939); short-lived direct
 downloads from a bucket (§3.4), S3 server-side encryption options, storage
-metrics and the `local`↔`s3` copy command (§3.9, PR4_NUMBER).
+metrics and the `local`↔`s3` copy command (§3.9, #1942).
 
 **Later** (designed, not built): an uploaded organization logo instead of a
 URL (closes the remote-image tracking of `logo_url`); asynchronous large
