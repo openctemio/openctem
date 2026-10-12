@@ -3,6 +3,7 @@ package cirun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -69,6 +70,11 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	if in.ScanFailures < 0 {
 		in.ScanFailures = 0
 	}
+	// The first verdict is final: asking again returns it unchanged, so a job
+	// cannot turn a stored failure into a pass by evaluating again.
+	if run.Status == cirun.StatusEvaluated {
+		return s.storedVerdict(ctx, run)
+	}
 	policy, source, err := s.ResolvePolicy(ctx, run.TenantID, run.RepositoryAssetID)
 	if err != nil {
 		return nil, err
@@ -103,11 +109,15 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	if err != nil {
 		return nil, err
 	}
+	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now); err != nil {
+		if errors.Is(err, cirun.ErrRunEvaluated) {
+			// Another job of the run was judged first.
+			return s.storedVerdict(ctx, run)
+		}
+		return nil, fmt.Errorf("save verdict: %w", err)
+	}
 	if err := s.repo.RecordRunOutcome(ctx, run.TenantID, run.ID, in.ScanFailures); err != nil {
 		return nil, fmt.Errorf("save run outcome: %w", err)
-	}
-	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now); err != nil {
-		return nil, fmt.Errorf("save verdict: %w", err)
 	}
 	s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	s.auditVerdict(ctx, run, in, v)
@@ -117,6 +127,19 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 // RunPath is the console page of a CI run: the runs view of the CI/CD page
 // with the run open.
 func RunPath(id shared.ID) string { return "/ci-cd?view=runs&run=" + id.String() }
+
+// storedVerdict returns the verdict a run already has.
+func (s *Service) storedVerdict(ctx context.Context, run *cirun.Run) (*Verdict, error) {
+	stored, err := s.repo.GetRun(ctx, run.TenantID, run.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load run: %w", err)
+	}
+	var v Verdict
+	if len(stored.VerdictDetail) == 0 || json.Unmarshal(stored.VerdictDetail, &v) != nil {
+		return nil, fmt.Errorf("%w: the run's stored verdict cannot be read", cirun.ErrRunEvaluated)
+	}
+	return &v, nil
+}
 
 // gateFindingsPath is the findings list the verdict links to: the
 // repository's findings, and for a run on a branch that does not count as
@@ -146,21 +169,17 @@ func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []ci
 		}
 		return set, run.Branch, true, nil
 	}
-	base := run.DefaultBranch
-	if s.branches == nil || s.baseline == nil || base == "" {
-		return nil, base, false, nil
-	}
-	br, err := s.branches.GetByName(ctx, run.RepositoryAssetID, base)
-	if err != nil || br == nil {
-		// The default branch was never scanned: no baseline, everything is
+	brID, base, ok := s.baselineBranch(ctx, run)
+	if !ok {
+		// The baseline branch was never scanned: no baseline, everything is
 		// new (fail closed).
-		return nil, base, false, nil //nolint:nilerr // a missing branch is "no baseline", not a failure
+		return nil, base, false, nil
 	}
 	fps := make([]string, 0, len(findings))
 	for _, f := range findings {
 		fps = append(fps, f.Fingerprint)
 	}
-	open, err := s.baseline.FingerprintsOpenOnBranch(ctx, run.TenantID, br.ID(), fps)
+	open, err := s.baseline.FingerprintsOpenOnBranch(ctx, run.TenantID, brID, fps)
 	if err != nil {
 		return nil, base, false, fmt.Errorf("read baseline: %w", err)
 	}
@@ -174,6 +193,33 @@ func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []ci
 		}
 	}
 	return set, base, true, nil
+}
+
+// baselineBranch picks the branch a run is compared with: the pull
+// request's base branch when the repository has scanned it and it counts as
+// exposure (default, protected, main or release type), else the repository's
+// default branch. ok is false when that branch was never scanned. A base
+// branch the job reports can therefore only choose among branches whose
+// findings are real exposure; it never makes a feature branch the baseline.
+func (s *Service) baselineBranch(ctx context.Context, run *cirun.Run) (shared.ID, string, bool) {
+	if s.branches == nil || s.baseline == nil {
+		return shared.ID{}, run.DefaultBranch, false
+	}
+	if run.BaseRef != "" && run.BaseRef != run.DefaultBranch {
+		if br, err := s.branches.GetByName(ctx, run.RepositoryAssetID, run.BaseRef); err == nil && br != nil {
+			if counts, err := s.baseline.BranchCountsAsExposure(ctx, run.TenantID, br.ID()); err == nil && counts {
+				return br.ID(), run.BaseRef, true
+			}
+		}
+	}
+	if run.DefaultBranch == "" {
+		return shared.ID{}, "", false
+	}
+	br, err := s.branches.GetByName(ctx, run.RepositoryAssetID, run.DefaultBranch)
+	if err != nil || br == nil {
+		return shared.ID{}, run.DefaultBranch, false
+	}
+	return br.ID(), run.DefaultBranch, true
 }
 
 func (s *Service) webURL(path string) string {
@@ -250,14 +296,15 @@ func (s *Service) BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints
 		return nil, fmt.Errorf("%w: at most %d fingerprints", shared.ErrValidation, maxBaselineFingerprints)
 	}
 	out := &BaselineDiffOutput{New: append([]string{}, fingerprints...), PreExisting: []string{}, BaseBranch: run.DefaultBranch}
-	if len(fingerprints) == 0 || s.branches == nil || s.baseline == nil || run.DefaultBranch == "" {
+	if len(fingerprints) == 0 {
 		return out, nil
 	}
-	br, err := s.branches.GetByName(ctx, run.RepositoryAssetID, run.DefaultBranch)
-	if err != nil || br == nil {
-		return out, nil //nolint:nilerr // an unscanned default branch means everything is new
+	brID, base, ok := s.baselineBranch(ctx, run)
+	out.BaseBranch = base
+	if !ok {
+		return out, nil // an unscanned baseline means everything is new
 	}
-	open, err := s.baseline.FingerprintsOpenOnBranch(ctx, run.TenantID, br.ID(), fingerprints)
+	open, err := s.baseline.FingerprintsOpenOnBranch(ctx, run.TenantID, brID, fingerprints)
 	if err != nil {
 		return nil, fmt.Errorf("read baseline: %w", err)
 	}

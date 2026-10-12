@@ -71,6 +71,9 @@ type BranchStore interface {
 // BaselineReader reads which findings are open on a branch.
 type BaselineReader interface {
 	FingerprintsOpenOnBranch(ctx context.Context, tenantID, branchID shared.ID, fingerprints []string) ([]string, error)
+	// BranchCountsAsExposure: the branch is default, protected, or of type
+	// main or release (a release line, never a feature branch).
+	BranchCountsAsExposure(ctx context.Context, tenantID, branchID shared.ID) (bool, error)
 }
 
 // ReportIngester applies a run's report (internal/app/ingest).
@@ -128,6 +131,7 @@ type Service struct {
 	now       func() time.Time
 	purgeMu   sync.Mutex
 	lastPurge time.Time
+	images    ImageLinker
 }
 
 // Deps are the service's collaborators.
@@ -517,6 +521,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		Branch:            truncate(c.Branch, 255),
 		CommitSHA:         truncate(c.SHA, 64),
 		CommitVerified:    c.CommitVerified,
+		BaseRef:           truncate(CleanBaseRef(c), 255),
 		PullRequest:       truncate(c.PullRequest, 32),
 		DefaultBranch:     defaultBranch,
 		IsDefaultBranch:   c.Branch != "" && c.PullRequest == "" && c.Branch == defaultBranch,
@@ -824,6 +829,7 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 		}
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
+	s.suggestImageLinks(ctx, run, report)
 	s.auditUpload(ctx, run, report, out)
 	return out, nil
 }
@@ -925,4 +931,14 @@ func nonEmpty(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// CleanBaseRef is the base branch a run records: only for a run that is not
+// on the branch itself.
+func CleanBaseRef(c cirun.Claims) string {
+	b := cirun.CleanBranchName(c.BaseRef)
+	if b == c.Branch {
+		return ""
+	}
+	return b
 }
