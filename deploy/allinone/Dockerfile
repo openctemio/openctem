@@ -32,30 +32,30 @@
 
 ARG API_IMAGE
 ARG WEB_IMAGE
-ARG GO_IMAGE=golang:1.26.9-alpine
-# The runtime base. Keep it the Alpine release the web image's node binary is
-# built on (node:26-alpine): node needs the C++ runtime it was linked against,
-# and `node --version` below fails the build otherwise.
-ARG BASE_IMAGE=alpine:3.24
+# Go and Alpine are pinned by digest in the FROM lines below, where Dependabot
+# finds and refreshes them (it does not read ARG defaults). The runtime Alpine
+# must stay the release the web image's node binary is built on
+# (node:26-alpine): node needs the C++ runtime it was linked against, and
+# `node --version` below fails the build otherwise.
 
 FROM ${API_IMAGE} AS api
 FROM ${WEB_IMAGE} AS web
 
 # golang-migrate, same version as CI (api-ci.yml). Built in the target
 # platform's own stage, so no arch-specific download URL to get wrong.
-FROM ${GO_IMAGE} AS migrate
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS migrate
 RUN CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" -tags postgres \
       github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1 \
  && cp "$(go env GOPATH)/bin/migrate" /usr/local/bin/migrate
 
-# Caddy, the same release as the split deployment (api/deploy/docker-compose.yml
+# Caddy, the same release as the gateway image (api/deploy/gateway/Dockerfile
 # CADDY_VERSION) with the standard modules, compiled here with the pinned Go
 # above rather than copied from the caddy image: the published binary carries
 # the Go standard library it was released with, and every standard-library
 # advisory since then with it. CADDY_DEPS raises dependencies that have
 # security fixes newer than the Caddy release; drop an entry once a Caddy
 # release requires that version itself.
-FROM ${GO_IMAGE} AS caddy
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS caddy
 ARG CADDY_VERSION=v2.11.4
 ARG CADDY_DEPS="golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
 WORKDIR /src
@@ -79,7 +79,7 @@ RUN printf '%s\n' 'package main' \
 # binaries. Every file is copied in with its final owner: no `cp -a` or
 # `chown -R` afterwards, which stored the whole web and API a second (and
 # third) time in new layers.
-FROM ${BASE_IMAGE} AS final
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS final
 RUN apk add --no-cache tini bash ca-certificates tzdata wget postgresql17-client \
       libstdc++ libgcc libatomic \
  && addgroup -S -g 1001 nodejs \
