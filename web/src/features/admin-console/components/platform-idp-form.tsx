@@ -156,7 +156,7 @@ export function PlatformIdPForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form method="post" onSubmit={submit} className="space-y-5">
       <Card>
         <CardHeader>
           <CardTitle>Identity provider (OIDC)</CardTitle>
