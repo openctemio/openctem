@@ -28,7 +28,7 @@ describe('forms with secret fields post', () => {
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/^\s*\/\/.*$/gm, '')
       if (!SECRET.test(src)) continue
-      for (const m of src.matchAll(/<form\b[^>]*>/gs)) {
+      for (const m of src.matchAll(/<form\b[^>]*>/g)) {
         if (!/\bmethod=["']post["']/.test(m[0])) offenders.push(file.slice(ROOT.length + 1))
       }
     }
