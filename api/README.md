@@ -131,7 +131,7 @@ Redis are never published.
 
 ```bash
 cd deploy
-cp .env.example .env   # set OPENCTEM_HOSTNAME, OPENCTEM_PUBLIC_URL, OPENCTEM_TLS_MODE, secrets
+./setup.sh ctem.example.com   # writes .env: host name + generated secrets (--acme you@example.com for Let's Encrypt)
 docker compose run --rm --no-deps api -check-config   # validate the settings, start nothing
 docker compose up -d
 ```
