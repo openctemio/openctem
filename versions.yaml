@@ -7,14 +7,17 @@
 #   .github/scripts/release/sync-versions.sh --check  # what CI runs
 #
 # The consumers (Go defaults, compose defaults, .env examples) are listed in
-# sync-versions.sh. The release workflow bumps platform.release after it tags;
-# the sensor and sdk-go release workflows open a PR that bumps their entries.
+# sync-versions.sh. platform.release is set on the release branch (one commit
+# by cut-release.sh), so a tag's checkout defaults to its own version; develop
+# gets it when main is merged back after the tag. The sensor and sdk-go
+# release workflows open a PR that bumps their entries.
 #
 # Format: two levels, "key: value" with values unquoted or double-quoted. ""
 # means "not set" (no minimum, comparison off). Keep it that simple: the
 # scripts read it without a YAML library.
 
-# The newest released vX.Y.Z tag of this repository (API + web share it).
+# The newest released vX.Y.Z tag of this repository (API + web share it); on
+# release/vX.Y.Z, that vX.Y.Z.
 platform:
   release: v0.9.0
 
@@ -32,7 +35,9 @@ sdk:
   min: ""
 
 # Helm chart (openctemio/helm-charts): the newest published chart whose
-# appVersion is platform.release. Charts 0.5.0 to 0.10.0 target v0.9.0, which
-# is not tagged yet; v0.8.0 deploys with chart 0.4.1.
+# appVersion is platform.release. The chart is published after the tag, so a
+# tag still names the previous chart; the develop follow-up sets this one.
+# Charts 0.5.0 to 0.10.0 target v0.9.0, which is not tagged yet; v0.8.0
+# deploys with chart 0.4.1.
 chart:
   version: 0.4.1
