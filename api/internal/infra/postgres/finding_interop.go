@@ -103,7 +103,19 @@ func (r *FindingRepository) UpdateInteropBatch(ctx context.Context, tenantID sha
 				$9::text[], $10::text[], $11::text[], $12::text[], $13::text[], $14::text[])
 				AS d(fingerprint, native_vuln_id, native_scheme, source_meta, scores, vulnerability_ids, source_extra,
 					location_key, vex_status, vex_justification, vex_statement, vex_source, vex_at)
-			WHERE f.tenant_id = $1 AND f.fingerprint = d.fingerprint`,
+			WHERE f.tenant_id = $1 AND f.fingerprint = d.fingerprint
+			  -- Skip a sighting that changes nothing: every rewritten row is a
+			  -- new tuple in all of the findings indexes, and a rescan
+			  -- re-reports the same data for nearly every finding. A VEX
+			  -- statement always writes (it carries its own time).
+			  AND (d.vex_status IS NOT NULL
+			       OR (f.native_vuln_id, f.native_scheme, f.source_meta, f.scores, f.vulnerability_ids,
+			           f.source_extra, f.location_key)
+			          IS DISTINCT FROM
+			          (COALESCE(d.native_vuln_id, f.native_vuln_id), COALESCE(d.native_scheme, f.native_scheme),
+			           COALESCE(d.source_meta::jsonb, f.source_meta), COALESCE(d.scores::jsonb, f.scores),
+			           COALESCE(d.vulnerability_ids::jsonb, f.vulnerability_ids),
+			           COALESCE(d.source_extra::jsonb, f.source_extra), COALESCE(d.location_key, f.location_key)))`,
 			tenantID.String(), pq.Array(fps), pq.Array(nativeIDs), pq.Array(schemes), pq.Array(metas),
 			pq.Array(scores), pq.Array(vids), pq.Array(extras), pq.Array(locs),
 			pq.Array(vexStatus), pq.Array(vexJust), pq.Array(vexStmt), pq.Array(vexSrc), pq.Array(vexAt))
