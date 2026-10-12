@@ -408,3 +408,52 @@ func (r *CIRunRepository) RepositoryBoundElsewhere(ctx context.Context, tenantID
 		tenantID.String(), string(provider), issuer, repositoryName, externalRepoID).Scan(&bound)
 	return bound, err
 }
+
+// PinOwner pins ownerID for the configuration's owner name unless a pin
+// exists, and returns the pinned id (tenant-scoped).
+func (r *CIRunRepository) PinOwner(ctx context.Context, tenantID, trustConfigID shared.ID, ownerName, ownerID string) (string, bool, error) {
+	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_trust_owner_pins (tenant_id, trust_config_id, owner_name, owner_id)
+		VALUES ($1, $2, $3, $4) ON CONFLICT (trust_config_id, owner_name) DO NOTHING`,
+		tenantID.String(), trustConfigID.String(), ownerName, ownerID)
+	if err != nil {
+		return "", false, err
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return ownerID, true, nil
+	}
+	var pinned string
+	err = r.db.QueryRowContext(ctx, `SELECT owner_id FROM ci_trust_owner_pins
+		WHERE tenant_id = $1 AND trust_config_id = $2 AND owner_name = $3`,
+		tenantID.String(), trustConfigID.String(), ownerName).Scan(&pinned)
+	return pinned, false, err
+}
+
+// ResetOwnerPins drops a configuration's pins (tenant-scoped).
+func (r *CIRunRepository) ResetOwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM ci_trust_owner_pins WHERE tenant_id = $1 AND trust_config_id = $2`,
+		tenantID.String(), trustConfigID.String())
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// OwnerPins lists a configuration's pins (tenant-scoped).
+func (r *CIRunRepository) OwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) ([]cirun.OwnerPin, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT owner_name, owner_id, pinned_at FROM ci_trust_owner_pins
+		WHERE tenant_id = $1 AND trust_config_id = $2 ORDER BY owner_name LIMIT 1000`,
+		tenantID.String(), trustConfigID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []cirun.OwnerPin{}
+	for rows.Next() {
+		var p cirun.OwnerPin
+		if err := rows.Scan(&p.OwnerName, &p.OwnerID, &p.PinnedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}

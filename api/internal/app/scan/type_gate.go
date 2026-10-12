@@ -227,8 +227,8 @@ func (s *Service) filterStepTypes(ctx context.Context, tenantID shared.ID, toolN
 }
 
 // StepRunContext is the run context a step's command carries: the step's own
-// targets, and no target_types or actor (platform bookkeeping, never sent to
-// a sensor).
+// targets, and no target_types, actor or skipped targets (platform
+// bookkeeping, never sent to a sensor).
 func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 	if runContext == nil {
 		return nil
@@ -239,6 +239,7 @@ func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 	delete(out, RunContextKeyWindowWaits)
 	delete(out, RunContextKeyTargetExpansion)
 	delete(out, RunContextKeySelectorRoots)
+	delete(out, RunContextKeySkippedTargets)
 	if st != nil && st.Targets != nil {
 		if _, had := out["targets"]; had {
 			out["targets"] = st.Targets

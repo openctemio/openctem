@@ -1729,7 +1729,6 @@ type UpdateSecuritySettingsInput struct {
 	MFARequired *bool `json:"mfa_required"`
 	// MFARequiredForAdmins: see tenantdom.SecuritySettings.
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
-	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
@@ -1812,9 +1811,6 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.MFARequiredForAdmins != nil {
 			security.MFARequiredForAdmins = *input.MFARequiredForAdmins
-		}
-		if input.SessionTimeoutMin != nil {
-			security.SessionTimeoutMin = *input.SessionTimeoutMin
 		}
 		if input.IPWhitelist != nil {
 			security.IPWhitelist = input.IPWhitelist
