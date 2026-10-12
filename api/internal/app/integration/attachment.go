@@ -48,6 +48,8 @@ type AttachmentService struct {
 	scanRepo        attachmentdom.ScanRepository
 	retentionRepo   attachmentdom.RetentionRepository
 	blobQueue       attachmentdom.BlobDeletionQueue
+	metrics         StorageMetrics
+	directDownloads bool
 	retention       RetentionSettings
 	audit           AttachmentAuditLogger
 	logger          *logger.Logger
@@ -198,6 +200,7 @@ func (s *AttachmentService) checkQuota(ctx context.Context, tenantID shared.ID, 
 		return fmt.Errorf("read storage usage: %w", err)
 	}
 	if used+size > s.quotaBytes {
+		s.event("quota_rejected")
 		return fmt.Errorf("%w: %d MiB used of %d MiB", attachmentdom.ErrQuotaExceeded, used>>20, s.quotaBytes>>20)
 	}
 	return nil

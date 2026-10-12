@@ -88,6 +88,7 @@ func TestFindingRetestHistory_IncludesManualRetests_DB(t *testing.T) {
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(as(tenant, admin, true, ph.CreateCampaign, http.MethodPost, `{"name":"frm","campaign_type":"web_app","priority":"high"}`, nil).Body.Bytes(), &c)
+	exec(`UPDATE pentest_campaigns SET status = 'in_progress' WHERE id = $1`, c.ID)
 	_ = json.Unmarshal(as(tenant, admin, true, ph.CreateFinding, http.MethodPost, `{"title":"frm finding","severity":"high","affected_assets":["a.example.test"]}`, map[string]string{"id": c.ID}).Body.Bytes(), &f)
 	if w := as(tenant, admin, true, ph.CreateRetest, http.MethodPost, `{"status":"partial","notes":"login fixed, API not"}`, map[string]string{"findingId": f.ID}); w.Code != http.StatusCreated {
 		t.Fatalf("create retest = %d %s", w.Code, w.Body.String())
