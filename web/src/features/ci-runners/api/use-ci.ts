@@ -314,7 +314,7 @@ export function useConnectGitLab() {
   return useSWRMutation(
     currentTenant ? SCM_APPS : null,
     async (_url: string, { arg }: { arg: SCMGitLabConnectRequest }) =>
-      post<SCMGitLabConnection>(`${SCM_APPS}/gitlab`, arg)
+      post<SCMGitLabConnection>(`${SCM_APPS}/gitlab-connections`, arg)
   )
 }
 
@@ -323,6 +323,6 @@ export function useRemoveGitLab() {
   return useSWRMutation(
     currentTenant ? SCM_APPS : null,
     async (_url: string, { arg }: { arg: string }) =>
-      del<void>(`${SCM_APPS}/gitlab/${encodeURIComponent(arg)}`)
+      del<void>(`${SCM_APPS}/gitlab-connections/${encodeURIComponent(arg)}`)
   )
 }
