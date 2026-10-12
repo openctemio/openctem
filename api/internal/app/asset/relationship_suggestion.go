@@ -455,24 +455,11 @@ func getResolvedIP(a *assetdom.Asset) string {
 // fetchAllAssets retrieves all assets of a given type for a tenant, paginating through all pages.
 // This prevents the LIMIT 100 cap from silently truncating large datasets.
 func (s *RelationshipSuggestionService) fetchAllAssets(ctx context.Context, tenantID string, assetType assetdom.AssetType) ([]*assetdom.Asset, error) {
-	const pageSize = 100
 	filter := assetdom.Filter{
 		TenantID: &tenantID,
 		Types:    []assetdom.AssetType{assetType},
 	}
-
-	var all []*assetdom.Asset
-	for page := 1; ; page++ {
-		result, err := s.assetRepo.List(ctx, filter, assetdom.ListOptions{}, pagination.New(page, pageSize))
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, result.Data...)
-		if len(all) >= int(result.Total) || len(result.Data) < pageSize {
-			break
-		}
-	}
-	return all, nil
+	return assetdom.ListAll(ctx, s.assetRepo, filter, 1000)
 }
 
 // isAlreadyExists checks if an error is an "already exists" error.
