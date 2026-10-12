@@ -204,6 +204,7 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 |---|---|---|---|---|---|
 | `STORAGE_ACCESS_KEY` | string | empty |  | yes | Access key. Required with `s3` / `minio`. |
 | `STORAGE_BUCKET` | string | empty |  |  | Bucket for `s3` / `minio`. Required with those providers. |
+| `STORAGE_CLAMD_ADDRESS` | string | empty |  |  | ClamAV daemon (`host:port` or `unix:/path`, e.g. `clamav:3310` with `docker-compose.clamav.yml`) that scans new uploads. A flagged file is kept and marked, audited `attachment.malware_detected`, and downloads only after a confirmation. Unset: no scanning. |
 | `STORAGE_ENDPOINT` | string | empty |  |  | Endpoint of an S3-compatible store, for example MinIO. Unset: AWS S3. |
 | `STORAGE_LOCAL_PATH` | string | `./data/attachments` |  |  | Directory for `local` storage, relative to the working directory (`/app` in the API image, so `/app/data/attachments`). Put it on a persistent volume and back it up. |
 | `STORAGE_TENANT_QUOTA_MB` | int | `20480` |  |  | Most attachment bytes one organization may hold, in MiB (20480 = 20 GiB). An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota. |
