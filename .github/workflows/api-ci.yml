@@ -67,6 +67,13 @@ jobs:
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/changed.sh
 
+      # Runs on every PR, also a docs-only one that skips the jobs below.
+      # Changelog entries live one file per change in api/changelog.d/, so
+      # pull requests never conflict on CHANGELOG.md. This also refuses
+      # merge-conflict markers committed anywhere in the repository.
+      - name: Changelog fragments
+        run: python3 scripts/changelog.py check
+
   # Every short gate in ONE job (one runner, one checkout, one setup-go) instead
   # of six. Steps run in order and the first failure fails the job; the step
   # name says which gate it was.
@@ -107,12 +114,6 @@ jobs:
         run: git fetch --no-tags origin "${{ github.base_ref }}"
 
       # PR-only: it reads the PR's labels (allow-destructive-migration).
-      # Changelog entries live one file per change in api/changelog.d/, so
-      # pull requests never conflict on CHANGELOG.md. This also refuses
-      # merge-conflict markers committed anywhere in the repository.
-      - name: Changelog fragments
-        run: python3 scripts/changelog.py check
-
       - name: Migration Safety
         if: github.event_name == 'pull_request'
         env:
@@ -139,11 +140,21 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
+          bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
           case "$EVENT" in
             pull_request) MIGRATION_BELOW_BASE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
             merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
             *)            bash .github/scripts/check-migration-versions.sh ;;
           esac
+
+      # PR only: a migration whose number develop has taken since is
+      # renumbered in this runner (never committed) so the checks and tests
+      # below see the tree the merge queue will merge. merge_group and push
+      # keep the hard error above.
+      - name: Renumber this PR's clashing migrations (this run only)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: bash .github/scripts/pr-migration-renumber.sh
 
       - name: SQL Schema Drift
         run: bash scripts/check-sql-schema.sh
@@ -234,7 +245,7 @@ jobs:
       # The shards of the two DB-backed jobs below cover every package and
       # every top-level test of tests/unit exactly once.
       - name: Test shards cover every test
-        run: bash ../.github/scripts/go-shard.sh check 4 4 && bash ../.github/scripts/go-shard.sh check 3 3
+        run: bash ../.github/scripts/go-shard.sh check 4 4 && bash ../.github/scripts/go-shard.sh check 3 1
 
   # vet, staticcheck and golangci-lint run in their own job, in parallel with
   # the gates in `API static checks` (they were two thirds of that job's time).
@@ -341,6 +352,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # the test merge's base parent, for the renumber below
+
+      - name: Renumber this PR's clashing migrations (this run only)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: bash .github/scripts/pr-migration-renumber.sh
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -426,9 +444,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { kind: unit, shard: 0, total: 3 }
-          - { kind: unit, shard: 1, total: 3 }
-          - { kind: unit, shard: 2, total: 3 }
+          # tests/unit as the app role takes ~2 min of test time per third:
+          # one shard costs one job instead of three and still finishes
+          # before the pkgs shards.
+          - { kind: unit, shard: 0, total: 1 }
           - { kind: pkgs, shard: 0, total: 3 }
           - { kind: pkgs, shard: 1, total: 3 }
           - { kind: pkgs, shard: 2, total: 3 }
@@ -465,6 +484,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # the test merge's base parent, for the renumber below
+
+      - name: Renumber this PR's clashing migrations (this run only)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: bash .github/scripts/pr-migration-renumber.sh
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

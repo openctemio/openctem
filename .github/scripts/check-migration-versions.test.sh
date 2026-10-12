@@ -49,9 +49,14 @@ mig "$d" 000003 c; commit "$d" pr
 expect "added below base max fails" 1 "$d" base "Renumber it to 000006"
 MODE=warning expect "pull_request: added below base max only warns" 0 "$d" base "::warning::"
 
-# 4b. Warning mode still fails a duplicate version.
+# 4b. Warning mode: a version the base also uses only warns (queue renumbers it).
 mig "$d" 000005 dupe; commit "$d" dup
-MODE=warning expect "pull_request: duplicate version still fails" 1 "$d" base "::error::"
+MODE=warning expect "pull_request: same version as a base migration only warns" 0 "$d" base "this change's copy is renumbered"
+expect "error mode: duplicate version fails" 1 "$d" base "used more than once"
+
+# 4c. Warning mode still fails two added migrations sharing a version.
+mig "$d" 000007 x; mig "$d" 000007 y; commit "$d" own-dup
+MODE=warning expect "pull_request: two added migrations with one version fail" 1 "$d" base "::error::migration version 7"
 
 # 5. Queue: the group ahead already took 000006; this PR also wrote 000006.
 d="$(repo)"; mig "$d" 000005 b; commit "$d" base
@@ -59,7 +64,7 @@ mig "$d" 000006 first; commit "$d" "queued ahead"
 git -C "$d" branch queue-base
 mig "$d" 000006 second; commit "$d" "this pr"
 expect "queue: same version as the group ahead fails" 1 "$d" queue-base "Renumber it to 000007"
-MODE=warning expect "warning mode: same version as base still fails (duplicate)" 1 "$d" queue-base "used more than once"
+MODE=warning expect "warning mode: same version as base only warns" 0 "$d" queue-base "::warning::migration version 6"
 
 # 6. Queue: this PR renumbered to 000007 on top.
 d="$(repo)"; mig "$d" 000005 b; mig "$d" 000006 first; commit "$d" base
