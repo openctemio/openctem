@@ -22,7 +22,11 @@ const api = vi.hoisted(() => ({
 const perms = vi.hoisted(() => ({ granted: new Set<string>() }))
 
 vi.mock('@/lib/permissions', () => ({
-  Permission: { ScanZonesRead: 'zones:read', ScanZonesWrite: 'zones:write' },
+  Permission: {
+    ScanZonesRead: 'zones:read',
+    ScanZonesWrite: 'zones:write',
+    SensorsGrantWiden: 'sensors:grant:widen',
+  },
   useHasPermission: (p: string) => perms.granted.has(p),
 }))
 vi.mock('@/lib/api/sensor-hooks', () => ({
@@ -35,7 +39,10 @@ vi.mock('@/lib/api/scan-zone-hooks', () => ({
   useScanZones: () => ({ data: { data: api.zones.value } }),
   assignSensorToZone: api.assign,
 }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+const toasts = vi.hoisted(() => ({ warning: vi.fn() }))
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn(), warning: toasts.warning },
+}))
 vi.mock('../sensor-install-snippets', () => ({
   SensorInstallSnippets: ({ sensorId, apiKey }: { sensorId: string; apiKey?: string }) => (
     <pre>
@@ -54,6 +61,7 @@ const created = {
 
 describe('SensorInstallFlow', () => {
   beforeEach(() => {
+    toasts.warning.mockClear()
     api.create.mockReset().mockResolvedValue(created)
     api.update.mockClear()
     api.assign.mockClear()
@@ -72,6 +80,65 @@ describe('SensorInstallFlow', () => {
       name: 'dmz-scanner-01',
       type: 'worker',
       execution_mode: 'daemon',
+    })
+  })
+
+  describe('collector trust', () => {
+    const pickCollector = async () => {
+      await userEvent.type(screen.getByLabelText('Name'), 'ad-collector')
+      await userEvent.click(screen.getByRole('radio', { name: /Collector/ }))
+    }
+    const trustBox = () =>
+      screen.getByRole('checkbox', { name: /Trust this collector to push asset reports/ })
+
+    it('shows the trust checkbox only for a collector, off by default, and explains it', async () => {
+      perms.granted.add('sensors:grant:widen')
+      render(<SensorInstallFlow />)
+      expect(screen.queryByRole('checkbox')).toBeNull()
+      await pickCollector()
+      expect(trustBox()).not.toBeChecked()
+      expect(trustBox()).toHaveAccessibleDescription(/refuses every report/)
+      await userEvent.click(screen.getByRole('button', { name: /Create and show the command/ }))
+      expect(api.create).toHaveBeenCalledWith({
+        name: 'ad-collector',
+        type: 'collector',
+        execution_mode: 'daemon',
+      })
+    })
+
+    it('sends trusted only when ticked', async () => {
+      perms.granted.add('sensors:grant:widen')
+      api.create.mockResolvedValue({ ...created, trusted: true })
+      render(<SensorInstallFlow />)
+      await pickCollector()
+      await userEvent.click(trustBox())
+      await userEvent.click(screen.getByRole('button', { name: /Create and show the command/ }))
+      expect(api.create).toHaveBeenCalledWith({
+        name: 'ad-collector',
+        type: 'collector',
+        execution_mode: 'daemon',
+        trusted: true,
+      })
+      expect(toasts.warning).not.toHaveBeenCalled()
+    })
+
+    it('warns when the collector was created but not trusted', async () => {
+      perms.granted.add('sensors:grant:widen')
+      api.create.mockResolvedValue({ ...created, trusted: false })
+      render(<SensorInstallFlow />)
+      await pickCollector()
+      await userEvent.click(trustBox())
+      await userEvent.click(screen.getByRole('button', { name: /Create and show the command/ }))
+      await waitFor(() => expect(toasts.warning).toHaveBeenCalledTimes(1))
+    })
+
+    it('without sensors:grant:widen: the checkbox is disabled and says who can trust', async () => {
+      render(<SensorInstallFlow />)
+      await pickCollector()
+      expect(trustBox()).toBeDisabled()
+      expect(trustBox()).toHaveAccessibleDescription(/Only an administrator who may widen/)
+      await userEvent.click(screen.getByRole('button', { name: /Create and show the command/ }))
+      expect(api.create.mock.calls[0][0]).not.toHaveProperty('trusted')
     })
   })
 

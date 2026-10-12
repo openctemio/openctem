@@ -235,6 +235,41 @@ func (s *Service) Update(ctx context.Context, actor Actor, sensorID shared.ID, i
 	return &next, nil
 }
 
+// AuthorizeTrust checks, before a sensor is created trusted, that the actor
+// may promote a sensor's trust level: the same rule as a promotion through
+// Update (sensors:grant:widen and the widening approver). Checked before the
+// sensor exists, so a refused promotion creates nothing. A refusal is
+// audited.
+func (s *Service) AuthorizeTrust(ctx context.Context, actor Actor) error {
+	if !actor.CanWiden {
+		s.logAudit(ctx, actor, auditapp.NewFailureEvent(audit.ActionSensorGrantChanged, audit.ResourceTypeSensor, "", ErrWidenForbidden).
+			WithMessage("Creating a trusted sensor refused: the sensors:grant:widen permission is required").
+			WithSeverity(audit.SeverityHigh).WithMetadata("widened", []string{sensordom.DimTrust}))
+		return ErrWidenForbidden
+	}
+	if s.approver != nil {
+		return s.approver.ApproveWidening(ctx, actor, sensordom.Grant{TrustLevel: sensordom.TrustNew},
+			sensordom.Grant{TrustLevel: sensordom.TrustTrusted}, []string{sensordom.DimTrust})
+	}
+	return nil
+}
+
+// Trust promotes a sensor of the actor's tenant to trust level trusted and
+// changes nothing else. It is a widening: it goes through Update, so it
+// needs sensors:grant:widen, is audited at high severity and notifies every
+// administrator. A sensor of another tenant reads as not found.
+func (s *Service) Trust(ctx context.Context, actor Actor, sensorID shared.ID) (*sensordom.Grant, error) {
+	cur, err := s.Get(ctx, actor.TenantID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	in := UpdateInput{Version: cur.Version, TrustLevel: sensordom.TrustTrusted, JobTypes: cur.JobTypes, ZoneIDs: cur.ZoneIDs,
+		Tools: cur.Tools, Capabilities: cur.Capabilities, TierCeiling: cur.TierCeiling, TargetNetwork: cur.TargetNetwork,
+		TargetCIDRs: cur.TargetCIDRs, TargetDomains: cur.TargetDomains, AllowCredentials: cur.AllowCredentials,
+		AllowPushIngest: cur.AllowPushIngest, RemoteActions: cur.RemoteActions}
+	return s.Update(ctx, actor, sensorID, in)
+}
+
 // build computes the next grant from the input.
 func (s *Service) build(cur sensordom.Grant, in UpdateInput) (sensordom.Grant, error) {
 	if in.Profile != "" {
@@ -307,8 +342,11 @@ func sensorID(g sensordom.Grant) string { return g.SensorID.String() }
 // ValidProfile reports whether profile may be chosen for a new sensor.
 func (s *Service) ValidProfile(profile string) bool { return sensordom.ValidProfile(profile) }
 
-// DefaultProfile is the profile an approval uses when none is chosen.
-func (s *Service) DefaultProfile() string { return sensordom.DefaultProfile }
+// DefaultProfileFor is the profile an approval uses for a sensor of type t
+// when none is chosen (collector for a collector).
+func (s *Service) DefaultProfileFor(t sensordom.SensorType) string {
+	return sensordom.DefaultProfileFor(t)
+}
 
 // OnApproved returns the step the pairing approval runs in its transaction:
 // the sensor's grant becomes the chosen profile at trust level New (a

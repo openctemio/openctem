@@ -41,6 +41,17 @@ const (
 	DefaultProfile = ProfileInternalScanner
 )
 
+// DefaultProfileFor is the profile a new sensor of type t gets when none is
+// chosen: collector for a collector (so its reports are not refused by the
+// grant; trust still decides), else DefaultProfile. The sensors insert
+// trigger applies the same rule.
+func DefaultProfileFor(t SensorType) string {
+	if t == SensorTypeCollector {
+		return ProfileCollector
+	}
+	return DefaultProfile
+}
+
 // TrustLevel is how far the platform trusts a sensor (RFC-052 §4 of
 // research; SP3 adds restricted and quarantined).
 type TrustLevel string

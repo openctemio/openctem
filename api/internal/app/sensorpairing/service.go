@@ -97,7 +97,7 @@ type SensorLookup interface {
 // §5); ValidProfile says whether a profile may be chosen for a new sensor.
 type ApprovalHook interface {
 	ValidProfile(profile string) bool
-	DefaultProfile() string
+	DefaultProfileFor(t sensordom.SensorType) string
 	OnApproved(tenantID shared.ID, profile string, zones []shared.ID, approvedBy shared.ID) func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error
 }
 
@@ -586,11 +586,12 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 		return nil, err
 	}
 	// The profile chosen now, else the one the expectation named, else the
-	// narrow default.
+	// default for the sensor's type (collector for a collector, else the
+	// narrow scanner default).
 	profile := firstNonEmpty(in.Profile, p.RequestedProfile)
 	if s.hook != nil {
 		if profile == "" {
-			profile = s.hook.DefaultProfile()
+			profile = s.hook.DefaultProfileFor(in.Type)
 		}
 		if !s.hook.ValidProfile(profile) {
 			return nil, ErrInvalid
