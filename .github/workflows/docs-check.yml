@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR cancels the older run; never a queued group or a branch push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   docs-check:
     name: Docs check
