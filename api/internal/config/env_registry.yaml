@@ -371,12 +371,6 @@ vars:
     type: string
     secret: true
     description: "Master secret of each organization's content pack signing key (Ed25519). Same formats as `APP_ENCRYPTION_KEY` and must differ from it and from `APP_TEMPLATE_SIGNING_KEY`. Unset: derived from `APP_ENCRYPTION_KEY` under its own label."
-  - name: AUTH_ACCESS_TOKEN_COOKIE_NAME
-    component: api
-    group: "Authentication"
-    type: string
-    default: "auth_token"
-    description: "Name of the access-token cookie. The gateway's routing rule and the web console expect `auth_token`; change all three together or not at all."
   - name: AUTH_ACCESS_TOKEN_DURATION
     component: api
     group: "Authentication"
@@ -482,12 +476,6 @@ vars:
     type: string
     default: "local"
     description: "`local` (built-in email and password), `oidc` (an external Keycloak realm) or `hybrid` (both). Up to v0.8.0 the default was `oidc`: an installation that relied on that must now set `AUTH_PROVIDER=oidc`."
-  - name: AUTH_REFRESH_TOKEN_COOKIE_NAME
-    component: api
-    group: "Authentication"
-    type: string
-    default: "refresh_token"
-    description: "Name of the refresh-token cookie."
   - name: AUTH_REFRESH_TOKEN_DURATION
     component: api
     group: "Authentication"
@@ -507,12 +495,6 @@ vars:
     type: duration
     default: "720h"
     description: "Session lifetime (30 days)."
-  - name: AUTH_TENANT_COOKIE_NAME
-    component: api
-    group: "Authentication"
-    type: string
-    default: "app_tenant"
-    description: "Name of the cookie holding the selected organization."
   - name: SCOPE_ACTIVE_PROOF
     component: api
     group: "Organizations and scope guardrails"
