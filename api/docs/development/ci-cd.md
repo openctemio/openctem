@@ -24,18 +24,19 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z`, starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI step "Changelog fragments" | PR, merge queue, push | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
+| Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). **Security gate self-test**: the gate's unit tests and the CODEOWNERS mirror | **security-gate** |
 | Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`) | — |
 
 Scheduled runs (weekly security, nightly fuzz) run from the default branch, `main`.
 
 ### Required checks
 
-Branch protection on `main` and `develop` requires exactly these six checks.
+Branch protection on `main` and `develop` requires exactly these seven checks.
 Merges go through the GitHub merge queue (see [Merge queue](#merge-queue)); the
 strict "branch must be up to date" rule is off, because the queue itself tests
 each PR on top of the current base:
 
-`API CI OK` · `Web CI OK` · `CodeQL OK` · `All-in-one OK` · `Secret Scanning` · `Workflow Lint`
+`API CI OK` · `Web CI OK` · `CodeQL OK` · `All-in-one OK` · `Secret Scanning` · `Workflow Lint` · `security-gate`
 
 The four `… OK` checks are aggregator jobs (`if: always()`): they pass when every
 job they depend on passed **or was skipped**, and fail when any failed or was
@@ -44,6 +45,102 @@ through their aggregator. API Security and Web Security are not required.
 
 Code-scanning result checks (CodeQL, Semgrep, Trivy alerts) are separate from
 these workflow gates.
+
+### Security gate
+
+One human maintainer reviews every change, and most pull requests are opened by
+automation under that maintainer's account, so GitHub's "required approvals"
+cannot work (an author cannot approve their own pull request). The
+`security-gate` check replaces them for the changes where a second look matters
+most, and stays out of the way for everything else.
+
+**What counts as security-sensitive.** A pull request that changes a file
+matched by [`.github/security-paths.yml`](../../../.github/security-paths.yml):
+authentication, sessions and authorization gates (middleware, auth routes and
+handlers, the permission model), tenant isolation and data scope (and the
+`tenantsql`/`getbyid`/`routeperm` guards), encryption, keys and signatures, the
+sensor protocol (transports, mTLS, ALPN routing in the gateway, pairing), the
+scope gate, web session/CSRF/proxy/header code, upload and download handlers,
+the SSRF guard (`pkg/httpsec`), CI workflows and release scripts, Dockerfiles and
+deployment defaults. Tests and the `tenantsql` table list count only when the
+change removes lines (adding a test strengthens a guard, removing one weakens
+it). A pull request is also sensitive when its added lines hit a content rule:
+a migration that changes row-level security, database grants or role
+permissions, or a security default in `api/internal/config/config.go`.
+`.github/CODEOWNERS` mirrors the list (a generated block; the self-test fails
+when they differ). Measured on the 150 pull requests merged before the gate
+existed: about 40% would have been sensitive, in a period dominated by scope,
+signer and sensor-protocol work.
+
+**What the gate does** (`.github/scripts/security_gate.py`, Python standard
+library only):
+
+1. Reads the pull request's changed files through the API and classifies them.
+   A non-sensitive pull request passes at once, with no comment.
+2. Reviews the added lines with high-precision rules. HIGH (blocks): TLS
+   verification disabled, JWT parsed unverified, `pull_request_target`,
+   `write-all` tokens, an action not pinned to a SHA, event text interpolated
+   into a workflow, raw HTML sinks or `eval` in the web app, row-level security
+   disabled or grants to `PUBLIC` in a migration. MEDIUM (reported): outbound
+   HTTP outside `pkg/httpsec`, raw client-IP headers, `os/exec` in the API,
+   SQL built with `Sprintf`, wildcard CORS, privileged containers.
+3. Lists new code-scanning alerts: open on the pull request's analysis
+   (CodeQL, Semgrep, Trivy) and not open on the base branch. A new **high or
+   critical** alert blocks. It also lists the results of the security checks on
+   the head commit (govulncheck, Semgrep, Trivy, npm audit, secret scanning,
+   golangci-lint with gosec).
+4. Labels the pull request `security-sensitive` and posts one comment (updated
+   in place) with the reasons, the findings and what is needed.
+5. Passes when the pull request carries `security-ack` added by a user listed
+   under `ackers` in the path list, and no HIGH finding or new high/critical
+   alert is open.
+
+**Acknowledging (the maintainer's one click).** Read the gate comment and the
+diff of the listed files, then add the **`security-ack`** label. The gate
+re-runs on the label and turns green; queue the pull request as usual. In the
+merge queue the gate runs again (`merge_group`), finds the pull request from the
+queue branch name and reads its labels and code-scanning alerts through the API.
+
+- A later push that changes a security-sensitive file of the pull request
+  removes `security-ack` (a force-push always does); merging the base branch
+  into the pull request does not. Ack again after reviewing the new commits.
+- A HIGH diff finding is resolved by changing the line, or, for a reviewed false
+  positive, by a comment on the same line:
+  `security-review: allow <RULE-ID> <reason>` (visible in the diff and in git
+  history). A code-scanning alert is resolved by fixing it or dismissing it in
+  the alert, which GitHub audits.
+- Release pull requests (`release/vX.Y.Z` into `main`) are judged only on what
+  the release branch adds on top of `develop`, whose commits already passed the
+  gate.
+- Automation working under the maintainer's account must never add
+  `security-ack`: the label is the maintainer's own decision. GitHub cannot
+  tell such automation from the maintainer while they share an account; once
+  automation moves to its own account or GitHub App, the `ackers` list enforces
+  this by itself.
+
+**Safety of the workflow.** It runs on `pull_request` and `merge_group` only (no
+`pull_request_target`). The gate script and the path list are checked out from
+the **base** commit, so a pull request cannot loosen the rules it is judged by,
+and no code from the pull request runs in the gate job (the diff is read as
+data). Fork pull requests get a read-only token: the verdict is in the check and
+the job summary, and the label and comment are skipped. The gate fails closed
+on any API error, on more than 3000 changed files and on a merge-queue branch it
+cannot parse. A pull request can still edit `security-gate.yml` itself, which is
+the residual risk of any check defined in the repository; such a change is
+`ci-release` sensitive and needs the ack like any other.
+
+**Emergency override.** An administrator can merge a pull request whose gate is
+red with **Merge without waiting for requirements (bypass rules)** (or by
+removing the check from branch protection for the incident). GitHub records the
+bypass in the organization audit log. Afterwards add `security-ack` to the merged
+pull request, or open a follow-up issue that explains the bypass, so every
+security-sensitive change carries a visible decision.
+
+**Changing the list.** Edit `.github/security-paths.yml`, then run
+`python3 .github/scripts/security_gate.py codeowners --write`, and
+`python3 .github/scripts/security_gate_test.py` (the tests also fail when a
+pattern matches no tracked file). The change itself is security-sensitive; it
+takes effect for pull requests opened against the base after it merges.
 
 ### Path filtering
 
@@ -281,7 +378,9 @@ All images go to GHCR, are multi-arch (linux/amd64 + linux/arm64), are built on 
 **native** runner per architecture and smoke-tested there (config arch, ELF
 `e_machine`, the binary executes) before anything is pushed, then merged into one
 manifest list per tag, signed with cosign (keyless) and given an SPDX SBOM that
-is attached to the GitHub Release.
+is attached to the GitHub Release, and a signed SLSA build provenance
+(`actions/attest-build-provenance`, stored in the registry next to the image;
+`gh attestation verify oci://<image>:<tag> --owner openctemio`).
 
 | Image | Built from | Contents |
 |-------|-----------|----------|
