@@ -42,6 +42,7 @@ import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { ManualEvidenceNotesSection } from './manual-evidence-notes'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { safeImageSrc } from '@/lib/safe-href'
+import { openAttachmentDownload } from '@/features/pentest/lib/attachment-download'
 import {
   FlaggedAttachmentRow,
   isMalwareFlagged,
@@ -837,6 +838,10 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                   <SafeExternalLink
                     key={att.id}
                     href={att.url}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      void openAttachmentDownload(att.url)
+                    }}
                     className="flex items-center gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
                   >
                     <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
