@@ -10,7 +10,7 @@
 - Deleting a template or report, directly or with its campaign, removes
   its file (organization deletion erases the whole namespace): a trigger queues it in
   `storage_blob_deletions` and the attachment-retention sweep deletes it.
-- Migration `002062_report_files_in_storage` (expand step): `content`
+- Migration `002063_report_files_in_storage` (expand step): `content`
   becomes nullable, `storage_key`, `storage_provider`, `size_bytes` added
   (backfilled), the queue table and trigger. Its down refuses while any file
   lives only in the storage.
