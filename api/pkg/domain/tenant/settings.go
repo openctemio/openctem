@@ -167,10 +167,11 @@ type SecuritySettings struct {
 	// every organization created after it shipped (NewTenant); organizations
 	// created before keep their stored value (off) until an owner turns it
 	// on. MFARequired, when on, covers everyone anyway.
-	MFARequiredForAdmins bool     `json:"mfa_required_for_admins,omitempty"`
-	SessionTimeoutMin    int      `json:"session_timeout_min"` // Session timeout in minutes (15-480)
-	IPWhitelist          []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
-	AllowedDomains       []string `json:"allowed_domains"`     // Allowed email domains for signup
+	MFARequiredForAdmins bool `json:"mfa_required_for_admins,omitempty"`
+	// A session_timeout_min key left in stored JSON is ignored: it was never
+	// enforced (sessions follow the platform's refresh and session lifetimes).
+	IPWhitelist    []string `json:"ip_whitelist"`    // Allowed IP addresses/CIDR ranges
+	AllowedDomains []string `json:"allowed_domains"` // Allowed email domains for signup
 
 	// PersonalAccounts says whether members with a personal address may use
 	// the organization (RFC-058): allowed (empty), allowed_with_mfa (the
@@ -700,7 +701,6 @@ func DefaultSettings() Settings {
 		},
 		Security: SecuritySettings{
 			MFARequired:           false,
-			SessionTimeoutMin:     60, // 1 hour default
 			IPWhitelist:           []string{},
 			AllowedDomains:        []string{},
 			EmailVerificationMode: EmailVerificationAuto, // Smart: require iff SMTP configured
@@ -823,12 +823,6 @@ func (s *SecuritySettings) Validate() error {
 	// Validate email verification mode
 	if !s.EmailVerificationMode.IsValid() {
 		return fmt.Errorf("%w: email_verification_mode must be one of: auto, always, never", shared.ErrValidation)
-	}
-	// Validate session timeout
-	if s.SessionTimeoutMin < 15 || s.SessionTimeoutMin > 480 {
-		if s.SessionTimeoutMin != 0 { // Allow 0 for default
-			return fmt.Errorf("%w: session timeout must be between 15 and 480 minutes", shared.ErrValidation)
-		}
 	}
 	// Validate IP whitelist
 	for _, ip := range s.IPWhitelist {

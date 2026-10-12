@@ -11,7 +11,7 @@ import (
 
 func TestReportConfigCheck(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if rc := reportConfigCheck(&out, &errOut, nil, errors.New("AUTH_JWT_SECRET is required")); rc != 1 {
+	if rc := reportConfigCheck(&out, &errOut, nil, errors.New("AUTH_JWT_SECRET is required"), nil); rc != 1 {
 		t.Fatalf("invalid config exit = %d, want 1", rc)
 	}
 	if !strings.Contains(errOut.String(), "INVALID") || !strings.Contains(errOut.String(), "AUTH_JWT_SECRET") {
@@ -24,7 +24,9 @@ func TestReportConfigCheck(t *testing.T) {
 	cfg.App.Env = config.EnvProduction
 	cfg.Auth.Provider = config.AuthProviderLocal
 	cfg.Auth.JWTSecret = "must-never-be-printed-by-the-check-0123456789abcdef0123456789abcdef"
-	if rc := reportConfigCheck(&out, &errOut, cfg, nil); rc != 0 {
+	cfg.EnvWarnings = []string{"AI_AGENT is set but not read by the API"}
+	environ := []string{"AUTH_JWT_SECRET=" + cfg.Auth.JWTSecret, "SERVER_PORT=8080", "PATH=/bin"}
+	if rc := reportConfigCheck(&out, &errOut, cfg, nil, environ); rc != 0 {
 		t.Fatalf("valid config exit = %d, want 0", rc)
 	}
 	if !strings.Contains(out.String(), "APP_ENV=production") || strings.Contains(out.String(), "note:") {
@@ -33,10 +35,17 @@ func TestReportConfigCheck(t *testing.T) {
 	if strings.Contains(out.String(), cfg.Auth.JWTSecret) {
 		t.Fatal("the check printed a secret")
 	}
+	if !strings.Contains(out.String(), "set from the environment (2;") || !strings.Contains(out.String(), "AUTH_JWT_SECRET SERVER_PORT") ||
+		strings.Contains(out.String(), "PATH") {
+		t.Fatalf("set variables not listed by name: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "warning: AI_AGENT is set but not read by the API") {
+		t.Fatalf("warning not printed: %q", out.String())
+	}
 
 	out.Reset()
 	cfg.App.Env = "development"
-	reportConfigCheck(&out, &errOut, cfg, nil)
+	reportConfigCheck(&out, &errOut, cfg, nil, nil)
 	if !strings.Contains(out.String(), "skips the production checks") {
 		t.Fatalf("development not flagged: %q", out.String())
 	}
@@ -49,7 +58,7 @@ func TestReportConfigCheck_WarnsAboutWideTrustedProxies(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.App.Env = config.EnvProduction
 	cfg.Server.TrustedProxies = []string{"172.18.0.0/16"}
-	if rc := reportConfigCheck(&out, &errOut, cfg, nil); rc != 0 {
+	if rc := reportConfigCheck(&out, &errOut, cfg, nil, nil); rc != 0 {
 		t.Fatalf("exit = %d, want 0 (a warning, not a failure)", rc)
 	}
 	if !strings.Contains(out.String(), "warning: SERVER_TRUSTED_PROXIES=172.18.0.0/16") {
@@ -57,7 +66,7 @@ func TestReportConfigCheck_WarnsAboutWideTrustedProxies(t *testing.T) {
 	}
 	out.Reset()
 	cfg.Server.TrustedProxies = []string{"172.18.0.10", "172.18.0.11/32"}
-	reportConfigCheck(&out, &errOut, cfg, nil)
+	reportConfigCheck(&out, &errOut, cfg, nil, nil)
 	if strings.Contains(out.String(), "warning:") {
 		t.Fatalf("pinned addresses must not warn: %q", out.String())
 	}

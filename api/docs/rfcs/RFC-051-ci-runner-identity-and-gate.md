@@ -267,7 +267,9 @@ For each finding the run reported:
 
 - **honored**: accepted risk (unexpired), `accepted_risk`, false positive,
   duplicate, or covered by a suppression rule: never blocks;
-- **secret**: a committed secret always blocks, whatever its age or severity;
+- **secret**: a new committed secret always blocks, whatever its severity; a
+  secret already open on the baseline branch blocks default-branch runs and is
+  a non-blocking `secret_pre_existing` note on other branches (RFC-077 G-9);
 - with new-findings-only, a finding already open on the default branch does
   not block; on the default branch itself, "new" means first detected or
   reopened by this run. Without a scan of the default branch every finding
@@ -335,6 +337,7 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | SSRF through a self-managed GitLab issuer or a Jenkins issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host; the preview validates the draft before any fetch |
 | A token valid for other services (Azure's fixed audience, a CI organization's default audience) | Azure: `org_id` pinned to the issuer, one exchange per `jti`, five-minute tokens; elsewhere a tenant-bound audience is required |
 | A renamed Bitbucket workspace's slug taken by someone else | `workspaceUuid` pinned in the configuration |
+| A GitHub organization or GitLab namespace renamed or deleted and its name registered by someone else | The first admitted exchange pins the name to its immutable id (`repository_owner_id`, `namespace_id`) per trust configuration (`ci_trust_owner_pins`, audited); a token with the same name and another id is refused (`owner_id_mismatch`). Changing the configuration's issuer, owners or repositories drops its pins; `GET /ci/trust-configs/{id}` lists them (RFC-077 G-10) |
 | A Bitbucket repository reporting as another (the name is not signed) | Rules list repository UUIDs; a name stays bound to the first UUID that used it (`repository_binding`) |
 | A name that changed hands (GitHub or GitLab organization renamed or deleted and its name registered again, a repository deleted and created anew): trust rules match names | GitHub, GitLab and Bitbucket: a repository name stays bound to the repository id (`repository_id`, `project_id`, `repositoryUuid`) that first reported under it while that pipeline is not retired; another id is refused (`repository_binding`, audited) until an administrator retires the old pipeline. A rename keeps the id and is admitted |
 | A job naming a commit it did not build (CircleCI) | Marked unverified; never matches a break-glass |
