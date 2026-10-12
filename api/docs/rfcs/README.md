@@ -69,7 +69,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-051](RFC-051-ci-runner-identity-and-gate.md) | CI runner identity and the central gate | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented |
 | [RFC-052](RFC-052-sensor-pairing-and-authorization.md) | Sensor pairing and per-sensor authorization | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented |
 | [RFC-053](RFC-053-migration-baseline.md) | Migration baseline (squash the migration chain) | Implemented |
-| [RFC-054](RFC-054-scope-model.md) | Scope model (what a tenant may actively probe) | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13); P0 implemented |
+| [RFC-054](RFC-054-scope-model.md) | Scope model (what a tenant may actively probe) | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented, R3–R5 awaiting owner decision); P0 implemented |
 | [RFC-055](RFC-055-tool-contract-v1.md) | Tool Contract v1 (capabilities, descriptors, inputs and outputs of every sensor tool) | Accepted (decisions TC1–TC16, 2026-10-07); in implementation: capability contracts from `ctis/capability` in the stage catalog and ingest (OC1, OC4) shipped; per-tenant tool descriptors (OC2) and later items not built |
 | [RFC-056](RFC-056-web-attack-surface.md) | Web attack surface (origins, endpoints, parameters, path patterns) | Implemented (decisions WS1–WS14, 2026-10-07; W-OC1–W-OC8) |
 | [RFC-057](RFC-057-finding-evidence-and-retest.md) | Finding evidence and honest retests | Implemented in the API (decided 2026-10-07: mask by default with an audited reveal; a tool-agnostic evidence contract); the SDK and sensor emitters follow the tool contract track (RFC-055) |
@@ -91,9 +91,11 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-073](RFC-073-scan-approval-governance.md) | Scan approval governance (approve scans, not scope entries) | Accepted (owner decision 2026-10-10); P0 in progress |
 | [RFC-074](RFC-074-adaptive-sensor-control.md) | Adaptive sensor control (measured values instead of configured numbers) | Proposed (2026-10-11) |
 | [RFC-075](RFC-075-asset-freshness.md) | Asset freshness and automatic enrichment | Proposed (2026-10-11); P0 in implementation |
+| [RFC-076](RFC-076-pentest-report-templates.md) | Pentest report templates | Proposed (2026-10-11); first slice implemented (upload, check, preview with sample data, DOCX rendering of a campaign) |
 | [RFC-077](RFC-077-ci-enforced-gate-and-pr-feedback.md) | CI enforced gate, pull request feedback and diff-aware runs | Proposed (decisions G-1..G-10 adopted as recommended, 2026-10-11; owner may veto) |
 | [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Proposed (2026-10-11) |
 | [RFC-079](RFC-079-console-platform-settings.md) | Run-time settings in the console instead of environment variables | Proposed (2026-10-11) |
+| [RFC-080](RFC-080-attack-surface-changes-and-digest.md) | Typed attack-surface changes and the weekly digest | Implemented (2026-10-11) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
