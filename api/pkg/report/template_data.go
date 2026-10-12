@@ -160,7 +160,7 @@ func TemplateData(in ReportInput, lang string) map[string]any {
 			"finding_title": r.FindingTitle, "finding_severity": r.FindingSeverity,
 			"finding_severity_label": label(lang, r.FindingSeverity, r.FindingSeverity),
 			"status":                 r.Status, "status_label": label(lang, "rt_"+r.Status, r.Status),
-			"notes": r.Notes, "tested_at": r.TestedAt,
+			"notes": r.Notes, "tested_at": r.TestedAt, "environment": r.Environment,
 		})
 	}
 
@@ -266,7 +266,7 @@ func SampleReportInput() ReportInput {
 			},
 		},
 		Checklists:     sampleChecklists(),
-		Retests:        []RetestData{{FindingTitle: "Server version disclosed", FindingSeverity: "info", Status: "passed", Notes: "Header removed.", TestedAt: "2026-02-02"}},
+		Retests:        []RetestData{{FindingTitle: "Server version disclosed", FindingSeverity: "info", Status: "passed", Notes: "Header removed.", Environment: "staging", TestedAt: "2026-02-02"}},
 		Stats:          StatsData{Total: 3, Critical: 1, Medium: 1, Info: 1, AvgCVSS: 7.6, MaxCVSS: 9.8},
 		GeneratedAt:    time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC),
 		Classification: "confidential",
