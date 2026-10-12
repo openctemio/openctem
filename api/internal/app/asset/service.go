@@ -1279,6 +1279,8 @@ type ListAssetsInput struct {
 	Scopes           []string            `validate:"max=6,dive,scope"`
 	Exposures        []string            `validate:"max=5,dive,exposure"`
 	Tags             []string            `validate:"max=20,dive,max=50"`
+	TagsMode         string              `validate:"omitempty,oneof=any all"` // any (default) or all of Tags
+	ExcludeTags      []string            `validate:"max=20,dive,max=50"`
 	Search           string              `validate:"max=255"` // Full-text search across name and description
 	MinRiskScore     *int                `validate:"omitempty,min=0,max=100"`
 	MaxRiskScore     *int                `validate:"omitempty,min=0,max=100"`
@@ -1413,10 +1415,12 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		filter = filter.WithExposures(exposures...)
 	}
 
-	// Tags filter
+	// Tags filter: any of them (default) or all of them, minus the excluded.
 	if len(input.Tags) > 0 {
 		filter = filter.WithTags(input.Tags...)
+		filter.TagsMatchAll = input.TagsMode == "all"
 	}
+	filter.ExcludeTags = input.ExcludeTags
 
 	// Search filter
 	if input.Search != "" {
@@ -1643,29 +1647,46 @@ func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID
 	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, lenses, tags, subType, countByFields...)
 }
 
-// ListTags returns distinct tags across all assets for a tenant.
-// Supports prefix filtering for autocomplete.
-func (s *AssetService) ListTags(ctx context.Context, tenantID, actingUserID string, isAdmin bool, prefix string, types []string, limit int) ([]string, error) {
+// ListTags returns the tags of the tenant's assets the caller may list, most
+// used first, and with q.IncludeSystem the system tags they may see: a
+// non-owner gets only those of programs not hidden from them (RFC-065 §15.3).
+func (s *AssetService) ListTags(ctx context.Context, tenantID, actingUserID string, isAdmin bool, q assetdom.TagListQuery) (assetdom.TagList, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		return assetdom.TagList{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
 	if err != nil {
-		return nil, err
+		return assetdom.TagList{}, err
 	}
 
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	if q.Limit <= 0 || q.Limit > 100 {
+		q.Limit = 50
+	}
+	q.Prefix = truncateTagQuery(q.Prefix)
+	q.Search = truncateTagQuery(q.Search)
+	if len(q.Types) > 20 {
+		q.Types = q.Types[:20]
+	}
+	q.ProgramTagViewer = nil
+	if q.IncludeSystem && actingUserID != "" && !s.callerIsOwner(ctx, actingUserID) {
+		uid, uerr := shared.IDFromString(actingUserID)
+		if uerr != nil {
+			return assetdom.TagList{}, fmt.Errorf("%w: invalid acting user id", shared.ErrForbidden)
+		}
+		q.ProgramTagViewer = &uid
 	}
 
-	// Sanitize prefix: trim and limit length to prevent abuse
-	prefix = strings.TrimSpace(prefix)
-	if len(prefix) > 50 {
-		prefix = prefix[:50]
-	}
+	return s.repo.ListDistinctTags(ctx, parsedTenantID, access, q)
+}
 
-	return s.repo.ListDistinctTags(ctx, parsedTenantID, access, prefix, types, limit)
+// truncateTagQuery trims a tag search and caps it at the tag length (50).
+func truncateTagQuery(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) > 50 {
+		v = v[:50]
+	}
+	return v
 }
 
 // ActivateAsset activates an asset.
