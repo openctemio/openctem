@@ -646,7 +646,7 @@ export function DataTable<TData, TValue>({
                 aria-label="Table view: density and columns"
               >
                 <SlidersHorizontal className="h-4 w-4 sm:me-2" />
-                <span className="hidden sm:inline">View</span>
+                <span className="sr-only sm:not-sr-only">View</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[200px]">

@@ -105,7 +105,7 @@ function RepositoryLink({
       ) : (
         <GitBranch className="h-3 w-3" />
       )}
-      <span className="hidden sm:inline">View source</span>
+      <span className="sr-only sm:not-sr-only">View source</span>
       <ExternalLink className="h-2.5 w-2.5" />
     </SafeExternalLink>
   )

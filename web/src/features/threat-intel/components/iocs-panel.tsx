@@ -235,7 +235,7 @@ export function IOCsPanel() {
         <Can permission={Permission.ThreatIntelWrite} mode="disable">
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 sm:me-2" />
-            <span className="hidden sm:inline">Add IOC</span>
+            <span className="sr-only sm:not-sr-only">Add IOC</span>
           </Button>
         </Can>
       </PageHeader>

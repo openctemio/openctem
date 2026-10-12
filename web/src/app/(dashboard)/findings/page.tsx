@@ -1713,7 +1713,7 @@ function FindingsContent() {
     >
       <SelectTrigger className="h-9 w-auto gap-2 sm:min-w-36" aria-label="Group findings">
         <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="hidden sm:inline">
+        <span className="sr-only sm:not-sr-only">
           <SelectValue />
         </span>
       </SelectTrigger>
@@ -1961,7 +1961,7 @@ function FindingsContent() {
           <Button variant="outline" size="sm" asChild>
             <Link href="/findings/approvals">
               <ClipboardList className="h-4 w-4 sm:me-2" />
-              <span className="hidden sm:inline">Approvals</span>
+              <span className="sr-only sm:not-sr-only">Approvals</span>
             </Link>
           </Button>
           {canImport && (
@@ -1972,13 +1972,13 @@ function FindingsContent() {
               onClick={() => setImportDialogOpen(true)}
             >
               <FileUp className="h-4 w-4 sm:me-2" />
-              <span className="hidden sm:inline">Import results</span>
+              <span className="sr-only sm:not-sr-only">Import results</span>
             </Button>
           )}
           {hasPermission('findings:write') && (
             <Button size="sm" aria-label="Add finding" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 sm:me-2" />
-              <span className="hidden sm:inline">Add finding</span>
+              <span className="sr-only sm:not-sr-only">Add finding</span>
             </Button>
           )}
         </PageHeader>
@@ -2069,7 +2069,7 @@ function FindingsContent() {
                           onClick={() => setAutoAssignOpen(true)}
                         >
                           <UserPlus className="h-4 w-4 sm:me-2" />
-                          <span className="hidden sm:inline">Assign to asset owners</span>
+                          <span className="sr-only sm:not-sr-only">Assign to asset owners</span>
                         </Button>
                       )}
                       {groupBySelect}
