@@ -44,6 +44,8 @@ type AttachmentService struct {
 	storageFactory  StorageFactory            // Optional: creates provider from config
 	storageCache    sync.Map                  // tenantID → *storageCacheEntry
 	quotaBytes      int64                     // per-tenant total of attachment bytes; 0 = no quota
+	scanner         attachmentdom.Scanner     // optional malware scanner; nil = off
+	scanRepo        attachmentdom.ScanRepository
 	retentionRepo   attachmentdom.RetentionRepository
 	retention       RetentionSettings
 	audit           AttachmentAuditLogger
@@ -242,6 +244,18 @@ func (s *AttachmentService) Upload(ctx context.Context, input UploadInput) (*att
 		return nil, err
 	}
 
+	// Images lose their metadata (EXIF/GPS, XMP, comments) and are refused
+	// past the pixel limit; the hash of the bytes received is kept for the
+	// audit event.
+	originalHash := ""
+	if attachmentdom.IsImageType(ct) {
+		reader, orig, err := sanitizeImageUpload(input.Reader, ct)
+		if err != nil {
+			return nil, err
+		}
+		input.Reader, originalHash = reader, orig
+	}
+
 	store, providerName, err := s.resolveStorage(ctx, input.TenantID)
 	if err != nil {
 		return nil, err
@@ -283,6 +297,12 @@ func (s *AttachmentService) Upload(ctx context.Context, input UploadInput) (*att
 	)
 	att.SetContentHash(contentHash)
 	att.SetStorageProvider(providerName)
+	if originalHash != "" && originalHash != contentHash {
+		att.SetOriginalContentHash(originalHash)
+	}
+	if s.scanner != nil {
+		att.SetScan(attachmentdom.ScanPending, "")
+	}
 
 	if err := s.repo.Create(ctx, att); err != nil {
 		_ = store.Delete(ctx, input.TenantID, storageKey)
@@ -339,6 +359,9 @@ func (s *AttachmentService) ReadAttachment(ctx context.Context, tenantID, attach
 	}
 	if att.Size() > maxBytes {
 		return nil, nil, attachmentdom.ErrTooLarge
+	}
+	if att.ScanStatus() == attachmentdom.ScanInfected {
+		return nil, nil, attachmentdom.ErrInfected
 	}
 	store, err := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
 	if err != nil {

@@ -1,0 +1,41 @@
+# Malware scanning of uploaded files (docs/rfcs/RFC-084-file-storage.md,
+# docs/architecture/file-storage.md "Malware scanning"): an optional overlay
+# that runs a ClamAV daemon next to the API. Off by default.
+#
+# The API streams each new upload to clamd (INSTREAM on port 3310) from a
+# background worker. A flagged file is kept and marked (evidence is never
+# blocked), audited attachment.malware_detected, and downloads only after
+# an explicit confirmation. While clamd is down or still loading its
+# signatures, files stay "pending" and are scanned when it is back.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.clamav.yml up -d
+#
+# clamd needs about 1.5 GB of memory for its signatures and downloads them
+# (freshclam) at start and every few hours, so it needs outbound HTTPS to
+# the ClamAV signature mirror. It listens only on the internal network;
+# nothing publishes its port.
+services:
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    networks:
+      - openctem
+    expose:
+      - "3310"
+    volumes:
+      - clamav-db:/var/lib/clamav
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+  api:
+    environment:
+      STORAGE_CLAMD_ADDRESS: clamav:3310
+
+volumes:
+  clamav-db:
