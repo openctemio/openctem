@@ -38,6 +38,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Service containers pull the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
 
 # Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
 # version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
@@ -315,7 +317,10 @@ jobs:
           - { kind: pkgs, shard: 3, total: 4 }
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:17-alpine
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_USER: openctem
           # Job-scoped throwaway database: no password at all (trust auth on
@@ -330,7 +335,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: public.ecr.aws/docker/library/redis:7-alpine
+        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - 6379:6379
         options: >-
@@ -434,7 +442,10 @@ jobs:
           - { kind: pkgs, shard: 2, total: 3 }
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:17-alpine
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_USER: postgres
           # Job-scoped throwaway database, trust auth on the service network:
@@ -450,7 +461,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: public.ecr.aws/docker/library/redis:7-alpine
+        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - 6379:6379
         options: >-
@@ -579,6 +593,13 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
