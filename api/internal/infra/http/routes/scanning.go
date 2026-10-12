@@ -46,17 +46,14 @@ func registerCommandRoutes(
 	router.Group("/api/v1/commands", func(r Router) {
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.CommandsRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.CommandsRead))
 		// Any command's logs (research/62); a command about a finding also
 		// needs findings:read and the finding in scope (in the handler).
 		r.GET("/{id}/logs", h.GetLogs, middleware.Require(permission.CommandsRead))
 
 		// Write operations
 		r.POST("/", h.Create, middleware.Require(permission.CommandsWrite))
-		r.POST("/{id}/cancel", h.Cancel, middleware.Require(permission.CommandsWrite))
-
-		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.CommandsDelete))
+		// A single command is no longer read, canceled or deleted here: a
+		// scan run is canceled as a whole (POST /api/v1/scan-runs/{id}/cancel).
 	}, tenantMiddlewares...)
 }
 
@@ -420,7 +417,6 @@ func registerCapabilityRoutes(
 func registerScanRoutes(
 	router Router,
 	h *handler.ScanHandler,
-	ciHandler *handler.CIHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	triggerRateLimiter *middleware.TriggerRateLimiter,
@@ -499,11 +495,6 @@ func registerScanRoutes(
 
 		// Export scan config
 		r.GET("/{id}/export", h.ExportConfig, middleware.Require(permission.ScansRead))
-
-		// CI/CD snippet generation
-		if ciHandler != nil {
-			r.GET("/{id}/ci-snippet", ciHandler.GenerateSnippet, middleware.Require(permission.ScansRead))
-		}
 
 		// Scan runs sub-resource
 		r.GET("/{id}/runs", h.ListScanRuns, middleware.Require(permission.ScansRead))

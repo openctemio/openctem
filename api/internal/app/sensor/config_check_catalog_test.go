@@ -22,6 +22,7 @@ var contractChecks = map[string][]string{
 	"tools.available":            {"ok", "none"},
 	"identity.state_persistent":  {"persistent", "not_persistent", "unknown"},
 	"identity.key_renewal":       {"enabled", "disabled", "off_not_persistent", "start_failed"},
+	"storage.outbox_persistent":  {"persistent", "not_persistent", "unknown"},
 	"network.scan_proxy_inherit": {"direct", "inherit_explicit", "inherits_proxy"},
 	"runtime.oom_protect":        {"protected", "not_requested", "unsupported", "no_permission", "failed"},
 	"config.alias_deprecated":    {"legacy_name"},
