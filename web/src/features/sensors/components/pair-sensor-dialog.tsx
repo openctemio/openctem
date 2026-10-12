@@ -214,6 +214,7 @@ function EnterCodePanel({
 
   return (
     <form
+      method="post"
       className="space-y-3"
       onSubmit={(e) => {
         e.preventDefault()
@@ -564,6 +565,7 @@ function ApprovalForm({
 
   return (
     <form
+      method="post"
       className="space-y-4 border-t pt-4"
       onSubmit={(e) => {
         e.preventDefault()

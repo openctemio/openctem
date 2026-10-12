@@ -127,7 +127,7 @@ function StorageConfigTab({ onStatusChange }: { onStatusChange: (s: StorageStatu
   if (!loaded) return <Skeleton className="h-48 w-full rounded-xl" />
 
   return (
-    <form id={STORAGE_FORM_ID} onSubmit={handleSave}>
+    <form method="post" id={STORAGE_FORM_ID} onSubmit={handleSave}>
       <Card>
         <CardHeader>
           <CardTitle>Storage provider</CardTitle>
@@ -380,7 +380,6 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
   const [securityForm, setSecurityForm] = useState({
     mfa_required: false,
     mfa_required_for_admins: false,
-    session_timeout_min: 60,
     ip_whitelist: '',
     allowed_domains: '',
     email_verification_mode: 'auto' as 'auto' | 'always' | 'never',
@@ -425,7 +424,6 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
       setSecurityForm({
         mfa_required: settings.security?.mfa_required || false,
         mfa_required_for_admins: settings.security?.mfa_required_for_admins || false,
-        session_timeout_min: settings.security?.session_timeout_min || 60,
         ip_whitelist: (settings.security?.ip_whitelist || []).join('\n'),
         allowed_domains: (settings.security?.allowed_domains || []).join('\n'),
         email_verification_mode:

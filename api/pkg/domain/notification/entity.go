@@ -74,6 +74,9 @@ const (
 	// TypeScanApproval tells approvers that a scan waits for their approval,
 	// and requesters that it was approved or rejected (RFC-073).
 	TypeScanApproval = "scan_approval"
+	// TypeAttackSurfaceDigest is the weekly "what changed" digest of the
+	// attack surface, sent to administrators (RFC-080).
+	TypeAttackSurfaceDigest = "attack_surface_digest"
 )
 
 // Notification represents an in-app notification.

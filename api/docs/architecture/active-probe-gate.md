@@ -70,6 +70,15 @@ controller then marks it `expired`.
   notifies all active owners and administrators in-app, and is audited.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
   click.
+- **Adding many entries** (RFC-054 §14). `POST /scope/targets/bulk`
+  (`scope:write`, at most 200 items) runs `scope.Service.CreateTargets`:
+  step-up is checked once before anything is written, then each item is an
+  ordinary `CreateTarget` (guardrails, duplicates, the Strict request rules,
+  the signer ledger before the write, one audit event per entry), and the
+  administrators get one notice for the batch. Each item answers `created`
+  (with its status), `exists` (the organization's own row) or `refused`
+  (code and message). Entries are recorded with origin `import`, or
+  `refusal_fix` when they fix a refused scan.
 - **One authority: scope entries** (RFC-054; migration
   `001262`). Root-domain seeds were folded into permanent `*.<domain>`
   entries and `/api/v1/easm/seeds` is gone; a verified domain, of any
@@ -90,14 +99,14 @@ Operator settings, never tenant settings:
   no `0.0.0.0/0`, `::/0`, link-local or metadata address, nothing in
   `SCOPE_DENY_EXTRA`, no public range larger than the CIDR caps.
 - **Dispatch** (the ownership gate below): a deny-listed target is refused
-  on every path (`platform_denied`); with `SCOPE_ACTIVE_PROOF=all` an
-  internet target not at or under a verified domain is refused
-  (`proof_required`).
-- **Platform sensors** (`scan/active_proof.go`): with `platform_sensors` or
-  `all`, a job goes to platform sensors only when every target is verified;
+  on every path (`platform_denied`).
+- **Platform sensors** (`scan/active_proof.go`): with the platform setting
+  "Require a verified domain before platform sensors scan a target" on
+  (Console > System > Platform scanning, default off; RFC-054 §8.1), a job
+  goes to platform sensors only when every target is verified;
   an explicit platform preference with an unproven target is refused
   (`PROOF_REQUIRED`).
-- **Intrusive scans**: a scanner whose stages are all T2 needs every target
+- **Intrusive scans** (setting on): a scanner whose stages are all T2 needs every target
   verified, at create, quick scan and every run. A workflow checks each
   intrusive (T2) step on its own: the step gets only the verified targets
   and fails (`STEP_TARGETS_REFUSED`) when none is left.

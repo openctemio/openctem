@@ -477,37 +477,3 @@ export async function isAuthenticated(): Promise<boolean> {
 // ============================================
 // GET ACCESS TOKEN (for API calls)
 // ============================================
-
-/**
- * Get valid access token for API calls
- * Automatically refreshes if token is expired
- *
- * @returns Access token or null if not authenticated
- */
-export async function getAccessToken(): Promise<string | null> {
-  try {
-    const cookieStore = await cookies()
-    let accessToken = cookieStore.get(env.auth.cookieName)?.value
-
-    if (!accessToken) {
-      return null
-    }
-
-    // Check if token is expired
-    if (isTokenExpired(accessToken)) {
-      // Try to refresh
-      const refreshResult = await refreshTokenAction()
-
-      if (!refreshResult.success || !refreshResult.accessToken) {
-        return null
-      }
-
-      accessToken = refreshResult.accessToken
-    }
-
-    return accessToken
-  } catch (error) {
-    console.error('Get access token error:', error)
-    return null
-  }
-}
