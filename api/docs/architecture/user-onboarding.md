@@ -306,8 +306,6 @@ UPDATE tenants
 | `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password#token=`). |
-| `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). |
-| `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password?token=`). |
 | `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). Pin the proxies' addresses; a range wider than 16 addresses is warned about at startup. |
 
 ## Code map
