@@ -79,7 +79,8 @@ export function DynamicTargetsPanel({
             return (
               <li key={`${sel.kind}:${sel.value}`} className="rounded-md bg-muted/40 px-3 py-2">
                 <p className="break-all font-mono text-sm">{sel.target}</p>
-                <p className="text-xs text-muted-foreground">
+                {/* The text names the domain, which may be one long word. */}
+                <p className="text-xs break-words text-muted-foreground">
                   {!enabled
                     ? t('scans.dynamic.needAssetRead')
                     : isLoading && !p
