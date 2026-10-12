@@ -36,7 +36,7 @@ func TestCIDecorationQueue(t *testing.T) {
 		return r
 	}
 	gh := mk(cirun.ProviderGitHub, cirun.StatusEvaluated)
-	gl := mk(cirun.ProviderGitLab, cirun.StatusEvaluated)
+	gl := mk(cirun.ProviderAzureDevOps, cirun.StatusEvaluated)
 	running := mk(cirun.ProviderGitHub, cirun.StatusRunning)
 	for _, r := range []*cirun.Run{gh, gl, running} {
 		if err := repo.MarkDecorationPending(ctx, tenant, r.ID); err != nil {
@@ -56,7 +56,7 @@ func TestCIDecorationQueue(t *testing.T) {
 		return s, n
 	}
 	if s, _ := state(gl.ID); s != "" {
-		t.Fatalf("gitlab run queued: %q", s)
+		t.Fatalf("azure run queued: %q", s)
 	}
 	if s, _ := state(running.ID); s != "" {
 		t.Fatalf("running run queued: %q", s)

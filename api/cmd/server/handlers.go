@@ -1366,7 +1366,11 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, lo
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	return handler.NewSCMAppHandler(scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log), log)
+	s := scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log)
+	if svc.Encryptor != nil {
+		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+	}
+	return handler.NewSCMAppHandler(s, log)
 }
 
 // newGitHubApp builds the deployment's GitHub App client, or nil when it is

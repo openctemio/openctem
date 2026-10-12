@@ -17,7 +17,9 @@ import (
 	"strings"
 	"unicode"
 
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
+	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -52,8 +54,15 @@ type DecorationRepository interface {
 	FinishDecoration(ctx context.Context, tenantID, runID shared.ID, state, detail string) error
 }
 
+// GitLabClients opens the tenant's GitLab connection for a project
+// (scmapp.Service).
+type GitLabClients interface {
+	GitLabClientFor(ctx context.Context, tenantID shared.ID, host, projectPath string) (scmappsvc.GitLabAPI, int64, error)
+}
+
 // DecorationJob posts queued verdicts.
 type DecorationJob struct {
+	gitlab   GitLabClients
 	repo     DecorationRepository
 	installs InstallationFinder
 	github   GitHubPoster
@@ -69,6 +78,9 @@ func NewDecorationJob(repo DecorationRepository, installs InstallationFinder, gi
 	return &DecorationJob{repo: repo, installs: installs, github: github, webBase: strings.TrimRight(webBase, "/"),
 		log: log.With("job", "ci-decoration")}
 }
+
+// SetGitLab enables posting GitLab commit statuses and merge request notes.
+func (j *DecorationJob) SetGitLab(g GitLabClients) { j.gitlab = g }
 
 // decorationBatch bounds one pass.
 const decorationBatch = 20
@@ -105,7 +117,13 @@ func GitHubRepository(name string) (owner, repo string, ok bool) {
 func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, string) {
 	owner, repo, ok := GitHubRepository(run.Repository)
 	if !ok {
+		if run.Provider == cirun.ProviderGitLab {
+			return j.decorateGitLab(ctx, run)
+		}
 		return cirun.DecorationSkipped, "not a github.com repository"
+	}
+	if j.github == nil {
+		return cirun.DecorationSkipped, "this deployment has no GitHub App"
 	}
 	inst, err := j.installs.ActiveForAccount(ctx, run.TenantID, scmapp.ProviderGitHub, owner)
 	if errors.Is(err, scmapp.ErrNotFound) {
@@ -156,6 +174,69 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 		}
 	}
 	return cirun.DecorationPosted, ""
+}
+
+// decorateGitLab sets the "OpenCTEM gate" commit status and one merge
+// request note with the tenant's GitLab connection for the project. For a
+// merge request the status goes on the merge request's head as GitLab
+// reports it, and only when that is the run's verified commit.
+func (j *DecorationJob) decorateGitLab(ctx context.Context, run *cirun.Run) (string, string) {
+	host, project, found := strings.Cut(strings.ToLower(run.Repository), "/")
+	if !found || host == "" || project == "" || j.gitlab == nil {
+		return cirun.DecorationSkipped, "no GitLab connection"
+	}
+	api, authorID, err := j.gitlab.GitLabClientFor(ctx, run.TenantID, host, project)
+	if errors.Is(err, scmapp.ErrNotFound) {
+		return cirun.DecorationSkipped, "no GitLab connection for this group"
+	}
+	if err != nil {
+		return cirun.DecorationRetry, "GitLab connection unavailable"
+	}
+	var v Verdict
+	if len(run.VerdictDetail) == 0 || json.Unmarshal(run.VerdictDetail, &v) != nil {
+		return cirun.DecorationFailed, "the stored verdict cannot be read"
+	}
+	if !run.CommitVerified || run.CommitSHA == "" {
+		return cirun.DecorationSkipped, "no verified commit"
+	}
+	mrIID := 0
+	if run.PullRequest != "" {
+		n, err := strconv.Atoi(run.PullRequest)
+		if err != nil || n <= 0 {
+			return cirun.DecorationSkipped, "no merge request number"
+		}
+		mr, err := api.MergeRequest(ctx, project, n)
+		if err != nil {
+			return gitlabOutcome(err, "read the merge request")
+		}
+		if !strings.EqualFold(mr.SHA, run.CommitSHA) {
+			return cirun.DecorationSkipped, "the merge request has newer commits"
+		}
+		mrIID = n
+	}
+	state := "success"
+	if conclusion(&v) == conclusionFailure {
+		state = "failed"
+	}
+	runURL := j.webBase + RunPath(run.ID)
+	if err := api.SetCommitStatus(ctx, project, run.CommitSHA, state, CheckName, runURL, plain(checkTitle(&v), 250)); err != nil {
+		return gitlabOutcome(err, "set the commit status")
+	}
+	if mrIID > 0 {
+		marker := commentMarker(run)
+		if err := api.UpsertMergeRequestNote(ctx, project, mrIID, authorID, marker, buildComment(run, &v, runURL, marker)); err != nil {
+			return gitlabOutcome(err, "post the merge request note")
+		}
+	}
+	return cirun.DecorationPosted, ""
+}
+
+func gitlabOutcome(err error, what string) (string, string) {
+	var se *gitlabapi.StatusError
+	if errors.As(err, &se) && (se.Status == 401 || se.Status == 403 || se.Status == 404 || se.Status == 422) {
+		return cirun.DecorationFailed, fmt.Sprintf("could not %s: GitLab answered %d", what, se.Status)
+	}
+	return cirun.DecorationRetry, "could not " + what
 }
 
 // outcome maps a GitHub error: a refusal GitHub will repeat (the app has no
