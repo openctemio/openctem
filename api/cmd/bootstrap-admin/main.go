@@ -54,6 +54,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,9 +62,11 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/adminbootstrap"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/platformemail"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/email"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -107,8 +110,6 @@ func main() {
 	if err := opts.Normalize(); err != nil {
 		fatal("%v", err)
 	}
-	opts.OrgSetupMailer = setupMailer(log)
-
 	databaseURL := firstNonEmpty(*dbURL, os.Getenv("DATABASE_URL"), databaseURLFromParts())
 	if databaseURL == "" {
 		fatal("Database URL required. Use -db flag, set DATABASE_URL, or set DB_HOST/DB_USER/DB_PASSWORD/DB_NAME env vars")
@@ -126,32 +127,57 @@ func main() {
 		fatal("Error pinging database: %v", err)
 	}
 
+	opts.OrgSetupMailer = setupMailer(ctx, db, log)
+
 	if err := adminbootstrap.Run(ctx, db, opts, os.Stdout); err != nil {
 		fatal("%v", err)
 	}
 }
 
 // setupMailer emails the first organization owner's set-password link through
-// the system SMTP (SMTP_* env, the same settings the server uses). Without
-// SMTP it returns nil (an untyped nil interface, never a nil *EmailService)
-// and the link is printed instead.
-func setupMailer(log *logger.Logger) tenantapp.AccountSetupMailer {
-	smtp := config.SMTPFromEnv()
-	if !smtp.IsConfigured() {
+// the platform e-mail settings (admin console, System > E-mail). For a
+// headless install, BOOTSTRAP_SMTP_HOST (with _PORT, _USER, _PASSWORD, _FROM,
+// _FROM_NAME, _STARTTLS) stores those settings first, when none are stored,
+// encrypted with APP_ENCRYPTION_KEY. Without e-mail it returns nil (an untyped
+// nil interface, never a nil *EmailService) and the link is printed instead.
+func setupMailer(ctx context.Context, db *sql.DB, log *logger.Logger) tenantapp.AccountSetupMailer {
+	key := os.Getenv("APP_ENCRYPTION_KEY")
+	if key == "" {
 		return nil
 	}
-	sender := email.NewSMTPSender(email.Config{
-		Host:       smtp.Host,
-		Port:       smtp.Port,
-		User:       smtp.User,
-		Password:   smtp.Password,
-		From:       smtp.From,
-		FromName:   smtp.FromName,
-		TLS:        smtp.TLS,
-		SkipVerify: smtp.SkipVerify,
-		Timeout:    smtp.Timeout,
-	})
-	return authapp.NewEmailService(sender, smtp, firstNonEmpty(os.Getenv("APP_NAME"), "openctem"), log)
+	enc, err := crypto.NewCipherFromKey(key, os.Getenv("APP_ENCRYPTION_KEY_FORMAT"))
+	if err != nil {
+		fatal("APP_ENCRYPTION_KEY is not a valid key")
+	}
+	svc := platformemail.NewService(postgres.NewPlatformSettingRepository(&postgres.DB{DB: db}), enc, nil, log)
+	if host := os.Getenv("BOOTSTRAP_SMTP_HOST"); host != "" {
+		port, err := strconv.Atoi(firstNonEmpty(os.Getenv("BOOTSTRAP_SMTP_PORT"), "587"))
+		if err != nil {
+			fatal("BOOTSTRAP_SMTP_PORT is not a number")
+		}
+		var password *string
+		if p, ok := os.LookupEnv("BOOTSTRAP_SMTP_PASSWORD"); ok {
+			password = &p
+		}
+		startTLS := os.Getenv("BOOTSTRAP_SMTP_STARTTLS") != "false"
+		created, err := svc.Seed(ctx, platformemail.Input{
+			Host: host, Port: port, Username: os.Getenv("BOOTSTRAP_SMTP_USER"), Password: password,
+			From: os.Getenv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(os.Getenv("BOOTSTRAP_SMTP_FROM_NAME"), "OpenCTEM"), StartTLS: startTLS,
+		})
+		if err != nil {
+			fatal("BOOTSTRAP_SMTP_*: %v", err)
+		}
+		if created {
+			fmt.Println("Platform e-mail settings stored from BOOTSTRAP_SMTP_* (change them in the admin console, System > E-mail).")
+		} else {
+			fmt.Println("Platform e-mail settings already stored; BOOTSTRAP_SMTP_* ignored.")
+		}
+	}
+	mailer := authapp.NewEmailService(svc.Sender(), config.SMTPFromEnv(), firstNonEmpty(os.Getenv("APP_NAME"), "openctem"), log)
+	if !mailer.IsConfigured() {
+		return nil
+	}
+	return mailer
 }
 
 // databaseURLFromParts builds a URL from DB_* variables (containers that use

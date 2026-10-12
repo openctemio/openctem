@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { env } from '@/lib/env'
 import { legalConfig } from '@/lib/legal'
+import { legalSettings } from '@/lib/legal-settings'
 
 import { RegisterGate } from '@/features/auth/components/register-gate'
 
@@ -22,7 +23,7 @@ export default async function SignUp() {
     }
   }
 
-  const legal = legalConfig()
+  const legal = legalConfig(await legalSettings())
 
   // The gate shows the form only when open registration is on or the visitor
   // came from an invitation; otherwise "accounts are created by your admin".

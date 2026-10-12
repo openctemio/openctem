@@ -33,6 +33,7 @@ export type ExposureEventType =
   | 'dangling_ns'
   | 'email_security_weak'
   | 'subdomain_takeover'
+  | 'lookalike_domain'
   | 'identity_mfa_gap'
   | 'identity_stale_principal'
   | 'identity_overprivileged'
@@ -328,6 +329,11 @@ export const EVENT_TYPE_CONFIG: Record<
   subdomain_takeover: {
     label: 'Subdomain Takeover',
     description: 'A takeover check confirmed the name can be claimed',
+    category: 'domain',
+  },
+  lookalike_domain: {
+    label: 'Lookalike Domain',
+    description: 'A registered domain that imitates one of your root domains',
     category: 'domain',
   },
   identity_mfa_gap: {

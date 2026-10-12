@@ -109,7 +109,7 @@ chart:
 YAML
   printf 'OPENCTEM_VERSION=v0.8.0\nOTHER=1\n' >"$d/api/deploy/.env.example"
   cat >"$d/api/deploy/docker-compose.yml" <<'YAML'
-    image: x:${UI_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is required, e.g. v0.8.0}}
+    image: x:${UI_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
       SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.6.4}
       SENSOR_MIN_VERSION: ${SENSOR_MIN_VERSION:-}
       SENSOR_SDK_MIN_VERSION: ${SENSOR_SDK_MIN_VERSION:-}

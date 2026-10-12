@@ -422,6 +422,40 @@ the ports it found open (`technical.ip_address.ports`). Ingest
 - Certificates page: the client-side Validity filter was never applied by the
   inventory page and is removed; each row shows its expiry, and expiring or
   expired certificates are listed on Exposures.
+## 4l. Lookalike domains (built)
+
+Design: [RFC-083](../rfcs/RFC-083-lookalike-domains.md). Attack surface ›
+**Lookalikes** watches the organization's own roots (an active permanent
+domain scope entry or a verified domain; at most 20) for registered
+lookalikes: candidates are generated locally (typos, keyboard neighbours,
+hyphens, bit flips, homoglyphs incl. IDN, other TLDs; default 300 per root)
+and checked passively only (decision O5): NS/A/AAAA/MX through the platform
+resolver and crt.sh through the SSRF guard; no candidate host is contacted.
+A registered candidate becomes a `lookalike_domain` exposure (medium with
+mail servers, or addresses plus a certificate; low otherwise) through the
+EASM alert writer; a lapsed one is resolved. Triage: accept (ours or benign),
+false positive (not a threat), resolve (taken down). Controller
+`easm-lookalikes` (hourly; registered names daily, others weekly, bounded per
+tenant). Routes: `/api/v1/easm/lookalikes/watches` (scope permissions,
+audited). The organization can turn the crt.sh queries off
+(`lookalike_ct_enabled` on `/api/v1/easm/settings`; fail closed).
+
+## 4k. Network seeds (built)
+
+Design: [RFC-082](../rfcs/RFC-082-network-seeds.md). Scoping › Scope ›
+**Networks** holds AS number and organization-name seeds
+(`/api/v1/easm/network-seeds`, scope permissions, audited; at most 50). An AS
+seed is expanded from RIPEstat (through the SSRF-guarded client, one fixed
+host) into its holder and announced prefixes; each prefix is checked against
+the platform guardrails and offered as a CIDR scope entry through the scope
+flow. An organization seed lists the AS numbers registered to the name
+(shared cloud/CDN ASes dropped). A seed never authorizes a probe. In the
+review queue an address in a seeded network gets the /24 or /48 around it
+offered (`network.seeded`). Seeds are refreshed weekly
+(`easm-network-seed-refresh`). A CIDR seed is a CIDR scope entry. The
+organization can turn RIPEstat lookups off (`network_lookups_enabled` on
+`/api/v1/easm/settings`; fail closed when the setting cannot be read).
+
 ## 4j. Web evidence and screenshots (built)
 
 Design: [RFC-081](../rfcs/RFC-081-web-evidence-screenshots.md). A sensor

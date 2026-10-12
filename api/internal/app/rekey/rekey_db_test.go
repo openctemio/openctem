@@ -92,6 +92,10 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	exec(`INSERT INTO settings (tenant_id, key, value_json) VALUES ($1, 'storage_config',
 		jsonb_build_object('provider', 's3', 'access_key', $2::text, 'secret_key', $3::text))`,
 		tenantID, put("settings.value_json.access_key", "AKIASTORAGE"), put("settings.value_json.secret_key", "storage-secret"))
+	exec(`INSERT INTO platform_settings (key, value) VALUES ('email.smtp',
+		jsonb_build_object('enabled', true, 'host', 'smtp.example.com', 'password_encrypted', $1::text))
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+		put("platform_settings.value.password_encrypted", "smtp-pass"))
 
 	// A finding evidence secret (bound plaintext, as the evidence service seals it).
 	assetID, findingID, evidenceID := "55555555-5555-7555-8555-555555555555", "66666666-6666-7666-8666-666666666666", "77777777-7777-7777-8777-777777777777"
@@ -175,6 +179,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		"scm_gitlab_connections.token_encrypted":              `SELECT token_encrypted FROM scm_gitlab_connections`,
 		"settings.value_json.access_key":                      `SELECT value_json->>'access_key' FROM settings WHERE key = 'storage_config'`,
 		"settings.value_json.secret_key":                      `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
+		"platform_settings.value.password_encrypted":          `SELECT value->>'password_encrypted' FROM platform_settings WHERE key = 'email.smtp'`,
 		"exposure_events.details.secret_value_enc":            `SELECT details->>'secret_value_enc' FROM exposure_events`,
 	} {
 		out[loc] = dec(one(q))

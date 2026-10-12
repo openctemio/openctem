@@ -55,12 +55,7 @@ func emailTestLogger() *logger.Logger {
 }
 
 func emailTestConfig() config.SMTPConfig {
-	return config.SMTPConfig{
-		Host:    "smtp.example.com",
-		Port:    587,
-		From:    "noreply@example.com",
-		BaseURL: "https://app.example.com",
-	}
+	return config.SMTPConfig{BaseURL: "https://app.example.com"}
 }
 
 func emailNewService(sender email.Sender) *auth.EmailService {

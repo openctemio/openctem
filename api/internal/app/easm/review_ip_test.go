@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
+	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -143,5 +144,34 @@ func TestOrgMatches(t *testing.T) {
 		if got := orgMatches(c.org, c.asn); got != c.want {
 			t.Errorf("orgMatches(%q, %q) = %v, want %v", c.org, c.asn, got, c.want)
 		}
+	}
+}
+
+// A seeded AS (RFC-082) offers the range around an address even when the
+// ASN organization does not name the organization; shared space still gets
+// no fix.
+func TestExplainAddresses_SeededNetworkOffersTheRange(t *testing.T) {
+	run := func(props map[string]any, seeds easmseed.Networks) ReviewItem {
+		store := &fakeAddrStore{props: map[string]map[string]any{"198.51.100.20": props}}
+		s := &ReviewService{}
+		s.SetAddressExplainer(store, func(context.Context, shared.ID) (string, error) { return "EXAMPLECO", nil })
+		s.SetSeededNetworks(func(context.Context, shared.ID) (easmseed.Networks, error) { return seeds, nil })
+		page := &ReviewPage{Items: []ReviewItem{{AssetID: "1", Name: "198.51.100.20", Type: "ip_address"}}}
+		if err := s.explainAddresses(context.Background(), shared.NewID(), nil, ReviewCaller{CanApprove: true}, page); err != nil {
+			t.Fatal(err)
+		}
+		return page.Items[0]
+	}
+	it := run(map[string]any{"asn": float64(3333), "asn_org": "Hosting JSC"}, easmseed.Networks{ASNs: map[string]bool{"AS3333": true}})
+	if !it.Network.Seeded || len(it.Fixes) != 2 || it.Fixes[1].Pattern != "198.51.100.0/24" {
+		t.Fatalf("seeded AS: %+v %+v", it.Network, it.Fixes)
+	}
+	it = run(map[string]any{}, easmseed.Networks{Prefixes: []string{"198.51.100.0/22"}})
+	if !it.Network.Seeded || len(it.Fixes) != 2 {
+		t.Fatalf("seeded prefix: %+v %+v", it.Network, it.Fixes)
+	}
+	it = run(map[string]any{"cdn": "cloudflare", "asn": float64(3333)}, easmseed.Networks{ASNs: map[string]bool{"AS3333": true}})
+	if it.Network.Seeded || len(it.Fixes) != 0 {
+		t.Fatalf("shared space seeded: %+v %+v", it.Network, it.Fixes)
 	}
 }
