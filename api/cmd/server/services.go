@@ -2577,6 +2577,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
+	s.SSO.SetAuditService(s.Audit)
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
@@ -2655,6 +2656,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
+		s.OAuth.SetAuditService(s.Audit)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {

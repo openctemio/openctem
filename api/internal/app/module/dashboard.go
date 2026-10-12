@@ -380,7 +380,8 @@ type ProcessMetrics struct {
 
 // ProgramMetrics holds the CTEM program metrics ctem.org asks a program to
 // report that can be computed honestly from data the platform already stores.
-// Every figure is tenant-scoped and windowed to the last PeriodDays days.
+// Every figure is tenant-scoped and windowed to the last PeriodDays days,
+// except ControlCoverage, which describes the inventory as it is now.
 //
 // A nil pointer means "not measurable" (no qualifying sample in the window) —
 // never 0 and never 100%. Clients must render nil as "—".
@@ -434,6 +435,92 @@ type ProgramMetrics struct {
 	// OwnerAcceptance — share of assignments the assignee acted on within the
 	// SLA window. See OwnerAcceptanceMetric.
 	OwnerAcceptance OwnerAcceptanceMetric `json:"owner_acceptance"`
+
+	// MTTV — mean time to validate priority exposures.
+	//
+	// Population: findings of priority class P0 or P1 whose first_detected_at
+	// falls in the window, excluding false positives and duplicates.
+	//
+	// Clock start: findings.first_detected_at.
+	// Clock stop: the first CONCLUSIVE validation_evidence row for the finding
+	// (outcome 'detected' — reproduced — or 'not_detected' — not reproduced).
+	// Inconclusive, error and skipped rows are not evidence. A stop before
+	// first_detected_at counts as 0 h. Findings with no conclusive evidence
+	// yet are not averaged; they are counted in Unmeasured.
+	MTTV DurationMetric `json:"mttv"`
+
+	// TimeToOwnerInternetFacing — mean time to assign an owner to new
+	// internet-facing assets.
+	//
+	// Population: the MTTD population (non-archived assets first seen in the
+	// window that are internet-facing now).
+	// Clock start: assets.first_seen. Clock stop: the earliest
+	// asset_owners.assigned_at of the asset (any ownership type, user or
+	// group). An owner assigned before first_seen counts as 0 h. Assets that
+	// still have no owner are counted in Unmeasured.
+	TimeToOwnerInternetFacing DurationMetric `json:"time_to_owner_internet_facing"`
+
+	// CycleCompletion — whether CTEM cycles finish on time. See
+	// CycleCompletionMetric.
+	CycleCompletion CycleCompletionMetric `json:"cycle_completion"`
+
+	// ControlCoverage — critical assets lacking a required control, one row
+	// per control. A snapshot of the current inventory, not windowed. See
+	// ControlCoverageMetric.
+	ControlCoverage []ControlCoverageMetric `json:"control_coverage"`
+}
+
+// CycleCompletionMetric — cycle completion rate.
+//
+// Population: CTEM cycles whose end_date falls in the window (from the window
+// start up to today, inclusive).
+//
+// Outcome of each cycle:
+//   - ClosedOnTime: status 'closed' and closed_at before the end of end_date
+//     (UTC).
+//   - ClosedLate: status 'closed' and closed_at after that.
+//   - Open: not closed yet (end_date has passed or is today).
+//
+// RatePct = ClosedOnTime / Due × 100, nil when Due is 0.
+// MeanCharterCompletionPct is the mean charter completion rate
+// (charter_evaluation.completion_rate: met / (met + unmet) success criteria)
+// over the closed cycles of the population that have one; nil when none has.
+type CycleCompletionMetric struct {
+	Due                      int      `json:"due"`
+	ClosedOnTime             int      `json:"closed_on_time"`
+	ClosedLate               int      `json:"closed_late"`
+	Open                     int      `json:"open"`
+	RatePct                  *float64 `json:"rate_pct"`
+	MeanCharterCompletionPct *float64 `json:"mean_charter_completion_pct"`
+}
+
+// Controls the coverage metric checks. Each one is read from a boolean asset
+// attribute of the asset types it applies to (configs/asset-types.yaml).
+const (
+	ControlEDR     = "edr"     // has_edr on host / endpoint assets
+	ControlMFA     = "mfa"     // has_mfa on cloud_account / identity assets
+	ControlLogging = "logging" // has_logging on storage assets
+)
+
+// ControlCoverageMetric — critical assets lacking a required control.
+//
+// Population: non-archived assets with criticality 'critical' or flagged as a
+// crown jewel, of the asset types the control applies to.
+//
+// Each asset is counted once, by its attribute value:
+//   - Covered: the attribute is true.
+//   - Lacking: the attribute is false.
+//   - Unknown: the attribute is not recorded. No source has reported the
+//     control, which is a blind spot rather than proof of coverage.
+//
+// GapPct = (Lacking + Unknown) / Total × 100, nil when Total is 0.
+type ControlCoverageMetric struct {
+	Control string   `json:"control"`
+	Total   int      `json:"total"`
+	Covered int      `json:"covered"`
+	Lacking int      `json:"lacking"`
+	Unknown int      `json:"unknown"`
+	GapPct  *float64 `json:"gap_pct"`
 }
 
 // DurationMetric is a mean/median duration over a sample, in hours.

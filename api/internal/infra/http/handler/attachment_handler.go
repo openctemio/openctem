@@ -373,50 +373,6 @@ func (h *AttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetMeta returns attachment metadata (without file content).
-// GET /api/v1/attachments/{id}/meta
-func (h *AttachmentHandler) GetMeta(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	id := chi.URLParam(r, "id")
-
-	// Campaign membership check (same as Download/Delete)
-	if h.accessChecker != nil {
-		att, aerr := h.service.GetByID(r.Context(), tenantID, id)
-		if aerr != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
-		if err := h.authorizeAttachment(r, att); err != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
-	}
-
-	att, err := h.service.GetByID(r.Context(), tenantID, id)
-	if err != nil {
-		if errors.Is(err, attachment.ErrNotFound) {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
-		h.logger.Error("attachment meta failed", "error", err, "id", id)
-		apierror.InternalServerError("Failed to get attachment").WriteJSON(w)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"id":           att.ID().String(),
-		"filename":     att.Filename(),
-		"content_type": att.ContentType(),
-		"size":         att.Size(),
-		"url":          att.URL(),
-		"markdown":     att.MarkdownLink(),
-		"uploaded_by":  att.UploadedBy().StringOrEmpty(),
-		"context_type": att.ContextType(),
-		"context_id":   att.ContextID(),
-		"created_at":   att.CreatedAt(),
-	})
-}
-
 func isImageMIME(ct string) bool {
 	// SVG excluded: can contain <script> tags → stored XSS if served inline
 	return ct == "image/png" || ct == "image/jpeg" || ct == "image/gif" || ct == "image/webp"
