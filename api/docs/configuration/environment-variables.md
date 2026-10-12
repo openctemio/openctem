@@ -207,6 +207,8 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `STORAGE_ENDPOINT` | string | empty |  |  | Endpoint of an S3-compatible store, for example MinIO. Unset: AWS S3. |
 | `STORAGE_LOCAL_PATH` | string | `./data/attachments` |  |  | Directory for `local` storage, relative to the working directory (`/app` in the API image, so `/app/data/attachments`). Put it on a persistent volume and back it up. |
 | `STORAGE_TENANT_QUOTA_MB` | int | `20480` |  |  | Most attachment bytes one organization may hold, in MiB (20480 = 20 GiB). An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota. |
+| `STORAGE_ORPHAN_GRACE_DAYS` | int | `7` |  |  | Days evidence files stay after their finding or campaign is deleted; then the retention sweep deletes them (audited `attachment.purged`). 0 = keep them. |
+| `STORAGE_UNLINKED_RETENTION_HOURS` | int | `24` |  |  | Hours an upload never linked to a finding or campaign stays before the retention sweep deletes it. Authorization letter files are never purged. 0 = keep them. |
 | `STORAGE_PROVIDER` | string | `local` |  |  | `local`, `s3` or `minio`. Any other value stops start-up. |
 | `STORAGE_REGION` | string | empty |  |  | Bucket region. |
 | `STORAGE_SECRET_KEY` | string | empty |  | yes | Secret key. Required with `s3` / `minio`. |
