@@ -103,7 +103,7 @@ type mcpPentestReader interface {
 	GetUserCampaignRole(ctx context.Context, tenantID, campaignID, userID string) (pentestdom.CampaignRole, error)
 	GetCampaign(ctx context.Context, tenantID, campaignID string) (*pentestdom.Campaign, error)
 	ListCampaignMembers(ctx context.Context, tenantID, campaignID string) ([]*pentestdom.CampaignMember, error)
-	GetCampaignStats(ctx context.Context, tenantID, campaignID string) (*pentestdom.CampaignStats, error)
+	GetCampaignStats(ctx context.Context, tenantID, campaignID string, publishedOnly bool) (*pentestdom.CampaignStats, error)
 	ListAllPentestFindings(ctx context.Context, tenantID, campaignID, viewerUserID, search string, isAdmin bool, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error)
 	ListCampaignRetests(ctx context.Context, tenantID, campaignID string) ([]*pentestdom.Retest, error)
 	ListTemplates(ctx context.Context, tenantID string, filter pentestdom.TemplateFilter, page pagination.Pagination) (pagination.Result[*pentestdom.Template], error)
