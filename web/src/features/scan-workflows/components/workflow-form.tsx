@@ -717,7 +717,7 @@ export function ScanWorkflowForm({
                 className="flex items-center gap-2 text-xs sm:text-sm"
               >
                 {step.icon}
-                <span className="hidden sm:inline">{step.label}</span>
+                <span className="sr-only sm:not-sr-only">{step.label}</span>
               </TabsTrigger>
             ))}
           </TabsList>

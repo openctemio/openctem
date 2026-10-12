@@ -708,7 +708,7 @@ export function SensorsSection({
       <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
         <SelectTrigger className="h-9 w-auto gap-2 sm:min-w-36" aria-label="Group sensors">
           <Layers className="h-4 w-4 text-muted-foreground" />
-          <span className="hidden sm:inline">
+          <span className="sr-only sm:not-sr-only">
             <SelectValue />
           </span>
         </SelectTrigger>
