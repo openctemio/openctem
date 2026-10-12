@@ -422,6 +422,24 @@ the ports it found open (`technical.ip_address.ports`). Ingest
 - Certificates page: the client-side Validity filter was never applied by the
   inventory page and is removed; each row shows its expiry, and expiring or
   expired certificates are listed on Exposures.
+## 4l. Lookalike domains (built)
+
+Design: [RFC-083](../rfcs/RFC-083-lookalike-domains.md). Attack surface ›
+**Lookalikes** watches the organization's own roots (an active permanent
+domain scope entry or a verified domain; at most 20) for registered
+lookalikes: candidates are generated locally (typos, keyboard neighbours,
+hyphens, bit flips, homoglyphs incl. IDN, other TLDs; default 300 per root)
+and checked passively only (decision O5): NS/A/AAAA/MX through the platform
+resolver and crt.sh through the SSRF guard; no candidate host is contacted.
+A registered candidate becomes a `lookalike_domain` exposure (medium with
+mail servers, or addresses plus a certificate; low otherwise) through the
+EASM alert writer; a lapsed one is resolved. Triage: accept (ours or benign),
+false positive (not a threat), resolve (taken down). Controller
+`easm-lookalikes` (hourly; registered names daily, others weekly, bounded per
+tenant). Routes: `/api/v1/easm/lookalikes/watches` (scope permissions,
+audited). The organization can turn the crt.sh queries off
+(`lookalike_ct_enabled` on `/api/v1/easm/settings`; fail closed).
+
 ## 4k. Network seeds (built)
 
 Design: [RFC-082](../rfcs/RFC-082-network-seeds.md). Scoping › Scope ›

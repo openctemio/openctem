@@ -752,6 +752,7 @@ Effort is engineer-weeks across all repos.
 | P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor; now scope entries, RFC-054); AS number and organization seeds with RIPEstat expansion ([RFC-082](RFC-082-network-seeds.md)). Open: candidates and tombstones, PTR collection in the sensor pipeline, noisy-OR learning, rule precision. |
 | P3–P6 | Not started (no `easm_observations`). |
 | P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor). Open: candidates and tombstones, CIDR/ASN/organization seeds with RDAP/RIPEstat/PTR collectors, noisy-OR learning, rule precision. |
+| P3–P6 | P6 in part: passive lookalike-domain monitoring ([RFC-083](RFC-083-lookalike-domains.md)). P3, P4 observations, P5 not started. |
 | P3–P6 | P4 in part: typed changes and the weekly digest over the existing records ([RFC-080](RFC-080-attack-surface-changes-and-digest.md)); no `easm_observations` yet. P3, P5, P6 not started. |
 
 **EASM maturity plan P0 (decisions E1–E13, 2026-10-04).**

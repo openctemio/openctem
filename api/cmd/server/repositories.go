@@ -240,6 +240,8 @@ type Repositories struct {
 	CIRun       *postgres.CIRunRepository
 	SCMApp      *postgres.SCMAppInstallationRepository
 	EASMSummary *postgres.EASMSummaryRepository
+	// EASMLookalike stores lookalike watches and candidates (RFC-083).
+	EASMLookalike *postgres.EASMLookalikeRepository
 	// EASMNetworkSeed stores AS number and organization seeds (RFC-082).
 	EASMNetworkSeed *postgres.EASMNetworkSeedRepository
 	// AssetWebEvidence stores web assets' captures (RFC-081).
@@ -512,6 +514,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CIRun:            postgres.NewCIRunRepository(db),
 		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
+		EASMLookalike:    postgres.NewEASMLookalikeRepository(db),
 		EASMNetworkSeed:  postgres.NewEASMNetworkSeedRepository(db),
 		AssetWebEvidence: postgres.NewAssetWebEvidenceRepository(db),
 		EASMChange:       postgres.NewEASMChangeRepository(db),

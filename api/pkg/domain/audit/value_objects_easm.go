@@ -40,6 +40,20 @@ var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMSweepRequested:  SeverityMedium,
 })
 
+// Lookalike-domain watches (RFC-083): passive monitoring of the
+// organization's root domains for registered lookalikes.
+const (
+	ActionEASMLookalikeWatchAdded   Action = "easm_lookalike_watch.added"
+	ActionEASMLookalikeWatchUpdated Action = "easm_lookalike_watch.updated"
+	ActionEASMLookalikeWatchDeleted Action = "easm_lookalike_watch.deleted"
+)
+
+var _ = registerActions("easm", map[Action]Severity{
+	ActionEASMLookalikeWatchAdded:   SeverityMedium,
+	ActionEASMLookalikeWatchUpdated: SeverityMedium,
+	ActionEASMLookalikeWatchDeleted: SeverityMedium,
+})
+
 // Network seeds (RFC-082): AS numbers and organization names discovery
 // expands from public routing data. A seed never authorizes a probe.
 const (
