@@ -158,6 +158,11 @@ interface AssetDetailSheetProps<T extends Asset> {
 
   /** Available tag suggestions for autocomplete */
   tagSuggestions?: string[]
+
+  /** Clicking a tag toggles it in the list's filter (when the sheet sits on a filterable list). */
+  onTagClick?: (tag: string) => void
+  /** The tags the list is filtered by (shown as active). */
+  activeTags?: string[]
 }
 
 // ============================================
@@ -204,6 +209,8 @@ export function AssetDetailSheet<T extends Asset>({
   onNavigateToAsset,
   onUpdateTags,
   tagSuggestions,
+  onTagClick,
+  activeTags,
 }: AssetDetailSheetProps<T>) {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = React.useState('overview')
@@ -417,7 +424,13 @@ export function AssetDetailSheet<T extends Asset>({
               />
             )}
 
-            <TagsSection tags={asset.tags} suggestions={tagSuggestions} onSave={onUpdateTags} />
+            <TagsSection
+              tags={asset.tags}
+              suggestions={tagSuggestions}
+              onSave={onUpdateTags}
+              onTagClick={onTagClick}
+              activeTags={activeTags}
+            />
           </DetailSections>
         )}
 
