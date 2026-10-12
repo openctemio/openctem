@@ -104,7 +104,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "PriorityReclassifyController", "PriorityReclassifySweepController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController", "VulnFeedImportController"},
+		Jobs:       []string{"ApprovalExpirationController", "PriorityReclassifyController", "PriorityReclassifySweepController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController", "VulnFeedImportController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -447,7 +447,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "pentest campaigns produce findings"},
 		},
 		Routes: []string{"/api/v1/pentest"},
-		MCP:    []string{"get_campaign", "list_campaign_findings", "get_pentest_finding", "list_retests", "list_finding_templates", "campaign_report_stats", "exec_summary", "finding_writeup", "remediation_guidance", "attack_narrative"},
+		MCP:    []string{"list_campaigns", "my_work", "get_campaign", "list_campaign_findings", "get_pentest_finding", "list_retests", "list_finding_templates", "campaign_report_stats", "exec_summary", "finding_writeup", "remediation_guidance", "attack_narrative"},
 	},
 	{
 		ID: ModuleAttackSimulation, Slug: "attack-simulation", Name: "Attack Simulation",

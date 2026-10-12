@@ -49,8 +49,11 @@ const (
 	TypeCampaignMemberAdded      = "campaign_member_added"
 	TypeCampaignMemberRemoved    = "campaign_member_removed"
 	TypeCampaignMemberRoleChange = "campaign_member_role_change"
-	TypeSLABreach                = "sla_breach"
-	TypeSystemAlert              = "system_alert"
+	// TypeCampaignStatusChange tells campaign members that the campaign
+	// moved to another phase (testing, reporting, remediation, ...).
+	TypeCampaignStatusChange = "campaign_status_change"
+	TypeSLABreach            = "sla_breach"
+	TypeSystemAlert          = "system_alert"
 	// TypeSSOChangePending tells an organization owner that a platform
 	// administrator proposed an SSO change that waits for their approval.
 	TypeSSOChangePending = "sso_change_pending"
@@ -281,6 +284,7 @@ func IsValidType(t string) bool {
 		TypeAssetDiscovered,
 		TypeMemberInvited, TypeMemberJoined, TypeRoleChanged,
 		TypeCampaignMemberAdded, TypeCampaignMemberRemoved, TypeCampaignMemberRoleChange,
+		TypeCampaignStatusChange,
 		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending:
 		return true
 	}

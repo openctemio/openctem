@@ -1,7 +1,10 @@
 package unit
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"io"
 	"strings"
 	"testing"
@@ -157,10 +160,18 @@ var (
 	attCID = shared.NewID().String()
 )
 
+// tinyPNG is a valid 2x2 PNG: images are parsed (metadata removed, pixel
+// limit checked) on upload.
+func tinyPNG() []byte {
+	var b bytes.Buffer
+	_ = png.Encode(&b, image.NewGray(image.Rect(0, 0, 2, 2)))
+	return b.Bytes()
+}
+
 func mkUpload() integration.UploadInput {
 	return integration.UploadInput{
 		TenantID: attTID, Filename: "shot.png", ContentType: "image/png",
-		Size: 1024, Reader: strings.NewReader("fakepng"), UploadedBy: attUID,
+		Size: 1024, Reader: bytes.NewReader(tinyPNG()), UploadedBy: attUID,
 		ContextType: "finding", ContextID: attCID,
 	}
 }

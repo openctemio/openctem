@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
@@ -28,7 +29,6 @@ import (
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
-	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
@@ -346,6 +346,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Tenant != nil {
 		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
 		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
+		if mcpHandler != nil {
+			// Pentest campaigns above the organization's TLP limit for AI
+			// applications never reach an AI client.
+			mcpHandler.SetAIPolicy(mcpPolicies)
+		}
 	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
@@ -371,7 +376,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	handlers := routes.Handlers{
 		ModuleGate:     moduleGate,
-		DataScope:      svc.DataScope,
+		DataScope:      byIDGuardAsserter(svc),
 		MCP:            mcpHandler,
 		MCPAuth:        mcpAuth,
 		MCPDiscovery:   mcpDiscovery,
@@ -521,7 +526,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Pentest Campaign Management
 		Pentest: func() *handler.PentestHandler {
 			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
-			h.SetImportService(finding.NewFindingImportService(repos.Finding, log))
 			h.SetAuditService(svc.Audit)
 			h.SetChecklistService(svc.PentestChecklists)
 			return h
@@ -1466,4 +1470,29 @@ func (l ciImageLinker) AssetsWithImageDigest(ctx context.Context, tenantID share
 
 func (l ciImageLinker) CreateBatch(ctx context.Context, s []*relationshipdom.Suggestion) (int, error) {
 	return l.suggestions.CreateBatch(ctx, s)
+}
+
+// findingAccessGuard is the by-id route guard's asserter: assets through the
+// data scope, findings through the finding service, which authorizes a
+// pentest finding by campaign membership (it usually has no inventory
+// asset) and any other finding by the data scope.
+type findingAccessGuard struct {
+	middleware.DataScopeAsserter
+	findings *finding.VulnerabilityService
+}
+
+func (g findingAccessGuard) AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error {
+	return g.findings.AssertFindingAccess(ctx, tenantID, findingID)
+}
+
+// byIDGuardAsserter is the asserter of the by-id data-scope guard (nil
+// without a data-scope enforcer: no guard).
+func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
+	if svc.DataScope == nil {
+		return nil
+	}
+	if svc.Vulnerability == nil {
+		return svc.DataScope
+	}
+	return findingAccessGuard{DataScopeAsserter: svc.DataScope, findings: svc.Vulnerability}
 }
