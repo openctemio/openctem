@@ -7,11 +7,14 @@ import (
 	"sync"
 	"time"
 
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/scan"
@@ -337,6 +340,22 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
 		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
+		// The OpenCTEM gate as a GitHub check run or GitLab commit status, and
+		// the pull or merge request comment (RFC-077).
+		if repos.SCMApp != nil {
+			var poster cirunapp.GitHubPoster
+			if app := newGitHubApp(deps.Config, log); app != nil {
+				poster = app
+			}
+			job := cirunapp.NewDecorationJob(repos.CIRun, repos.SCMApp, poster, deps.Config.SMTP.BaseURL, log)
+			gl := scmappsvc.NewService(repos.SCMApp, nil, deps.Config.Auth.JWTSecret, nil, log)
+			gl.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+			job.SetGitLab(gl)
+			if svc.Outbox != nil {
+				job.SetNotifier(svc.Outbox)
+			}
+			w.ControllerManager.Register(controller.NewCIDecorationController(job, 0))
+		}
 	}
 
 	jobRecovery := controller.NewJobRecoveryController(
@@ -677,6 +696,34 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger:      log.With("controller", "easm-dns-checks"),
 				ModuleGuard: svc.Module,
 			},
+		))
+	}
+
+	// Web evidence retention (RFC-081): screenshots after 30 days (O7),
+	// files of deleted rows, capture text after a year.
+	if svc.WebEvidence != nil {
+		w.ControllerManager.Register(controller.NewWebEvidenceRetentionController(svc.WebEvidence, 0, log))
+	}
+
+	// Weekly "what changed" digest of the attack surface (RFC-080): hourly
+	// tick, once per organization and slot, on unless the organization turns
+	// it off in its attack-surface settings.
+	if repos.EASMChange != nil && svc.Tenant != nil {
+		var ob easmapp.DigestEnqueuer
+		if svc.Outbox != nil {
+			ob = svc.Outbox
+		}
+		var inApp easmapp.DigestInApp
+		if svc.Notification != nil {
+			inApp = svc.Notification
+		}
+		var admins easmapp.DigestAdmins
+		if repos.MemberLifecycle != nil {
+			admins = repos.MemberLifecycle
+		}
+		w.ControllerManager.Register(controller.NewEASMWeeklyDigestController(
+			easmapp.NewDigestJob(repos.EASMChange, svc.Tenant, ob, inApp, admins, log.With("job", "easm-weekly-digest")),
+			repos.Tenant, svc.Module, 0, log,
 		))
 	}
 

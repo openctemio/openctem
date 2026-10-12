@@ -35,6 +35,12 @@ export interface EASMSettingsInput {
   dns_interval_hours: number
   /** Automatic passive enrichment of new assets; omitted keeps the stored value. */
   enrichment_enabled?: boolean
+  /** Keep screenshots sent with web evidence (RFC-081); omitted keeps it. */
+  web_screenshots_enabled?: boolean
+  /** Weekly "what changed" digest (RFC-080); omitted keeps the stored value. */
+  weekly_digest_enabled?: boolean
+  /** Weekday of the digest, 1..7 = Monday..Sunday; omitted keeps it. */
+  digest_weekday?: number
 }
 
 /** PUT /api/v1/easm/settings (settings:write, audited). */
