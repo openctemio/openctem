@@ -872,6 +872,80 @@ func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, a
 	return created, nil
 }
 
+// ------------------------------------------------------------ decoration ---
+
+// MarkDecorationPending queues a GitHub or GitLab run's verdict for posting
+// to the code host (RFC-077 phase C). Other providers have nothing to post.
+func (r *CIRunRepository) MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET decoration_state = 'pending', decoration_attempts = 0,
+			decoration_detail = '', decoration_updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND provider IN ('github', 'gitlab') AND status = 'evaluated'`,
+		tenantID.String(), runID.String())
+	return err
+}
+
+// ClaimDecorations takes up to limit runs waiting to be posted, across
+// tenants (a system job; each run carries its tenant). A claim older than
+// ten minutes (a crashed replica) is taken again; runs evaluated more than a
+// day ago are no longer posted.
+func (r *CIRunRepository) ClaimDecorations(ctx context.Context, limit int) ([]cirun.Run, error) {
+	rows, err := r.db.QueryContext(ctx, `UPDATE ci_runs SET decoration_state = 'posting',
+			decoration_attempts = decoration_attempts + 1, decoration_updated_at = NOW()
+		WHERE id IN (
+			SELECT id FROM ci_runs
+			WHERE (decoration_state = 'pending'
+			    OR (decoration_state = 'posting' AND decoration_updated_at < NOW() - INTERVAL '10 minutes'))
+			  AND evaluated_at > NOW() - INTERVAL '1 day'
+			ORDER BY decoration_updated_at
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED)
+		RETURNING `+ciRunColumns, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []cirun.Run{}
+	for rows.Next() {
+		run, err := scanCIRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, run)
+	}
+	return out, rows.Err()
+}
+
+// FinishDecoration records how posting a run went (tenant-scoped). The state
+// cirun.DecorationRetry queues the run again, up to cirun.MaxDecorationAttempts
+// attempts, then marks it failed.
+func (r *CIRunRepository) FinishDecoration(ctx context.Context, tenantID, runID shared.ID, state, detail string) error {
+	if len(detail) > 255 {
+		detail = detail[:255]
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET
+			decoration_state = CASE WHEN $3 <> 'retry' THEN $3
+				WHEN decoration_attempts >= $5 THEN 'failed' ELSE 'pending' END,
+			decoration_detail = $4, decoration_updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), runID.String(), state, detail, cirun.MaxDecorationAttempts)
+	return err
+}
+
+// PullRequestPassed reports whether the last evaluated non-fork run of a
+// pull request on the repository passed the gate (tenant-scoped).
+func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, assetID shared.ID, pullRequest string) (bool, error) {
+	var verdict sql.NullString
+	err := r.db.QueryRowContext(ctx, `SELECT verdict FROM ci_runs
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND pull_request = $3 AND status = 'evaluated' AND NOT fork
+		ORDER BY evaluated_at DESC LIMIT 1`, tenantID.String(), assetID.String(), pullRequest).Scan(&verdict)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return verdict.String == cirun.VerdictPass, nil
+}
+
 // AssetsWithImageDigest returns up to limit of the tenant's assets whose
 // properties mention the image digest (an image asset's own digest, a
 // workload's or host's list of running images), excluding one asset (the
