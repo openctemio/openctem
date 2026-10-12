@@ -25,6 +25,10 @@ type Scan struct {
 	// TargetOptions tunes how each run resolves the selectors among Targets
 	// (wildcard domains, CIDRs) against the inventory (RFC-068).
 	TargetOptions TargetOptions
+	// SkippedTargets are the targets the user chose to leave out when the
+	// scan was saved because the scope check refused them, with the reason
+	// (RFC-054 §6.4). They are not in Targets; every run records them.
+	SkippedTargets []SkippedTarget
 
 	// Scan Type
 	ScanType       ScanType
@@ -810,6 +814,17 @@ func (s *Scan) SaveAsConfiguration(name string) error {
 	s.UpdatedAt = time.Now()
 	return nil
 }
+
+// SkippedTarget is a target left out when the scan was saved: the refused
+// target (or asset name) and the scope refusal code (scopedom.Refusal*).
+type SkippedTarget struct {
+	Target string `json:"target"`
+	Code   string `json:"code"`
+}
+
+// MaxSkippedTargets bounds what one scan records (a scan takes up to 1000
+// targets).
+const MaxSkippedTargets = 1000
 
 // Clone creates a copy of the scan with a new ID.
 func (s *Scan) Clone(newName string) *Scan {

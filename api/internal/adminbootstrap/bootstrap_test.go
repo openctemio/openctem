@@ -73,9 +73,9 @@ func TestOptionsFirstOrganization(t *testing.T) {
 
 func TestSetupLinkURL(t *testing.T) {
 	cases := map[string]string{
-		"https://ctem.example.com/": "https://ctem.example.com/set-password?token=tok",
-		"https://ctem.example.com":  "https://ctem.example.com/set-password?token=tok",
-		"":                          "<ui-url>/set-password?token=tok",
+		"https://ctem.example.com/": "https://ctem.example.com/set-password#token=tok",
+		"https://ctem.example.com":  "https://ctem.example.com/set-password#token=tok",
+		"":                          "<ui-url>/set-password#token=tok",
 	}
 	for base, want := range cases {
 		if got := setupLinkURL(base, "tok"); got != want {

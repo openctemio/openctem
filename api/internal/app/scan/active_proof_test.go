@@ -42,30 +42,32 @@ func (g proofGate) UnverifiedTargets(_ context.Context, _ shared.ID, targets []s
 	return out, nil
 }
 
-// Platform sensors probe from the platform's addresses: with
-// SCOPE_ACTIVE_PROOF=platform_sensors every target must be verified
-// (RFC-054 §8.1). A malicious tenant cannot point them at a third party.
+// Platform sensors probe from the platform's addresses: with the platform
+// setting on, every target must be verified (RFC-054 §8.1). A malicious
+// tenant cannot point them at a third party. Off (the default), the scope
+// entry is the authorization.
 func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 	ctx := context.Background()
 	allowed := stubSelector{false, true}
 	cases := []struct {
 		name    string
-		mode    string
+		on      bool
 		gate    AttributionGate
 		pref    scan.SensorPreference
 		targets []string
 		want    bool
 		code    string
 	}{
-		{"off: unverified goes to platform", ActiveProofOff, proofGate{}, scan.SensorPreferencePlatform, []string{"bigbank.example"}, true, ""},
-		{"platform_sensors: verified goes to platform", ActiveProofPlatformSensors, proofGate{}, scan.SensorPreferencePlatform, []string{"app.verified.example"}, true, ""},
-		{"platform_sensors: explicit platform, unverified refused", ActiveProofPlatformSensors, proofGate{}, scan.SensorPreferencePlatform, []string{"app.verified.example", "bigbank.example"}, false, codeProofRequired},
-		{"platform_sensors: auto, unverified waits for tenant sensors", ActiveProofPlatformSensors, proofGate{}, scan.SensorPreferenceAuto, []string{"bigbank.example"}, false, ""},
-		{"all: same on platform sensors", ActiveProofAll, proofGate{}, scan.SensorPreferencePlatform, []string{"203.0.113.9"}, false, codeProofRequired},
-		{"no verifier: fail closed", ActiveProofPlatformSensors, nil, scan.SensorPreferencePlatform, []string{"app.verified.example"}, false, codeProofRequired},
+		{"off: unverified goes to platform", false, proofGate{}, scan.SensorPreferencePlatform, []string{"bigbank.example"}, true, ""},
+		{"platform_sensors: verified goes to platform", true, proofGate{}, scan.SensorPreferencePlatform, []string{"app.verified.example"}, true, ""},
+		{"platform_sensors: explicit platform, unverified refused", true, proofGate{}, scan.SensorPreferencePlatform, []string{"app.verified.example", "bigbank.example"}, false, codeProofRequired},
+		{"platform_sensors: auto, unverified waits for tenant sensors", true, proofGate{}, scan.SensorPreferenceAuto, []string{"bigbank.example"}, false, ""},
+		{"on: an address needs proof too", true, proofGate{}, scan.SensorPreferencePlatform, []string{"203.0.113.9"}, false, codeProofRequired},
+		{"off: auto keeps tenant-first selection", false, proofGate{}, scan.SensorPreferenceAuto, []string{"bigbank.example"}, true, ""},
+		{"no verifier: fail closed", true, nil, scan.SensorPreferencePlatform, []string{"app.verified.example"}, false, codeProofRequired},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), activeProof: tc.mode, attributionGate: tc.gate}
+		svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(tc.on), attributionGate: tc.gate}
 		sc := testScan("nuclei")
 		sc.SensorPreference = tc.pref
 		got, err := svc.shouldUsePlatformSensor(ctx, sc, tc.targets)
@@ -80,7 +82,7 @@ func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 		}
 	}
 	// A failed proof lookup fails the explicit-platform decision.
-	svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), activeProof: ActiveProofPlatformSensors, attributionGate: proofGate{err: errors.New("db down")}}
+	svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{err: errors.New("db down")}}
 	sc := testScan("nuclei")
 	sc.SensorPreference = scan.SensorPreferencePlatform
 	if _, err := svc.shouldUsePlatformSensor(ctx, sc, []string{"app.verified.example"}); err == nil {
@@ -88,10 +90,19 @@ func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 	}
 }
 
-// Intrusive (T2) scans need a verified domain whatever the mode.
+// With the setting on, intrusive (T2) scans need a verified domain on any
+// sensor; off, they need none.
 func TestRefuseUnprovenIntrusive(t *testing.T) {
 	ctx := context.Background()
-	svc := &Service{logger: logger.NewNop(), activeProof: ActiveProofOff, attributionGate: proofGate{}}
+	off := &Service{logger: logger.NewNop(), proofPolicy: StaticProofPolicy(false), attributionGate: proofGate{}}
+	if err := off.refuseUnprovenIntrusive(ctx, shared.NewID(), "zap", []string{"https://bigbank.example/"}); err != nil {
+		t.Fatalf("setting off: intrusive scan refused: %v", err)
+	}
+	unwired := &Service{logger: logger.NewNop(), attributionGate: proofGate{}}
+	if err := unwired.refuseUnprovenIntrusive(ctx, shared.NewID(), "zap", []string{"https://bigbank.example/"}); err != nil {
+		t.Fatalf("no policy (default off): intrusive scan refused: %v", err)
+	}
+	svc := &Service{logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{}}
 	tenant := shared.NewID()
 	var de *shared.DomainError
 	if err := svc.refuseUnprovenIntrusive(ctx, tenant, "zap", []string{"https://bigbank.example/"}); !errors.As(err, &de) || de.Code != codeProofRequired {
@@ -101,7 +112,7 @@ func TestRefuseUnprovenIntrusive(t *testing.T) {
 		t.Fatalf("intrusive scan of a verified target: %v", err)
 	}
 	if err := svc.refuseUnprovenIntrusive(ctx, tenant, "nuclei", []string{"bigbank.example"}); err != nil {
-		t.Fatalf("a safe-active scan needs no proof in mode off: %v", err)
+		t.Fatalf("a safe-active scan needs no proof on tenant sensors: %v", err)
 	}
 }
 

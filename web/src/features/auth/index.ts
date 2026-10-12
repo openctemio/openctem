@@ -27,7 +27,6 @@ export {
   getCurrentUser,
   logoutAction,
   isAuthenticated,
-  getAccessToken,
 } from './actions'
 
 // ============================================
