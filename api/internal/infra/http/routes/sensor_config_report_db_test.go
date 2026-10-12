@@ -37,7 +37,7 @@ func configReportBody(observedAt string) map[string]any {
 			map[string]any{"id": "content.templates_signed", "status": "warn", "code": "newer", "summary": "from a newer sensor"},
 		},
 		"settings": []any{
-			map[string]any{"name": "SENSOR_API_KEY", "set": true, "source": "env", "secret": true, "valid": true, "value": configCanary},
+			map[string]any{"name": "API_KEY", "set": true, "source": "env", "secret": true, "valid": true, "value": configCanary},
 			map[string]any{"name": "SENSOR_CA_CERT_FILE", "set": false, "source": "unset", "secret": false, "valid": true},
 		},
 	}

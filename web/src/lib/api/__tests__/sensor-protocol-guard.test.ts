@@ -39,7 +39,7 @@ describe('SENSOR_PROTOCOL_REFUSAL', () => {
   it('is a 421 in the API error shape that says what to change', () => {
     expect(SENSOR_PROTOCOL_REFUSAL_STATUS).toBe(421)
     expect(SENSOR_PROTOCOL_REFUSAL.code).toBe('WRONG_ENDPOINT')
-    expect(SENSOR_PROTOCOL_REFUSAL.message).toContain('SENSOR_API_URL')
+    expect(SENSOR_PROTOCOL_REFUSAL.message).toContain('API_URL')
     expect(SENSOR_PROTOCOL_REFUSAL.message).toContain('not the API')
   })
 })

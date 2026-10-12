@@ -120,8 +120,8 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 		continuationLinesOK(t, dir+" docker", d)
 		for _, want := range []string{
 			"ghcr.io/openctemio/sensor:v0.4.2",
-			"-e SENSOR_API_URL='https://192.0.2.204'",
-			"-e SENSOR_API_KEY='rda_4b1e0123456789abcdef'",
+			"-e API_URL='https://192.0.2.204'",
+			"-e API_KEY='rda_4b1e0123456789abcdef'",
 			"-e SENSOR_TOOLS=nuclei,trivy",
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
 			// The CA and the sensor-local policy both live under /etc/openctem,
@@ -163,7 +163,7 @@ func TestTemplates_NoKeyNoCA(t *testing.T) {
 		// Without the key the snippet reads it from the environment and stops
 		// with a clear message when it is not set; no "<YOUR_API_KEY>", which
 		// the shell would read as a redirection.
-		if !strings.Contains(out.Docker, `-e SENSOR_API_KEY="${OPENCTEM_API_KEY:?`) {
+		if !strings.Contains(out.Docker, `-e API_KEY="${OPENCTEM_API_KEY:?`) {
 			t.Errorf("[%s] docker without a key:\n%s", dir, out.Docker)
 		}
 		if strings.Contains(out.Docker, "<YOUR_API_KEY>") || strings.Contains(out.Docker, "SSL_CERT_DIR") ||
@@ -228,13 +228,13 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		if s.Image != "ghcr.io/openctemio/sensor:v0.4.2" || s.Restart != "unless-stopped" {
 			t.Errorf("[%s] image=%q restart=%q", dir, s.Image, s.Restart)
 		}
-		if s.Environment["SENSOR_API_URL"] != "https://192.0.2.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
+		if s.Environment["API_URL"] != "https://192.0.2.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
 			s.Environment["SSL_CERT_DIR"] != "/etc/openctem/certs" {
 			t.Errorf("[%s] environment = %v", dir, s.Environment)
 		}
 		// The key comes from .env, never written into the compose file.
-		if !strings.HasPrefix(s.Environment["SENSOR_API_KEY"], "${OPENCTEM_API_KEY:?") || strings.Contains(c, "SENSOR_API_KEY: rda_") {
-			t.Errorf("[%s] SENSOR_API_KEY = %q", dir, s.Environment["SENSOR_API_KEY"])
+		if !strings.HasPrefix(s.Environment["API_KEY"], "${OPENCTEM_API_KEY:?") || strings.Contains(c, "API_KEY: rda_") {
+			t.Errorf("[%s] API_KEY = %q", dir, s.Environment["API_KEY"])
 		}
 		if !strings.Contains(c, "OPENCTEM_API_KEY=rda_4b1e0123456789abcdef") {
 			t.Errorf("[%s] compose does not say how to write .env with the key:\n%s", dir, c)
