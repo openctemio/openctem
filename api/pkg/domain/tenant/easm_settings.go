@@ -32,6 +32,10 @@ type EASMSettings struct {
 	// EnrichmentDisabled stops automatic passive enrichment of new assets
 	// (docs/architecture/asset-freshness.md); on by default.
 	EnrichmentDisabled bool `json:"enrichment_disabled,omitempty"`
+	// WebScreenshotsEnabled keeps the screenshots sensors send with web
+	// evidence (docs/rfcs/RFC-081-web-evidence-screenshots.md); off by
+	// default: a screenshot can show whatever the page shows.
+	WebScreenshotsEnabled bool `json:"web_screenshots_enabled,omitempty"`
 	// WeeklyDigestDisabled stops the weekly "what changed" digest of the
 	// attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md);
 	// on by default.

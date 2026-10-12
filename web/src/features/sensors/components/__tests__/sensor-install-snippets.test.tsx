@@ -6,13 +6,13 @@ import { availableFormats, SensorInstallSnippets } from '../sensor-install-snipp
 import { TEST_SENSOR_KEY } from '@/test/sensor-keys'
 
 const templates = {
-  docker: `docker run -d --name dmz \\\n  -e API_KEY='${TEST_SENSOR_KEY}' \\\n  ghcr.io/openctemio/sensor:v0.4.2\n`,
+  docker: `docker run -d --name dmz \\\n  -e SENSOR_API_KEY='${TEST_SENSOR_KEY}' \\\n  ghcr.io/openctemio/sensor:v0.4.2\n`,
   compose: 'services:\n  sensor:\n    image: ghcr.io/openctemio/sensor:v0.4.2\n',
   kubernetes: 'apiVersion: v1\nkind: Secret\n',
   helm: 'helm upgrade openctem openctem/openctem --reuse-values \\\n  --set sensor.enabled=true\n',
   policy: 'apiVersion: openctem.io/sensor-policy/v1\ntargets:\n  allow:\n    - "10.20.0.0/16"\n',
   yaml: 'sensor:\n  name: dmz\n',
-  env: "export API_URL='https://x'\n",
+  env: "export SENSOR_API_URL='https://x'\n",
   cli: './openctemio-sensor -daemon\n',
   image: 'ghcr.io/openctemio/sensor:v0.4.2',
   api_url: 'https://192.0.2.204',

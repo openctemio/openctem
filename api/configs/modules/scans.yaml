@@ -18,6 +18,7 @@
     - ScanWindowClosingController
     - StalledRunRepairController
     - CIAlertsController
+    - CIDecorationController
     - CIRetentionController
     - CommandEventRetentionController
     - CommandLogRetentionController
