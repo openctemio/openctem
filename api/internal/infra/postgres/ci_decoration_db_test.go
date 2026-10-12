@@ -106,3 +106,39 @@ func TestCIDecorationQueue(t *testing.T) {
 		t.Fatalf("cross-tenant finish changed the run: %q", s)
 	}
 }
+
+// PullRequestPassed reads the last evaluated non-fork run of the pull
+// request, tenant-scoped.
+func TestCIPullRequestPassed(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewCIRunRepository(&DB{DB: db})
+	tenant, other := seedTestTenant(ctx, t, db), seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	at := time.Now().UTC().Add(-time.Hour)
+	judge := func(pr, verdict string, fork bool, when time.Time) {
+		_, hash, _ := cirun.NewToken()
+		r := &cirun.Run{ID: shared.NewID(), TenantID: tenant, RepositoryAssetID: asset, Provider: cirun.ProviderGitHub,
+			Issuer: "https://i", Repository: "github.com/acme/api", PullRequest: pr, Fork: fork, Status: cirun.StatusRunning,
+			TokenHash: hash, CreatedAt: when, UpdatedAt: when}
+		if err := repo.CreateRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.SaveVerdict(ctx, tenant, r.ID, verdict, []byte(`{}`), when); err != nil {
+			t.Fatal(err)
+		}
+	}
+	judge("5", cirun.VerdictPass, false, at)
+	judge("5", cirun.VerdictFail, false, at.Add(time.Minute)) // last verdict fails
+	judge("6", cirun.VerdictFail, false, at)
+	judge("6", cirun.VerdictPass, false, at.Add(time.Minute))
+	judge("7", cirun.VerdictPass, true, at) // only a fork run passed
+	for pr, want := range map[string]bool{"5": false, "6": true, "7": false, "8": false} {
+		if got, err := repo.PullRequestPassed(ctx, tenant, asset, pr); err != nil || got != want {
+			t.Fatalf("pr %s: %v %v, want %v", pr, got, err, want)
+		}
+	}
+	if got, _ := repo.PullRequestPassed(ctx, other, asset, "6"); got {
+		t.Fatal("another tenant read the verdict")
+	}
+}

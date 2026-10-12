@@ -35,9 +35,15 @@ type CheckRun struct {
 
 // PullRequest is the part of a pull request the decoration reads.
 type PullRequest struct {
-	Number         int    `json:"number"`
-	State          string `json:"state"`
-	Merged         bool   `json:"merged"`
+	Number int    `json:"number"`
+	State  string `json:"state"`
+	Merged bool   `json:"merged"`
+	// MergedAt is set on merged pull requests (the list endpoints report it,
+	// not Merged).
+	MergedAt *string `json:"merged_at"`
+	Base     struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
 	MergeCommitSHA string `json:"merge_commit_sha"`
 	Head           struct {
 		SHA string `json:"sha"`

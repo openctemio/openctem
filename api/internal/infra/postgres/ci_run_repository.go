@@ -892,6 +892,22 @@ func (r *CIRunRepository) FinishDecoration(ctx context.Context, tenantID, runID 
 	return err
 }
 
+// PullRequestPassed reports whether the last evaluated non-fork run of a
+// pull request on the repository passed the gate (tenant-scoped).
+func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, assetID shared.ID, pullRequest string) (bool, error) {
+	var verdict sql.NullString
+	err := r.db.QueryRowContext(ctx, `SELECT verdict FROM ci_runs
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND pull_request = $3 AND status = 'evaluated' AND NOT fork
+		ORDER BY evaluated_at DESC LIMIT 1`, tenantID.String(), assetID.String(), pullRequest).Scan(&verdict)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return verdict.String == cirun.VerdictPass, nil
+}
+
 // AssetsWithImageDigest returns up to limit of the tenant's assets whose
 // properties mention the image digest (an image asset's own digest, a
 // workload's or host's list of running images), excluding one asset (the

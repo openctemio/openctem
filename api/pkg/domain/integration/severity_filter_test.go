@@ -114,6 +114,7 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeCIGateFailing:        true,
 		EventTypeCIRunnerOutdated:     true,
 		EventTypeCIBreakGlass:         true,
+		EventTypeCIUngatedMerge:       true,
 		EventTypeCITokenRefusals:      true,
 	}
 
