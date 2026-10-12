@@ -35,6 +35,8 @@ export interface EASMSettingsInput {
   dns_interval_hours: number
   /** Automatic passive enrichment of new assets; omitted keeps the stored value. */
   enrichment_enabled?: boolean
+  /** Look network seeds up in RIPEstat (RFC-082); omitted keeps the stored value. */
+  network_lookups_enabled?: boolean
   /** Keep screenshots sent with web evidence (RFC-081); omitted keeps it. */
   web_screenshots_enabled?: boolean
   /** Weekly "what changed" digest (RFC-080); omitted keeps the stored value. */

@@ -722,6 +722,8 @@ type Services struct {
 	// Pentest
 	Pentest    *compliance.PentestService
 	Attachment *integration.AttachmentService
+	// EASMNetworkSeeds manages AS number and organization seeds (RFC-082).
+	EASMNetworkSeeds *easmapp.NetworkSeedService
 	// WebEvidence stores and serves web assets' captures (RFC-081).
 	WebEvidence *webevidenceapp.Service
 
@@ -2494,6 +2496,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Every asset an ingest wrote moves the freshness clock of the attribute
 	// classes the report's tool observes (docs/architecture/asset-freshness.md).
 	s.Ingest.SetAssetsObservedCallback(assetfreshnessapp.NewRecorder(repos.AssetFreshness, log).AssetsObserved)
+	// Network seeds (RFC-082): expanded from RIPEstat through the SSRF guard.
+	s.EASMNetworkSeeds = easmapp.NewNetworkSeedService(repos.EASMNetworkSeed, easmapp.NewRIPEstat(), s.ScopeGuardrails, log.With("service", "easm-network-seeds"))
+	s.EASMNetworkSeeds.SetSettings(s.Tenant) // per-organization opt-out of RIPEstat lookups
 	// Web evidence (RFC-081): status, title and masked snippet of web
 	// assets; screenshots only for organizations that turned them on,
 	// stored in the tenant's file storage.

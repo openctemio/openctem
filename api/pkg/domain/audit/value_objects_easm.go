@@ -39,3 +39,17 @@ var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMSettingsUpdated: SeverityHigh,
 	ActionEASMSweepRequested:  SeverityMedium,
 })
+
+// Network seeds (RFC-082): AS numbers and organization names discovery
+// expands from public routing data. A seed never authorizes a probe.
+const (
+	ActionEASMNetworkSeedAdded    Action = "easm_network_seed.added"
+	ActionEASMNetworkSeedDeleted  Action = "easm_network_seed.deleted"
+	ActionEASMNetworkSeedExpanded Action = "easm_network_seed.expanded"
+)
+
+var _ = registerActions("easm", map[Action]Severity{
+	ActionEASMNetworkSeedAdded:    SeverityMedium,
+	ActionEASMNetworkSeedDeleted:  SeverityMedium,
+	ActionEASMNetworkSeedExpanded: SeverityLow,
+})

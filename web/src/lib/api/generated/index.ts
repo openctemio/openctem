@@ -232,6 +232,10 @@ export type EASMChangePage =
   Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Page']
 export type EASMChange = Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Change']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
+/** GET /api/v1/easm/network-seeds (RFC-082). */
+export type EASMNetworkSeedList = Schemas['internal_infra_http_handler.EASMNetworkSeedList']
+export type EASMNetworkSeed =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
 /** GET /api/v1/assets/{id}/web-evidence (RFC-081). */
 export type WebEvidenceList = Schemas['internal_infra_http_handler.WebEvidenceListResponse']
 export type WebEvidenceItem = Schemas['internal_infra_http_handler.WebEvidenceResponse']

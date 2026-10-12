@@ -32,6 +32,10 @@ type EASMSettings struct {
 	// EnrichmentDisabled stops automatic passive enrichment of new assets
 	// (docs/architecture/asset-freshness.md); on by default.
 	EnrichmentDisabled bool `json:"enrichment_disabled,omitempty"`
+	// NetworkLookupsDisabled stops looking network seeds up in public routing
+	// data (RIPEstat): their AS numbers and organization names are no longer
+	// sent there (docs/rfcs/RFC-082-network-seeds.md).
+	NetworkLookupsDisabled bool `json:"network_lookups_disabled,omitempty"`
 	// WebScreenshotsEnabled keeps the screenshots sensors send with web
 	// evidence (docs/rfcs/RFC-081-web-evidence-screenshots.md); off by
 	// default: a screenshot can show whatever the page shows.

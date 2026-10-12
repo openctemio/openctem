@@ -691,6 +691,26 @@ func registerAssetSoftwareRoutes(router Router, h *handler.AssetSoftwareHandler,
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerEASMNetworkSeedRoutes registers network seeds (RFC-082): scope
+// permissions like the verified domains, behind the attack_surface module.
+// A seed never authorizes a probe; suggested prefixes are added through
+// POST /api/v1/scope/targets with its own approvals and step-up.
+func registerEASMNetworkSeedRoutes(
+	router Router,
+	h *handler.EASMNetworkSeedHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/network-seeds", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+		r.POST("/{id}/expand", h.Expand, middleware.Require(permission.ScopeWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerAssetWebEvidenceRoutes registers an asset's web evidence (RFC-081):
 // assets:read plus the asset's data scope (checked in the handler, 404),
 // behind the attack_surface module.

@@ -110,6 +110,8 @@ type EASMSettingsResponse struct {
 	LastCTSweepAt     *time.Time `json:"last_ct_sweep_at,omitempty"`
 	LastDNSCheckAt    *time.Time `json:"last_dns_check_at,omitempty"`
 	RunNowAvailableAt *time.Time `json:"run_now_available_at,omitempty"`
+	// NetworkLookupsEnabled: network seeds are looked up in RIPEstat.
+	NetworkLookupsEnabled bool `json:"network_lookups_enabled"`
 	// WebScreenshotsEnabled: screenshots sent with web evidence are kept
 	// (30 days); off by default.
 	WebScreenshotsEnabled bool `json:"web_screenshots_enabled"`
@@ -132,6 +134,8 @@ type EASMSettingsUpdateRequest struct {
 	// 0 = platform default; otherwise 6..168.
 	CTIntervalHours  int `json:"ct_interval_hours"`
 	DNSIntervalHours int `json:"dns_interval_hours"`
+	// NetworkLookupsEnabled omitted keeps it as it is.
+	NetworkLookupsEnabled *bool `json:"network_lookups_enabled,omitempty"`
 	// WebScreenshotsEnabled omitted keeps it as it is.
 	WebScreenshotsEnabled *bool `json:"web_screenshots_enabled,omitempty"`
 	// WeeklyDigestEnabled omitted keeps it as it is.
@@ -173,10 +177,11 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		DNSEffectiveIntervalHours: effective(es.DNSIntervalHours, h.platform.DNSDefaultHrs),
 		MinIntervalHours:          tenant.MinEASMIntervalHours, MaxIntervalHours: tenant.MaxEASMIntervalHours,
 		CTAvailable: h.platform.CTAvailable, DNSAvailable: h.platform.DNSAvailable,
-		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
+		NetworkLookupsEnabled: !es.NetworkLookupsDisabled,
 		WeeklyDigestEnabled:   !es.WeeklyDigestDisabled,
 		DigestWeekday:         isoWeekday(easmchange.Weekday(es.DigestWeekday)),
 		DigestHourUTC:         easmchange.DigestHourUTC,
+		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
 	}
 	if h.digests != nil {
 		if last, err := h.digests.LastDigestAt(ctx, tenantID); err == nil {
@@ -224,7 +229,7 @@ func (h *EASMSettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 // Update handles PUT /api/v1/easm/settings
 // @Summary      Change attack-surface monitoring settings
-// @Description  Turn the Certificate Transparency monitor (sends the organization's domain names to crt.sh and Cert Spotter), the DNS-only checks or automatic passive enrichment of new assets off or on (enrichment_enabled omitted keeps it as it is), and set their interval in hours: 0 for the platform default, otherwise 6 to 168. Audited.
+// @Description  Turn the Certificate Transparency monitor (sends the organization's domain names to crt.sh and Cert Spotter), the DNS-only checks or automatic passive enrichment of new assets off or on (enrichment_enabled omitted keeps it as it is), turn lookups of network seeds in RIPEstat off or on (network_lookups_enabled, omitted keeps it), and set their interval in hours: 0 for the platform default, otherwise 6 to 168. Audited.
 // @Tags         Attack Surface
 // @Accept       json
 // @Produce      json
@@ -257,6 +262,9 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	es.CTIntervalHours, es.DNSIntervalHours = req.CTIntervalHours, req.DNSIntervalHours
 	if req.EnrichmentEnabled != nil {
 		es.EnrichmentDisabled = !*req.EnrichmentEnabled
+	}
+	if req.NetworkLookupsEnabled != nil {
+		es.NetworkLookupsDisabled = !*req.NetworkLookupsEnabled
 	}
 	if req.WebScreenshotsEnabled != nil {
 		es.WebScreenshotsEnabled = *req.WebScreenshotsEnabled
