@@ -701,7 +701,7 @@ export default function ControlTestingPage() {
       >
         <Button size="sm" onClick={() => setDialogOpen(true)}>
           <Plus className="h-4 w-4 sm:me-2" />
-          <span className="hidden sm:inline">Add control test</span>
+          <span className="sr-only sm:not-sr-only">Add control test</span>
         </Button>
       </PageHeader>
 

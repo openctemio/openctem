@@ -497,7 +497,7 @@ export default function CredentialsPage() {
     >
       <SelectTrigger className="h-9 w-auto gap-2 sm:min-w-36" aria-label="Group credential leaks">
         <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="hidden sm:inline">
+        <span className="sr-only sm:not-sr-only">
           <SelectValue />
         </span>
       </SelectTrigger>
@@ -522,7 +522,7 @@ export default function CredentialsPage() {
             disabled={!filteredData.length}
           >
             <Download className="h-4 w-4 sm:me-2" />
-            <span className="hidden sm:inline">Export</span>
+            <span className="sr-only sm:not-sr-only">Export</span>
           </Button>
         </PageHeader>
 
