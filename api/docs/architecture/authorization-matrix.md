@@ -981,7 +981,11 @@ match `METRICS_TOKEN`.
 ## Pentest campaign roles
 
 Inside the pentest module, campaign membership decides who sees a campaign
-(non-members get 404; admins see every campaign). Each member has one role:
+(non-members get 404; admins see every campaign of their organization). Every
+`/pentest/campaigns/{id}/*` route first finds the campaign in the caller's
+organization: another organization's campaign, an unknown id or a malformed
+id answers 404 for everyone, organization owners and admins included, never
+an empty list or zero counts. Each member has one role:
 
 | Role | Reads | Writes |
 |---|---|---|

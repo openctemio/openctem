@@ -246,6 +246,64 @@ func (f fakeCampaignRoles) GetUserRole(_ context.Context, _, _, userID string) (
 	return f[userID], nil
 }
 
+// The campaign under test (resolvedRole's tenant and campaign) exists.
+const (
+	testTenant   = "11111111-1111-1111-1111-111111111111"
+	testCampaign = "22222222-2222-2222-2222-222222222222"
+)
+
+func (f fakeCampaignRoles) CampaignExists(_ context.Context, tenantID, campaignID string) (bool, error) {
+	return tenantID == testTenant && campaignID == testCampaign, nil
+}
+
+// resolverStatus runs the resolver for a caller with no campaign role and
+// returns the response code and whether the handler ran.
+func resolverStatus(t *testing.T, tenantID, campaignID string, admin bool) (int, bool) {
+	t.Helper()
+	ran := false
+	h := middleware.CampaignRoleResolver(fakeCampaignRoles{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		ran = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	r := chi.NewRouter()
+	r.Handle("/campaigns/{id}", h)
+	ctx := context.WithValue(context.Background(), middleware.UserIDKey, "someone")
+	ctx = context.WithValue(ctx, middleware.TenantIDKey, tenantID)
+	if admin {
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/campaigns/"+campaignID, nil).WithContext(ctx))
+	return rec.Code, ran
+}
+
+// Another organization's campaign is not found, for an admin too (who would
+// otherwise pass RequireCampaignRole and read an empty list or zero stats).
+func TestCampaignRoleResolver_OtherTenantCampaignNotFound(t *testing.T) {
+	for _, admin := range []bool{true, false} {
+		code, ran := resolverStatus(t, "33333333-3333-3333-3333-333333333333", testCampaign, admin)
+		if code != http.StatusNotFound || ran {
+			t.Errorf("admin=%v: other tenant's campaign: got %d (handler ran: %v), want 404", admin, code, ran)
+		}
+	}
+}
+
+func TestCampaignRoleResolver_UnknownOrMalformedCampaignNotFound(t *testing.T) {
+	for _, id := range []string{"44444444-4444-4444-4444-444444444444", "not-a-uuid"} {
+		code, ran := resolverStatus(t, testTenant, id, true)
+		if code != http.StatusNotFound || ran {
+			t.Errorf("campaign %q: got %d (handler ran: %v), want 404", id, code, ran)
+		}
+	}
+}
+
+// An admin who is not a member reaches their own organization's campaign.
+func TestCampaignRoleResolver_AdminNonMemberOwnCampaign(t *testing.T) {
+	if code, ran := resolverStatus(t, testTenant, testCampaign, true); code != http.StatusOK || !ran {
+		t.Errorf("admin, own campaign: got %d (handler ran: %v), want 200", code, ran)
+	}
+}
+
 func resolvedRole(t *testing.T, roles fakeCampaignRoles, userID string, admin bool) pentest.CampaignRole {
 	t.Helper()
 	var got pentest.CampaignRole

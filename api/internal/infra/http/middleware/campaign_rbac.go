@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -13,9 +14,11 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// CampaignRoleQuerier resolves a user's campaign role from the database.
+// CampaignRoleQuerier resolves a user's campaign role from the database, and
+// whether the campaign exists in the tenant.
 type CampaignRoleQuerier interface {
 	GetUserRole(ctx context.Context, tenantID, campaignID, userID string) (pentest.CampaignRole, error)
+	CampaignExists(ctx context.Context, tenantID, campaignID string) (bool, error)
 }
 
 // CampaignStatusQuerier resolves a campaign's status. Optional — if nil, status not set in context.
@@ -27,6 +30,11 @@ type CampaignStatusQuerier interface {
 // from the database and stores it in the request context.
 // It uses the {id} URL parameter for the campaign ID. Admins get their role
 // too (it may be empty); RequireCampaignRole still lets them through.
+//
+// A caller without a role must still find the campaign in their own tenant:
+// another tenant's campaign (or a malformed id) answers 404 here, so an
+// organization admin never gets an empty list or zero stats for a campaign
+// that is not theirs.
 func CampaignRoleResolver(roleQuerier CampaignRoleQuerier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +52,21 @@ func CampaignRoleResolver(roleQuerier CampaignRoleQuerier) func(http.Handler) ht
 			// so it is resolved for them too: an admin who is the lead is the
 			// lead. A missing role is not an error here.
 			role, _ := roleQuerier.GetUserRole(r.Context(), tenantID, campaignID, userID)
+			if role == "" {
+				if _, err := uuid.Parse(campaignID); err != nil {
+					apierror.NotFound("Campaign").WriteJSON(w)
+					return
+				}
+				exists, err := roleQuerier.CampaignExists(r.Context(), tenantID, campaignID)
+				if err != nil {
+					apierror.InternalServerError("Failed to resolve the campaign").WriteJSON(w)
+					return
+				}
+				if !exists {
+					apierror.NotFound("Campaign").WriteJSON(w)
+					return
+				}
+			}
 			ctx := context.WithValue(r.Context(), CampaignRoleKey, role)
 			ctx = context.WithValue(ctx, CampaignIDKey, campaignID)
 			// Share the resolved role via request-scoped cache so service-layer
