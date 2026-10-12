@@ -31,8 +31,11 @@ func (r *reactFindingRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*
 	return f, nil
 }
 
-func (r *reactFindingRepo) CanSeePentestFinding(_ context.Context, _, campaignID, userID, _ string) (bool, error) {
-	return r.members[campaignID+"/"+userID], nil
+func (r *reactFindingRepo) PentestCampaignRole(_ context.Context, _, campaignID, userID string) (string, error) {
+	if r.members[campaignID+"/"+userID] {
+		return "tester", nil
+	}
+	return "", nil
 }
 
 type reactCommentRepo struct {

@@ -7,9 +7,10 @@
  */
 
 import { forwardRef, useEffect } from 'react'
-import { ChevronRight, MessageSquare } from 'lucide-react'
+import { AlertCircle, ChevronRight, MessageSquare } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ActivityItem } from '../types'
 import { markdownSnippet, sortChronological } from '../lib/activity-feed'
 import { ActivityTime } from './activity-items'
@@ -31,6 +32,11 @@ export interface ActivityTriggerProps {
   panelOpen?: boolean
   /** The line shown when there is nothing yet. */
   emptyText?: string
+  /**
+   * Loading failed: say so instead of "Nothing yet" (a refused or failed
+   * request must not look like an empty history).
+   */
+  error?: boolean
   /** Replaces "N comments" / "N events" (e.g. "Latest events" for a cursor feed). */
   headline?: string
   /** `card` (bordered, default) or `plain` inside a card that already frames it. */
@@ -62,12 +68,14 @@ export const ActivityTrigger = forwardRef<HTMLButtonElement, ActivityTriggerProp
       shortcut,
       panelOpen,
       emptyText = 'Nothing yet.',
+      error,
       variant = 'card',
       headline: headlineProp,
       className,
     },
     ref
   ) {
+    const { t } = useTranslation()
     useEffect(() => {
       if (!shortcut || panelOpen) return
       const onKey = (e: KeyboardEvent) => {
@@ -153,6 +161,14 @@ export const ActivityTrigger = forwardRef<HTMLButtonElement, ActivityTriggerProp
           </span>
           {loading && !latest ? (
             <Skeleton className="mt-1.5 h-4 w-2/3" />
+          ) : error && !latest ? (
+            <span
+              className="mt-0.5 flex items-center gap-1 text-sm text-destructive"
+              data-testid="activity-trigger-error"
+            >
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {t('findings.activity.loadFailed', 'Activity could not be loaded. Open to retry.')}
+            </span>
           ) : preview ? (
             <span className="mt-0.5 flex min-w-0 items-baseline gap-2 text-sm text-muted-foreground">
               <span className="min-w-0 flex-1 truncate">{preview}</span>
