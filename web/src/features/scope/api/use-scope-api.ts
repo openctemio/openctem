@@ -14,6 +14,7 @@ import useSWRMutation from 'swr/mutation'
 import { get, post, put, del } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
+import { Permission, useHasPermission } from '@/lib/permissions'
 import type {
   ScopeT2MaxDuration,
   ApiScopeTarget,
@@ -626,4 +627,30 @@ export async function invalidateScopeStatsCache() {
   await mutate((key) => typeof key === 'string' && key.includes('/scope/stats'), undefined, {
     revalidate: true,
   })
+}
+
+/**
+ * What adding a scope entry does for the caller. Entries need approval only
+ * under Strict scan approval (unknown, still loading, counts as Strict): there
+ * a member without scope:approve sends a request, when the organization
+ * accepts member requests. Everyone else with scope:write adds directly.
+ * The server decides; this only words the buttons.
+ */
+export function useScopeAddMode(enabled = true) {
+  const canWrite = useHasPermission(Permission.ScopeWrite)
+  const canApprove = useHasPermission(Permission.ScopeApprove)
+  const { data: settings, isLoading } = useScopeSettingsApi(enabled)
+  const entriesNeedApproval = settings?.approval_policy?.entries_need_approval ?? true
+  const isRequest = !canApprove && entriesNeedApproval
+  const requestsAllowed = settings?.one_off_targets === 'admins_and_requests'
+  return {
+    settings,
+    isLoading,
+    canApprove,
+    entriesNeedApproval,
+    isRequest,
+    requestsAllowed,
+    /** The caller may add (or, under Strict, request) an entry. */
+    canAdd: canWrite && (!isRequest || requestsAllowed),
+  }
 }

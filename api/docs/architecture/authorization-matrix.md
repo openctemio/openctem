@@ -981,7 +981,11 @@ match `METRICS_TOKEN`.
 ## Pentest campaign roles
 
 Inside the pentest module, campaign membership decides who sees a campaign
-(non-members get 404; admins see every campaign). Each member has one role:
+(non-members get 404; admins see every campaign of their organization). Every
+`/pentest/campaigns/{id}/*` route first finds the campaign in the caller's
+organization: another organization's campaign, an unknown id or a malformed
+id answers 404 for everyone, organization owners and admins included, never
+an empty list or zero counts. Each member has one role:
 
 | Role | Reads | Writes |
 |---|---|---|
@@ -989,16 +993,43 @@ Inside the pentest module, campaign membership decides who sees a campaign
 | tester | everything in the campaign | creates findings; edits, changes status of and retests own or assigned findings; evidence on those; checklist results |
 | reviewer | everything in the campaign | status, edits and retests on any finding (no delete) |
 | observer | everything in the campaign | nothing |
-| client | the campaign, its team and its **published** findings (never draft or in review) | nothing |
+| client | the campaign, its team, its **published** findings (never draft or in review) and its **delivered** reports | nothing |
 
-A client gets no campaign-wide read: no stats or finding counts (they
-include unpublished work), no exports, no reports, no campaign attachments
-and no report-writing (MCP) tools. Every surface that lists or reads pentest
+A client reads the campaign's stats (`GET /pentest/campaigns/{id}/stats`)
+counted over published findings only (drafts, findings in review and their
+retests are left out); the campaign's own finding counts and progress stay
+hidden from a client (they include unpublished work). A client gets no other
+campaign-wide read: no exports, no campaign attachments and no
+report-writing (MCP) tools. Of the reports, a client lists, reads and
+downloads the delivered ones only (stored snapshots, without their
+generation options; downloads audited), never generates one on the fly. Every surface that lists or reads pentest
 findings (campaign list, the pentest findings list, the generic findings
 list and groups, single-finding reads, retests, evidence) applies the same
 rule in SQL or in `ResolveCampaignRoleForFinding`. A client does not read
 the campaign's checklists either (tester notes are internal); reports carry
 only checklist coverage counts and failed item titles.
+
+### Pentest findings on the shared finding surface
+
+A pentest finding usually has no inventory asset (its targets are free text),
+so the asset data scope cannot decide who sees it. For `source = pentest`,
+campaign membership replaces the data scope on `GET /findings/{id}`, its
+comments, comment reactions, activity, the live `finding:{id}` channel and the
+MCP per-finding tools and prompts: the team sees every finding of its
+campaign, a client the published ones, anyone else gets 404; admins pass.
+
+Comments on a pentest finding carry a visibility (migration
+`002072_finding_comment_visibility`):
+
+| Who | Writes | Reads |
+|---|---|---|
+| lead, reviewer, org admin | team-only by default, or client-visible on request | every comment |
+| tester, observer | team-only (asking for client-visible is 403) | every comment |
+| client | client-visible only (asking for team-only is 400) | client-visible comments only |
+
+- **Writing as a client.** Clients (usually org viewers, without `findings:comment`) post through `POST /api/v1/pentest/findings/{id}/comments` (`pentest:findings:read`, pentest findings only), and edit or delete their own comments and react through `PUT|DELETE /api/v1/pentest/findings/{id}/comments/{comment_id}` and `POST|DELETE /api/v1/pentest/findings/{id}/comments/{comment_id}/reactions` (emoji in the body, or `?emoji=` to remove; same gate). These routes authorize by campaign role, for every member: the finding must be a pentest finding the caller reaches, the comment must belong to it, and a client reaches client-visible comments only (anything else 404); only the author edits or deletes (403). The web console uses them for every member on a pentest finding.
+- **What the client never receives.** Team-only comments, the activity derived from them, the team's activity (assignment, triage, evidence, approvals) and the team's change details (reasons, notes, source metadata). This holds for the comment list, the activity feed (filtered in SQL, trimmed in the handler), the live channel (team members only), notification previews and MCP.
+- **MCP.** `add_finding_comment` takes `visibility` (team by default). It is one of the confirmed arguments, and the confirmation page states whether the client will read the comment. Clients do not hold `findings:comment`, so they cannot write over MCP. The comment's activity records `source = mcp` and the AI client's name.
 
 The organization's checklist templates (RFC-087) are read by anyone with
 `pentest:campaigns:read`; creating, importing, editing and archiving them
@@ -1328,7 +1359,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
 | `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
 | `PUT/DELETE /findings/{id}/comments/{comment_id}` | bypass | 404 (guard) + comment's finding checked |
-| `POST /comments/{comment_id}/reactions`, `DELETE /comments/{comment_id}/reactions/{emoji}` | (new) | comment resolved by (tenant, id); its finding goes through the comment-list gate (data scope, pentest campaign membership): 404. Removing another member's reaction (`?user_id=`) needs owner/admin and is audited |
+| `POST /comments/{comment_id}/reactions`, `DELETE /comments/{comment_id}/reactions/{emoji}` | (new) | comment resolved by (tenant, id); its finding goes through the comment-list gate (data scope, or pentest campaign membership instead of it; a client reaches client-visible comments only): 404. Removing another member's reaction (`?user_id=`) needs owner/admin and is audited |
 | `PUT/DELETE /assets/{id}`, activate/deactivate/archive, crown-jewel, snooze, sync, scan | **bypass (write)** | 404 (guard) |
 | `POST /findings/bulk/status`, `/bulk/assign` | **bypass (write)** | out-of-scope ids skipped, reported as not found |
 | `POST /findings/actions/verify`, `/reject-fix` (by ids), `/fix-applied` (filter) | partly | scoped |

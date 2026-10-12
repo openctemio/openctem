@@ -317,3 +317,85 @@ describe('reactions', () => {
     act(() => resolve())
   })
 })
+
+describe('Reaction picker from the comment menu', () => {
+  // On touch screens the menu is the only way to add a new reaction: the
+  // picker must stay open once the menu has closed.
+  it('opens the picker from "Add reaction" in the actions menu', async () => {
+    const user = userEvent.setup()
+    setUrl('?activity=open')
+    renderActivity({ onToggleReaction: vi.fn() })
+    const dialog = await screen.findByRole('dialog', { name: /Activity/ })
+    const card = within(dialog).getByRole('article', { name: 'Comment by Jamie' })
+    await user.click(within(card).getByRole('button', { name: 'Comment actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Add reaction' }))
+    await waitFor(() =>
+      expect(document.querySelector('[data-radix-popper-content-wrapper]')).not.toBeNull()
+    )
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
+describe('Pentest comment visibility', () => {
+  it('shows who reads each comment and the AI client that wrote one', async () => {
+    const user = userEvent.setup()
+    const base = items()
+    renderActivity({
+      items: [
+        ...base.slice(0, 3),
+        { ...(base[3] as Extract<ActivityItem, { kind: 'comment' }>), visibility: 'client' },
+        {
+          ...(base[4] as Extract<ActivityItem, { kind: 'comment' }>),
+          internal: false,
+          visibility: 'team',
+          via: 'Desktop assistant',
+        },
+      ],
+    })
+    await user.click(screen.getByRole('button', { name: /^Activity,/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByTestId('comment-visibility-client')).toHaveTextContent(
+      'Client can see'
+    )
+    expect(within(dialog).getByTestId('comment-visibility-team')).toHaveTextContent('Team only')
+    expect(within(dialog).getByTestId('comment-via')).toHaveTextContent('via Desktop assistant')
+  })
+
+  it('sends team-only by default and client-visible when the lead turns it on', async () => {
+    const user = userEvent.setup()
+    const send = vi.fn().mockResolvedValue(undefined)
+    renderActivity({ composer: { onSend: send, allowInternal: true, visibility: 'choose' } })
+    await user.click(screen.getByRole('button', { name: /^Activity,/ }))
+    const dialog = await screen.findByRole('dialog')
+    const box = within(dialog).getByRole('textbox', { name: 'Comment' })
+    await user.type(box, 'first')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    expect(send).toHaveBeenLastCalledWith('first', { internal: false, clientVisible: false })
+    await user.click(within(dialog).getByTestId('composer-client-visible'))
+    await user.type(box, 'second')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+    expect(send).toHaveBeenLastCalledWith('second', { internal: false, clientVisible: true })
+  })
+
+  it('a client composer says the client side reads the comment, without a toggle', async () => {
+    const user = userEvent.setup()
+    renderActivity({
+      composer: { onSend: vi.fn().mockResolvedValue(undefined), visibility: 'client' },
+    })
+    await user.click(screen.getByRole('button', { name: /^Activity,/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByTestId('composer-client-visible')).toBeNull()
+    expect(dialog).toHaveTextContent('The campaign team and your organization read your comments.')
+  })
+
+  it('says the activity failed to load instead of "Nothing yet"', () => {
+    renderActivity({ items: [], error: new Error('404') })
+    const trigger = screen.getByRole('button', { name: /^Activity,/ })
+    expect(within(trigger).getByTestId('activity-trigger-error')).toHaveTextContent(
+      'Activity could not be loaded'
+    )
+    expect(trigger).not.toHaveTextContent('Nothing yet')
+  })
+})

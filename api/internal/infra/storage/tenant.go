@@ -36,7 +36,11 @@ func NewTenantStorageFactory(operatorLocal attachment.FileStorage) func(cfg atta
 		case attachment.ProviderLocal:
 			return operatorLocal, nil
 		case attachment.ProviderS3, attachment.ProviderMinIO:
-			return NewS3Storage(cfg.Bucket, cfg.Region, cfg.Endpoint, cfg.AccessKey, cfg.SecretKey)
+			s, err := NewS3Storage(cfg.Bucket, cfg.Region, cfg.Endpoint, cfg.AccessKey, cfg.SecretKey)
+			if err != nil {
+				return nil, err
+			}
+			return Instrument(s, BackendOrganization), nil
 		default:
 			return nil, fmt.Errorf("unsupported tenant storage provider: %s", cfg.Provider)
 		}
