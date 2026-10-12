@@ -80,8 +80,13 @@ func (s *VulnerabilityService) resolveReaction(ctx context.Context, in CommentRe
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeCommentFinding(ctx, tenantID, comment.FindingID(), in.ActingUserID, in.IsAdmin); err != nil {
+	viewer, err := s.authorizeCommentFinding(ctx, tenantID, comment.FindingID(), in.ActingUserID, in.IsAdmin)
+	if err != nil {
 		return nil, err
+	}
+	// A campaign client never reaches a team-only comment.
+	if viewer.clientOnly() && !comment.ClientVisible() {
+		return nil, shared.ErrNotFound
 	}
 	return &reactionTarget{tenantID: tenantID, comment: comment, userID: userID, emoji: emoji}, nil
 }
