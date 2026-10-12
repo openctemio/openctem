@@ -26,18 +26,14 @@ describe('CI/CD integration page', () => {
     window.history.replaceState(null, '', '/ci-cd')
   })
 
-  it('opens on the pipelines, with the provider guides', () => {
+  it('opens on the pipelines, with the CI guide', () => {
     render(<CICDIntegration />)
     expect(screen.getByRole('heading', { name: 'CI/CD integration' })).toBeInTheDocument()
     expect(screen.getByTestId('pipelines-panel')).toBeInTheDocument()
     expect(screen.queryByTestId('trust-settings')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /github actions guide/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /ci integration guide/i })).toHaveAttribute(
       'href',
-      DOCS.ci.githubActions
-    )
-    expect(screen.getByRole('link', { name: /gitlab ci guide/i })).toHaveAttribute(
-      'href',
-      DOCS.ci.gitlabCi
+      DOCS.ci.guide
     )
   })
 
