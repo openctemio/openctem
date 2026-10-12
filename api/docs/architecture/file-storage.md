@@ -126,6 +126,44 @@ bounded by their own limits and retention, not by this quota.
 - `attachment.uploaded` and `attachment.deleted` audit events record the
   file's name, type, size, SHA-256 and context.
 
+## Images
+
+PNG, JPEG, GIF and WebP uploads are parsed before they are stored:
+
+- more than 50 megapixels (or a GIF frame that large): `400 IMAGE_TOO_LARGE`;
+  a damaged image: `400 IMAGE_INVALID`;
+- metadata goes, pixels stay: JPEG EXIF/XMP/IPTC/comments (the orientation
+  is kept), PNG text/eXIf/tIME chunks, GIF comments and non-looping
+  application extensions, WebP EXIF/XMP;
+- the attachment's SHA-256 is the stored file; `attachment.uploaded` adds
+  `original_sha256` and `metadata_removed` when bytes were removed.
+
+## Malware scanning
+
+Off by default. Set `STORAGE_CLAMD_ADDRESS` to a ClamAV daemon:
+
+- **Docker Compose**:
+  `docker compose -f docker-compose.yml -f docker-compose.clamav.yml up -d`
+  (`api/deploy/docker-compose.clamav.yml`: a `clamav` service on the
+  internal network, signatures in the `clamav-db` volume, about 1.5 GB of
+  memory, outbound HTTPS for signature updates).
+- **Kubernetes**: apply `api/deploy/kubernetes/clamav.yaml` (Deployment,
+  Service, a NetworkPolicy that admits only the API pods) and set
+  `api.extraEnv: [{name: STORAGE_CLAMD_ADDRESS, value: openctem-clamav:3310}]`.
+
+New uploads start `pending`; the `attachment-malware-scan` controller (every
+30 s, one replica, 50 files per run) streams each to clamd and records
+`clean`, `infected` (signature in `scan_result`, audited
+`attachment.malware_detected`) or `error`. While clamd is down files stay
+pending. The attachment list returns `scan_status` and `scan_result`.
+
+A flagged file is kept (pentest evidence often is malware on purpose):
+`GET /api/v1/attachments/{id}` answers `409 MALWARE_DETECTED` until the
+request adds `?confirm=malware`, then serves it as an attachment with
+`Cache-Control: no-store` and audits `attachment.infected_downloaded`.
+Reports skip flagged images; the console lists flagged files apart and asks
+before downloading. Files uploaded with no scanner keep an empty status.
+
 ## Retention
 
 The `attachment-retention` controller runs hourly on one replica:
@@ -155,18 +193,23 @@ retention.
 Shipped: local and S3 drivers, an organization's own bucket (fail closed),
 tenant erasure, content-sniffed types, streamed uploads, the quota, upload
 and delete audit, effective import limits with a streaming web proxy,
-retention of evidence whose parent was deleted and of never-linked uploads.
+retention of evidence whose parent was deleted and of never-linked uploads,
+image metadata removal and a pixel limit, optional malware scanning with
+ClamAV.
 
 Planned (RFC-084 §6): short-lived direct downloads from a bucket; report
-bytes moved out of Postgres; asynchronous large imports; image metadata
-stripping; a malware scanning hook; S3 server-side encryption options; a
-`local`↔`s3` migration command.
+bytes moved out of Postgres; asynchronous large imports; S3 server-side
+encryption options; a `local`↔`s3` migration command.
 
 ## Key files
 
 - `pkg/domain/attachment/storage.go`: the `FileStorage` interface, the
   organization storage setting, limits and the allow-list.
 - `pkg/domain/attachment/sniff.go`: `DetectContentType`.
+- `pkg/domain/attachment/image.go`: image metadata removal and pixel limit.
+- `pkg/domain/attachment/scan.go`, `internal/infra/malware/clamd.go`,
+  `internal/app/integration/attachment_hygiene.go`,
+  `internal/infra/controller/attachment_scan.go`: malware scanning.
 - `internal/app/integration/attachment.go`: upload (stream, hash, quota,
   dedup), storage resolution per organization, erasure.
 - `internal/app/integration/attachment_retention.go`,
