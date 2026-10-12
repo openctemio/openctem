@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"time"
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
@@ -1292,6 +1291,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	s.Pentest.SetReportTemplateRepository(repos.PentestReportTemplate)
 	if s.SLA != nil {
 		s.Pentest.SetSLACalculator(s.SLA) // deadline from the org SLA policy when a finding is published
 	}
@@ -1336,6 +1336,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		return nil, fmt.Errorf("unsupported STORAGE_PROVIDER %q (local, s3 or minio)", cfg.Storage.Provider)
 	}
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
+	s.Pentest.SetEvidenceImageReader(s.Attachment) // evidence images in reports
 	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
 	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
 		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdmins)
@@ -2526,9 +2527,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
-	if os.Getenv("AUTH_ALLOW_REGISTRATION") != "" {
-		log.Warn("AUTH_ALLOW_REGISTRATION is retired and ignored: who may sign up is the sign-up policy (Console > System > Sign-up)")
-	}
 	// Plans and limits: self-service organizations are Free.
 	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the

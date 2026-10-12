@@ -27,10 +27,10 @@ export interface SetupLinkOutcome {
   setup_expires_at?: string
 }
 
-/** `${origin}/set-password?token=...` — the page the user opens to choose a password. */
+/** `${origin}/set-password#token=...` — the page the user opens to choose a password. */
 export function buildSetupLink(token: string, origin?: string): string {
   const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '')
-  return `${base}/set-password?token=${encodeURIComponent(token)}`
+  return `${base}/set-password#token=${encodeURIComponent(token)}`
 }
 
 function formatExpiry(iso?: string): string | null {

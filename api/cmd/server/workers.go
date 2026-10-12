@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/scan"
@@ -684,6 +685,28 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// files of deleted rows, capture text after a year.
 	if svc.WebEvidence != nil {
 		w.ControllerManager.Register(controller.NewWebEvidenceRetentionController(svc.WebEvidence, 0, log))
+	}
+
+	// Weekly "what changed" digest of the attack surface (RFC-080): hourly
+	// tick, once per organization and slot, on unless the organization turns
+	// it off in its attack-surface settings.
+	if repos.EASMChange != nil && svc.Tenant != nil {
+		var ob easmapp.DigestEnqueuer
+		if svc.Outbox != nil {
+			ob = svc.Outbox
+		}
+		var inApp easmapp.DigestInApp
+		if svc.Notification != nil {
+			inApp = svc.Notification
+		}
+		var admins easmapp.DigestAdmins
+		if repos.MemberLifecycle != nil {
+			admins = repos.MemberLifecycle
+		}
+		w.ControllerManager.Register(controller.NewEASMWeeklyDigestController(
+			easmapp.NewDigestJob(repos.EASMChange, svc.Tenant, ob, inApp, admins, log.With("job", "easm-weekly-digest")),
+			repos.Tenant, svc.Module, 0, log,
+		))
 	}
 
 	// Owner resolution — make the member whose email is owner_ref a primary owner (asset_owners)

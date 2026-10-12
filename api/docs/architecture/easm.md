@@ -441,6 +441,31 @@ evidence** card on the asset page and the screenshot switch on the
 monitoring card. The `screenshot` tool is an optional sensor image (sensor
 repository).
 
+## 4i. Typed changes and the weekly digest (built)
+
+Design: [RFC-080](../rfcs/RFC-080-attack-surface-changes-and-digest.md).
+`GET /api/v1/easm/changes` (`assets:read`, data-scoped) reads asset state
+history, the change timeline and exposure events and gives each change one of
+ten kinds: `host_added`, `host_removed`, `port_opened`, `port_closed`,
+`cert_changed`, `cert_expiring`, `dns_changed`, `dns_dangling`,
+`tech_changed`, `exposure_new`. Window at most 31 days (default 7), counts
+per kind, keyset pages. Only inventory assets on the surface (surface type or
+`exposure = public`) count; rejected assets and false positives never do.
+Code: `pkg/domain/easmchange`, `postgres.EASMChangeRepository`,
+`easm.ChangeService`.
+
+**Weekly digest.** `EASMWeeklyDigestController` ticks hourly; each
+organization with the module gets one digest per slot (its weekday, default
+Monday, 08:00 UTC; the week before). The slot is claimed by a primary-key
+insert into `easm_weekly_digests`, so replicas never double-send; a quiet week
+is recorded and silent; an outbox failure releases the claim for the next
+tick. The digest is one `attack_surface_digest` outbox event (counts, up to 10
+named changes, link to `/attack-surface/changes?from=&to=`) plus an in-app
+notification (`attack_surface_digest`) to each active owner and
+administrator. Settings: `weekly_digest_enabled`, `digest_weekday` on
+`/api/v1/easm/settings` (omitted keeps them). Web: Attack surface › Changes,
+and the Weekly digest switch on the monitoring card.
+
 ## 4f. Review queue reachable, honest counts (built, P0-12)
 
 - **Reachable:** the Attack surface sidebar row carries the section tabs

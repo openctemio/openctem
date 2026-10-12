@@ -21,5 +21,6 @@
     - CertMonitorController
     - EASMDNSController
     - WebEvidenceRetentionController
+    - EASMWeeklyDigestController
     - GraphEnrichmentController
     - ScopeJoinController

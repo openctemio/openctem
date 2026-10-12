@@ -43,6 +43,7 @@ import { CodeHighlighter } from './code-highlighter'
 import { MobilizationBriefCard } from './mobilization-brief-card'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface RemediationTabProps {
   remediation: Remediation
@@ -64,6 +65,7 @@ const EFFORT_CONFIG: Record<string, { label: string; color: string }> = {
 }
 
 export function RemediationTab({ remediation, finding }: RemediationTabProps) {
+  const { t } = useTranslation()
   const [copiedCode, setCopiedCode] = useState(false)
 
   const { hasPermission } = usePermissions()
@@ -346,11 +348,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
         ) : (
           <div className="rounded-lg border border-dashed p-4 text-center">
             <p className="text-muted-foreground text-sm">
-              No remediation recommendation available from the scanner.
-            </p>
-            <p className="text-muted-foreground text-xs mt-1">
-              Consult the vulnerability documentation or security guidelines for fix
-              recommendations.
+              {t('findings.remediation.none', 'The scanner gave no remediation advice.')}
             </p>
           </div>
         )}
