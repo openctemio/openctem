@@ -160,7 +160,7 @@ jobs:
       - name: Set up trivy (image guard)
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
-          version: v0.68.2
+          version: v0.75.0
       - name: Image guard (size budget, non-root, no setuid, OS advisories)
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
@@ -284,7 +284,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:17-alpine
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_USER: openctem
           # Job-scoped throwaway database: no password at all (trust auth on
@@ -295,7 +298,10 @@ jobs:
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: public.ecr.aws/docker/library/redis:7-alpine
+        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports: ["6379:6379"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -330,7 +336,7 @@ jobs:
       - name: Set up trivy (image guard)
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
-          version: v0.68.2
+          version: v0.75.0
       - name: Image guard (size budget, non-root, no setuid, OS advisories)
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2

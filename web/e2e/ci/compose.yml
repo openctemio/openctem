@@ -17,7 +17,7 @@ name: octe2e-ci
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: ghcr.io/openctemio/mirror/postgres:17-alpine
     environment:
       POSTGRES_USER: openctem
       POSTGRES_PASSWORD: ${E2E_DB_PASSWORD:?set E2E_DB_PASSWORD (see web/e2e/ci/make-env.sh)}
@@ -29,7 +29,7 @@ services:
       retries: 30
 
   redis:
-    image: redis:7-alpine
+    image: ghcr.io/openctemio/mirror/redis:7-alpine
     command: ['redis-server', '--requirepass', '${E2E_REDIS_PASSWORD:?set E2E_REDIS_PASSWORD}']
     environment:
       REDISCLI_AUTH: ${E2E_REDIS_PASSWORD:?set E2E_REDIS_PASSWORD}
@@ -39,7 +39,7 @@ services:
       retries: 30
 
   migrate:
-    image: migrate/migrate:v4.18.1
+    image: ghcr.io/openctemio/mirror/migrate:v4.18.1
     volumes: ['../../../api/migrations:/migrations:ro']
     # The URL is assembled from E2E_DB_PASSWORD by make-env.sh / the workflow.
     command: ['-path=/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']

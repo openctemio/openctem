@@ -778,7 +778,7 @@ OIDC token instead of a stored key:
    configuration for your GitHub organization, GitLab group, Azure DevOps
    organization, Bitbucket workspace, CircleCI organization or Jenkins
    controller.
-2. In the pipeline: use `openctemio/ci` (`uses: openctemio/ci@v1` on GitHub,
+2. In the pipeline: use `openctemio/ci` (`uses: openctemio/ci@v0.2.0` on GitHub, pinned to a release tag,
    or its GitLab templates) with `OPENCTEM_TENANT_ID`, and delete the
    `API_KEY` secret.
 3. When every pipeline uses OIDC, turn on "Require OIDC for CI".

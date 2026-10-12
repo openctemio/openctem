@@ -24,6 +24,7 @@ export const dynamic = 'force-dynamic'
 import { isInSwitchCooldown } from '@/lib/api/switch-cooldown'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { CONDITIONAL_REQUEST_HEADERS, proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
+import { isBinaryContentType } from '@/lib/api/proxy-binary'
 import { proxyBackendPath } from '@/lib/api/proxy-path'
 import {
   accessTokenExpiresSoon,
@@ -399,15 +400,11 @@ async function proxyRequest(
     // For binary content (images, PDFs, videos, downloads) — stream the
     // response body directly without reading as text. Reading binary data
     // via response.text() corrupts it (encoding mismatch).
+    // Everything that is not JSON or text is passed through as bytes: an
+    // allow-list of binary types missed DOCX/XLSX and corrupted every Word
+    // report and template download (2026-10-12).
     const backendContentType = response.headers.get('content-type') || ''
-    const isBinaryResponse =
-      backendContentType.startsWith('image/') ||
-      backendContentType.startsWith('video/') ||
-      backendContentType.startsWith('audio/') ||
-      backendContentType === 'application/pdf' ||
-      backendContentType === 'application/zip' ||
-      backendContentType === 'application/octet-stream' ||
-      backendContentType === 'application/x-gzip'
+    const isBinaryResponse = isBinaryContentType(backendContentType)
 
     if (isBinaryResponse) {
       const proxyResponse = new NextResponse(response.body, {

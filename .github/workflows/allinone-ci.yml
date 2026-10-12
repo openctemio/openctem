@@ -33,6 +33,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Service containers pull the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
 
 jobs:
   changes:
@@ -58,7 +60,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:17-alpine
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_USER: openctem
           # Job-scoped throwaway database: no password at all (trust auth on
@@ -69,22 +74,32 @@ jobs:
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: public.ecr.aws/docker/library/redis:7-alpine
+        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports: ["6379:6379"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
       # The default docker driver: images built here are visible to the next
       # build's FROM without a registry.
       - name: Build openctem-api
-        run: docker build -t local/openctem-api:ci --target production api
+        run: bash .github/scripts/retry.sh docker build -t local/openctem-api:ci --target production api
       # The web image compiles against the generated contract files, which are
       # not committed (api/docs/development/ci-cd.md).
       - name: Generate the contract files
         uses: ./.github/actions/generate-contract
       - name: Build openctem-web
-        run: docker build -t local/openctem-web:ci web
+        run: bash .github/scripts/retry.sh docker build -t local/openctem-web:ci web
       - name: Build openctem (all-in-one)
         run: >-
+          bash .github/scripts/retry.sh
           docker buildx build --load -t local/openctem:ci
           --build-context gateway=api/deploy/gateway
           --build-arg API_IMAGE=local/openctem-api:ci
@@ -104,7 +119,7 @@ jobs:
       - name: Set up trivy (image guard)
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
-          version: v0.68.2
+          version: v0.75.0
       # Size budget, non-root user, no setuid file, no fixable HIGH/CRITICAL
       # advisory in OS packages (.github/scripts/image-guard.sh).
       - name: Image guard
