@@ -114,7 +114,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "scans:read",
-		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIRetentionController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController"},
+		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController"},
 	},
 	{
 		ID: ModuleAttackSurface, Slug: "attack-surface", Name: "Attack Surface",
@@ -126,9 +126,9 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "attack surface is computed from assets"},
 		},
-		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm"},
+		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm", "/api/v1/assets/{id}/web-evidence"},
 		MCP:    []string{"get_exposure_chains"},
-		Jobs:   []string{"AssetEnrichmentController", "CertMonitorController", "EASMDNSController", "EASMWeeklyDigestController", "GraphEnrichmentController", "ScopeJoinController"},
+		Jobs:   []string{"AssetEnrichmentController", "CertMonitorController", "EASMDNSController", "WebEvidenceRetentionController", "EASMWeeklyDigestController", "GraphEnrichmentController", "ScopeJoinController"},
 	},
 	{
 		ID: ModuleScopeConfig, Slug: "scope-config", Name: "Scope Config",
