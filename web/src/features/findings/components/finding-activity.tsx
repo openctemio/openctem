@@ -8,6 +8,7 @@
 
 import { forwardRef } from 'react'
 import { useCanMutate } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   EntityActivity,
   type EntityActivityHandle,
@@ -37,6 +38,13 @@ export interface FindingActivityProps {
    * `findings:write` permission is always required.
    */
   readOnly?: boolean
+  /**
+   * A pentest finding: every campaign member comments through the pentest
+   * route; `clientVisibility` is what the viewer may do with the client
+   * ("choose": lead, reviewer, admin; "client": the client, whose comments
+   * the client side reads; "team": everyone else, team-only).
+   */
+  pentest?: { clientVisibility: 'choose' | 'client' | 'team' }
   onTriageActivity?: () => void
   className?: string
 }
@@ -47,6 +55,10 @@ export const FindingActivity = forwardRef<EntityActivityHandle, FindingActivityP
       enabled,
       fromFinding,
       onTriageActivity,
+      pentest: !!props.pentest,
+      // The live channel carries team-only comments: a campaign client
+      // reads the filtered feed only (the API refuses the subscription).
+      live: props.pentest?.clientVisibility !== 'client',
     })
     return <FindingActivityView ref={ref} feed={feed} {...props} />
   }
@@ -62,12 +74,20 @@ export interface FindingActivityViewProps extends Omit<
 
 export const FindingActivityView = forwardRef<EntityActivityHandle, FindingActivityViewProps>(
   function FindingActivityView(
-    { feed, findingId, subject, urlParam, legacyTab, shortcut, readOnly, className },
+    { feed, findingId, subject, urlParam, legacyTab, shortcut, readOnly, pentest, className },
     ref
   ) {
+    const { t } = useTranslation()
     // POST /findings/{id}/comments needs findings:comment; without it the
-    // composer is not offered (instead of a 403 on Send).
-    const canComment = useCanMutate('POST /api/v1/findings/{id}/comments') && !readOnly
+    // composer is not offered (instead of a 403 on Send). Edits, deletes and
+    // reactions use the same permission.
+    const canManageFinding = useCanMutate('POST /api/v1/findings/{id}/comments') && !readOnly
+    // A pentest finding takes comments, edits of one's own comments and
+    // reactions from every campaign member, clients included (the pentest
+    // routes need pentest:findings:read; the API checks the campaign role).
+    const canPentestComment =
+      useCanMutate('POST /api/v1/pentest/findings/{id}/comments') && !readOnly
+    const canComment = pentest ? canPentestComment : canManageFinding
 
     return (
       <EntityActivity
@@ -83,7 +103,15 @@ export const FindingActivityView = forwardRef<EntityActivityHandle, FindingActiv
         loadingOlder={feed.loadingOlder}
         onLoadOlder={feed.loadOlder}
         live={feed.live}
-        composer={canComment ? { onSend: feed.sendComment, allowInternal: true } : undefined}
+        composer={
+          canComment
+            ? {
+                onSend: feed.sendComment,
+                allowInternal: !pentest || pentest.clientVisibility !== 'client',
+                visibility: pentest?.clientVisibility,
+              }
+            : undefined
+        }
         onEditComment={canComment ? feed.editComment : undefined}
         onDeleteComment={canComment ? feed.deleteComment : undefined}
         onToggleReaction={canComment ? feed.toggleReaction : undefined}
@@ -91,7 +119,11 @@ export const FindingActivityView = forwardRef<EntityActivityHandle, FindingActiv
         legacyTab={legacyTab}
         shortcut={shortcut}
         triggerClassName={className}
-        emptyDescription={canComment ? 'Start the discussion below.' : undefined}
+        emptyDescription={
+          canComment
+            ? t('findings.activity.startDiscussion', 'Start the discussion below.')
+            : undefined
+        }
       />
     )
   }

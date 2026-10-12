@@ -72,6 +72,7 @@ export const EntityActivity = forwardRef<EntityActivityHandle, EntityActivityPro
           total={panel.total}
           unread={unread}
           loading={panel.loading}
+          error={!!panel.error}
           onOpen={openPanel}
           shortcut={shortcut && !!panel.composer}
           panelOpen={open}

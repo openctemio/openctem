@@ -44,6 +44,9 @@
 //	# linked) to a sign-in account, keeping its role and authenticator
 //	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -link
 //
+//	# Copy the server file storage between local and S3 (storage_migrate.go)
+//	./bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run
+//
 //	# Or via environment variables
 //	DATABASE_URL=postgres://... ADMIN_EMAIL=admin@example.com ADMIN_BACKUP_EMAIL=bg@example.com \
 //	    ORG_NAME="Acme Security" ORG_OWNER_EMAIL=owner@example.com ./bootstrap-admin
@@ -74,6 +77,11 @@ import (
 )
 
 func main() {
+	// `bootstrap-admin storage migrate ...`: copy the server file storage
+	// between local and S3 (storage_migrate.go).
+	if len(os.Args) > 1 && os.Args[1] == "storage" {
+		os.Exit(runStorage(os.Args[2:]))
+	}
 	dbURL := flag.String("db", "", "Database URL (or set DATABASE_URL env)")
 	email := flag.String("email", "", "Admin email (or set ADMIN_EMAIL env)")
 	name := flag.String("name", "", "Admin name (defaults to email prefix)")

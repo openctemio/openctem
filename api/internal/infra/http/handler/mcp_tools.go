@@ -371,8 +371,11 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		{
 			Name: "get_campaign",
 			Description: "Get a pentest campaign's report context: name, type, status, client, dates, " +
-				"scope items, rules of engagement, methodology, objectives, and team. Requires the " +
-				"key owner to be a member of the campaign.",
+				"scope items, rules of engagement, methodology, objectives, and team. Status is the phase: " +
+				"planning (no findings yet), in_progress (testing: lead and testers add findings), " +
+				"reporting (testing closed: findings reviewed, only the lead and reviewers add late findings), " +
+				"completed (report delivered: remediation and retests only), on_hold, canceled or archived. " +
+				"Requires the key owner to be a member of the campaign.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 			RequiredPerm: string(permission.PentestCampaignsRead),
 			Module:       moduledom.ModulePentest,
@@ -404,7 +407,8 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		},
 		{
 			Name: "list_retests",
-			Description: "List retests for a pentest campaign: finding title, severity, retest status, " +
+			Description: "List retests for a pentest campaign: finding title, severity, retest status " +
+				"(passed, failed, partial, inconclusive = unable to verify, with the reason in the notes), " +
 				"notes, tested_at. Requires campaign membership.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"campaign_id":{"type":"string"}},"required":["campaign_id"]}`),
 			RequiredPerm: string(permission.PentestRetestsRead),
