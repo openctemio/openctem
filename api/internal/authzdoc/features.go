@@ -62,7 +62,7 @@ var Features = []Feature{
 		Description: "External attack surface management: discovery candidates, verified domains, sweeps, attack paths and the scoping summary.",
 		Stages:      []string{StageScoping, StageDiscovery, StagePrioritization},
 		Registers: []string{
-			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes",
+			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerAssetWebEvidenceRoutes",
 			"registerEASMVerifiedDomainRoutes", "registerScopingRoutes",
 		},
 	},
@@ -126,7 +126,7 @@ var Features = []Feature{
 		ID: "ci", Title: "CI pipelines",
 		Description: "CI runner identity, trust configurations, the central gate and its overrides.",
 		Stages:      []string{StageDiscovery, StageMobilization},
-		Registers:   []string{"registerCIRoutes"},
+		Registers:   []string{"registerCIRoutes", "registerSCMAppRoutes"},
 	},
 	{
 		ID: "pentest", Title: "Penetration testing",
@@ -163,7 +163,7 @@ var Features = []Feature{
 		Description: "Ticketing, SCM, SIEM and notification integrations, inbound webhooks, the notification outbox and API keys.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerOutboxRoutes", "registerAPIKeyRoutes",
+			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerGitHubWebhookRoute", "registerOutboxRoutes", "registerAPIKeyRoutes",
 		},
 		Prefixes: []string{"/api/v1/webhooks/incoming"},
 	},
@@ -182,7 +182,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
-			"registerAssetReconciliationSettingsRoutes",
+			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes",
 		},
 	},
 	{

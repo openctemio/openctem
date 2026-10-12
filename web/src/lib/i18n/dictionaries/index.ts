@@ -15,7 +15,9 @@ import en_assetFreshness from './en/assetFreshness.json'
 import en_assetSources from './en/assetSources.json'
 import en_assets from './en/assets.json'
 import en_assetTimeline from './en/assetTimeline.json'
+import en_attackSurface from './en/attackSurface.json'
 import en_auth from './en/auth.json'
+import en_automations from './en/automations.json'
 import en_common from './en/common.json'
 import en_components from './en/components.json'
 import en_confirm from './en/confirm.json'
@@ -30,6 +32,7 @@ import en_pentest from './en/pentest.json'
 import en_plan from './en/plan.json'
 import en_prioritization from './en/prioritization.json'
 import en_programs from './en/programs.json'
+import en_reports from './en/reports.json'
 import en_scanWindows from './en/scanWindows.json'
 import en_scans from './en/scans.json'
 import en_scope from './en/scope.json'
@@ -38,6 +41,7 @@ import en_settings from './en/settings.json'
 import en_severity from './en/severity.json'
 import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
+import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
 import vi_activity from './vi/activity.json'
 import vi_actor from './vi/actor.json'
@@ -47,7 +51,9 @@ import vi_assetFreshness from './vi/assetFreshness.json'
 import vi_assetSources from './vi/assetSources.json'
 import vi_assets from './vi/assets.json'
 import vi_assetTimeline from './vi/assetTimeline.json'
+import vi_attackSurface from './vi/attackSurface.json'
 import vi_auth from './vi/auth.json'
+import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
 import vi_components from './vi/components.json'
 import vi_confirm from './vi/confirm.json'
@@ -62,6 +68,7 @@ import vi_pentest from './vi/pentest.json'
 import vi_plan from './vi/plan.json'
 import vi_prioritization from './vi/prioritization.json'
 import vi_programs from './vi/programs.json'
+import vi_reports from './vi/reports.json'
 import vi_scanWindows from './vi/scanWindows.json'
 import vi_scans from './vi/scans.json'
 import vi_scope from './vi/scope.json'
@@ -70,6 +77,7 @@ import vi_settings from './vi/settings.json'
 import vi_severity from './vi/severity.json'
 import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
+import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
 
 export type Dictionary = Record<string, string>
@@ -84,7 +92,9 @@ export const enNamespaces: Record<string, Dictionary> = {
   assetSources: en_assetSources,
   assets: en_assets,
   assetTimeline: en_assetTimeline,
+  attackSurface: en_attackSurface,
   auth: en_auth,
+  automations: en_automations,
   common: en_common,
   components: en_components,
   confirm: en_confirm,
@@ -99,6 +109,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   plan: en_plan,
   prioritization: en_prioritization,
   programs: en_programs,
+  reports: en_reports,
   scanWindows: en_scanWindows,
   scans: en_scans,
   scope: en_scope,
@@ -107,6 +118,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   severity: en_severity,
   userMenu: en_userMenu,
   validation: en_validation,
+  webEvidence: en_webEvidence,
   workflowStages: en_workflowStages,
 }
 
@@ -119,7 +131,9 @@ export const viNamespaces: Record<string, Dictionary> = {
   assetSources: vi_assetSources,
   assets: vi_assets,
   assetTimeline: vi_assetTimeline,
+  attackSurface: vi_attackSurface,
   auth: vi_auth,
+  automations: vi_automations,
   common: vi_common,
   components: vi_components,
   confirm: vi_confirm,
@@ -134,6 +148,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   plan: vi_plan,
   prioritization: vi_prioritization,
   programs: vi_programs,
+  reports: vi_reports,
   scanWindows: vi_scanWindows,
   scans: vi_scans,
   scope: vi_scope,
@@ -142,6 +157,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   severity: vi_severity,
   userMenu: vi_userMenu,
   validation: vi_validation,
+  webEvidence: vi_webEvidence,
   workflowStages: vi_workflowStages,
 }
 

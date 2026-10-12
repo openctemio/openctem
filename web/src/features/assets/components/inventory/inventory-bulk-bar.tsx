@@ -81,6 +81,7 @@ import {
 } from '../../types/asset.types'
 import { ASSET_CRITICALITY_LEVELS } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
+import { AddToScopeAction } from '@/features/scope/components/add-to-scope-action'
 
 interface BulkBarProps {
   selected: Asset[]
@@ -138,6 +139,7 @@ interface MembersResponse {
 export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBarProps) {
   const { t } = useTranslation()
   const count = selected.length
+  const selectedNames = useMemo(() => selected.map((a) => a.name), [selected])
   const [dialog, setDialog] = useState<null | 'owner' | 'criticality' | 'tag' | 'removeTags'>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -375,6 +377,8 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   return (
     <>
       <BulkActionBar count={count} onClear={onClear} noun="selected">
+        {/* Scope is its own permission (scope:write), not assets:write. */}
+        <AddToScopeAction names={selectedNames} onDone={onDone} />
         {canWrite ? (
           <>
             <Button variant="ghost" size="sm" onClick={() => setDialog('owner')}>
