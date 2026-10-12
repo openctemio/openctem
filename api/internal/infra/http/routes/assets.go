@@ -699,6 +699,6 @@ func registerAssetWebEvidenceRoutes(
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 	router.Group("/api/v1/assets/{id}/web-evidence", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
-		r.GET("/{evidenceId}/screenshot", h.Screenshot, middleware.Require(permission.AssetsRead))
+		r.GET("/{evidence_id}/screenshot", h.Screenshot, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
