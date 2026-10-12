@@ -58,11 +58,13 @@ function sameSet(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((x) => b.includes(x))
 }
 
-export function pipelineColumns(): ColumnDef<CIPipeline>[] {
+type TFn = ReturnType<typeof useTranslation>['t']
+
+export function pipelineColumns(t: TFn): ColumnDef<CIPipeline>[] {
   return [
     {
       id: 'repository',
-      header: 'Repository',
+      header: t('scans.ci.col.repository', 'Repository'),
       cell: ({ row }) => {
         const p = row.original
         return (
@@ -85,7 +87,7 @@ export function pipelineColumns(): ColumnDef<CIPipeline>[] {
     },
     {
       id: 'status',
-      header: 'Status',
+      header: t('scans.ci.col.status', 'Status'),
       cell: ({ row }) => (
         <PipelineStatusBadge
           status={row.original.status}
@@ -95,7 +97,7 @@ export function pipelineColumns(): ColumnDef<CIPipeline>[] {
     },
     {
       id: 'last_run',
-      header: 'Last run',
+      header: t('scans.ci.col.lastRun', 'Last run'),
       cell: ({ row }) => (
         <RelativeTime
           date={row.original.last_run_at}
@@ -105,12 +107,12 @@ export function pipelineColumns(): ColumnDef<CIPipeline>[] {
     },
     {
       id: 'gate',
-      header: 'Default-branch gate',
+      header: t('scans.ci.col.defaultGate', 'Default-branch gate'),
       cell: ({ row }) => <GateLabel gate={row.original.gate} />,
     },
     {
       id: 'version',
-      header: 'Runner',
+      header: t('scans.ci.col.runner', 'Runner'),
       cell: ({ row }) => (
         <span
           className={cn(
@@ -166,41 +168,50 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
   const metrics: MetricStripItem[] = [
     {
       key: 'pipelines',
-      label: 'CI pipelines',
+      label: t('scans.ci.metric.pipelines', 'CI pipelines'),
       value: active,
-      hint: 'active',
-      detail: 'one per workflow file of each repository',
+      hint: t('scans.ci.metric.active', 'active'),
+      detail: t('scans.ci.metric.pipelinesDetail', 'one per workflow file of each repository'),
     },
     {
       key: 'fresh',
-      label: 'Fresh',
+      label: t('scans.ci.metric.fresh', 'Fresh'),
       value: n('fresh') + n('running'),
-      hint: `of ${active}`,
-      detail: n('running') > 0 ? `${n('running')} running now` : 'ran within their cadence',
+      hint: t('scans.ci.metric.ofTotal', 'of {total}', { total: active }),
+      detail:
+        n('running') > 0
+          ? t('scans.ci.metric.runningNow', '{count} running now', { count: n('running') })
+          : t('scans.ci.metric.withinCadence', 'ran within their cadence'),
     },
     {
       key: 'failing',
-      label: 'Failing gate',
+      label: t('scans.ci.metric.failing', 'Failing gate'),
       value: n('failing'),
       tone: 'danger',
-      detail: 'last default-branch run failed',
+      detail: t('scans.ci.metric.failingDetail', 'last default-branch run failed'),
       onClick: () => toggleStatuses(QUICK.failing),
       active: sameSet(statuses, QUICK.failing),
     },
     {
       key: 'attention',
-      label: 'Stale or degraded',
+      label: t('scans.ci.metric.attention', 'Stale or degraded'),
       value: n('stale') + n('degraded'),
       tone: 'warning',
-      detail: `${n('stale')} stale · ${n('degraded')} degraded`,
+      detail: t('scans.ci.metric.attentionDetail', '{stale} stale · {degraded} degraded', {
+        stale: n('stale'),
+        degraded: n('degraded'),
+      }),
       onClick: () => toggleStatuses(QUICK.attention),
       active: sameSet(statuses, QUICK.attention),
     },
     {
       key: 'inactive',
-      label: 'Inactive',
+      label: t('scans.ci.metric.inactive', 'Inactive'),
       value: inactive,
-      detail: 'archived, retired, revoked or never ran; hidden, not deleted',
+      detail: t(
+        'scans.ci.metric.inactiveDetail',
+        'archived, retired, revoked or never ran; hidden, not deleted'
+      ),
       onClick: () => {
         setInactiveParam(includeInactive ? '' : '1')
         setPage(1)
@@ -211,19 +222,30 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
 
   const lens = (
     <SegmentedLens<RunnerView>
-      label="Runner view"
+      label={t('scans.ci.view.label', 'Runner view')}
       value={view}
       onChange={(v) => {
         setView(v)
         setPage(1)
       }}
       options={[
-        { value: 'pipelines', label: 'Pipelines', description: 'One row per workflow file' },
-        { value: 'runs', label: 'Runs', description: 'Every run, newest first' },
+        {
+          value: 'pipelines',
+          label: t('scans.ci.view.pipelines', 'Pipelines'),
+          description: t('scans.ci.view.pipelinesHint', 'One row per workflow file'),
+        },
+        {
+          value: 'runs',
+          label: t('scans.ci.view.runs', 'Runs'),
+          description: t('scans.ci.view.runsHint', 'Every run, newest first'),
+        },
         {
           value: 'coverage',
-          label: 'Coverage',
-          description: 'Repositories by capability: which are not being looked at',
+          label: t('scans.ci.view.coverage', 'Coverage'),
+          description: t(
+            'scans.ci.view.coverageHint',
+            'Repositories by capability: which are not being looked at'
+          ),
         },
       ]}
     />
@@ -264,7 +286,11 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
     <div className="mt-5 space-y-5">
       {!empty && <MetricStrip loading={isLoading && !data} items={metrics} />}
       {error ? (
-        <ErrorState title="CI pipelines" error={error} onRetry={() => mutate()} />
+        <ErrorState
+          title={t('scans.ci.metric.pipelines', 'CI pipelines')}
+          error={error}
+          onRetry={() => mutate()}
+        />
       ) : empty ? (
         <>
           <div className="flex flex-wrap items-center gap-2">
@@ -276,18 +302,18 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
             title={t('scans.ci.noPipelinesTitle', 'No CI pipelines yet')}
             description={t(
               'scans.ci.noPipelines',
-              'A pipeline appears after its first run. Add a CI trust configuration, then run the sensor in a CI job.'
+              'A pipeline appears after its first run. Add a CI trust configuration, then add the OpenCTEM CI scan to a pipeline.'
             )}
             action={
               <Button asChild size="sm">
-                <Link href="/ci-cd?tab=setup">Set up CI trust</Link>
+                <Link href="/ci-cd?tab=setup">{t('scans.ci.setUpTrust', 'Set up CI trust')}</Link>
               </Button>
             }
           />
         </>
       ) : (
         <DataTable
-          columns={pipelineColumns()}
+          columns={pipelineColumns(t)}
           data={data?.data ?? []}
           isLoading={isLoading}
           manualPagination
@@ -299,9 +325,14 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
           onRowClick={(p) => setOpenId(p.id ?? '')}
           showSearch={false}
           paginationNoun="pipelines"
-          emptyMessage="No pipeline matches"
+          emptyMessage={t('scans.ci.noPipelineMatches', 'No pipeline matches')}
           emptyDescription={
-            includeInactive ? undefined : 'Inactive pipelines are hidden: turn on Show inactive.'
+            includeInactive
+              ? undefined
+              : t(
+                  'scans.ci.inactiveHidden',
+                  'Inactive pipelines are hidden: turn on Show inactive.'
+                )
           }
           toolbarStart={
             <>
@@ -310,8 +341,8 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
               <div className="relative min-w-0 flex-1 sm:max-w-xs">
                 <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search repository or workflow…"
-                  aria-label="Search CI pipelines"
+                  placeholder={t('scans.ci.searchPipelines', 'Search repository or workflow…')}
+                  aria-label={t('scans.ci.searchPipelinesLabel', 'Search CI pipelines')}
                   value={q}
                   onChange={(e) => {
                     setQ(e.target.value)
@@ -333,7 +364,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
                 }}
               />
               <Label htmlFor="pipelines-inactive" className="text-sm font-normal">
-                Show inactive
+                {t('scans.ci.showInactive', 'Show inactive')}
               </Label>
             </div>
           }
