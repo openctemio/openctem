@@ -179,7 +179,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3">
+          <form method="post" onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3">
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>
