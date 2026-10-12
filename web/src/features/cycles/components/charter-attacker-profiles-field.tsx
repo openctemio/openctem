@@ -6,6 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { profileTypeLabel, useAttackerProfiles, type AttackerProfile } from '../api'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * Picks the attacker profiles a cycle assumes (external unauthenticated,
@@ -24,6 +25,7 @@ export function CharterAttackerProfilesField({
   editable: boolean
   idPrefix?: string
 }) {
+  const { t } = useTranslation()
   const { data, error, isLoading } = useAttackerProfiles()
   const profiles = useMemo(() => data?.data ?? [], [data])
   const selected = useMemo(() => new Set(value), [value])
@@ -32,7 +34,7 @@ export function CharterAttackerProfilesField({
   if (error) {
     return (
       <p className="text-sm text-muted-foreground">
-        Attacker profiles could not be loaded (the Attacker profiles module may be off).
+        {t('scope.cycles.profilesLoadFailed', 'Attacker profiles could not be loaded.')}
       </p>
     )
   }

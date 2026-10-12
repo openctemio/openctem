@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented, R3–R5 awaiting owner decision); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -37,7 +37,7 @@ This RFC makes one model out of them:
    decided, and the fixes the caller may apply. `POST /scope/check` is a dry
    run of the whole gate.
 7. **Platform guardrails** (S2), operator-level only: active-probe proof
-   (`SCOPE_ACTIVE_PROOF`), public-suffix refusal, a minimal platform deny list
+   (platform setting, §8.1), public-suffix refusal, a minimal platform deny list
    and CIDR size caps.
 8. **Tenant settings** (S5): auto-join, who adds one-off targets, maximum
    days, approval count, default tier. There is **no** switch that turns
@@ -49,7 +49,7 @@ This RFC makes one model out of them:
 |---|---|---|
 | Careless admin | types `example.org` for `example.com` | preview (`POST /scope/check`), step-up, second approver when the tenant has two or more admins, admin notification |
 | Compromised admin session | adds `*.victim.example` and scans it | step-up on every widening route (a stolen cookie alone cannot widen), approvals, notification of every admin, audit |
-| Malicious tenant (colluding admins) | uses the platform to scan a third party | approvals do not help; **ownership proof** for probes from platform sensors (`SCOPE_ACTIVE_PROOF`), platform deny list, public-suffix refusal, CIDR caps; none of them tenant-overridable |
+| Malicious tenant (colluding admins) | uses the platform to scan a third party | approvals do not help; **ownership proof** for probes from platform sensors (platform setting, §8.1), platform deny list, public-suffix refusal, CIDR caps; none of them tenant-overridable |
 | Restricted member | scans outside their assets | act scope (D9) unchanged; may only *request* a one-off entry |
 | DNS pointing to others' IPs | an in-scope name resolves to a third party's address | a name grant never becomes an IP grant: discovered addresses never inherit (S4); the sensor resolves and pins (local policy) |
 | Ownership-tab click | confirms `bank.example` as the tenant's and scans it | confirmation no longer authorizes alone (§4.2) |
@@ -63,7 +63,7 @@ Every lookup error refuses (fail closed).
 | # | Decision |
 |---|---|
 | S1 | (a) `*.x` = `x` + all subdomains; exclusion `x` carves the apex out |
-| S2 | (a) proof for active probes is an operator setting `SCOPE_ACTIVE_PROOF`: SaaS default `platform_sensors`, self-hosted `off`; intrusive (T2) always needs proof |
+| S2 | (a) proof for active probes is a platform setting (revised 2026-10-11, §8.1): default off; a public multi-tenant cloud turns it on, and then platform sensors and intrusive (T2) probes need proof |
 | S3 | (a) widening approvals are a tenant setting 0/1/2, default `min(1, admins − 1)`, never 0 for T2 (amends RFC-040 Q2 (a)). Revised 2026-10-09 (§12): approvers are named and reminded; an owner with no other approver self-approves with a fresh authenticator code; a platform policy may make approvals tenant-controlled or off |
 | S4 | yes, refined 2026-10-07: an active, non-expiring scope entry or seed confirms the names it covers (`matches_scope_target`, no review); IPs only through IP entries; one-off entries never confirm; tombstones and exclusions win; removal keeps the asset and stops scanning; backfill of existing `needs_review` rows |
 | S5 | tenant knobs (§7); no global scope-off switch, ever |
@@ -498,6 +498,35 @@ targets. `rule` names the caller's own rule that refused: `{"kind":
 "exclusion"|"scope_target"|"tombstone"|"asset", "id", "pattern"}`; for
 platform policy it is `{"kind": "platform_policy"}` with no detail.
 
+**Where the scan would run** (`routing`, 2026-10-11). The response also
+says where a scan of these targets would run, decided as the trigger decides:
+`{"preference": "auto"|"tenant"|"platform", "runs_on": "tenant"|"platform"|"waits",
+"reason", "sensor": {"id", "name"}}`. Reasons: `platform_needs_proof` (auto,
+proof required by the platform setting of §8.1, and some targets unproven:
+the job runs on the organization's own sensor), `tenant_first`, `tenant_busy`,
+`internal_targets`, `no_tenant_sensor`, `platform_sensors`. `sensor` names
+only the organization's own sensor; a platform sensor is never named. With
+the proof setting on, auto refuses an unproven target (`proof_required`) only
+when no own sensor can take the job; intrusive probes need proof on any
+sensor, and their `proof_required` refusal does not offer "use your own
+sensor".
+
+**Resolved address** (`resolved`). A `zone_none` refusal of a hostname that
+resolves to a private address lists those addresses (at most 8), so the
+Review can say "resolves to 10.x.x.x, an internal address". It is shown only
+when the answer cannot come from the platform's own internal DNS: zone
+routing resolves through a public resolver (`SCAN_ZONE_RESOLVER`), or
+organizations are not self-service.
+
+**Skip the refused targets** (`skip_refused_targets` on `POST /scans`). The
+creator may save a scan with only the targets this check allows now: the
+create runs the same dry run, leaves the refused targets out and records
+them with their codes in `scans.skipped_targets` (shown on the scan) and in
+every run's context (`skipped_targets`, never sent to a sensor). The kept
+targets then pass every normal create check, so nothing the gate refuses is
+saved or scanned; with no target left the create is refused
+(`NO_ALLOWED_TARGETS`).
+
 ### 6.5 Refusal codes
 
 | Code | Meaning | Fixes offered |
@@ -750,29 +779,36 @@ None of these is a tenant setting; nothing a tenant sends turns them off.
 
 ### 8.1 Active-probe proof
 
-`SCOPE_ACTIVE_PROOF`:
+A platform setting, edited by a super admin in Console > System > Platform
+scanning: **"Require a verified domain before platform sensors scan a
+target"** (`platform_settings` key `platform_sensor_proof`). The former
+environment variable `SCOPE_ACTIVE_PROOF` is retired: startup refuses it with
+a hint (owner decision 2026-10-11, revising S2).
 
-| Value | Rule |
+| Setting | Rule |
 |---|---|
-| `off` | no proof needed (self-hosted default: the operator is the tenant) |
-| `platform_sensors` | a job routed to platform sensors needs every target at or under a verified domain of the tenant (SaaS default) |
-| `all` | every active probe needs a verified root (internal, zone-gated targets excepted) |
+| off (default) | no proof needed anywhere: assets come from many sources, and the organization's scope entry is the authorization. The scope gate, exclusions, the deny list (§8.2), scan zones for private addresses and tier ceilings stay in force |
+| on | a job routed to platform sensors needs every target at or under a verified domain of the tenant, and intrusive (T2) probes need one on any sensor |
 
-Unset: `platform_sensors` when `TENANT_CREATION_MODE=self_service`, else
-`off`; any other value fails startup. Intrusive (T2) probes always need a
-verified root. IP targets have no proof kind yet, so they are refused where
-proof is required.
+A public multi-tenant cloud should turn it on: platform sensors send packets
+from the operator's addresses, and only ownership proof stops a tenant from
+pointing them at a third party. A self-hosted operator runs its own
+infrastructure and usually leaves it off. A change needs super_admin, a fresh
+console authenticator code and a reason; it is written to the admin audit log
+at critical severity (`platform.platform_sensor_proof_changed`) and the other
+platform administrators are emailed. An unreadable stored value counts as on
+(fail closed); a value never stored is the default, off. Replicas cache the
+value for 15 seconds. IP targets have no proof kind yet, so they are refused
+where proof is required.
 
-Where it is enforced:
+Where it is enforced when on:
 
-- `platform_sensors` (and `all`): the scan trigger sends a job to platform
-  sensors only when every target is at or under a verified domain. An
-  explicit `sensor_preference=platform` with an unproven target is refused
-  (`400 PROOF_REQUIRED`, the unproven targets named); `auto` keeps the job on
-  tenant sensors.
-- `all`: the ownership gate refuses an unproven internet target on every
-  path (never-stored state `proof_required`, refusal code `proof_required`).
-- Intrusive: scan create, quick scan and every single-scanner run refuse a
+- the scan trigger sends a job to platform sensors only when every target is
+  at or under a verified domain. An explicit `sensor_preference=platform`
+  with an unproven target is refused (`400 PROOF_REQUIRED`, the unproven
+  targets named); `auto` keeps the job on the tenant's own sensors, and the
+  scope check (`POST /scope/check`) says so.
+- Intrusive (setting on): scan create, quick scan and every single-scanner run refuse a
   scan whose tool only implements T2 stages (for example `zap`) when a target
   is unproven (`PROOF_REQUIRED`). A workflow scan checks proof per step: an
   intrusive step (its tool's tier is T2) is handed only the run's targets at
@@ -836,7 +872,7 @@ are gated by zones and are not capped.
 |---|---|
 | S1 | matcher, tests, docs, this RFC |
 | Authority | one authority check for typed and inventory targets; Ownership-tab bypass removed |
-| Guardrails | PSL, deny list, CIDR caps, `SCOPE_ACTIVE_PROOF` |
+| Guardrails | PSL, deny list, CIDR caps, platform sensor proof setting |
 | Entries | migration `001198`, expiry, requests, approvals, step-up, notification, settings, sweep |
 | Discovery | `matches_scope_target` + backfill |
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
@@ -1060,3 +1096,85 @@ review of §6.2 also apply only in Strict. In Off and On a caller with
 and an exclusion is in effect at once; rows left pending stay pending and
 reviewable. Details in RFC-073 §6.
 
+
+## 14. Amendment 2026-10-11: flexible scope
+
+Owner request: scope must be as flexible as possible without becoming unsafe.
+After RFC-073 the policy friction is gone outside Strict (no approvals, no
+member requests, no tier ceilings); what is left is mechanical: entries are
+added one pattern at a time, assets that arrive by import, connector or CI
+are blocked until someone adds them by hand, addresses behind in-scope names
+need their own entries, and private targets need a scan zone first.
+
+One authority stays: scope entries and exclusions. Every relaxation either
+creates entries through `scope.Service` (so the job signer accepts each
+widening before it is saved, and audit and notification follow), or reads a
+fact the signer already shares. There is no implicit authority from inventory
+state at dispatch time, no automatic address inheritance and no switch that
+turns scope off.
+
+### 14.1 Rules
+
+| # | Rule | Before | After | State |
+|---|---|---|---|---|
+| R1 | Add many entries | one pattern per request; one notice to every administrator per entry | `POST /scope/targets/bulk` (≤ 200 items): step-up once before any write, each item an ordinary create, a result per item, one notice for the batch | implemented |
+| R2 | Add from anywhere | one asset's ownership section, the review queue, a scan refusal | inventory selection → "Add to scope" (exact entries), the scan wizard's "add the missing targets" and finding actions use R1 | inventory: implemented; others follow |
+| R3 | A person confirms an asset | confirmation records ownership only (§4.2) | proposed: a tenant setting `confirm_adds_to_scope` (Off and On only) creates the exact entry when a person confirms; automated sources never do | owner decision pending |
+| R4 | Addresses behind in-scope names | never inherit (S4) | proposed: a one-click suggestion of the addresses in-scope names resolve to, excluding addresses that look shared (provider edge ranges, an address several registrable domains of the inventory resolve to); never automatic | owner decision pending |
+| R5 | Private targets on the organization's own sensor | refused without a scan zone (`zone_none`) | proposed: allowed when the scan runs on a tenant sensor whose reported local policy `targets.allow` contains the target; platform sensors never; zones stay for routing | owner decision pending |
+| R6 | Approvals, tiers, requests | Strict only (RFC-073) | unchanged | — |
+| R7 | Exclusions, deny list, public suffixes, CIDR caps, audit, signer ledger, sensor local policy | always on | unchanged, always on; a bulk add runs every item through them | — |
+
+### 14.2 Bulk add
+
+`POST /scope/targets/bulk` (`attack_surface:scope:write`)
+
+```json
+{ "items": [{"target_type": "domain", "pattern": "api.example.com"},
+            {"target_type": "ip_address", "pattern": "203.0.113.9"}],
+  "reason": "", "origin": "refusal_fix" }
+```
+
+- 1 to 200 items (the dry run's limit, so a scan's refused targets fit in
+  one request); `reason` is recorded on every entry; `origin` may be
+  `refusal_fix`, otherwise the entries are recorded as `import`.
+- A caller who adds entries directly (Off and On, or an approver in Strict)
+  needs a recent re-authentication once: without it the request answers
+  `403 STEP_UP_REQUIRED` and nothing is written. A Strict member's items
+  follow the request rules of §6.1 per item (one-off, single, reason).
+- Each item is `scope.Service.CreateTarget`: guardrails (§8), duplicates
+  (the caller's tenant only), the Strict rules, the signer ledger before the
+  write (an item the signer refuses is not saved and answers its code), the
+  scope join, one audit event `scope_target.created` per entry. Waiting scans
+  (§12.8) and a discovery sweep start once for the batch.
+- One in-app notice to every owner and administrator for the entries that
+  took effect ("N scope entries added", up to ten named); a pending item
+  notifies as a single request does.
+
+Response `200`:
+
+```json
+{ "results": [
+    {"target_type": "domain", "pattern": "api.example.com", "result": "created", "id": "…", "status": "active"},
+    {"target_type": "domain", "pattern": "old.example.com", "result": "exists", "id": "…", "status": "active"},
+    {"target_type": "domain", "pattern": "*.com", "result": "refused", "code": "PUBLIC_SUFFIX", "message": "…"}],
+  "created": 1, "existing": 1, "refused": 1 }
+```
+
+### 14.3 Threat model of the relaxations
+
+| Relaxation | Abuse case | Control | Residual |
+|---|---|---|---|
+| R1 | a stolen session pastes 200 third-party names | step-up (a cookie alone fails), guardrails per item, one high-severity notice naming the batch, audit per entry, signer per entry, rate limits | a malicious organization adds many entries, as it could one by one; third parties are protected by the platform's proof setting for platform sensors and the deny list |
+| R1 | cross-tenant oracle through `exists` | duplicates are looked up in the caller's tenant only | none |
+| R3 | a lookalike confirmed by mistake | exact entry only, a person's action, audited, notified, Off and On only, exclusions and tombstones win | the confirmation now also authorizes scanning; the scan's intensity and approval rules still apply |
+| R4 | dangling DNS or shared hosting points an in-scope name at a third party | suggestion only, shared addresses left out, exact addresses, a person accepts seeing the name each came from; the sensor pins resolution | a released cloud address still in DNS until the record is fixed |
+| R5 | a compromised platform orders a tenant sensor to scan an internal range | the authority is the host operator's own local policy, which the sensor enforces on every signed job; platform sensors and sensors without a local policy are not eligible | an operator who allows a wide internal range chose it |
+
+### 14.4 Plan
+
+| Phase | Items |
+|---|---|
+| P0 | R1 bulk add (API); inventory "Add to scope"; pasting a list on the Scope page |
+| P1 | R3, R4, R5 after the owner's decision; "Add host to scope" on findings |
+| P2 | connector assets as scope (a per-connector switch, default off); the scan preflight explains a sensor's local-policy refusals from its reported policy |

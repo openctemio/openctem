@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -13,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/easmchange"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -25,11 +27,12 @@ type EASMSummarizer interface {
 
 // EASMHandler serves the EASM overview (RFC-036 §6.10).
 type EASMHandler struct {
-	svc    EASMSummarizer
-	review EASMReviewer
-	rules  EASMRuleService
-	audit  AttributionAuditor
-	logger *logger.Logger
+	svc     EASMSummarizer
+	review  EASMReviewer
+	rules   EASMRuleService
+	audit   AttributionAuditor
+	changes EASMChangeLister
+	logger  *logger.Logger
 }
 
 // NewEASMHandler creates the handler.
@@ -244,4 +247,79 @@ func (h *EASMHandler) ReviewCount(ctx context.Context, tenantID shared.ID) (int,
 		return 0, err
 	}
 	return page.Total, nil
+}
+
+// EASMChangeLister serves the typed attack-surface changes (RFC-080).
+type EASMChangeLister interface {
+	List(ctx context.Context, tenantID shared.ID, q easmchange.Query) (*easmchange.Page, error)
+}
+
+// SetChanges wires the typed change feed.
+func (h *EASMHandler) SetChanges(c EASMChangeLister) *EASMHandler {
+	h.changes = c
+	return h
+}
+
+// HasChanges reports whether the change feed is wired.
+func (h *EASMHandler) HasChanges() bool { return h.changes != nil }
+
+// Changes handles GET /api/v1/easm/changes
+// @Summary      What changed on the attack surface
+// @Description  Typed changes of the external attack surface in a window (default the last 7 days, at most 31): new and removed hosts, opened and closed ports, new and expiring certificates, DNS changes and dangling records, technology changes and new exposures. Read from asset state history, the asset change timeline and exposure events; narrowed to the caller's data scope. counts covers every kind in the window.
+// @Tags         Attack Surface
+// @Produce      json
+// @Security     BearerAuth
+// @Param        from    query  string  false  "Window start (RFC 3339)"
+// @Param        to      query  string  false  "Window end (RFC 3339), default now"
+// @Param        kind    query  string  false  "Comma-separated kinds"
+// @Param        limit   query  int     false  "Page size (max 200)"
+// @Param        cursor  query  string  false  "Next page cursor"
+// @Success      200  {object}  easmchange.Page
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Router       /easm/changes [get]
+func (h *EASMHandler) Changes(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	v := r.URL.Query()
+	var q easmchange.Query
+	for name, dst := range map[string]*time.Time{"from": &q.From, "to": &q.To} {
+		if s := v.Get(name); s != "" {
+			t, perr := time.Parse(time.RFC3339, s)
+			if perr != nil {
+				apierror.BadRequest(name + " must be an RFC 3339 time").WriteJSON(w)
+				return
+			}
+			*dst = t.UTC()
+		}
+	}
+	if s := v.Get("kind"); s != "" {
+		kinds, kerr := easmchange.ParseKinds(strings.Split(s, ","))
+		if kerr != nil {
+			apierror.BadRequest(kerr.Error()).WriteJSON(w)
+			return
+		}
+		q.Kinds = kinds
+	}
+	limit, ok := listLimit(w, r, 50, easmchange.MaxPageSize)
+	if !ok {
+		return
+	}
+	q.Limit = limit
+	q.Cursor = v.Get("cursor")
+	page, err := h.changes.List(r.Context(), tenantID, q)
+	if err != nil {
+		if errors.Is(err, easmchange.ErrInvalidQuery) {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return
+		}
+		h.logger.Error("failed to list attack surface changes", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("failed to list changes").WriteJSON(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(page)
 }

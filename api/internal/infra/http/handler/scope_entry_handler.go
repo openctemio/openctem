@@ -32,9 +32,14 @@ type ScopeSettingsStore interface {
 // SetSettingsStore wires GET/PUT /scope/settings.
 func (h *ScopeHandler) SetSettingsStore(s ScopeSettingsStore) { h.settings = s }
 
-// SetActiveProof shows the operator's SCOPE_ACTIVE_PROOF in the settings
+// ScopeProofPolicy is the platform's proof requirement (*scanpolicy.Service).
+type ScopeProofPolicy interface {
+	PlatformProofRequired(ctx context.Context) bool
+}
+
+// SetProofPolicy shows the platform's proof requirement in the settings
 // (read-only; RFC-054 §8.1).
-func (h *ScopeHandler) SetActiveProof(mode string) { h.activeProof = mode }
+func (h *ScopeHandler) SetProofPolicy(p ScopeProofPolicy) { h.proofPolicy = p }
 
 // ApproveTarget handles POST /api/v1/scope/targets/{id}/approve
 // @Summary      Approve scope entry
@@ -112,9 +117,10 @@ type ScopeSettingsResponse struct {
 	// that count.
 	EffectiveWideningApprovals int `json:"effective_widening_approvals"`
 	AdminCount                 int `json:"admin_count"`
-	// ActiveProof is the operator's setting: off, platform_sensors or all.
+	// ActiveProof is the platform's setting: platform_sensors (platform
+	// sensors and intrusive probes need a verified domain) or off.
 	// Read-only; no tenant setting changes it.
-	ActiveProof string `json:"active_proof"`
+	ActiveProof string `json:"active_proof" enums:"off,platform_sensors"`
 	// T2MaxDuration is the longest an intrusive (t2) entry may last: 7d,
 	// 30d, 90d, 365d or permanent. Owner-only (PUT /scope/settings/intrusive).
 	T2MaxDuration string `json:"t2_max_duration" enums:"7d,30d,90d,365d,permanent"`
@@ -167,7 +173,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
-		ActiveProof:   activeProofOrOff(h.activeProof),
+		ActiveProof:   h.activeProofMode(ctx),
 		T2MaxDuration: ss.T2Duration(), T2MaxDays: t2Days, T2PermanentAllowed: t2Permanent,
 		T2AttestationDays: ss.AttestationDays(),
 		ApprovalPolicy: ScopeApprovalPolicyView{ScanApproval: string(mode), Source: source,
@@ -175,11 +181,13 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 	}, nil
 }
 
-func activeProofOrOff(m string) string {
-	if m == "" {
-		return "off"
+// activeProofMode is the platform's proof requirement as the settings show
+// it (off without a policy).
+func (h *ScopeHandler) activeProofMode(ctx context.Context) string {
+	if h.proofPolicy != nil && h.proofPolicy.PlatformProofRequired(ctx) {
+		return "platform_sensors"
 	}
-	return m
+	return "off"
 }
 
 // GetSettings handles GET /api/v1/scope/settings

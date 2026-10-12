@@ -312,6 +312,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	runContext["scan_id"] = sc.ID.String()
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
+	recordSkippedTargets(sc, runContext)
 	// The probe ceiling of every step (RFC-071), from the scan, never from
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
@@ -452,6 +453,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	runContext["scan_id"] = sc.ID.String()
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
+	recordSkippedTargets(sc, runContext)
 	runContext["scanner_name"] = sc.ScannerName
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext["scanner_config"] = sc.ScannerConfig
@@ -1073,7 +1075,7 @@ func (s *Service) decideWorkflowRouting(ctx context.Context, sc *scan.Scan, targ
 	if s.sensorSelector == nil || sc.HasAssetGroup() || hasInternalTarget(targets) {
 		return sensorRouting{Routing: sensorRoutingTenant}, nil
 	}
-	if s.platformNeedsProof() {
+	if s.platformNeedsProof(ctx) {
 		unproven, err := s.unverified(ctx, sc.TenantID, targets)
 		if err != nil {
 			s.logger.Warn("target proof lookup failed; run kept on tenant sensors",
@@ -1115,7 +1117,7 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	// operator's proof requirement every target must be at or under a
 	// verified domain of the tenant (RFC-054 §8.1).
 	var unproven []string
-	if s.platformNeedsProof() && !internal {
+	if s.platformNeedsProof(ctx) && !internal {
 		var err error
 		if unproven, err = s.unverified(ctx, sc.TenantID, targets); err != nil {
 			return false, err
