@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/png"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +22,16 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
+
+// validPNG is a 2x2 PNG (uploaded images are parsed).
+func validPNG(t *testing.T) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	if err := png.Encode(&b, image.NewGray(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
 
 // memAttRepo is an in-memory, tenant-scoped attachment repository.
 type memAttRepo struct {
@@ -121,8 +133,7 @@ func TestAttachmentUpload_TypeFromContentNotDeclaration(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01")
-	h.Upload(rec, asMember(uploadReq(t, "shot.png", "text/html", png), tenant, user))
+	h.Upload(rec, asMember(uploadReq(t, "shot.png", "text/html", validPNG(t)), tenant, user))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("PNG declared as text/html: code %d, want 201 (%s)", rec.Code, rec.Body)
 	}

@@ -254,6 +254,11 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 			apierror.BadRequest(err.Error()).WriteJSON(w)
 		case errors.Is(err, attachment.ErrUnsupported):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
+		case errors.Is(err, attachment.ErrImageTooLarge):
+			apierror.New(http.StatusBadRequest, "IMAGE_TOO_LARGE",
+				fmt.Sprintf("The image is larger than %d megapixels", attachment.MaxImagePixels/1_000_000)).WriteJSON(w)
+		case errors.Is(err, attachment.ErrImageInvalid):
+			apierror.New(http.StatusBadRequest, "IMAGE_INVALID", "The image file is damaged or not a valid image").WriteJSON(w)
 		case errors.Is(err, attachment.ErrQuotaExceeded):
 			apierror.New(http.StatusRequestEntityTooLarge, "STORAGE_QUOTA_EXCEEDED",
 				"The organization's file storage is full: delete files or ask the operator to raise the quota").WriteJSON(w)
@@ -266,17 +271,26 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logRequestChange(h.audit, h.logger, r,
-		auditapp.NewSuccessEvent(auditdom.ActionAttachmentUploaded, auditdom.ResourceTypeAttachment, att.ID().String()).
-			WithResourceName(att.Filename()).
-			WithMessage("Evidence file uploaded").
-			WithMetadata("content_type", att.ContentType()).
-			WithMetadata("size", att.Size()).
-			WithMetadata("sha256", att.ContentHash()).
-			WithMetadata("context_type", att.ContextType()).
-			WithMetadata("context_id", att.ContextID()))
+	uploaded := auditapp.NewSuccessEvent(auditdom.ActionAttachmentUploaded, auditdom.ResourceTypeAttachment, att.ID().String()).
+		WithResourceName(att.Filename()).
+		WithMessage("Evidence file uploaded").
+		WithMetadata("content_type", att.ContentType()).
+		WithMetadata("size", att.Size()).
+		WithMetadata("sha256", att.ContentHash()).
+		WithMetadata("context_type", att.ContextType()).
+		WithMetadata("context_id", att.ContextID())
+	if orig := att.OriginalContentHash(); orig != "" {
+		// Image metadata was removed: the stored bytes differ from those received.
+		uploaded = uploaded.WithMetadata("original_sha256", orig).WithMetadata("metadata_removed", true)
+	}
+	logRequestChange(h.audit, h.logger, r, uploaded)
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	writeJSON(w, http.StatusCreated, attachmentJSON(att))
+}
+
+// attachmentJSON is an attachment as the upload and list routes return it.
+func attachmentJSON(att *attachment.Attachment) map[string]any {
+	return map[string]any{
 		"id":           att.ID().String(),
 		"filename":     att.Filename(),
 		"content_type": att.ContentType(),
@@ -284,8 +298,14 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		"url":          att.URL(),
 		"markdown":     att.MarkdownLink(),
 		"created_at":   att.CreatedAt(),
-	})
+		"scan_status":  string(att.ScanStatus()),
+		"scan_result":  att.ScanResult(),
+	}
 }
+
+// confirmInfectedParam is the query a download of a flagged file needs:
+// GET /api/v1/attachments/{id}?confirm=malware.
+const confirmInfectedParam = "malware"
 
 // Download serves the file content for an attachment.
 // GET /api/v1/attachments/{id}
@@ -293,17 +313,33 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	// Campaign membership check: resolve attachment metadata to verify context access
+	// Resolve the record (tenant-scoped) to check context access and the
+	// malware scan state.
+	att, aerr := h.service.GetByID(r.Context(), tenantID, id)
+	if aerr != nil {
+		apierror.NotFound("Attachment not found").WriteJSON(w)
+		return
+	}
 	if h.accessChecker != nil {
-		att, aerr := h.service.GetByID(r.Context(), tenantID, id)
-		if aerr != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
 		if err := h.authorizeAttachment(r, att); err != nil {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
+	}
+	// A file the malware scanner flagged is kept (evidence is never blocked)
+	// but served only on an explicit confirmation, which is audited.
+	if att.ScanStatus() == attachment.ScanInfected {
+		if r.URL.Query().Get("confirm") != confirmInfectedParam {
+			apierror.New(http.StatusConflict, "MALWARE_DETECTED",
+				"The malware scanner flagged this file ("+att.ScanResult()+"); download it with ?confirm=malware").WriteJSON(w)
+			return
+		}
+		logRequestChange(h.audit, h.logger, r,
+			auditapp.NewSuccessEvent(auditdom.ActionAttachmentInfectedDownloaded, auditdom.ResourceTypeAttachment, att.ID().String()).
+				WithResourceName(att.Filename()).
+				WithMessage("A file flagged by the malware scanner was downloaded after confirmation").
+				WithMetadata("signature", att.ScanResult()).
+				WithMetadata("sha256", att.ContentHash()))
 	}
 
 	reader, contentType, filename, err := h.service.Download(r.Context(), tenantID, id)
@@ -326,12 +362,15 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 	// Use mime.FormatMediaType to properly escape filename (prevents header injection).
 	w.Header().Set("Content-Type", contentType)
 	disposition := "attachment"
-	if isImageMIME(contentType) {
+	if isImageMIME(contentType) && att.ScanStatus() != attachment.ScanInfected {
 		disposition = "inline"
 	}
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": filename}))
 	// Cache for 1 hour (attachments are immutable once uploaded)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
+	if att.ScanStatus() == attachment.ScanInfected {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	if _, err := io.Copy(w, reader); err != nil {
@@ -427,15 +466,7 @@ func (h *AttachmentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]map[string]any, len(atts))
 	for i, att := range atts {
-		items[i] = map[string]any{
-			"id":           att.ID().String(),
-			"filename":     att.Filename(),
-			"content_type": att.ContentType(),
-			"size":         att.Size(),
-			"url":          att.URL(),
-			"markdown":     att.MarkdownLink(),
-			"created_at":   att.CreatedAt(),
-		}
+		items[i] = attachmentJSON(att)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": items, "total": len(items)})
 }

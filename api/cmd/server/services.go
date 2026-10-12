@@ -98,6 +98,7 @@ import (
 	infrajira "github.com/openctemio/openctem/api/internal/infra/jira"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/llm"
+	"github.com/openctemio/openctem/api/internal/infra/malware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
@@ -1385,6 +1386,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		OrphanGrace:       time.Duration(cfg.Storage.OrphanGraceDays) * 24 * time.Hour,
 		UnlinkedRetention: time.Duration(cfg.Storage.UnlinkedRetentionHours) * time.Hour,
 	}, s.Audit)
+	// Optional malware scanning of new uploads (marks, never blocks).
+	if cfg.Storage.ClamdAddress != "" {
+		clamd, err := malware.NewClamd(cfg.Storage.ClamdAddress, 0)
+		if err != nil {
+			return nil, fmt.Errorf("STORAGE_CLAMD_ADDRESS: %w", err)
+		}
+		s.Attachment.SetMalwareScanner(clamd, repos.Attachment, s.Audit)
+		log.Info("attachment malware scanning: clamd", "address", cfg.Storage.ClamdAddress)
+	}
 	s.Pentest.SetEvidenceImageReader(s.Attachment) // evidence images in reports
 	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
 	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),

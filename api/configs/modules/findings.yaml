@@ -23,6 +23,7 @@
     - PriorityAuditRetentionController
     - EvidenceRetentionController
     - AttachmentRetentionController
+    - AttachmentScanController
     - ScannerOutputRetentionController
     - RiskSnapshotController
     - CTEMIDRefreshController
