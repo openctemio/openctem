@@ -1,8 +1,8 @@
 ### Added: the OpenCTEM gate as a GitLab commit status and merge request note
 
 - An organization connects a GitLab group with a group access token
-  (`POST /api/v1/ci/scm-apps/gitlab`, `scans:ci:write` and a fresh second
-  factor; `DELETE /api/v1/ci/scm-apps/gitlab/{id}`; listed without the token in
+  (`POST /api/v1/ci/scm-apps/gitlab-connections`, `scans:ci:write` and a fresh second
+  factor; `DELETE /api/v1/ci/scm-apps/gitlab-connections/{id}`; listed without the token in
   `GET /api/v1/ci/scm-apps`). OpenCTEM checks with GitLab that the token is
   active, has the `api` scope and belongs to a direct member of the group, and
   stores it encrypted (table `scm_gitlab_connections`, migration
