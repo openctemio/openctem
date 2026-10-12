@@ -28,12 +28,17 @@
 # checkov:skip=CKV_DOCKER_2: One-time seed container, no healthcheck needed
 # =============================================================================
 
-FROM alpine:3.24
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 RUN apk add --no-cache postgresql18-client
 
 # Copy seed files
 COPY migrations/seed /seed
+
+LABEL org.opencontainers.image.title="OpenCTEM seed" \
+      org.opencontainers.image.description="OpenCTEM seed SQL files and a psql client" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
 
 USER 65532:65532
 

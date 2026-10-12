@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # Builder stage
 # -----------------------------------------------------------------------------
-FROM golang:1.27.0-alpine AS builder
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS builder
 
 WORKDIR /app
 
@@ -44,11 +44,12 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)}
 # -----------------------------------------------------------------------------
 # Production stage - Minimal distroless image
 # -----------------------------------------------------------------------------
-FROM gcr.io/distroless/static-debian12:nonroot AS production
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS production
 
 LABEL org.opencontainers.image.title="OpenCTEM bootstrap-admin"
 LABEL org.opencontainers.image.description="Creates the first OpenCTEM platform administrator"
 LABEL org.opencontainers.image.source="https://github.com/openctemio/openctem"
+LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 
 # Copy binaries
 COPY --from=builder /out/bootstrap-admin /usr/local/bin/bootstrap-admin

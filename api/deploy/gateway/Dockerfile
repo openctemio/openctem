@@ -14,10 +14,9 @@
 # Caddy image (XDG_CONFIG_HOME=/config, XDG_DATA_HOME=/data, /etc/caddy,
 # /srv), with ONE caddy binary: building on the Caddy image and replacing its
 # binary shipped both.
-ARG GO_IMAGE=golang:1.26.9-alpine
-ARG BASE_IMAGE=alpine:3.24
-
-FROM ${GO_IMAGE} AS build
+# Base images are pinned by digest in the FROM lines themselves, where
+# Dependabot finds and refreshes them (it does not read ARG defaults).
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 ARG CADDY_VERSION=v2.11.4
 ARG CADDY_L4_VERSION=v0.1.2
 # Dependencies with security fixes newer than the Caddy release; drop an entry
@@ -39,7 +38,7 @@ RUN printf '%s\n' 'package main' \
  && /usr/bin/caddy version | grep -q "^${CADDY_VERSION} " \
  && /usr/bin/caddy list-modules | grep -qx layer4
 
-FROM ${BASE_IMAGE}
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 # mailcap: /etc/mime.types for file responses, as in the Caddy image.
 # The gateway runs as uid/gid 1000 (as in the Helm chart). /data and /config
 # belong to it, so a new named volume mounted there starts with that owner.
@@ -57,6 +56,13 @@ ENV XDG_CONFIG_HOME=/config \
     XDG_DATA_HOME=/data
 EXPOSE 80 443 443/udp 2019
 WORKDIR /srv
+LABEL org.opencontainers.image.title="OpenCTEM gateway" \
+      org.opencontainers.image.description="OpenCTEM gateway: Caddy with the layer4 module (non-root)" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+# Caddy's admin API answers on 127.0.0.1:2019 (the shared Caddyfile).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
 # Non-root (uid 1000); needs net.ipv4.ip_unprivileged_port_start=0 to bind
 # 443/80, or a non-privileged port. Volumes written by an older gateway
 # that ran as root need a one-time `chown -R 1000:1000` (entrypoint.sh says so
