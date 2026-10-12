@@ -164,6 +164,9 @@ type MCPHandler struct {
 	// modules answers whether a module is on for the organization (the
 	// route module gate). nil: every module counts as on (tests, stub builds).
 	modules mcpModuleChecker
+	// aiPolicy reads the organization's TLP limit for AI applications
+	// (SetAIPolicy). nil: the default limit (amber).
+	aiPolicy mcpAIPolicyReader
 }
 
 // mcpModuleChecker is the route module gate (*middleware.ModuleGate).
