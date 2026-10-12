@@ -16,7 +16,7 @@
 #   docker-compose.plain-http.yml     OPENCTEM_TLS_MODE=http behind your own
 #                                     TLS proxy (explicit opt-in)
 #
-# Never published: API :8080, gRPC/metrics :9090, web :3000, Postgres, Redis.
+# Never published: API :8080, web :3000, Postgres, Redis.
 # =============================================================================
 
 name: openctem
@@ -237,7 +237,6 @@ services:
     environment:
       APP_NAME: openctem
       APP_ENV: ${APP_ENV:-production}
-      APP_DEBUG: "false"
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
       # Only the gateway and the web UI may assert a client address

@@ -27,7 +27,6 @@ const (
 type Config struct {
 	App          AppConfig
 	Server       ServerConfig
-	GRPC         GRPCConfig
 	Database     DatabaseConfig
 	Redis        RedisConfig
 	Log          LogConfig
@@ -258,10 +257,9 @@ type StorageConfig struct {
 
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name  string
-	Env   string
-	Debug bool
-	URL   string // Public app URL (used as fallback for sensor config base URL)
+	Name string
+	Env  string
+	URL  string // Public app URL (used as fallback for sensor config base URL)
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
@@ -454,11 +452,6 @@ type ServerConfig struct {
 // TLSEnabled reports whether the API listener terminates TLS itself.
 func (c *ServerConfig) TLSEnabled() bool { return c.TLSCertFile != "" }
 
-// GRPCConfig holds gRPC server configuration.
-type GRPCConfig struct {
-	Port int
-}
-
 // DatabaseConfig holds database configuration.
 type DatabaseConfig struct {
 	Host            string
@@ -513,8 +506,7 @@ type LogConfig struct {
 	ErrorSamplingRate float64 // Sample rate for errors, 0.0-1.0 (default: 1.0 = 100%)
 
 	// HTTP logging configuration
-	SkipHealthLogs     bool // Skip logging health check endpoints (default: true in prod)
-	SlowRequestSeconds int  // Log requests slower than this as warnings (default: 5)
+	SlowRequestSeconds int // Log requests slower than this as warnings (default: 5)
 }
 
 // AuthProvider represents the authentication provider type.
@@ -1125,10 +1117,9 @@ type AITriageConfig struct {
 	GeminiAPIKey     string // Platform's Google Gemini API key
 
 	// Rate Limiting
-	MaxConcurrentJobs int // Max concurrent AI triage jobs
-	RateLimitRPM      int // Rate limit per minute
-	TimeoutSeconds    int // Timeout for AI API calls
-	MaxTokens         int // Max tokens per request
+	RateLimitRPM   int // Rate limit per minute
+	TimeoutSeconds int // Timeout for AI API calls
+	MaxTokens      int // Max tokens per request
 
 	// LLM Parameters
 	Temperature float64 // Temperature for LLM (0.0-1.0, lower = more deterministic)
@@ -1209,10 +1200,9 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name:  getEnv("APP_NAME", "openctem"),
-			Env:   appEnv(),
-			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
-			URL:   getEnv("APP_URL", ""),
+			Name: getEnv("APP_NAME", "openctem"),
+			Env:  appEnv(),
+			URL:  getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1275,9 +1265,6 @@ func Load() (*Config, error) {
 			TLSCertFile:           getEnv("SERVER_TLS_CERT_FILE", ""),
 			TLSKeyFile:            getEnv("SERVER_TLS_KEY_FILE", ""),
 		},
-		GRPC: GRPCConfig{
-			Port: getEnvInt("GRPC_PORT", 9090),
-		},
 		Database: DatabaseConfig{
 			Host:            getEnv("DB_HOST", "localhost"),
 			Port:            getEnvInt("DB_PORT", 5432),
@@ -1319,7 +1306,6 @@ func Load() (*Config, error) {
 			SamplingThreshold:  getEnvInt("LOG_SAMPLING_THRESHOLD", 100),    // First 100 identical logs/sec
 			SamplingRate:       getEnvFloat("LOG_SAMPLING_RATE", 0.1),       // Then 10%
 			ErrorSamplingRate:  getEnvFloat("LOG_ERROR_SAMPLING_RATE", 1.0), // Always log errors
-			SkipHealthLogs:     getEnvBool("LOG_SKIP_HEALTH", true),         // Skip health endpoints
 			SlowRequestSeconds: getEnvInt("LOG_SLOW_REQUEST_SECONDS", 5),    // Warn on slow requests
 		},
 		Auth: AuthConfig{
@@ -1508,7 +1494,6 @@ func Load() (*Config, error) {
 			AnthropicAPIKey:             getEnv("ANTHROPIC_API_KEY", ""),
 			OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 			GeminiAPIKey:                getEnv("GEMINI_API_KEY", ""),
-			MaxConcurrentJobs:           getEnvInt("AI_MAX_CONCURRENT_JOBS", 10),
 			RateLimitRPM:                getEnvInt("AI_RATE_LIMIT_RPM", 60),
 			TimeoutSeconds:              getEnvInt("AI_TIMEOUT_SECONDS", 30),
 			MaxTokens:                   getEnvInt("AI_MAX_TOKENS", 4096),
@@ -2086,9 +2071,6 @@ func (c *Config) validateProductionSecurity() error {
 	if !c.RateLimit.Enabled {
 		return fmt.Errorf("rate limiting must be enabled in production")
 	}
-	if c.App.Debug {
-		return fmt.Errorf("debug mode must be disabled in production")
-	}
 	if c.Log.Level == "debug" {
 		return fmt.Errorf("log level should not be 'debug' in production")
 	}
@@ -2207,6 +2189,12 @@ var retiredEnv = []struct{ Old, New string }{
 // variable. Startup refuses to run while one is set, saying what to do
 // instead, so an operator never believes a removed setting still applies.
 var removedEnv = []struct{ Name, Instead string }{
+	// Knobs that were read but switched nothing.
+	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
+	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
+	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
+	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
+	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
 	// A platform-wide Jira webhook secret verified a delivery for any
 	// ?tenant=: whoever held it could forge Jira events for every
 	// organization. Each organization's Jira integration has its own secret.
