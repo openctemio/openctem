@@ -87,13 +87,26 @@ func registerLegalRoute(router Router, h *handler.AdminLegalHandler) {
 	router.GET("/api/v1/legal", h.Public)
 }
 
-// registerDocsRoutes registers API documentation endpoints (public).
-func registerDocsRoutes(router Router, h *handler.DocsHandler) {
-	// OpenAPI spec (YAML)
-	router.GET("/openapi.yaml", h.ServeOpenAPISpec)
-
-	// Scalar API documentation UI
-	router.GET("/docs", h.ServeDocsUI)
+// registerDocsRoutes registers the API documentation (the OpenAPI spec and
+// the API reference page). The public documentation lives on the docs site,
+// so in production the API serves:
+//   - /openapi.yaml to signed-in users only (authMiddleware);
+//   - no public /docs page;
+//   - /api/v1/admin/docs and /api/v1/admin/openapi.yaml to platform
+//     administrators with a verified console session (consoleAuth).
+//
+// Outside production /docs and /openapi.yaml stay public for development.
+func registerDocsRoutes(router Router, h *handler.DocsHandler, production bool, authMiddleware, consoleAuth Middleware) {
+	if production {
+		router.GET("/openapi.yaml", h.ServeOpenAPISpec, authMiddleware)
+	} else {
+		router.GET("/openapi.yaml", h.ServeOpenAPISpec)
+		router.GET("/docs", h.ServeDocsUI)
+	}
+	if consoleAuth != nil {
+		router.GET("/api/v1/admin/openapi.yaml", h.ServeOpenAPISpec, consoleAuth)
+		router.GET("/api/v1/admin/docs", h.ServeConsoleDocsUI, consoleAuth)
+	}
 }
 
 // registerDashboardRoutes registers dashboard endpoints.
@@ -117,16 +130,16 @@ func registerDashboardRoutes(
 
 	// Dashboard routes
 	router.Group("/api/v1/dashboard", func(r Router) {
-		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead))
-		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead))
-		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead))
-		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead))
-		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead))
-		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
 		r.GET("/executive-summary/export", h.ExportExecutiveSummary, middleware.Require(permission.DashboardRead))
-		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead))
-		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead))
-		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead))
+		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
 		r.GET("/overview", overview.Overview, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }
@@ -452,11 +465,6 @@ func registerPlatformScanningRoutes(
 	}, tenantMiddlewares...)
 }
 
-// F-1: wire HMAC verification around the Jira webhook. The tenant query
-// param remains for routing, but the middleware now requires a valid
-// HMAC-SHA256 of the body signed with JIRA_WEBHOOK_SECRET before the
-// handler runs — preventing cross-tenant spoofing by external callers.
-
 // JiraWebhookSecretResolver returns the candidate HMAC secrets for a tenant's
 // inbound Jira webhooks (one per configured Jira integration). Implemented by
 // the integration service.
@@ -468,21 +476,16 @@ type JiraWebhookSecretResolver interface {
 // These endpoints are NOT protected by JWT — they are called by external services (e.g. Jira).
 // Tenant routing is done via a ?tenant= query parameter that each external service configures.
 //
-// Each request is verified with HMAC-SHA256 over the raw body (middleware.VerifyHMACMulti).
-// The accepted secrets are, in order:
-//   - the requesting tenant's own per-integration webhook secrets (resolved via
-//     resolver using the ?tenant= param) — this is what prevents cross-tenant
-//     spoofing, since a tenant only ever holds its own secrets;
-//   - the platform-wide jiraSecret as a backward-compatible fallback for
-//     deployments that have not yet configured per-tenant secrets.
-//
-// If neither resolves to anything the middleware fails closed (rejects every
-// request), so the endpoint is never reachable without explicit configuration.
+// Each request is verified with HMAC-SHA256 over the raw body
+// (middleware.VerifyHMACMulti) against the requesting organization's own
+// per-integration webhook secrets only, resolved from ?tenant=. An
+// organization only ever holds its own secrets, so one organization cannot
+// sign a delivery for another. There is no platform-wide secret. With no
+// secret for the named organization the middleware rejects the request.
 func registerIncomingWebhookRoutes(
 	router Router,
 	jiraHandler *handler.JiraWebhookHandler,
 	resolver JiraWebhookSecretResolver,
-	jiraSecret string,
 	log *logger.Logger,
 ) {
 	if jiraHandler == nil {
@@ -491,26 +494,20 @@ func registerIncomingWebhookRoutes(
 	hmacMW := middleware.VerifyHMACMulti(
 		"X-OpenCTEM-Signature",
 		func(r *http.Request) ([]string, bool) {
-			secrets := make([]string, 0, 2)
-
-			// Per-tenant secrets for the tenant named in ?tenant=. Failures to
-			// resolve (bad tenant id, lookup error) simply contribute no
+			// Failures to resolve (bad tenant id, lookup error) contribute no
 			// candidates — they never widen acceptance to another tenant.
-			if resolver != nil {
-				if tid, err := shared.IDFromString(r.URL.Query().Get("tenant")); err == nil {
-					if tenantSecrets, err := resolver.ListJiraWebhookSecrets(r.Context(), tid); err == nil {
-						secrets = append(secrets, tenantSecrets...)
-					} else {
-						log.Warn("failed to resolve tenant Jira webhook secrets", "error", err)
-					}
-				}
+			if resolver == nil {
+				return nil, false
 			}
-
-			// Backward-compatible platform fallback.
-			if jiraSecret != "" {
-				secrets = append(secrets, jiraSecret)
+			tid, err := shared.IDFromString(r.URL.Query().Get("tenant"))
+			if err != nil {
+				return nil, false
 			}
-
+			secrets, err := resolver.ListJiraWebhookSecrets(r.Context(), tid)
+			if err != nil {
+				log.Warn("failed to resolve tenant Jira webhook secrets", "error", err)
+				return nil, false
+			}
 			return secrets, len(secrets) > 0
 		},
 		log,

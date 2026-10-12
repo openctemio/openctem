@@ -49,7 +49,6 @@ type Config struct {
 	AITriage     AITriageConfig
 	SensorConfig SensorConfigConfig
 	Storage      StorageConfig
-	Webhooks     WebhooksConfig
 	Ingest       IngestConfig
 	Metrics      MetricsConfig
 
@@ -243,16 +242,6 @@ type IngestConfig struct {
 
 // AsyncEnabled reports whether async ingest mode is on.
 func (c IngestConfig) AsyncEnabled() bool { return c.Mode == "async" }
-
-// WebhooksConfig holds shared secrets for incoming webhook HMAC verification (F-1).
-// These are platform-wide fallbacks; per-integration secrets can be layered on
-// top via the integration repository when that abstraction is added.
-type WebhooksConfig struct {
-	// JiraSecret is the HMAC-SHA256 secret used to verify inbound Jira webhooks
-	// at POST /api/v1/webhooks/incoming/jira. REQUIRED — if empty, the endpoint
-	// rejects all requests (fail closed).
-	JiraSecret string
-}
 
 // StorageConfig holds file attachment storage settings.
 // Default: local filesystem at ./data/attachments.
@@ -1437,11 +1426,6 @@ func Load() (*Config, error) {
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
 		},
-		Webhooks: WebhooksConfig{
-			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
-			// middleware fails closed if empty.
-			JiraSecret: getEnv("JIRA_WEBHOOK_SECRET", ""),
-		},
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant:   getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
@@ -1871,6 +1855,13 @@ func (c *Config) validateAuth() error {
 		}
 	}
 
+	// The CAPTCHA needs both halves: the secret makes the API require a
+	// token, the site key makes the web render the check that produces it.
+	// One without the other either blocks every sign-up or checks nothing.
+	if (strings.TrimSpace(c.Auth.CaptchaTurnstileSecret) == "") != (strings.TrimSpace(c.Auth.CaptchaTurnstileSiteKey) == "") {
+		return fmt.Errorf("CAPTCHA_TURNSTILE_SECRET and CAPTCHA_TURNSTILE_SITE_KEY must be set together")
+	}
+
 	// Same sentinel for the credential-at-rest key: only refuse outside
 	// development. Dev keeps the predictable `0123…cdef` value so
 	// `docker compose up` works without further config; non-dev MUST
@@ -2207,6 +2198,10 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"SMTP_SKIP_VERIFY", smtpMoved},
 	{"SMTP_TIMEOUT", smtpMoved},
 	{"APP_ALLOW_PLAINTEXT_CREDENTIALS", "unset it; credentials are always encrypted (development uses the key in api/.env.example)"},
+	// A platform-wide Jira webhook secret verified a delivery for any
+	// ?tenant=: whoever held it could forge Jira events for every
+	// organization. Each organization's Jira integration has its own secret.
+	{"JIRA_WEBHOOK_SECRET", "unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate"},
 }
 
 // rejectRetiredEnv fails when any retired or removed name is set, naming

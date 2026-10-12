@@ -17,8 +17,9 @@ configuration needs only the platform URL and, when your platform uses a
 private certificate authority, its fingerprint (`SENSOR_CA_FINGERPRINT`). It
 contains no key.
 
-Keep the sensor's state directory on a persistent volume (`/var/lib/openctem/state`
-in the container): the sensor's identity lives in `identity/` there. The
+Keep the sensor's data directory on a persistent volume (one volume at
+`/var/lib/openctem` in the container, holding `state/`, `outbox/` and
+`content/`): the sensor's identity lives in `state/identity/`. The
 directory must be `0700` and the files `0600`, owned by the sensor's user;
 the sensor refuses to start otherwise and prints the command that fixes it.
 
