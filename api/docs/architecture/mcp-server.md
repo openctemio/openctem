@@ -1,23 +1,31 @@
-# MCP server (read-only AI access to CTEM data)
+# MCP server (AI access to CTEM and pentest data)
 
-> Shipped vs planned. See [RFC-016](../rfcs/RFC-016-mcp-server.md) for rationale.
+> Shipped vs planned. Rationale: [RFC-016](../rfcs/RFC-016-mcp-server.md);
+> authorization, organization policy and write tools:
+> [RFC-062](../rfcs/RFC-062-mcp-authorization.md) and
+> [mcp-authorization.md](./mcp-authorization.md).
 
-OpenCTEM exposes a read-only **Model Context Protocol** server so an AI client
-(Claude Desktop/Code, or any MCP host) can query a tenant's CTEM data in natural
-language. It reuses existing tenant-scoped read services — no new data path, no
-schema change.
+OpenCTEM exposes a **Model Context Protocol** server so an AI client (a
+desktop or IDE assistant, or any MCP host) can read an organization's CTEM
+data and the pentest campaigns of the signed-in person, and draft report
+sections from them. It reuses the tenant-scoped read services: no new data
+path. One write tool exists (`add_finding_comment`); it runs only after the
+person confirms the exact action in the web UI.
 
 ## Endpoint
 
 ```
 POST /api/v1/mcp
-Authorization: Bearer oct_<tenant-scoped-api-key>
+Authorization: Bearer octm_at_<token>   (OAuth, a person's connection)
+Authorization: Bearer oct_<api-key>     (a tenant API key)
 Content-Type: application/json
 ```
 
 JSON-RPC 2.0. A single request/response per POST (`application/json`); no SSE.
-Supported methods: `initialize`, `notifications/*` (acknowledged, no body),
-`ping`, `tools/list`, `tools/call`.
+Methods: `initialize`, `notifications/*` (acknowledged, no body), `ping`,
+`tools/list`, `tools/call`, `prompts/list`, `prompts/get`. The server
+advertises protocol revision `2024-11-05`; tool annotations (below) are sent
+as well, and clients that predate them ignore them.
 
 ## Authentication (shipped)
 
@@ -40,34 +48,111 @@ tenant-scoped `oct_` API key (below) — never the browser JWT chain.
   from a browser page on a foreign `Origin` is `403` before authentication.
 
 Mint a key with the existing JWT-gated CRUD: `POST /api/v1/api-keys` (returns the
-plaintext `oct_…` once).
+plaintext `oct_…` once). Pentest tools need a key with an owning user.
 
-## Tools (shipped, all read-only)
+## Tools (shipped)
 
-| Tool | Backing service | Returns |
+Every tool requires a permission matched against the credential's scopes and
+is listed only to credentials that hold it. Every tool carries annotations:
+read tools `readOnlyHint: true, idempotentHint: true`, the write tool
+`readOnlyHint: false`; all `destructiveHint: false, openWorldHint: false`.
+
+| Tool | Permission | Returns |
 |---|---|---|
-| `list_findings` | `VulnerabilityService.ListFindings` | findings (severity/status/source/search filters) |
-| `get_finding` | `VulnerabilityService.GetFinding` | one finding |
-| `finding_stats` | `VulnerabilityService.GetFindingStats` | totals by severity/status + KEV/EPSS/SLA rollups |
-| `list_active_cves` | `VulnerabilityService.ListActiveCVEs` | KEV/EPSS-prioritized CVEs |
-| `explain_finding_priority` | `PriorityClassificationService.ExplainFinding` | priority explanation (KEV/EPSS/reachability) |
-| `get_exposure_chains` | `SurfaceService.GetExposureChains` | shortest attack paths to KEV/crown-jewel assets |
-| `list_remediation_groups` | `GroupService.ListGroups` | solution families |
-| `list_assets` | `AssetService.ListAssets` | assets (exposure/criticality/search) |
-| `compliance_posture` | `ComplianceService.GetComplianceStats` | framework/control posture |
+| `list_findings` | `findings:read` | findings (severity/status/source/search filters), caller's data scope |
+| `get_finding` (`finding_id`) | `findings:read` | one finding |
+| `finding_stats` | `findings:read` | totals by severity/status + KEV/EPSS/SLA rollups |
+| `list_active_cves` | `findings:read` | KEV/EPSS-prioritized CVEs |
+| `explain_finding_priority` (`finding_id`) | `findings:read` | priority explanation (KEV/EPSS/reachability) |
+| `get_exposure_chains` | `assets:read` | shortest attack paths to KEV/crown-jewel assets |
+| `list_remediation_groups` | `findings:read` | solution families |
+| `list_assets` | `assets:read` | assets (exposure/criticality/search) |
+| `compliance_posture` | `compliance:frameworks:read` | framework/control posture |
+| `get_campaign` (`campaign_id`) | `pentest:campaigns:read` | campaign context: scope, rules of engagement, methodology, objectives, team (names and roles), TLP, phase |
+| `list_campaign_findings` | `pentest:findings:read` | a campaign's findings with report fields; `severity`, `status`, `search` filters and `page`/`limit` paging |
+| `get_pentest_finding` (`finding_id`) | `pentest:findings:read` | one pentest finding; evidence as counts only |
+| `list_retests` | `pentest:retests:read` | a campaign's retests, newest first, paged |
+| `list_finding_templates` | `pentest:templates:read` | the finding template library |
+| `campaign_report_stats` | `pentest:campaigns:read` | working counts (drafts and findings under review included) |
+| `add_finding_comment` (write) | `findings:comment` | a comment, after the person confirms it ([RFC-062 §10](../rfcs/RFC-062-mcp-authorization.md)) |
+
+Tools that took `id` take `campaign_id` or `finding_id` like the others; `id`
+is still accepted.
+
+### Pentest tools
+
+- **Membership, no administrator bypass.** Every pentest tool acts for the
+  credential's person with `IsAdmin=false`: a tenant administrator who is not
+  a member of a campaign reads nothing of it, and a key without a person is
+  refused. Campaign-wide tools (`get_campaign`, `list_campaign_findings`,
+  `list_retests`, `campaign_report_stats`, the campaign prompts) are for the
+  team: a client gets `not_found` from them. A client reads a published
+  finding of their campaign with `get_pentest_finding` (drafts and findings
+  under review do not exist for them, in SQL and again in the handler).
+- **Rules of engagement.** `get_campaign` sends a whitelist: testing hours,
+  allowed and restricted methods and data handling to every team member; the
+  emergency contact, communication channel and escalation procedure to the
+  campaign lead only. Other keys are dropped.
+- **Paging and filters.** `list_campaign_findings` pushes `severity` (one or
+  a list), `status` (one or a list of the pentest statuses) and `search`
+  (title and description, ≤ 200 characters) into SQL before paging, so
+  `total` is the filtered count. `page` starts at 1, `limit` is 1–50
+  (default 25); the result carries `has_more` and `next_page`.
+  `list_retests` pages the same way.
+- **Evidence** is never returned: counts and a `has_poc` flag only; no PoC,
+  request/response bodies or files.
+
+### Untrusted content
+
+Text in tool results was written by people or imported from tested systems
+(scanner output reflects the target's responses), so a finding title can try
+to instruct the model. Every tool whose result carries free text returns it
+under `untrusted_data`, next to a fixed `notice` that tells the model to treat
+it as data, the same rule the prompts state in their DATA message; ids,
+paging and the caller's role sit beside it. The tool descriptions and the
+server `instructions` say so too. Write actions cannot be triggered by such
+text: they need the person's confirmation outside the AI client.
+
+### Errors
+
+A failed call is a normal result with `isError: true` and JSON text
+`{"error": {"code", "message", "retryable"}}`; a failed `prompts/get` is a
+JSON-RPC error whose message starts with the code.
+
+| Code | When |
+|---|---|
+| `invalid_argument` | a missing or malformed argument, an unknown status or severity; the message names it |
+| `not_found` | the item does not exist **or** the caller may not read it (one answer, so existence is never confirmed) |
+| `forbidden` | the campaign role does not allow the action |
+| `permission_denied` | the credential lacks the tool's permission (OAuth connections also get an `insufficient_scope` step-up challenge) |
+| `module_disabled` | the organization has the tool's module off |
+| `not_confirmed` | a write call whose confirmation is missing, refused, expired, used or for other arguments |
+| `unavailable`, `internal_error` | a timeout or a server fault; `retryable: true`; no internal detail is returned (it is logged) |
+
+## Prompts (shipped)
+
+`exec_summary` and `attack_narrative` (`campaign_id`, `pentest:campaigns:read`),
+`finding_writeup` and `remediation_guidance` (`finding_id`,
+`pentest:findings:read`). Each returns an instruction message and a separate
+DATA message holding the context as fenced JSON, marked untrusted.
+
+The two campaign prompts use the delivered report's selection
+(`PentestService.ReportFindings`): published findings only, no drafts,
+findings under review, false positives or duplicates, most severe first; the
+statistics are counted from the same set, so the AI-drafted summary and the
+report agree. `attack_narrative` carries at most 100 findings and says when it
+cut.
 
 ## Security model (the key invariants)
 
 - **Tenant isolation**: the tenant is taken **solely** from the authenticated
-  key's context and injected into every tool call. Tools expose **no tenant
+  credential and injected into every tool call. Tools expose **no tenant
   argument**, so a caller cannot widen scope by smuggling a `tenant_id` — a
   regression test asserts this. Every backing service takes `tenantID` explicitly
   and enforces `WHERE tenant_id = ?`.
-- **Least privilege**: each tool requires a permission (`findings:read`,
-  `assets:read`, `compliance:frameworks:read`) matched against the key's scopes;
-  tools run with the key owner's data-scope (`IsAdmin=false`), so group scoping and
-  the pentest-membership gate still apply. Mint an MCP key with the read scopes it
-  needs — a scopeless key can call nothing.
+- **Least privilege**: tools run with the person's data scope (`IsAdmin=false`),
+  so group scoping and the pentest-membership gate still apply. A scopeless key
+  can call nothing.
 - **Offboarding**: a user-scoped key stops authenticating the moment its owner's
   membership is suspended or removed.
 - **Network policy**: the organization IP allowlist (`security.ip_whitelist`)
@@ -75,13 +160,17 @@ plaintext `oct_…` once).
   used from outside the listed networks gets `403 IP_NOT_ALLOWED` on both. The
   chain is `[Origin check, 401 challenge, per-IP rate limit, key auth, IP
   allowlist]` (`routes/mcp.go`).
-- **Rate limit**: a per-IP limiter runs before auth. List tools clamp to ≤100 rows.
-- **Errors**: internal errors are redacted; only input-validation messages surface.
+- **Rate limit**: a per-IP limiter runs before auth, and a per-credential budget
+  after it. Generic list tools clamp to ≤100 rows, pentest lists to ≤50 per page.
+- **Audit**: every `tools/call` and `prompts/get` (success, denied, failure) is
+  audited with the tool, ids and enum arguments (free text such as `search` is
+  recorded as redacted), result size, user, IP and the OAuth client.
 
 ## Connecting a client
 
-Point an MCP host at the endpoint with the key as a bearer token, e.g. a Claude
-Code MCP server entry:
+Connect from the AI client with OAuth (the client discovers the authorization
+server from the `401`), or point an MCP host at the endpoint with a key as a
+bearer token:
 
 ```json
 {
@@ -95,13 +184,24 @@ Code MCP server entry:
 }
 ```
 
+## Key files
+
+| Concern | Path |
+|---|---|
+| Protocol, dispatch, audit | `internal/infra/http/handler/mcp_handler.go` |
+| Generic tools | `internal/infra/http/handler/mcp_tools.go` |
+| Pentest tools | `internal/infra/http/handler/mcp_pentest_tools.go` |
+| Results envelope, typed errors | `internal/infra/http/handler/mcp_results.go` |
+| Prompts | `internal/infra/http/handler/mcp_prompts.go` |
+| Write tools | `internal/infra/http/handler/mcp_write_tools.go` |
+| Pentest queries (member-scoped paging, report selection) | `internal/app/compliance/pentest_queries.go` |
+
 ## Planned (not yet shipped)
 
-- **OAuth 2.1 for MCP clients** ([RFC-062](../rfcs/RFC-062-mcp-authorization.md)):
-  standard discovery (Protected Resource Metadata, `WWW-Authenticate`),
-  OpenCTEM as the authorization server with its own consent page, short-lived
-  tokens bound to one user, organization, client and this endpoint, read
-  scopes mapped onto permissions, an organization MCP policy and a connected
-  applications page. `oct_` keys stay for headless use.
-- Write-capable tools, confirmed by the person in the web UI (RFC-062 §10).
-- MCP `resources`; the MCP 2026-07-28 protocol revision (stateless requests).
+- Campaign discovery (`list_campaigns`, `my_work`) and a TLP limit for AI
+  clients.
+- Draft-first pentest write tools (create drafts, evidence, checklist, retests)
+  with one confirmation per batch.
+- The current MCP protocol revisions: structured output with output schemas,
+  resource links, `resources`, and the 2026-07-28 stateless requests with the
+  write confirmation as a URL-mode elicitation.
