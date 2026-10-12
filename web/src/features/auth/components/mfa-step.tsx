@@ -104,6 +104,7 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
 
   return (
     <form
+      method="post"
       onSubmit={submit}
       className="grid gap-3"
       aria-label={t('auth.mfa.verifyFormLabel', 'Two-factor verification')}
@@ -289,6 +290,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
 
   return (
     <form
+      method="post"
       onSubmit={confirm}
       className="grid gap-4"
       aria-label={t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
