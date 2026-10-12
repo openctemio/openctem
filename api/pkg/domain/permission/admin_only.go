@@ -16,7 +16,6 @@ package permission
 var adminOnlyPermissions = []Permission{
 	SensorsWrite,
 	SensorsDelete,
-	CommandsDelete,
 	ScanZonesWrite,
 	ScanZonesDelete,
 	// RFC-052: pairing, approval, grants and revocation (migration 001101

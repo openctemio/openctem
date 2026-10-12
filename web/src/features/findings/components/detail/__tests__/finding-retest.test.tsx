@@ -160,4 +160,22 @@ describe('retestMeta', () => {
     expect(retestMeta(retest({ outcome: 'inconclusive' })).label).toBe('Inconclusive')
     expect(retestMeta(retest({ status: 'pending' })).label).toBe('Retest running')
   })
+
+  it("shows a pentest finding's manual retests with the tester's notes", () => {
+    mockRetests = [
+      retest({
+        id: 'm-1',
+        kind: 'manual',
+        manual_result: 'partial',
+        notes: 'login fixed, API not',
+      }),
+    ]
+    render(
+      <FindingRetestSection finding={{ id: 'f-2', source: 'pentest', status: 'fix_applied' }} />
+    )
+    expect(screen.getByText('Tester retest: partially fixed')).toBeTruthy()
+    expect(screen.getByText('login fixed, API not')).toBeTruthy()
+    expect(screen.queryByText('View evidence')).toBeNull()
+    expect(screen.queryByText('Retest now')).toBeNull()
+  })
 })

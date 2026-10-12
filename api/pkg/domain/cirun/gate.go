@@ -415,7 +415,7 @@ func Evaluate(in GateInput) GateVerdict {
 	if p.NewFindingsOnly && !in.BaselineKnown && len(in.Findings) > 0 {
 		// Informational: listed after the blocking reasons, not counted.
 		v.Reasons = append(v.Reasons, GateReason{Code: ReasonNoBaseline,
-			Message: fmt.Sprintf("no scan of the default branch %q is known: every finding counts as new", in.BaselineBranch)})
+			Message: fmt.Sprintf("no scan of the baseline branch %q is known: every finding counts as new", in.BaselineBranch)})
 	}
 	fail := blocking > 0
 	switch {

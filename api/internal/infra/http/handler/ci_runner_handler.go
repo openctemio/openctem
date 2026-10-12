@@ -91,6 +91,10 @@ type CIExchangeRequest struct {
 	// used only when the token signs no name (Bitbucket). It is bound to the
 	// repository id the token signs.
 	Repository string `json:"repository,omitempty"`
+	// BaseRef, optional, is the pull request's target branch as the job sees
+	// it (GitHub signs it). It only picks among the repository's branches
+	// that count as exposure as the gate's baseline.
+	BaseRef string `json:"base_ref,omitempty"`
 	// Aggregate, optional, joins the run every capability job of the same
 	// pipeline run reports into (opening it for the first job); each job
 	// gets its own token for it, and one final job asks for the verdict.
@@ -139,7 +143,7 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := h.svc.Exchange(r.Context(), cirunapp.ExchangeInput{TenantID: req.TenantID, IDToken: req.IDToken,
-		RunID: req.RunID, Aggregate: req.Aggregate, Hints: cirun.Hints{CommitSHA: req.CommitSHA, Repository: req.Repository},
+		RunID: req.RunID, Aggregate: req.Aggregate, Hints: cirun.Hints{CommitSHA: req.CommitSHA, Repository: req.Repository, BaseRef: req.BaseRef},
 		ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
 	if err != nil {
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {
