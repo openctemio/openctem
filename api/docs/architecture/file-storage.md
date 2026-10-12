@@ -9,8 +9,9 @@ semantics: [finding-evidence.md](finding-evidence.md). Imports:
 | Kind | Where the bytes live |
 |---|---|
 | Evidence attachments, manual finding evidence, authorization letters, web evidence screenshots | file storage, namespace `{tenant id}/` |
+| Report templates, stored reports | file storage, namespace `{tenant id}/` (rows written before moved by the `report-file-migration` job) |
 | Content packs | server file storage (`{tenant id}/`, platform packs `platform-content/`) |
-| Report templates, stored reports, scanner templates | Postgres rows (report bytes move to file storage in a later phase) |
+| Scanner templates | Postgres rows (small, versioned with the row) |
 | Imports (findings, SBOM, VEX, CSV) | not stored: parsed while streamed |
 
 The **server file storage** is operator configuration (`STORAGE_*`). An
@@ -164,6 +165,27 @@ request adds `?confirm=malware`, then serves it as an attachment with
 Reports skip flagged images; the console lists flagged files apart and asks
 before downloading. Files uploaded with no scanner keep an empty status.
 
+## Report files
+
+Pentest report templates and stored reports are written to the
+organization's file storage like attachments; `pentest_report_templates` and
+`pentest_report_files` keep `storage_key`, `storage_provider` and
+`size_bytes`. Each read is checked against the recorded SHA-256 and refused
+on mismatch.
+
+After upgrading, the `report-file-migration` controller (every minute, one
+replica) copies rows that still hold bytes to the storage, 10 per kind per
+run, reads each copy back and compares it, then clears the row's `content`.
+A row it cannot move keeps its bytes and an error is logged each run. When
+`SELECT count(*) FROM pentest_report_files WHERE content IS NOT NULL` and the
+same for `pentest_report_templates` are 0, the move is complete. Back up the
+file storage with the database from then on.
+
+Deleting a template or report (or the campaign or organization holding it)
+queues its file in `storage_blob_deletions` through a database trigger; the
+`attachment-retention` sweep deletes it. Deleting the organization queues
+nothing (organization erasure removes the namespace).
+
 ## Retention
 
 The `attachment-retention` controller runs hourly on one replica:
@@ -195,11 +217,11 @@ tenant erasure, content-sniffed types, streamed uploads, the quota, upload
 and delete audit, effective import limits with a streaming web proxy,
 retention of evidence whose parent was deleted and of never-linked uploads,
 image metadata removal and a pixel limit, optional malware scanning with
-ClamAV.
+ClamAV, report templates and stored reports in the file storage.
 
-Planned (RFC-084 §6): short-lived direct downloads from a bucket; report
-bytes moved out of Postgres; asynchronous large imports; S3 server-side
-encryption options; a `local`↔`s3` migration command.
+Planned (RFC-084 §6): short-lived direct downloads from a bucket;
+asynchronous large imports; S3 server-side encryption options; a
+`local`↔`s3` migration command.
 
 ## Key files
 
@@ -215,6 +237,10 @@ encryption options; a `local`↔`s3` migration command.
 - `internal/app/integration/attachment_retention.go`,
   `internal/infra/postgres/attachment_retention.go`,
   `internal/infra/controller/attachment_retention.go`: the retention sweep.
+- `internal/app/integration/report_files.go`,
+  `internal/infra/postgres/pentest_report_file_store.go`,
+  `internal/infra/controller/report_file_migration.go`: report files in the
+  storage, the move, the deletion queue.
 - `internal/infra/storage/local.go`, `s3.go`, `tenant.go`: drivers and the
   organization bucket factory.
 - `internal/infra/http/handler/attachment_handler.go`,
