@@ -63,6 +63,10 @@ type CreateScanInput struct {
 	// only because pending scope entries cover them; it starts once those
 	// entries are approved (scope_wait.go). Ignored when nothing waits.
 	StartWhenScopeApproved bool `json:"start_when_scope_approved"`
+	// SkipRefusedTargets saves the scan with only the direct targets the
+	// scope check allows now and records the others, with their refusal
+	// codes, on the scan and its runs (skip_refused.go).
+	SkipRefusedTargets bool `json:"skip_refused_targets"`
 }
 
 // CreateScanResult represents the result of creating a scan.
@@ -89,6 +93,14 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	if input.Targets, err = mergeDirectTargets(input.Targets, assetTargets); err != nil {
 		return nil, err
+	}
+	// "Scan the allowed targets, skip the rest": only what the gate allows
+	// now goes on; the rest is recorded. The checks below still run.
+	var skipped []scan.SkippedTarget
+	if input.SkipRefusedTargets {
+		if input.Targets, skipped, err = s.partitionRefused(ctx, tenantID, input); err != nil {
+			return nil, err
+		}
 	}
 
 	// Security validations
@@ -153,6 +165,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 	sc.Description = input.Description
+	sc.SkippedTargets = skipped
 	if input.TargetOptions != nil {
 		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
 			return nil, err

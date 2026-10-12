@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
@@ -140,6 +141,9 @@ type RefusedTarget struct {
 	Target string `json:"target"`
 	Reason string `json:"reason"`
 	Code   string `json:"code"`
+	// Resolved are the addresses a hostname resolved to, when zone routing
+	// refused it (shown to the tenant that owns the target only).
+	Resolved []string `json:"resolved,omitempty"`
 }
 
 // DispatchTargets is the gate's decision for every input target.
@@ -702,7 +706,7 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 			if reason == "" {
 				reason = "no scan zone covers this target"
 			}
-			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: reason, Code: scopedom.RefusalZoneNone})
+			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: reason, Code: scopedom.RefusalZoneNone, Resolved: s.revealedAddrs(r)})
 		case r.Zone != nil && len(r.Zone.SensorIDs) == 0:
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target,
 				Reason: fmt.Sprintf("scan zone %q has no sensors assigned", r.Zone.Name), Code: scopedom.RefusalZoneNoSensor})
@@ -729,6 +733,28 @@ func dedupeTargets(in []string) []string {
 		}
 		seen[strings.ToLower(t)] = true
 		out = append(out, t)
+	}
+	return out
+}
+
+// revealedAddrs is what a refused hostname resolved to, for the tenant's
+// own scope check: only private answers the platform may show (see
+// WithRevealResolved), at most 8. Nothing otherwise.
+func (s *Service) revealedAddrs(r scanzone.Route) []string {
+	if !s.revealResolved || !r.OutsideZones {
+		return nil
+	}
+	return addrStrings(r.Addrs)
+}
+
+// addrStrings renders resolved addresses (at most 8).
+func addrStrings(addrs []netip.Addr) []string {
+	if len(addrs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, min(len(addrs), 8))
+	for _, a := range addrs[:min(len(addrs), 8)] {
+		out = append(out, a.String())
 	}
 	return out
 }

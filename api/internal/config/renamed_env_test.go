@@ -57,6 +57,25 @@ func TestRejectRetiredEnv_DeadKnobsSayRemove(t *testing.T) {
 	}
 }
 
+// Cookie names are fixed: an override reached the API but not the web
+// console's browser bundle or the gateway, which split the session.
+func TestCookieNamesFixed(t *testing.T) {
+	for _, name := range []string{"AUTH_ACCESS_TOKEN_COOKIE_NAME", "AUTH_REFRESH_TOKEN_COOKIE_NAME", "AUTH_TENANT_COOKIE_NAME"} {
+		if err := rejectRetiredEnv(fakeEnv{name: "x"}.lookup); err == nil || !strings.Contains(err.Error(), name+" (removed:") {
+			t.Errorf("%s set: err = %v, want a refusal", name, err)
+		}
+	}
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("AUTH_JWT_SECRET", strings.Repeat("a", 64))
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.AccessTokenCookieName != "auth_token" || cfg.Auth.RefreshTokenCookieName != "refresh_token" || cfg.Auth.TenantCookieName != "app_tenant" {
+		t.Errorf("cookie names = %q %q %q", cfg.Auth.AccessTokenCookieName, cfg.Auth.RefreshTokenCookieName, cfg.Auth.TenantCookieName)
+	}
+}
+
 // The platform-wide Jira webhook secret was removed (each organization has
 // its own). Startup refuses it, even empty, and says what to do instead.
 func TestLoad_RefusesRemovedJiraWebhookSecret(t *testing.T) {
