@@ -45,10 +45,30 @@ const (
 // footnotes and endnotes.
 var templateParts = regexp.MustCompile(`^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$`)
 
-// Info describes a valid template.
+// Info describes a template.
 type Info struct {
 	Tags     []string // distinct tags in the template, sorted
-	Warnings []string // non-fatal problems (literal braces, unknown paths)
+	Issues   []Issue  // every problem found, errors and warnings, in document order per part
+	Warnings []string // the messages of the warning issues
+}
+
+// HasErrors reports whether an issue makes the template unusable.
+func (i *Info) HasErrors() bool {
+	for _, is := range i.Issues {
+		if is.Level == LevelError {
+			return true
+		}
+	}
+	return false
+}
+
+func (i *Info) addIssues(issues []Issue) {
+	i.Issues = append(i.Issues, issues...)
+	for _, is := range issues {
+		if is.Level == LevelWarning {
+			i.Warnings = append(i.Warnings, is.Message)
+		}
+	}
 }
 
 type entry struct {
@@ -229,33 +249,46 @@ func wellFormed(data string) error {
 // Inspect validates a template: the package checks, then every tag part
 // must parse and its tags must form valid sections. It renders nothing.
 func Inspect(data []byte) (*Info, error) {
+	return Check(data, nil)
+}
+
+// Check is Inspect that also checks every tag path against the data the
+// template will read (nil: no path check). The package checks stop at the
+// first problem (the file is refused as a whole); tag problems are all
+// collected. When any issue is an error, it returns the Info with every
+// issue and an ErrInvalidTemplate error naming the first one.
+func Check(data []byte, schema *Schema) (*Info, error) {
 	entries, err := readPackage(data)
 	if err != nil {
 		return nil, err
 	}
 	info := &Info{}
 	tags := map[string]bool{}
+	var firstErr error
 	for _, e := range entries {
 		if !templateParts.MatchString(e.name) {
 			continue
 		}
+		c := newChecker(e.name, schema)
 		root, err := parseXML(string(e.data))
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", e.name, err)
 		}
-		found, warnings, err := prepare(root)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", e.name, err)
-		}
-		for _, t := range found {
+		for _, t := range prepare(root, c) {
 			tags[t.String()] = true
 		}
-		info.Warnings = append(info.Warnings, warnings...)
+		info.addIssues(c.issues)
+		if firstErr == nil {
+			firstErr = c.firstError()
+		}
 	}
 	for t := range tags {
 		info.Tags = append(info.Tags, t)
 	}
 	sort.Strings(info.Tags)
+	if firstErr != nil {
+		return info, firstErr
+	}
 	return info, nil
 }
 
@@ -286,11 +319,12 @@ func RenderWithImages(template []byte, data Data, images map[string]markdown.Ima
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", e.name, err)
 		}
-		_, warnings, err := prepare(root)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", e.name, err)
+		c := newChecker(e.name, nil)
+		prepare(root, c)
+		if err := c.firstError(); err != nil {
+			return nil, nil, err
 		}
-		info.Warnings = append(info.Warnings, warnings...)
+		info.addIssues(c.issues)
 		r.out.Reset()
 		r.media = nil
 		if e.name == "word/document.xml" {

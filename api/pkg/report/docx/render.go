@@ -285,3 +285,6 @@ func escapeText(s string) string {
 	}, s)
 	return textEscaper.Replace(clean)
 }
+
+// ValueText is a value as a {path} tag prints it.
+func ValueText(v any) string { return toText(v) }
