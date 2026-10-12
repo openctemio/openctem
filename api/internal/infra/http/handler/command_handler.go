@@ -19,8 +19,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -542,33 +540,6 @@ func payloadEmbedsCustomTemplates(payload json.RawMessage) bool {
 	return len(p.CustomTemplates) > 0
 }
 
-// Get handles GET /api/v1/commands/{id}
-// @Summary      Get command
-// @Description  Get a single command by ID
-// @Tags         Commands
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Command ID"
-// @Success      200  {object}  CommandResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /commands/{id} [get]
-func (h *CommandHandler) Get(w http.ResponseWriter, r *http.Request) {
-	commandID := chi.URLParam(r, "id")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	cmd, err := h.service.Get(r.Context(), tenantID, commandID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
-}
-
 // List handles GET /api/v1/commands
 // @Summary      List commands
 // @Description  Get a paginated list of commands
@@ -975,63 +946,6 @@ func (h *CommandHandler) triggerScanRunFailed(ctx context.Context, cmd *commandd
 			)
 		}
 	}()
-}
-
-// Cancel handles POST /api/v1/commands/{id}/cancel - admin endpoint
-// @Summary      Cancel command
-// @Description  Cancel a pending or running command
-// @Tags         Commands
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Command ID"
-// @Success      200  {object}  CommandResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /commands/{id}/cancel [post]
-func (h *CommandHandler) Cancel(w http.ResponseWriter, r *http.Request) {
-	commandID := chi.URLParam(r, "id")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	cmd, err := h.service.CancelCommand(r.Context(), tenantID, commandID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	logRequestChange(h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionCommandCanceled, audit.ResourceTypeCommand, cmd.ID.String()).
-		WithResourceName(string(cmd.Type)).
-		WithMessage("Command "+string(cmd.Type)+" canceled"))
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
-}
-
-// Delete handles DELETE /api/v1/commands/{id}
-// @Summary      Delete command
-// @Description  Delete a command
-// @Tags         Commands
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Command ID"
-// @Success      204  "No Content"
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /commands/{id} [delete]
-func (h *CommandHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	commandID := chi.URLParam(r, "id")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	if err := h.service.DeleteCommand(r.Context(), tenantID, commandID); err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	logRequestChange(h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionCommandDeleted, audit.ResourceTypeCommand, commandID).
-		WithMessage("Command deleted"))
-
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleValidationError converts validation errors to API errors.

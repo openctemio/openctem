@@ -37,6 +37,7 @@ import { registerSchema, type RegisterInput } from '../schemas/auth.schema'
 import { passwordPolicyIssue } from '../lib/password-policy'
 import { PasswordPolicyHint } from './password-policy-hint'
 import { registerAction } from '../actions/local-auth-actions'
+import { TurnstileWidget } from './turnstile-widget'
 import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth-actions'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { invitationTokenFromReturnTo } from '../lib/self-register'
@@ -103,6 +104,9 @@ export function RegisterForm({
   // live; this is the same question, asked here too.
   const { data: authProviders } = useAuthProviders()
   const passwordPolicy = authProviders?.password_policy
+  const captchaSiteKey = authProviders?.captcha_site_key ?? ''
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaReset, setCaptchaReset] = useState(0)
   const enabledSocialProviders = authProviders
     ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
     : []
@@ -158,6 +162,10 @@ export function RegisterForm({
       form.setError('password', { message: issue })
       return
     }
+    if (captchaSiteKey && !captchaToken) {
+      toast.error(t('auth.captcha.required', 'Complete the security check first.'))
+      return
+    }
     startTransition(async () => {
       const result = await registerAction({
         email: data.email,
@@ -165,7 +173,10 @@ export function RegisterForm({
         firstName: data.firstName,
         lastName: data.lastName,
         invitationToken,
+        captchaToken: captchaToken || undefined,
       })
+      // A token works once: ask for a fresh one whatever happened.
+      if (captchaSiteKey) setCaptchaReset((n) => n + 1)
 
       if (result.success) {
         toast.success(
@@ -181,6 +192,8 @@ export function RegisterForm({
       } else if (isSignupNotAvailable(result.code)) {
         // The sign-up policy refused: the one "not set up" page.
         router.push(NOT_SET_UP_PATH)
+      } else if (result.code === 'CAPTCHA_FAILED') {
+        toast.error(t('auth.captcha.failed', 'Complete the security check and try again.'))
       } else {
         toast.error(result.error || 'Registration failed')
       }
@@ -355,6 +368,14 @@ export function RegisterForm({
             </FormItem>
           )}
         />
+
+        {captchaSiteKey && (
+          <TurnstileWidget
+            siteKey={captchaSiteKey}
+            onToken={setCaptchaToken}
+            resetSignal={captchaReset}
+          />
+        )}
 
         {/* Submit Button */}
         <Button className="mt-2" disabled={isLoading} type="submit">

@@ -98,6 +98,22 @@ func adoptV1KeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID sha
 		return
 	}
 	v1Current := resolveFingerprintAliasesOf(ctx, p, tenantID, v1s, func(s string) string { return s })
+	// Only a version-1 key a live finding holds can be re-keyed. Checking
+	// them in one query keeps a batch of new findings (nothing to adopt) from
+	// issuing one no-op UPDATE per finding.
+	froms := make([]string, 0, len(v1s))
+	for _, v1 := range v1s {
+		if cur, ok := v1Current[v1]; ok {
+			froms = append(froms, cur)
+		} else {
+			froms = append(froms, v1)
+		}
+	}
+	live, err := adopter.CheckFingerprintsExist(ctx, tenantID, froms)
+	if err != nil {
+		p.logger.Warn("failed to check version-1 finding keys", "error", err)
+		return
+	}
 	adopted, claimed := 0, map[string]bool{}
 	for _, pr := range pairs {
 		if held[pr.v2] {
@@ -107,7 +123,7 @@ func adoptV1KeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID sha
 		if cur, ok := v1Current[pr.v1]; ok {
 			from = cur
 		}
-		if claimed[from] {
+		if claimed[from] || !live[from] {
 			continue
 		}
 		claimed[from] = true
