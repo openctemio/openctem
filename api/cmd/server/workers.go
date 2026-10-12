@@ -351,6 +351,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			gl := scmappsvc.NewService(repos.SCMApp, nil, deps.Config.Auth.JWTSecret, nil, log)
 			gl.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
 			job.SetGitLab(gl)
+			if svc.Outbox != nil {
+				job.SetNotifier(svc.Outbox)
+			}
 			w.ControllerManager.Register(controller.NewCIDecorationController(job, 0))
 		}
 	}
