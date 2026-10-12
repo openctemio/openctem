@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -32,6 +33,11 @@ func (s *Service) ListTrustConfigs(ctx context.Context, tenantID shared.ID) ([]c
 }
 
 // GetTrustConfig returns one trust configuration of the tenant.
+// OwnerPins lists the organization or namespace ids a configuration pinned.
+func (s *Service) OwnerPins(ctx context.Context, tenantID, id shared.ID) ([]cirun.OwnerPin, error) {
+	return s.repo.OwnerPins(ctx, tenantID, id)
+}
+
 func (s *Service) GetTrustConfig(ctx context.Context, tenantID, id shared.ID) (*cirun.TrustConfig, error) {
 	return s.repo.GetTrustConfig(ctx, tenantID, id)
 }
@@ -84,6 +90,15 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	}
 	if err := s.repo.UpdateTrustConfig(ctx, &next); err != nil {
 		return nil, err
+	}
+	// Changing which organizations or repositories a configuration trusts, or
+	// its issuer, drops its owner pins: they are taken again at the next
+	// admitted exchange.
+	if cur.Issuer != next.Issuer || !slices.Equal(cur.Rules.Owners, next.Rules.Owners) ||
+		!slices.Equal(cur.Rules.Repositories, next.Rules.Repositories) {
+		if _, err := s.repo.ResetOwnerPins(ctx, tenantID, id); err != nil {
+			return nil, fmt.Errorf("reset owner pins: %w", err)
+		}
 	}
 	// Disabling a configuration, or pointing it at another issuer or
 	// audience, withdraws the trust its pipelines were admitted under.
