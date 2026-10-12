@@ -710,3 +710,20 @@ func registerEASMNetworkSeedRoutes(
 		r.POST("/{id}/expand", h.Expand, middleware.Require(permission.ScopeWrite))
 	}, tenantMiddlewares...)
 }
+
+// registerAssetWebEvidenceRoutes registers an asset's web evidence (RFC-081):
+// assets:read plus the asset's data scope (checked in the handler, 404),
+// behind the attack_surface module.
+func registerAssetWebEvidenceRoutes(
+	router Router,
+	h *handler.AssetWebEvidenceHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/assets/{id}/web-evidence", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/{evidence_id}/screenshot", h.Screenshot, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}

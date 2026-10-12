@@ -36,6 +36,10 @@ type EASMSettings struct {
 	// data (RIPEstat): their AS numbers and organization names are no longer
 	// sent there (docs/rfcs/RFC-082-network-seeds.md).
 	NetworkLookupsDisabled bool `json:"network_lookups_disabled,omitempty"`
+	// WebScreenshotsEnabled keeps the screenshots sensors send with web
+	// evidence (docs/rfcs/RFC-081-web-evidence-screenshots.md); off by
+	// default: a screenshot can show whatever the page shows.
+	WebScreenshotsEnabled bool `json:"web_screenshots_enabled,omitempty"`
 	// WeeklyDigestDisabled stops the weekly "what changed" digest of the
 	// attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md);
 	// on by default.

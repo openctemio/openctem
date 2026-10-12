@@ -146,6 +146,8 @@ export type CheckScopeResponse = Schemas['internal_infra_http_handler.CheckScope
 export type ScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
 export type ScopeBulkOperationResponse =
   Schemas['internal_infra_http_handler.ScopeBulkOperationResponse']
+export type BulkCreateScopeTargetsResponse =
+  Schemas['internal_infra_http_handler.BulkCreateScopeTargetsResponse']
 
 // Inventory vulnerability matching (RFC-066): an asset's software, its
 // matched CVEs and the organization's policy
@@ -226,6 +228,9 @@ export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_
 export type EASMNetworkSeedList = Schemas['internal_infra_http_handler.EASMNetworkSeedList']
 export type EASMNetworkSeed =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
+/** GET /api/v1/assets/{id}/web-evidence (RFC-081). */
+export type WebEvidenceList = Schemas['internal_infra_http_handler.WebEvidenceListResponse']
+export type WebEvidenceItem = Schemas['internal_infra_http_handler.WebEvidenceResponse']
 
 /** A scan run's tasks (RFC-046): GET /api/v1/scan-runs and /scan-runs/{id}. */
 export type RunTaskSummary = Schemas['internal_infra_http_handler.RunTaskSummaryResponse']

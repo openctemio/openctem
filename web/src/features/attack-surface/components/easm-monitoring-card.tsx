@@ -242,6 +242,28 @@ export function EASMMonitoringCard() {
             )}
           </p>
         </section>
+        <section
+          className="space-y-3 md:col-span-2"
+          aria-label={t('webEvidence.settings.title', 'Screenshots of web assets')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-screenshots" className="font-medium">
+              {t('webEvidence.settings.title', 'Screenshots of web assets')}
+            </Label>
+            <Switch
+              id="easm-screenshots"
+              checked={!!settings.web_screenshots_enabled}
+              disabled={!canSettings || busy}
+              onCheckedChange={(on) => void save({ web_screenshots_enabled: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'webEvidence.settings.description',
+              'Keep the screenshots that sensors with the screenshot tool take of your web assets, for 30 days. A screenshot shows whatever the page shows, so this is off by default. Status, title and a short masked response are kept either way.'
+            )}
+          </p>
+        </section>
         <DigestSection settings={settings} disabled={!canSettings || busy} onSave={save} />
       </CardContent>
     </Card>
