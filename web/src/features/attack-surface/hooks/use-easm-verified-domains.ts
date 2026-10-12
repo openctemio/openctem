@@ -12,13 +12,14 @@ export const EASM_VERIFIED_DOMAINS_KEY = '/api/v1/easm/verified-domains'
  * GET /api/v1/easm/verified-domains (research/22 P0-10): the organization's
  * DNS-TXT verified domains. Rows it added are EASM-only (they never admit SSO
  * users); rows a platform administrator set up for SSO come back read-only
- * (`managed`). Fetched only with scope:read and the attack_surface module.
+ * (`managed`). Fetched only with scope:read and the attack_surface module,
+ * and while `active` (a closed dialog passes false).
  */
-export function useEASMVerifiedDomains() {
+export function useEASMVerifiedDomains(active = true) {
   const { can } = usePermissions()
   const { moduleIds, isLoading: modulesLoading } = useTenantModules()
   const enabled =
-    can(Permission.ScopeRead) && !modulesLoading && moduleIds.includes('attack_surface')
+    active && can(Permission.ScopeRead) && !modulesLoading && moduleIds.includes('attack_surface')
   const { data, error, isLoading, mutate } = useSWR<EASMVerifiedDomainList>(
     enabled ? EASM_VERIFIED_DOMAINS_KEY : null,
     get,

@@ -654,7 +654,8 @@ it.
   plain text (1-500 characters, no control characters, rendered as text,
   never HTML) with a required end at most 31 days after its start, so none
   is left up by mistake. Signed-in users read the active ones (at most 5,
-  maintenance first) at `GET /api/v1/announcements`, once per page load.
+  maintenance first) at `GET /api/v1/announcements`; the web app gets the
+  same list once per page load in `announcements` of `GET /me/bootstrap`.
   Table `platform_announcements` (migration 001541), platform-level.
 - **System > Threat intelligence.** The EPSS and CISA KEV feeds' sync state
   (last run, records, next run, last error), turning the scheduled sync on
