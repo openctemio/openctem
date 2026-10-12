@@ -131,6 +131,7 @@ type Handlers struct {
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
 	CIRunner            *handler.CIRunnerHandler
+	SCMApps             *handler.SCMAppHandler              // nil without a database
 	ScannerTemplate     *handler.ScannerTemplateHandler     // nil if not initialized (no database)
 	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
@@ -845,6 +846,8 @@ func Register(
 		registerCIRoutes(router, h.CIAdmin, h.CIRunner, authMiddleware, userSync,
 			h.ModuleGate.RequireModule(moduledom.ModuleScans), ingestRateLimiter, log)
 	}
+	// Code-host app installations and the GitHub App webhook (RFC-077).
+	registerSCMAppRoutes(router, h.SCMApps, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScans), log)
 
 	// Sensor protocol v2 results (RFC-026): its own route group and
 	// authenticator, only when enabled.
