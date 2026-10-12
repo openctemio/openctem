@@ -31,6 +31,18 @@ func (h *AssetServiceHandler) SetDataScope(e DataScopeEnforcer) *AssetServiceHan
 	return h
 }
 
+// assetVisible returns shared.ErrNotFound unless the asset exists in the
+// tenant and lies inside the caller's data scope (fail closed).
+func (h *AssetServiceHandler) assetVisible(r *http.Request, tenantID, assetID shared.ID) error {
+	if _, err := h.assetRepo.GetByID(r.Context(), tenantID, assetID); err != nil {
+		return err
+	}
+	if !assetInDataScope(r.Context(), h.dataScope, tenantID, assetID) {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
 // NewAssetServiceHandler creates a new asset service handler.
 func NewAssetServiceHandler(repo asset.AssetServiceRepository, assetRepo asset.Repository, v *validator.Validator, log *logger.Logger) *AssetServiceHandler {
 	return &AssetServiceHandler{
@@ -130,9 +142,11 @@ func (h *AssetServiceHandler) ListByAsset(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Security: GetByID now enforces tenant isolation internally
-	_, err = h.assetRepo.GetByID(ctx, tenantID, assetID)
-	if err != nil {
+	// The asset must exist in the tenant and be inside the caller's data
+	// scope; both misses answer 404 so the reply never reveals that an
+	// out-of-scope asset exists. DataScopeGuard checks the same on the route;
+	// this keeps the handler safe wherever it is mounted.
+	if err = h.assetVisible(r, tenantID, assetID); err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			apierror.NotFound("Asset").WriteJSON(w)
 			return
@@ -193,9 +207,11 @@ func (h *AssetServiceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Security: Verify asset exists and belongs to the tenant (tenant-scoped query)
-	_, err = h.assetRepo.GetByID(ctx, tenantID, assetID)
-	if err != nil {
+	// The asset must exist in the tenant and be inside the caller's data
+	// scope; both misses answer 404 so the reply never reveals that an
+	// out-of-scope asset exists. DataScopeGuard checks the same on the route;
+	// this keeps the handler safe wherever it is mounted.
+	if err = h.assetVisible(r, tenantID, assetID); err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			apierror.NotFound("Asset").WriteJSON(w)
 			return
