@@ -57,3 +57,29 @@ export function saveScanPolicyOrganization(
 ) {
   return adminFetch<ScanPolicyOrganization>(orgKey(tenantId), { method: 'PUT', body: input })
 }
+
+/**
+ * "Require a verified domain before platform sensors scan a target"
+ * (RFC-054 §8.1). Default off; a public multi-tenant cloud turns it on.
+ */
+export interface PlatformSensorProof {
+  required: boolean
+  version: number
+}
+
+const PROOF_KEY = '/settings/platform-sensor-proof'
+
+/** The setting (any administrator reads it). */
+export function usePlatformSensorProof() {
+  return useSWR<PlatformSensorProof>(PROOF_KEY, adminFetcher)
+}
+
+/** Super admin, a fresh authenticator code and a reason. */
+export function savePlatformSensorProof(input: {
+  required: boolean
+  version: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<PlatformSensorProof>(PROOF_KEY, { method: 'PUT', body: input })
+}

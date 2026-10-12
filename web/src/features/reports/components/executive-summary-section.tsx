@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select'
 import { MetricStrip } from '@/features/shared'
 import { useExecutiveSummary, downloadExecutiveSummaryCsv } from '../hooks/use-report-schedules'
+import { useTranslation } from '@/context/i18n-provider'
 
 const RANGES = [
   { value: '7', label: 'Last 7 days' },
@@ -21,6 +22,7 @@ const RANGES = [
 ]
 
 export function ExecutiveSummarySection() {
+  const { t } = useTranslation()
   const [days, setDays] = useState('30')
   const [downloading, setDownloading] = useState(false)
   const { summary, isLoading } = useExecutiveSummary(parseInt(days, 10))
@@ -43,8 +45,10 @@ export function ExecutiveSummarySection() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold">Executive summary</h2>
           <p className="text-sm text-muted-foreground">
-            Program-level risk, findings, SLA and MTTR for the selected window — download a CSV for
-            board decks and stakeholder updates.
+            {t(
+              'reports.executiveHint',
+              'Program-level risk, findings, SLA and MTTR for the selected window.'
+            )}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

@@ -1,4 +1,4 @@
-.PHONY: all build run test test-db lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install
+.PHONY: all build run test test-db lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs
 
 # Variables
 APP_NAME := openctem
@@ -386,6 +386,14 @@ modules-sql:
 ## modules-check: Fail when the generated module files or the newest registry migration drifted
 modules-check:
 	@GOWORK=off $(GOCMD) run ./cmd/gen-modules -check
+
+## env-docs: Regenerate .env.example and docs/configuration/environment-variables.md
+##
+## Single source of truth: internal/config/env_registry.yaml. Edit the registry,
+## run this target, commit the registry and the two generated files
+## (TestEnvDocsUpToDate fails when they are stale).
+env-docs:
+	@GOWORK=off $(GOCMD) run ./cmd/envdoc
 
 ## generate-asset-types: Regenerate the asset type registry (Go + TS) from YAML
 ##

@@ -121,6 +121,11 @@ type CreateScanRequest struct {
 	// for approval; the scan starts once those entries are approved, as the
 	// caller, and every gate runs again then. Any other refusal still refuses.
 	StartWhenScopeApproved bool `json:"start_when_scope_approved"`
+	// SkipRefusedTargets saves the scan with only the direct targets the
+	// scope check allows now; the others are recorded with their refusal
+	// codes in skipped_targets and on every run. Nothing the gate refuses is
+	// saved or scanned.
+	SkipRefusedTargets bool `json:"skip_refused_targets"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
@@ -246,6 +251,9 @@ type ScanDetailResponse struct {
 	AssetGroupID   string   `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
 	AssetGroupIDs  []string `json:"asset_group_ids,omitempty"` // Multiple asset groups
 	Targets        []string `json:"targets,omitempty"`         // Direct targets
+	// SkippedTargets: targets left out when the scan was saved, with the
+	// scope refusal code of each.
+	SkippedTargets []scan.SkippedTarget `json:"skipped_targets,omitempty"`
 	// TargetOptions: how each run resolves the dynamic selectors among
 	// Targets from the inventory (RFC-068).
 	TargetOptions scan.TargetOptions `json:"target_options"`
@@ -420,6 +428,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		CreatedBy:           userID,
 
 		StartWhenScopeApproved: req.StartWhenScopeApproved,
+		SkipRefusedTargets:     req.SkipRefusedTargets,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)
@@ -1393,6 +1402,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		AssetGroupIDs:         assetGroupIDs,
 		Targets:               s.Targets,
 		TargetOptions:         s.TargetOptions,
+		SkippedTargets:        s.SkippedTargets,
 		Intensity:             string(s.EffectiveIntensity()),
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
