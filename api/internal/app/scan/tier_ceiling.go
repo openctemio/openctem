@@ -114,7 +114,7 @@ func (s *Service) stepScopeFilter(ctx context.Context, tenantID shared.ID, tool 
 		return nil, 0, "", fmt.Errorf("tier check failed, step not dispatched: %w", err)
 	}
 	unproven := map[string]bool{}
-	if tier >= scopedom.TierIntrusive {
+	if tier >= scopedom.TierIntrusive && s.platformNeedsProof(ctx) {
 		missing, err := s.unverified(ctx, tenantID, targets)
 		if err != nil {
 			return nil, 0, "", fmt.Errorf("proof check failed, step not dispatched: %w", err)

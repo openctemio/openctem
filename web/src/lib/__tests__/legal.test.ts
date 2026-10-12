@@ -62,6 +62,7 @@ describe('securityTxt', () => {
     expect(securityTxt({}, now)).toBe(
       'Contact: mailto:security@openctem.io\n' +
         'Expires: 2027-10-08T00:00:00.000Z\n' +
+        'Policy: https://docs.openctem.io/security/vulnerability-disclosure/\n' +
         'Preferred-Languages: en, vi\n'
     )
   })
@@ -86,6 +87,16 @@ describe('securityTxt', () => {
       'Policy: https://example.com/policy\n'
     )
     expect(securityTxt({ SECURITY_POLICY_URL: 'ftp://x' }, now)).not.toContain('Policy:')
+  })
+
+  it('an operator contact does not inherit the OpenCTEM policy', () => {
+    expect(securityTxt({ SECURITY_CONTACT: 'psirt@example.com' }, now)).not.toContain('Policy:')
+    expect(
+      securityTxt(
+        { SECURITY_CONTACT: 'psirt@example.com', SECURITY_POLICY_URL: 'https://example.com/p' },
+        now
+      )
+    ).toContain('Policy: https://example.com/p\n')
   })
 
   it('a contact cannot inject extra fields', () => {

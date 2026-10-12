@@ -79,6 +79,21 @@ not used.
 | Service method | `PentestService.GenerateReportPDF` |
 | Handler format switch | `internal/infra/http/handler/pentest_handler.go` (`DownloadReport`) |
 
+## Markdown and evidence images
+
+Finding fields are written in Markdown (description, impacts, remediation,
+steps, campaign description). The HTML and PDF reports render it through
+`pkg/report/markdown`: paragraphs, headings, lists, quotes, code blocks,
+bold, italic, code and links. Every text is escaped, raw HTML stays text, and
+links are kept only for http(s) and mailto.
+
+Screenshots referenced as `![alt](/api/v1/attachments/{id})` are embedded
+(data URI in HTML, image in PDF) when the attachment is evidence of that
+finding, of its retests or of the campaign, in the same tenant; when it is
+PNG, JPEG or GIF and decodes as one; and within 5 MiB per image, 40 MiB and
+200 images per report. Anything else renders as its alt text in brackets: a
+report never fetches a URL. `include_evidence=false` leaves images out.
+
 ## Stored reports and delivery
 
 A report created with `POST /api/v1/pentest/campaigns/{id}/reports` is
