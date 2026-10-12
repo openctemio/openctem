@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -13,6 +14,7 @@ import (
 // Errors for password operations.
 var (
 	ErrPasswordTooShort    = errors.New("password is too short")
+	ErrPasswordTooLong     = errors.New("password is too long")
 	ErrPasswordNoUppercase = errors.New("password must contain at least one uppercase letter")
 	ErrPasswordNoLowercase = errors.New("password must contain at least one lowercase letter")
 	ErrPasswordNoNumber    = errors.New("password must contain at least one number")
@@ -20,6 +22,10 @@ var (
 	ErrPasswordMismatch    = errors.New("password does not match")
 	ErrInvalidHash         = errors.New("invalid password hash")
 )
+
+// MaxBytes is the longest password, in UTF-8 bytes, that bcrypt hashes: it
+// refuses longer input. A character outside ASCII takes 2 to 4 bytes.
+const MaxBytes = 72
 
 // DefaultCost is the default bcrypt cost factor.
 // This provides a good balance between security and performance.
@@ -113,8 +119,17 @@ func (h *Hasher) Validate(password string) error {
 
 // ValidateWithPolicy validates a password against a specific policy.
 func ValidateWithPolicy(password string, policy Policy) error {
-	if len(password) < policy.MinLength {
+	// The minimum counts characters (what the user typed), the maximum
+	// counts bytes (what bcrypt reads).
+	if utf8.RuneCountInString(password) < policy.MinLength {
 		return ErrPasswordTooShort
+	}
+	// Refused here, by every caller's validation step, rather than by the
+	// hash call: a password bcrypt cannot hash used to fail as a server error
+	// after the account lookup, which told an existing email (no hash needed)
+	// from a new one at registration.
+	if len(password) > MaxBytes {
+		return ErrPasswordTooLong
 	}
 
 	var hasUpper, hasLower, hasNumber, hasSpecial bool

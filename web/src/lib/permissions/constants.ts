@@ -219,7 +219,6 @@ export const Permission = {
   // Commands (sensors:commands:*)
   CommandsRead: 'sensors:commands:read',
   CommandsWrite: 'sensors:commands:write',
-  CommandsDelete: 'sensors:commands:delete',
 
   // Scan zones (sensors:zones:*): RFC-023
   ScanZonesRead: 'sensors:zones:read',
@@ -399,7 +398,6 @@ export type PermissionString = (typeof Permission)[keyof typeof Permission]
 export const ADMIN_ONLY_PERMISSIONS: readonly string[] = [
   Permission.SensorsWrite,
   Permission.SensorsDelete,
-  Permission.CommandsDelete,
   Permission.ScanZonesWrite,
   Permission.ScanZonesDelete,
   Permission.SensorsPair,
@@ -546,7 +544,6 @@ export const PermissionGroups = {
     Permission.TemplateSourcesDelete,
     Permission.SecretStoreDelete,
     Permission.SensorsDelete,
-    Permission.CommandsDelete,
     Permission.ScanZonesDelete,
     Permission.TeamDelete,
     Permission.GroupsDelete,
@@ -685,7 +682,6 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SensorsDelete]: 'Delete Sensors',
   [Permission.CommandsRead]: 'View Commands',
   [Permission.CommandsWrite]: 'Send Commands',
-  [Permission.CommandsDelete]: 'Delete Commands',
   [Permission.ScanZonesRead]: 'View Scan Zones',
   [Permission.ScanZonesWrite]: 'Manage Scan Zones',
   [Permission.ScanZonesDelete]: 'Delete Scan Zones',
@@ -886,7 +882,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SensorsDelete,
     Permission.CommandsRead,
     Permission.CommandsWrite,
-    Permission.CommandsDelete,
     Permission.ScanZonesRead,
     Permission.ScanZonesWrite,
     Permission.ScanZonesDelete,
@@ -1049,7 +1044,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SensorsDelete,
     Permission.CommandsRead,
     Permission.CommandsWrite,
-    Permission.CommandsDelete,
     Permission.ScanZonesRead,
     Permission.ScanZonesWrite,
     Permission.ScanZonesDelete,
