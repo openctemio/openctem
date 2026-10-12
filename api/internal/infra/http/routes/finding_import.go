@@ -25,8 +25,12 @@ func registerFindingImportRoutes(router Router, h *handler.FindingImportHandler,
 	router.Group("/api/v1/findings/import", func(r Router) {
 		// Findings and assets are written; a VEX document closing findings
 		// additionally needs findings:approve, checked in the handler.
+		// The route's own body limit replaces the global one (10 MiB by
+		// default), which otherwise refused every file above it with a
+		// misleading "larger than 110 MiB" answer.
 		r.POST("/", h.Import,
 			middleware.RequireAll(permission.FindingsWrite, permission.AssetsWrite, permission.AssetsImport),
-			importRL.TenantMiddleware())
+			importRL.TenantMiddleware(),
+			middleware.BodyLimit(handler.MaxFindingImportBody))
 	}, tenantMiddlewares...)
 }

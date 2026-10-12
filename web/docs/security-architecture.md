@@ -46,7 +46,7 @@ Browser                          Next.js Server                    Backend API
 
 ### 1.2 Token Refresh
 
-- Auto-refresh triggers `TOKEN_REFRESH_BEFORE_EXPIRY` seconds before expiration (default: 300s = 5 minutes).
+- Auto-refresh triggers 5 minutes before expiration.
 - Calls `POST /api/auth/refresh` with `credentials: 'include'` (sends httpOnly cookie).
 - **Mutex-protected**: `isRefreshingToken` flag prevents concurrent refresh attempts.
 - **Permanent failure flag**: `authPermanentlyFailed` prevents infinite refresh loops. On failure, clears all auth state and redirects to login.
@@ -381,25 +381,20 @@ All forms use Zod schemas (`src/features/*/schemas/`) for:
 
 Baked into the client bundle at build time. Safe to expose:
 
-| Variable                          | Default                 | Purpose                               |
-| --------------------------------- | ----------------------- | ------------------------------------- |
-| `NEXT_PUBLIC_APP_URL`             | `http://localhost:3000` | Frontend URL                          |
-| `NEXT_PUBLIC_AUTH_PROVIDER`       | `local`                 | Auth mode (`local`, `oidc`, `hybrid`) |
-| `NEXT_PUBLIC_WS_BASE_URL`         | (empty)                 | WebSocket host override (same site)   |
-| `NEXT_PUBLIC_AUTH_COOKIE_NAME`    | `auth_token`            | Access token cookie name              |
-| `NEXT_PUBLIC_REFRESH_COOKIE_NAME` | `refresh_token`         | Refresh token cookie name             |
+| Variable                  | Default                 | Purpose                             |
+| ------------------------- | ----------------------- | ----------------------------------- |
+| `NEXT_PUBLIC_APP_URL`     | `http://localhost:3000` | Frontend URL                        |
+| `NEXT_PUBLIC_WS_BASE_URL` | (empty)                 | WebSocket host override (same site) |
 
 ### 8.2 Server-Only Variables
 
 Never exposed to the browser:
 
-| Variable                      | Default                 | Purpose                                                                          |
-| ----------------------------- | ----------------------- | -------------------------------------------------------------------------------- |
-| `BACKEND_API_URL`             | `http://localhost:8080` | Backend API URL                                                                  |
-| `SECURE_COOKIES`              | `false`                 | Secure flag on cookies (overridden to `true` in production via `NODE_ENV` check) |
-| `COOKIE_MAX_AGE`              | `604800` (7 days)       | Refresh token cookie lifetime                                                    |
-| `ENABLE_TOKEN_REFRESH`        | `true`                  | Enable auto token refresh                                                        |
-| `TOKEN_REFRESH_BEFORE_EXPIRY` | `300` (5 min)           | Refresh trigger threshold                                                        |
+| Variable          | Default                 | Purpose                                                                          |
+| ----------------- | ----------------------- | -------------------------------------------------------------------------------- |
+| `BACKEND_API_URL` | `http://localhost:8080` | Backend API URL                                                                  |
+| `SECURE_COOKIES`  | `true`                  | Secure flag on cookies; only `false` turns it off (local plain-HTTP development) |
+| `COOKIE_MAX_AGE`  | `604800` (7 days)       | Refresh token cookie lifetime                                                    |
 
 ### 8.3 Validation
 
