@@ -231,7 +231,7 @@ func (h *MCPHandler) promptExecSummary(ctx context.Context, tenantID string, arg
 	if err != nil {
 		return mcpPromptResult{}, err
 	}
-	stats, err := h.pentest.GetCampaignStats(ctx, tenantID, campaignID)
+	stats, err := h.pentest.GetCampaignStats(ctx, tenantID, campaignID, false)
 	if err != nil {
 		return mcpPromptResult{}, err
 	}

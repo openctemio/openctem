@@ -945,7 +945,7 @@ func (h *MCPHandler) toolCampaignReportStats(ctx context.Context, tenantID strin
 	if err := h.pentest.CheckCampaignAccess(ctx, tenantID, a.CampaignID, user, false); err != nil {
 		return nil, err
 	}
-	stats, err := h.pentest.GetCampaignStats(ctx, tenantID, a.CampaignID)
+	stats, err := h.pentest.GetCampaignStats(ctx, tenantID, a.CampaignID, false)
 	if err != nil || stats == nil {
 		return stats, err
 	}
