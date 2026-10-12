@@ -79,7 +79,7 @@ func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 
 	// With the freshly issued key.
 	_, resp = call("rda_4b1e0123456789abcdef")
-	if !resp.APIKeyIncluded || !strings.Contains(resp.Docker, "-e API_KEY='rda_4b1e0123456789abcdef'") {
+	if !resp.APIKeyIncluded || !strings.Contains(resp.Docker, "-e SENSOR_API_KEY='rda_4b1e0123456789abcdef'") {
 		t.Errorf("key not embedded:\n%s", resp.Docker)
 	}
 

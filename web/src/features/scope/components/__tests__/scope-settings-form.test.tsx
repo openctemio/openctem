@@ -51,7 +51,7 @@ const settings = {
   default_max_tier: 't1',
   effective_widening_approvals: 1,
   admin_count: 3,
-  active_proof: 'platform_sensors',
+  active_proof: 'platform_sensors' as const,
 }
 
 beforeEach(() => {
