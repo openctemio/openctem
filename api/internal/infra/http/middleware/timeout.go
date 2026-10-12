@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -46,6 +47,8 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 			tw := &timeoutWriter{
 				ResponseWriter: w,
 				done:           done,
+				ctx:            ctx,
+				h:              w.Header().Clone(),
 			}
 
 			go func() {
@@ -54,6 +57,7 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 				defer close(done)
 				defer func() {
 					if rec := recover(); rec != nil {
+						metrics.RecordPanic("http")
 						if log != nil {
 							log.Error("panic recovered in request handler",
 								"error", rec,
@@ -62,7 +66,7 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 								// Sanitized: the path is attacker-controlled and the text
 								// handler emits plain lines, so a raw CR/LF here would let a
 								// caller forge log entries (CodeQL go/log-injection).
-								"path", logger.SanitizeValue(r.URL.Path),
+								"path", logger.SanitizeValue(RedactPath(r.URL.Path)),
 							)
 						}
 						// Report a 500 unless something was already written, or
@@ -99,12 +103,57 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 }
 
 // timeoutWriter wraps http.ResponseWriter to handle timeout scenarios.
+//
+// The handler gets its OWN header map (h). It runs on another goroutine than
+// the timeout path, which writes the 504 into the real header map; sharing
+// that map made a handler that set a header after the timeout fire a
+// concurrent map write, a fatal error that kills the process. h is copied to
+// the real header under mu when the handler first writes, and never after a
+// timeout.
 type timeoutWriter struct {
 	http.ResponseWriter
 	done     chan struct{}
+	ctx      context.Context
 	mu       sync.Mutex
+	h        http.Header
 	written  bool
 	timedOut bool
+}
+
+// expiredLocked reports whether the deadline has passed before the handler
+// wrote anything, and then takes the response away from the handler. The
+// handler and the timeout path both see ctx.Done at the deadline; without
+// this check the handler could write its own status before the timeout path
+// took the lock, and the 504 was lost. Callers hold tw.mu.
+func (tw *timeoutWriter) expiredLocked() bool {
+	if tw.timedOut {
+		return true
+	}
+	if !tw.written && tw.ctx != nil && tw.ctx.Err() == context.DeadlineExceeded {
+		tw.timedOut = true
+		return true
+	}
+	return false
+}
+
+// Header returns the handler's own header map (see timeoutWriter).
+func (tw *timeoutWriter) Header() http.Header { return tw.h }
+
+// commitHeaderLocked copies the handler's headers to the real response once,
+// before its first write. Callers hold tw.mu.
+func (tw *timeoutWriter) commitHeaderLocked() {
+	if tw.written {
+		return
+	}
+	dst := tw.ResponseWriter.Header()
+	for k := range dst {
+		if _, ok := tw.h[k]; !ok {
+			delete(dst, k)
+		}
+	}
+	for k, v := range tw.h {
+		dst[k] = v
+	}
 }
 
 // Write implements http.ResponseWriter. Same CodeQL
@@ -116,10 +165,11 @@ func (tw *timeoutWriter) Write(b []byte) (int, error) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
-	if tw.timedOut {
+	if tw.expiredLocked() {
 		return 0, context.DeadlineExceeded
 	}
 
+	tw.commitHeaderLocked()
 	tw.written = true
 	return tw.ResponseWriter.Write(b)
 }
@@ -128,10 +178,11 @@ func (tw *timeoutWriter) WriteHeader(code int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
-	if tw.timedOut {
+	if tw.expiredLocked() {
 		return
 	}
 
+	tw.commitHeaderLocked()
 	tw.written = true
 	tw.ResponseWriter.WriteHeader(code)
 }

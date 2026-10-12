@@ -217,3 +217,30 @@ func zoneName(z *Zone) string {
 	}
 	return z.Name
 }
+
+// A service on a private address routes to the zone of its address, in
+// every name form, and never as a public target (research/63 PR0).
+func TestRouter_ServiceNamesRouteByHost(t *testing.T) {
+	dc := mustZone(t, "dc", false, "10.0.0.0/8")
+	v6 := mustZone(t, "dc6", false, "fd00::/32")
+	r := NewRouter([]*Zone{dc, v6}, nil)
+	for target, want := range map[string]*Zone{
+		"10.0.0.5:22:tcp":   dc,
+		"10.0.0.5:22/tcp":   dc,
+		"[fd00::5]:443/tcp": v6,
+		"fd00::5:443:tcp":   v6,
+	} {
+		got := r.Route(context.Background(), target)
+		if got.Zone != want {
+			t.Errorf("Route(%q) zone = %v, want %s (reason %q)", target, zoneName(got.Zone), want.Name, got.Reason)
+		}
+	}
+	// A private service outside every zone is refused, not routed as public.
+	got := r.Route(context.Background(), "192.168.7.7:22:tcp")
+	if got.Zone != nil || got.Unzoned {
+		t.Fatalf("a private service outside every zone was routed: %+v", got)
+	}
+	if pt := ParseTarget("10.0.0.5:22:tcp"); !pt.IsAddr || pt.Prefix.String() != "10.0.0.5/32" {
+		t.Fatalf("ParseTarget = %+v", pt)
+	}
+}

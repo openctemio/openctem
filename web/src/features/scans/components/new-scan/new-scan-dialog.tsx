@@ -7,18 +7,25 @@
 
 'use client'
 
-import { useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, Loader2, Play } from 'lucide-react'
-import { ScanRoutingSection, toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
+import { ChevronLeft, ChevronRight, Clock, Loader2, Play, ShieldCheck } from 'lucide-react'
+import { submitScanApproval, useScanApprovalPreview } from '@/lib/api/scan-approval-hooks'
+import { ApprovalRequirement, missingEvidence } from '../approval/approval-requirement'
+import { toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
+import { ReviewStep } from './review-step'
+import { useScanReview } from '../../hooks/use-scan-review'
+import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
@@ -27,16 +34,35 @@ import { BasicInfoStep } from './basic-info-step'
 import { TargetsStep } from './targets-step'
 import { OptionsStep } from './options-step'
 import { ScheduleStep } from './schedule-step'
-import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../../types'
+import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
+import {
+  basicInfoError,
+  directTargets,
+  formDataToCreateRequest,
+  targetsError,
+  onceRunAt,
+  scheduleError,
+} from '../../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import type {
-  CreateScanConfigRequest,
-  ScheduleType,
-  SensorPreference,
-  ScanType,
-} from '@/lib/api/scan-types'
+import { probeNewAssetsRequest } from '../../lib/continuous-discovery'
+import { scopeCheckTier } from '../../lib/scan-intensity'
+import { useTranslation } from '@/context/i18n-provider'
+import {
+  refusedFromError,
+  scopeRefusalSummary,
+  ScopeRefusalPanel,
+  useScopeCheck,
+  type ScopeRefusal,
+} from '@/features/scope'
+import { useTenant } from '@/context/tenant-provider'
+import {
+  clearNewScanDraft,
+  loadNewScanDraft,
+  saveNewScanDraft,
+} from '../../hooks/use-new-scan-draft'
+import { onlyAwaitingApproval } from '../../lib/scope-wait'
 
 interface NewScanDialogProps {
   open: boolean
@@ -44,145 +70,52 @@ interface NewScanDialogProps {
   onSubmit?: (data: NewScanFormData) => void
 }
 
-const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
-
-/**
- * Map form schedule frequency to API schedule type
- */
-function mapScheduleFrequency(frequency: ScheduleFrequency | undefined): ScheduleType {
-  switch (frequency) {
-    case 'once':
-      return 'manual'
-    case 'daily':
-      return 'daily'
-    case 'weekly':
-      return 'weekly'
-    case 'monthly':
-      return 'monthly'
-    default:
-      return 'manual'
-  }
-}
-
-/**
- * Map form sensor preference to API sensor preference
- */
-function mapSensorPreference(preference: string): SensorPreference {
-  switch (preference) {
-    case 'auto':
-      return 'auto'
-    case 'tenant':
-      return 'tenant'
-    case 'platform':
-      return 'platform'
-    default:
-      return 'auto'
-  }
-}
-
-/**
- * Map form data to API request format
- * Combines all target sources (asset groups, individual assets, custom targets)
- */
-function mapFormDataToRequest(formData: NewScanFormData): CreateScanConfigRequest {
-  const { targets, schedule, options, intensity } = formData
-
-  // Build scanner config from options
-  const scannerConfig: Record<string, unknown> = {}
-  if (options.portScanning) scannerConfig.port_scanning = true
-  if (options.webAppScanning) scannerConfig.web_app_scanning = true
-  if (options.sslAnalysis) scannerConfig.ssl_analysis = true
-  if (options.bruteForce) scannerConfig.brute_force = true
-  if (options.techDetection) scannerConfig.tech_detection = true
-  if (options.apiSecurity) scannerConfig.api_security = true
-  scannerConfig.intensity = intensity
-
-  // Determine scan type and related fields
-  const scanType: ScanType = formData.mode === 'workflow' ? 'workflow' : 'single'
-  const scheduleType = schedule.runImmediately ? 'manual' : mapScheduleFrequency(schedule.frequency)
-
-  const request: CreateScanConfigRequest = {
-    name: formData.name.trim(),
-    description: `Security scan created via UI - ${formData.type}`,
-    scan_type: scanType,
-    schedule_type: scheduleType,
-    sensor_preference: mapSensorPreference(formData.sensorPreference),
-    targets_per_job: formData.maxConcurrent || 10,
-    scanner_config: scannerConfig,
-    timeout_seconds: formData.timeoutSeconds,
-    max_retries: formData.maxRetries,
-    retry_backoff_seconds: formData.retryBackoffSeconds,
-  }
-  if (formData.profileId) {
-    request.profile_id = formData.profileId
-  }
-  if (formData.scanZoneId) {
-    request.scan_zone_id = formData.scanZoneId
-  }
-
-  // COMBINE all target sources
-  // 1. Asset groups - pass all selected ones
-  if (targets.assetGroupIds.length > 0) {
-    // Pass all asset group IDs to the API
-    request.asset_group_ids = targets.assetGroupIds
-    // Also set asset_group_id for backward compatibility with older API versions
-    request.asset_group_id = targets.assetGroupIds[0]
-  }
-
-  // 2. Combine individual assets and custom targets into targets array
-  const allTargets: string[] = []
-
-  // Individual assets - convert asset names to targets
-  if (targets.assetIds.length > 0 && targets.assetNames) {
-    for (const assetId of targets.assetIds) {
-      const assetName = targets.assetNames[assetId]
-      if (assetName) {
-        allTargets.push(assetName)
-      }
-    }
-  }
-
-  // Custom targets - add directly
-  if (targets.customTargets.length > 0) {
-    allTargets.push(...targets.customTargets)
-  }
-
-  // If we have explicit targets, add to request
-  if (allTargets.length > 0) {
-    request.targets = allTargets
-  }
-
-  // Add pipeline_id if workflow mode
-  if (formData.mode === 'workflow' && formData.workflowId) {
-    request.pipeline_id = formData.workflowId
-  }
-
-  // Add scanner name for single scan mode
-  if (formData.mode === 'single') {
-    // Default scanner based on scan type
-    request.scanner_name = formData.type === 'full' ? 'nuclei' : 'nuclei'
-  }
-
-  // Add schedule details if not manual
-  if (!schedule.runImmediately && schedule.frequency !== 'once') {
-    if (schedule.time) {
-      request.schedule_time = schedule.time
-    }
-    if (schedule.frequency === 'weekly' && schedule.dayOfWeek !== undefined) {
-      request.schedule_day = schedule.dayOfWeek
-    }
-    if (schedule.frequency === 'monthly') {
-      request.schedule_day = 1 // First of month
-    }
-  }
-
-  return request
-}
+const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule', 'review']
 
 export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogProps) {
   const [currentStep, setCurrentStep] = useState<ScanWizardStep>('basic')
   const [formData, setFormData] = useState<NewScanFormData>(DEFAULT_NEW_SCAN)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Targets the server refused on create (TARGET_OUT_OF_SCOPE details).
+  const [refused, setRefused] = useState<ScopeRefusal[]>([])
+  const { t } = useTranslation()
+  const { currentTenant } = useTenant()
+  const tenantId = currentTenant?.id
+
+  // Keep the wizard while the user leaves it (to approve a scope entry,
+  // verify a domain) and give it back on the next open.
+  const restored = useRef(false)
+  useEffect(() => {
+    if (!open) {
+      restored.current = false
+      return
+    }
+    if (restored.current) return
+    restored.current = true
+    const draft = loadNewScanDraft(tenantId)
+    if (draft && STEPS.includes(draft.step as ScanWizardStep)) {
+      setFormData({ ...DEFAULT_NEW_SCAN, ...draft.form })
+      setCurrentStep(draft.step as ScanWizardStep)
+    }
+  }, [open, tenantId])
+  useEffect(() => {
+    if (open && restored.current && formData !== DEFAULT_NEW_SCAN)
+      saveNewScanDraft(tenantId, { form: formData, step: currentStep })
+  }, [open, tenantId, formData, currentStep])
+
+  // The same check the Targets step shows (one cached request): when every
+  // refused target only waits for a scope approval, the scan can be saved to
+  // start once it is approved.
+  const scopeCheck = useScopeCheck(directTargets(formData), {
+    enabled: open,
+    sensor_preference:
+      formData.sensorPreference === 'tenant' || formData.sensorPreference === 'platform'
+        ? formData.sensorPreference
+        : 'auto',
+    scanner_name: formData.mode === 'single' ? formData.scannerName || undefined : undefined,
+    tier: scopeCheckTier(formData),
+  })
+  const awaitingApproval = onlyAwaitingApproval(scopeCheck.results)
 
   // Store created scan config ID for triggering
   const createdConfigIdRef = useRef<string | null>(null)
@@ -195,10 +128,70 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const { data: zonesData } = useScanZones(canReadZones && open)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
+  // The previews take names: the picked assets by name, with the typed ones.
   const previewRequest = useMemo(
-    () => toZonePreviewRequest(mapFormDataToRequest(formData), formData.scanZoneId),
+    () =>
+      toZonePreviewRequest(
+        { ...formDataToCreateRequest(formData), targets: directTargets(formData) },
+        formData.scanZoneId
+      ),
     [formData]
   )
+
+  const workflowRequest = useMemo(
+    () => ({
+      scan_workflow_id: formData.workflowId ?? '',
+      targets: previewRequest.targets,
+      asset_group_ids: previewRequest.asset_group_ids,
+      scan_zone_id: formData.scanZoneId ?? undefined,
+    }),
+    [formData.workflowId, formData.scanZoneId, previewRequest]
+  )
+  const review = useScanReview(formData, workflowRequest, open && currentStep === 'review')
+  // Scope changes elsewhere (an entry approved, a domain verified, a sensor
+  // online): the Review answers from a fresh check each time it opens.
+  const recheckScope = review.scope.recheck
+  useEffect(() => {
+    if (open && currentStep === 'review') void recheckScope()
+  }, [open, currentStep, recheckScope])
+
+  // Scan approval (RFC-073): what the organization's rules ask of this scan,
+  // shown on the review step; the scan is then saved and submitted.
+  const [approvalJustification, setApprovalJustification] = useState('')
+  const [approvalTicket, setApprovalTicket] = useState('')
+  const approvalInput = useMemo(() => {
+    if (!open || currentStep !== 'review') return null
+    const req = formDataToCreateRequest(formData)
+    return {
+      targets: directTargets(formData),
+      asset_group_ids: req.asset_group_ids ?? [],
+      scan_type: req.scan_type,
+      scanner_name: req.scanner_name,
+      scan_workflow_id: req.scan_workflow_id,
+      schedule_type: req.schedule_type,
+      sensor_preference: req.sensor_preference,
+      scan_zone_id: req.scan_zone_id ?? undefined,
+    }
+  }, [open, currentStep, formData])
+  const { data: approval } = useScanApprovalPreview(approvalInput)
+  const needsApproval = !!approval?.required
+  const approvalLack = missingEvidence(t, approval, approvalJustification, approvalTicket)
+  const { data: chosenWorkflow } = useScanWorkflow(
+    formData.mode === 'workflow' && formData.workflowId ? formData.workflowId : null,
+    { revalidateOnFocus: false }
+  )
+  const whatLabel =
+    formData.mode === 'workflow'
+      ? (chosenWorkflow?.name ?? t('scans.new.workflowFallback'))
+      : formData.scannerName || t('scans.new.scannerFallback')
+  const blocked = review.blockers.length > 0
+  // Saving to start when the scope is approved: the scope refusal is not a
+  // blocker then, every other one still is.
+  const waitBlocked = review.blockers.length > (review.refused.length > 0 ? 1 : 0)
+  // "Scan the N allowed targets, skip the rest": only refused targets block,
+  // and some are allowed. The server re-checks and records the skipped ones.
+  const canSkipRefused =
+    review.refused.length > 0 && review.allowedCount > 0 && review.otherBlockers.length === 0
 
   const currentStepIndex = STEPS.indexOf(currentStep)
   const isFirstStep = currentStepIndex === 0
@@ -206,38 +199,37 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
   const handleDataChange = (data: Partial<NewScanFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }))
+    if (data.targets) setRefused([])
   }
 
   const validateCurrentStep = (): boolean => {
     switch (currentStep) {
-      case 'basic':
-        if (!formData.name.trim()) {
-          toast.error('Please enter a scan name')
-          return false
-        }
-        if (formData.mode === 'workflow' && !formData.workflowId) {
-          toast.error('Please select a workflow')
+      case 'basic': {
+        const problem = basicInfoError(formData, t)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
-      case 'targets':
-        // NEW: Check if at least ONE target source has data (can have all)
-        const { targets } = formData
-        const hasAssetGroups = targets.assetGroupIds.length > 0
-        const hasIndividualAssets = targets.assetIds.length > 0
-        const hasCustomTargets = targets.customTargets.length > 0
-
-        if (!hasAssetGroups && !hasIndividualAssets && !hasCustomTargets) {
-          toast.error(
-            'Please select at least one target (asset group, individual asset, or custom target)'
-          )
+      }
+      case 'targets': {
+        const problem = targetsError(formData, t)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
+      }
       case 'options':
         return true
-      case 'schedule':
+      case 'schedule': {
+        const problem = scheduleError(formData, undefined, t)
+        if (problem) {
+          toast.error(problem)
+          return false
+        }
         return true
+      }
       default:
         return true
     }
@@ -263,78 +255,136 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       setCurrentStep(step)
     }
   }
+  const startLabel = formData.schedule.runImmediately
+    ? t('scans.new.startScan')
+    : formData.schedule.saveOnly
+      ? t('scans.new.saveScan')
+      : t('scans.new.scheduleScan')
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (opts: { waitForScope?: boolean; skipRefused?: boolean } = {}) => {
     if (!validateCurrentStep()) return
+    if (opts.skipRefused ? !canSkipRefused : opts.waitForScope ? waitBlocked : blocked) {
+      toast.error(review.blockers[0])
+      return
+    }
+    if (approvalLack) {
+      toast.error(approvalLack)
+      return
+    }
 
-    // Additional validation: ensure we have at least one target source
-    const { targets } = formData
-    const hasAssetGroups = targets.assetGroupIds.length > 0
-    const hasIndividualAssets = targets.assetIds.length > 0
-    const hasCustomTargets = targets.customTargets.length > 0
-
-    if (!hasAssetGroups && !hasIndividualAssets && !hasCustomTargets) {
-      toast.error('Please select at least one target')
+    const targetProblem = targetsError(formData, t)
+    if (targetProblem) {
+      toast.error(targetProblem)
+      setCurrentStep('targets')
       return
     }
 
     setIsSubmitting(true)
     try {
       // Map form data to API request format
-      const request = mapFormDataToRequest(formData)
-
-      // Validate the mapped request has targets
-      // This can happen if asset IDs couldn't be resolved to names
-      const requestHasAssetGroups = request.asset_group_ids && request.asset_group_ids.length > 0
-      const requestHasTargets = request.targets && request.targets.length > 0
-      if (!requestHasAssetGroups && !requestHasTargets) {
-        toast.error('Unable to resolve selected assets. Please try selecting them again.')
-        return
-      }
+      const request = formDataToCreateRequest(formData)
+      if (opts.waitForScope) request.start_when_scope_approved = true
+      if (opts.skipRefused) request.skip_refused_targets = true
 
       // Create the scan configuration
       const scanConfig = await createScanConfig(request)
 
       if (!scanConfig) {
-        throw new Error('Failed to create scan configuration')
+        throw new Error(t('scans.new.createFailedNoConfig'))
       }
-      notifyScannerConfigWarnings(scanConfig)
+      notifyScannerConfigWarnings(scanConfig, t)
 
       createdConfigIdRef.current = scanConfig.id
 
-      // Trigger scan immediately if requested
-      if (formData.schedule.runImmediately) {
+      // Continuous discovery: the probing scan is saved with the passive one
+      // (active, only assets new since its last run).
+      if (formData.continuousProbeWorkflowId) {
+        const probe = probeNewAssetsRequest(
+          { ...request, targets: directTargets(formData) },
+          formData.continuousProbeWorkflowId,
+          t('scans.new.continuousSecondName', undefined, { name: formData.name.trim() })
+        )
+        if (probe) {
+          try {
+            await createScanConfig(probe)
+          } catch (probeError) {
+            toast.error(
+              t('scans.new.continuousSecondFailed', undefined, {
+                error: getErrorMessage(probeError, t('scans.new.unknownError')),
+              })
+            )
+          }
+        }
+      }
+
+      const waits = !!(scanConfig as { starts_when_scope_approved?: boolean })
+        .starts_when_scope_approved
+      if (needsApproval) {
+        // Saved; submit it for approval. It runs once approved (when the
+        // user asked to run now) or at its schedule.
+        try {
+          await submitScanApproval(scanConfig.id, {
+            justification: approvalJustification.trim(),
+            ticket: approvalTicket.trim(),
+            run_on_approval: formData.schedule.runImmediately,
+          })
+          toast.success(
+            t('scans.approval.submitted', 'Saved "{name}" and submitted it for approval', {
+              name: formData.name,
+            })
+          )
+        } catch (submitError) {
+          toast.error(
+            t(
+              'scans.approval.submitFailed',
+              'Saved "{name}", but it was not submitted for approval: {error}',
+              { name: formData.name, error: getErrorMessage(submitError, '') }
+            )
+          )
+        }
+      } else if (waits) {
+        toast.success(t('scans.new.savedWaiting', undefined, { name: formData.name }), {
+          description: t('scans.new.savedWaitingHint'),
+        })
+      } else if (formData.schedule.runImmediately) {
+        // Trigger scan immediately if requested
         // Import trigger function dynamically to avoid hook rules issue
         const { post } = await import('@/lib/api/client')
         const { scanEndpoints } = await import('@/lib/api/endpoints')
 
         try {
           await post(scanEndpoints.trigger(scanConfig.id), {})
-          toast.success(`Scan "${formData.name}" started successfully`)
+          toast.success(t('scans.new.started', undefined, { name: formData.name }))
         } catch (triggerError) {
           // Scan config was created but trigger failed - show specific error
-          const triggerErrorMsg = getErrorMessage(triggerError, 'Unknown error')
+          const triggerRefused = refusedFromError(triggerError)
+          const triggerErrorMsg =
+            triggerRefused.length > 0
+              ? scopeRefusalSummary(t, triggerRefused)
+              : getErrorMessage(triggerError, t('scans.new.unknownError'))
           console.error('Failed to trigger scan:', triggerError)
 
           // Show a persistent error toast with action buttons
           toast.error(
-            `Scan "${formData.name}" was created but failed to start: ${triggerErrorMsg}`,
+            t('scans.new.createdButNotStarted', undefined, {
+              name: formData.name,
+              error: triggerErrorMsg,
+            }),
             {
               duration: 10000, // Keep visible for 10 seconds
               action: {
-                label: 'View Scan',
+                label: t('scans.new.viewScan'),
                 onClick: () => {
                   // Navigate to the scan detail page
                   window.location.href = `/scans/${scanConfig.id}`
                 },
               },
-              description:
-                triggerErrorHint(triggerError) ??
-                'You can manually trigger the scan from the scan details page.',
+              description: triggerErrorHint(triggerError) ?? t('scans.new.triggerManually'),
             }
           )
 
           // Still close dialog and refresh - the scan was created successfully
+          clearNewScanDraft(tenantId)
           await invalidateScanConfigsCache()
           onSubmit?.(formData)
           setFormData(DEFAULT_NEW_SCAN)
@@ -343,8 +393,18 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           onOpenChange(false)
           return
         }
+      } else if (formData.schedule.saveOnly) {
+        toast.success(t('scans.new.savedStartLater', undefined, { name: formData.name }))
       } else {
-        toast.success(`Scan "${formData.name}" scheduled successfully`)
+        const at = formData.schedule.frequency === 'once' ? onceRunAt(formData) : null
+        toast.success(
+          at
+            ? t('scans.new.willRunOn', undefined, {
+                name: formData.name,
+                time: at.toLocaleString(),
+              })
+            : t('scans.new.scheduled', undefined, { name: formData.name })
+        )
       }
 
       // Invalidate caches to refresh lists
@@ -354,19 +414,29 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       onSubmit?.(formData)
 
       // Reset and close
+      clearNewScanDraft(tenantId)
       setFormData(DEFAULT_NEW_SCAN)
       setCurrentStep('basic')
       createdConfigIdRef.current = null
       onOpenChange(false)
     } catch (error) {
+      const scopeRefused = refusedFromError(error)
+      if (scopeRefused.length > 0) {
+        // Show each refused target with its fixes, on the step that owns them.
+        setRefused(scopeRefused)
+        setCurrentStep('targets')
+        return
+      }
       console.error('Failed to create scan:', error)
-      toast.error(getErrorMessage(error, 'Failed to create scan. Please try again.'))
+      toast.error(getErrorMessage(error, t('scans.new.createFailed')))
     } finally {
       setIsSubmitting(false)
     }
   }
 
   const handleClose = () => {
+    clearNewScanDraft(tenantId)
+    setRefused([])
     setFormData(DEFAULT_NEW_SCAN)
     setCurrentStep('basic')
     createdConfigIdRef.current = null
@@ -378,22 +448,39 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       case 'basic':
         return <BasicInfoStep data={formData} onChange={handleDataChange} />
       case 'targets':
-        return <TargetsStep data={formData} onChange={handleDataChange} />
-      case 'options':
-        return <OptionsStep data={formData} onChange={handleDataChange} />
-      case 'schedule':
         return (
           <>
-            <ScheduleStep data={formData} onChange={handleDataChange} />
-            {canReadZones && zones.length > 0 && (
-              <ScanRoutingSection
-                zones={zones}
-                value={formData.scanZoneId}
-                onChange={(scanZoneId) => handleDataChange({ scanZoneId })}
-                request={previewRequest}
-              />
-            )}
+            {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-4 mt-4" />}
+            <TargetsStep data={formData} onChange={handleDataChange} />
           </>
+        )
+      case 'options':
+        return <OptionsStep data={formData} onChange={handleDataChange} showProfile />
+      case 'schedule':
+        return <ScheduleStep data={formData} onChange={handleDataChange} offerSaveOnly />
+      case 'review':
+        return (
+          <ReviewStep
+            data={formData}
+            onChange={handleDataChange}
+            review={review}
+            onEdit={setCurrentStep}
+            whatLabel={whatLabel}
+            zones={zones}
+            canReadZones={canReadZones}
+            zoneRequest={previewRequest}
+            approvalBlock={
+              approval ? (
+                <ApprovalRequirement
+                  evaluation={approval}
+                  justification={approvalJustification}
+                  ticket={approvalTicket}
+                  onJustification={setApprovalJustification}
+                  onTicket={setApprovalTicket}
+                />
+              ) : null
+            }
+          />
         )
       default:
         return null
@@ -404,23 +491,41 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] overflow-hidden p-0 w-full sm:max-w-[600px]">
-        <DialogHeader className="border-b px-6 py-4">
-          <DialogTitle>New Scan</DialogTitle>
-          <DialogDescription>Configure and launch a new security scan</DialogDescription>
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle>{t('scans.new.title')}</DialogTitle>
+          <DialogDescription>{t('scans.new.description')}</DialogDescription>
+          <ScanStepper
+            className="px-0 pt-2 pb-0 sm:px-0"
+            currentStep={currentStep}
+            onStepClick={handleStepClick}
+            steps={STEPS}
+          />
         </DialogHeader>
 
-        {/* Stepper */}
-        <div className="min-w-0 border-b">
-          <ScanStepper currentStep={currentStep} onStepClick={handleStepClick} />
-        </div>
+        <DialogBody className="px-0 py-0 sm:px-0">{renderStep()}</DialogBody>
 
-        {/* Step Content */}
-        <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden">{renderStep()}</div>
-
-        {/* Footer */}
-        <div className="flex flex-col-reverse gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="flex justify-center sm:justify-start">
+        <DialogFooter className="sm:items-center sm:justify-between">
+          <div className="flex flex-col items-center gap-1 sm:flex-row sm:justify-start">
+            {isLastStep && awaitingApproval && (
+              <p
+                className="text-xs text-muted-foreground sm:order-2 sm:max-w-[18rem]"
+                data-testid="scope-wait-notice"
+              >
+                {t('scans.new.waitNotice')}
+              </p>
+            )}
+            {isLastStep && !blocked && approvalLack && (
+              <p className="text-xs text-destructive sm:order-2 sm:max-w-[16rem]">{approvalLack}</p>
+            )}
+            {isLastStep && blocked && !awaitingApproval && (
+              <p
+                id="review-blocked"
+                className="text-xs text-destructive sm:order-2 sm:max-w-[16rem]"
+              >
+                {review.blockers[0]}
+              </p>
+            )}
             {!isFirstStep && (
               <Button
                 type="button"
@@ -430,7 +535,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 className="w-full sm:w-auto"
               >
                 <ChevronLeft className="me-1 h-4 w-4" />
-                Back
+                {t('scans.common.back')}
               </Button>
             )}
           </div>
@@ -443,25 +548,63 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               disabled={isLoading}
               className="w-full sm:w-auto order-2 sm:order-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
 
-            {isLastStep ? (
+            {isLastStep && !awaitingApproval && blocked && canSkipRefused && (
               <Button
                 type="button"
-                onClick={handleSubmit}
-                disabled={isLoading}
+                variant="secondary"
+                onClick={() => void handleSubmit({ skipRefused: true })}
+                disabled={isLoading || !!approvalLack}
+                className="order-1 h-auto w-full whitespace-normal py-2 sm:order-2 sm:w-auto"
+                data-testid="skip-refused"
+              >
+                {t('scans.review.skipRefused', 'Scan the {count} allowed targets, skip the rest', {
+                  count: review.allowedCount,
+                })}
+              </Button>
+            )}
+            {isLastStep && awaitingApproval ? (
+              <Button
+                type="button"
+                onClick={() => void handleSubmit({ waitForScope: true })}
+                disabled={isLoading || waitBlocked}
+                title={waitBlocked ? review.blockers[0] : undefined}
+                className="order-1 h-auto w-full whitespace-normal py-2 sm:order-2 sm:w-auto"
+              >
+                {isLoading ? (
+                  <Loader2 className="me-2 h-4 w-4 shrink-0 animate-spin" />
+                ) : (
+                  <Clock className="me-2 h-4 w-4 shrink-0" />
+                )}
+                {t('scans.new.createWhenApproved')}
+              </Button>
+            ) : isLastStep ? (
+              <Button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={isLoading || blocked || !!approvalLack}
+                title={blocked ? review.blockers[0] : approvalLack || undefined}
+                aria-describedby={blocked ? 'review-blocked' : undefined}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    {formData.schedule.runImmediately ? 'Starting...' : 'Scheduling...'}
+                    {formData.schedule.runImmediately
+                      ? t('scans.common.starting')
+                      : t('scans.common.saving')}
+                  </>
+                ) : needsApproval ? (
+                  <>
+                    <ShieldCheck className="me-2 h-4 w-4" />
+                    {t('scans.approval.submitForApproval', 'Submit for approval')}
                   </>
                 ) : (
                   <>
                     <Play className="me-2 h-4 w-4" />
-                    {formData.schedule.runImmediately ? 'Start Scan' : 'Schedule Scan'}
+                    {startLabel}
                   </>
                 )}
               </Button>
@@ -471,12 +614,12 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 onClick={handleNext}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
-                Next
+                {t('scans.common.next')}
                 <ChevronRight className="ms-1 h-4 w-4" />
               </Button>
             )}
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

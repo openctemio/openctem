@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -44,6 +45,10 @@ type UnifiedAuthConfig struct {
 	// stop working on the next request instead of when they expire. A lookup
 	// error fails open (logged): the token still expires on its own.
 	RevokedSessions RevokedSessionChecker
+	// CookieName is the access-token cookie, the same fixed name the web
+	// console sets. Empty means DefaultAccessTokenCookieName. The WebSocket upgrade is the browser
+	// request that reaches the API with this cookie (RFC-045).
+	CookieName string
 }
 
 // RevokedSessionChecker answers whether a session id has been revoked.
@@ -75,7 +80,7 @@ const DefaultAccessTokenCookieName = "auth_token"
 // The source matters for CSRF: a cookie is attached by the browser to
 // requests the page did not write (an ambient credential), so a request it
 // authenticates needs CSRF protection; a header token does not.
-func extractTokenWithSource(r *http.Request) (string, bool) {
+func extractTokenWithSource(r *http.Request, cookieName string) (string, bool) {
 	// 1. Try Authorization header first (standard API auth)
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
@@ -88,7 +93,10 @@ func extractTokenWithSource(r *http.Request) (string, bool) {
 	// 2. Try httpOnly cookie (for WebSocket connections + cookie-based SPA)
 	// Browser automatically sends cookies during WebSocket upgrade request,
 	// eliminating any need for frontend to expose token via query param.
-	if cookie, err := r.Cookie(DefaultAccessTokenCookieName); err == nil && cookie.Value != "" {
+	if cookieName == "" {
+		cookieName = DefaultAccessTokenCookieName
+	}
+	if cookie, err := r.Cookie(cookieName); err == nil && cookie.Value != "" {
 		return cookie.Value, true
 	}
 
@@ -107,7 +115,7 @@ func extractTokenWithSource(r *http.Request) (string, bool) {
 func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tokenString, fromCookie := extractTokenWithSource(r)
+			tokenString, fromCookie := extractTokenWithSource(r, cfg.CookieName)
 			if tokenString == "" {
 				apierror.Unauthorized("Missing authorization token").WriteJSON(w)
 				return
@@ -210,6 +218,7 @@ func validateLocalToken(ctx context.Context, tokenString string, validator *jwt.
 	ctx = context.WithValue(ctx, PermissionsKey, claims.Permissions)
 	ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
 	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderLocal)
+	ctx = scangov.WithOrigin(ctx, scangov.OriginUI)
 	ctx = context.WithValue(ctx, LocalClaimsKey, claims)
 
 	// Add tenant memberships to context for authorization
@@ -228,7 +237,7 @@ func validateOIDCToken(ctx context.Context, tokenString string, validator *keycl
 		return nil, errors.New("OIDC auth not configured")
 	}
 
-	claims, err := validator.ValidateToken(tokenString)
+	claims, err := validator.ValidateToken(ctx, tokenString)
 	if err != nil {
 		if log != nil {
 			log.Debug("OIDC token validation failed",
@@ -247,6 +256,7 @@ func validateOIDCToken(ctx context.Context, tokenString string, validator *keycl
 	ctx = context.WithValue(ctx, UsernameKey, claims.PreferredUsername)
 	ctx = context.WithValue(ctx, TenantIDKey, claims.GetTenantID())
 	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderOIDC)
+	ctx = scangov.WithOrigin(ctx, scangov.OriginUI)
 	ctx = context.WithValue(ctx, ClaimsKey, claims)
 
 	return ctx, nil
@@ -320,6 +330,28 @@ func GetSessionID(ctx context.Context) string {
 		return id
 	}
 	return ""
+}
+
+// CredentialExpiresAtKey carries the expiry of the credential that
+// authenticated the request when no token claims are in the context to read
+// it from (the single-use WebSocket ticket).
+const CredentialExpiresAtKey logger.ContextKey = "credential_expires_at"
+
+// GetCredentialExpiry returns when the credential that authenticated the
+// request stops being valid: the access token's exp (local or OIDC), or the
+// value a ticket middleware recorded. Zero when unknown. A long-lived
+// connection (the WebSocket) must not outlive it.
+func GetCredentialExpiry(ctx context.Context) time.Time {
+	if t, ok := ctx.Value(CredentialExpiresAtKey).(time.Time); ok && !t.IsZero() {
+		return t
+	}
+	if c := GetLocalClaims(ctx); c != nil && c.ExpiresAt != nil {
+		return c.ExpiresAt.Time
+	}
+	if c := GetClaims(ctx); c != nil && c.ExpiresAt != nil {
+		return c.ExpiresAt.Time
+	}
+	return time.Time{}
 }
 
 // GetPermissions extracts the permissions from context.
@@ -457,7 +489,7 @@ func Require(perm permission.Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !HasPermission(r.Context(), perm.String()) {
-				apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+				permissionDenied(perm.String()).WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -480,7 +512,7 @@ func RequireAny(perms ...permission.Permission) func(http.Handler) http.Handler 
 					return
 				}
 			}
-			apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+			permissionDeniedAnyOf(permission.ToStrings(perms)...).WriteJSON(w)
 		})
 	}
 }
@@ -494,11 +526,15 @@ func RequireAny(perms ...permission.Permission) func(http.Handler) http.Handler 
 func RequireAll(perms ...permission.Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var missing []string
 			for _, perm := range perms {
 				if !HasPermission(r.Context(), perm.String()) {
-					apierror.Forbidden("Insufficient permissions").WriteJSON(w)
-					return
+					missing = append(missing, perm.String())
 				}
+			}
+			if len(missing) > 0 {
+				permissionDenied(missing...).WriteJSON(w)
+				return
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -510,7 +546,7 @@ func RequireAdmin() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !IsAdmin(r.Context()) {
-				apierror.Forbidden("Admin access required").WriteJSON(w)
+				roleRequired("Admin access required", "admin").WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -528,13 +564,12 @@ func IsOwner(ctx context.Context) bool {
 // RequireOwner creates a middleware that requires owner role.
 // Use this for sensitive operations that only the owner should perform:
 // - TeamDelete: Deleting the tenant
-// - BillingManage: Managing billing settings
-// - GroupsDelete, PermissionSetsDelete, AssignmentRulesDelete: Deleting access control resources
+// - GroupsDelete, AssignmentRulesDelete: Deleting access control resources
 func RequireOwner() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !IsOwner(r.Context()) {
-				apierror.Forbidden("Owner access required").WriteJSON(w)
+				roleRequired("Owner access required", "owner").WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)

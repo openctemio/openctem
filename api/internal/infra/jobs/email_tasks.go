@@ -9,7 +9,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -120,12 +120,12 @@ func NewPasswordResetTask(payload PasswordResetPayload) (*asynq.Task, error) {
 
 // EmailTaskHandler handles email task processing.
 type EmailTaskHandler struct {
-	emailService *app.EmailService
+	emailService *auth.EmailService
 	logger       *logger.Logger
 }
 
 // NewEmailTaskHandler creates a new email task handler.
-func NewEmailTaskHandler(emailService *app.EmailService, log *logger.Logger) *EmailTaskHandler {
+func NewEmailTaskHandler(emailService *auth.EmailService, log *logger.Logger) *EmailTaskHandler {
 	return &EmailTaskHandler{
 		emailService: emailService,
 		logger:       log.With("handler", "email_tasks"),

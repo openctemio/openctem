@@ -478,40 +478,34 @@ func (r *BranchRepository) doScan(scan func(dest ...any) error) (*branch.Branch,
 func (r *BranchRepository) buildWhereClause(filter branch.Filter) (string, []any) {
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	if filter.RepositoryID != nil {
-		conditions = append(conditions, fmt.Sprintf("repository_id = $%d", argIndex))
 		args = append(args, filter.RepositoryID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("repository_id = $%d", len(args)))
 	}
 
 	if filter.Name != "" {
-		conditions = append(conditions, fmt.Sprintf("name ILIKE $%d", argIndex))
 		args = append(args, wrapLikePattern(filter.Name))
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("name ILIKE $%d", len(args)))
 	}
 
 	if len(filter.Types) > 0 {
 		placeholders := make([]string, len(filter.Types))
 		for i, t := range filter.Types {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, t.String())
-			argIndex++
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
 		}
 		conditions = append(conditions, fmt.Sprintf("branch_type IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
 	if filter.IsDefault != nil {
-		conditions = append(conditions, fmt.Sprintf("is_default = $%d", argIndex))
 		args = append(args, *filter.IsDefault)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("is_default = $%d", len(args)))
 	}
 
 	if filter.ScanStatus != nil {
-		conditions = append(conditions, fmt.Sprintf("scan_status = $%d", argIndex))
 		args = append(args, filter.ScanStatus.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("scan_status = $%d", len(args)))
 	}
 
 	return strings.Join(conditions, " AND "), args

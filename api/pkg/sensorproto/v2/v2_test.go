@@ -154,10 +154,10 @@ func TestIDs(t *testing.T) {
 }
 
 func TestHasFeatureAndVersion(t *testing.T) {
-	if !HasFeature([]string{"doorbell, Results-V2"}, FeatureResultsV2) {
+	if !HasFeature([]string{"doorbell, Results"}, FeatureResults) {
 		t.Error("feature not found")
 	}
-	if HasFeature([]string{"doorbell"}, FeatureResultsV2) {
+	if HasFeature([]string{"doorbell"}, FeatureResults) {
 		t.Error("feature found")
 	}
 	for _, v := range []string{"1", "1.0", "1.3"} {
@@ -249,7 +249,7 @@ func TestStatusAndHelloGolden(t *testing.T) {
 	receiving := Status{ReportID: st.ReportID, State: StateReceiving, Segments: SegmentCounts{Received: 1},
 		Errors: []ItemError{}, ReceivedAt: at, UpdatedAt: at}
 	var buf bytes.Buffer
-	full := NewHello(DefaultLimits(), ControlFeatures()...).WithDeprecation(DeprecationProtocolV1, Deprecation{
+	full := NewHello(DefaultLimits(), ControlFeatures()...).WithDeprecation("protocol_v1", Deprecation{
 		DeprecatedAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), SunsetAt: time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)})
 	for _, v := range []any{st, receiving, NewHello(DefaultLimits()), full} {
 		b, err := json.MarshalIndent(v, "", "  ")

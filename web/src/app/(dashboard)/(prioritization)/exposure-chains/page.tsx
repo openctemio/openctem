@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { PageHeader, StatsCard, EmptyState } from '@/features/shared'
 import { useExposureChains, PathGraph } from '@/features/attack-surface'
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Route, ShieldAlert, ShieldCheck, Globe, ArrowRight, Network, Target } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================================
 // Map an exposure chain onto the generic path-graph model.
@@ -30,7 +31,7 @@ function chainToPath(chain: ExposureChain, maxScore: number): PathGraphPath {
       criticality: isTarget ? chain.targetCriticality : undefined,
       isCrownJewel: isTarget ? chain.isCrownJewel : undefined,
       kev: isTarget ? chain.kevCount > 0 : undefined,
-      href: hop.assetId ? `/findings?assetId=${hop.assetId}` : undefined,
+      href: hop.assetId ? `/findings?asset_id=${hop.assetId}` : undefined,
     }
   })
 
@@ -87,15 +88,19 @@ function LoadingSkeleton() {
 // ============================================================
 
 function NoRelationshipData() {
+  const { t } = useTranslation()
   return (
     <EmptyState
       icon={Network}
-      title="No relationship data yet"
-      description="Exposure chains are built from asset relationships. Add relationships between your assets so we can trace paths from internet-facing entry points to assets carrying KEV or critical findings."
+      title={t('prioritization.noRelationships.title', 'No relationship data yet')}
+      description={t(
+        'prioritization.exposureChains.noRelationships',
+        'Add relationships between your assets to trace paths from internet-facing entry points.'
+      )}
       action={
         <Button size="sm" asChild>
           <Link href="/assets">
-            Go to assets
+            {t('prioritization.goToAssets', 'Go to assets')}
             <ArrowRight className="ms-2 h-4 w-4" />
           </Link>
         </Button>
@@ -109,6 +114,7 @@ function NoRelationshipData() {
 // ============================================================
 
 export default function ExposureChainsPage() {
+  const { t } = useTranslation()
   const { chains: data, isLoading } = useExposureChains()
 
   const summary = data?.summary
@@ -126,8 +132,11 @@ export default function ExposureChainsPage() {
   return (
     <Main>
       <PageHeader
-        title="Exposure chains"
-        description="Attack paths from internet-facing entry points to assets with KEV or critical findings, ranked by urgency."
+        title={t('prioritization.exposureChains.title', 'Exposure chains')}
+        description={t(
+          'prioritization.exposureChains.description',
+          'Paths from internet-facing entry points to assets with KEV or critical findings, ranked by urgency.'
+        )}
       />
 
       {isLoading ? (
@@ -171,11 +180,14 @@ export default function ExposureChainsPage() {
                 section heading rather than inside another card. */}
             <section className="space-y-3 lg:col-span-2">
               <div>
-                <h2 className="text-base font-semibold">Chains ranked by urgency</h2>
+                <h2 className="text-base font-semibold">
+                  {t('prioritization.exposureChains.rankedTitle', 'Chains ranked by urgency')}
+                </h2>
                 <p className="text-sm text-muted-foreground">
-                  Each chain is the shortest path from a public entry point to an asset with open
-                  KEV or critical findings. Hover to trace a path; click any node to open that
-                  asset&apos;s findings. Break the top chains first.
+                  {t(
+                    'prioritization.exposureChains.rankedHint',
+                    'Each chain is the shortest path. Click a node to open its findings.'
+                  )}
                 </p>
               </div>
               <PathGraph
@@ -183,8 +195,11 @@ export default function ExposureChainsPage() {
                 empty={
                   <EmptyState
                     icon={ShieldCheck}
-                    title="No exposure chains"
-                    description="No internet-facing entry point reaches an asset with KEV or critical findings through tracked relationships."
+                    title={t('prioritization.exposureChains.emptyTitle', 'No exposure chains')}
+                    description={t(
+                      'prioritization.exposureChains.emptyDescription',
+                      'No internet-facing entry point reaches an asset with KEV or critical findings.'
+                    )}
                   />
                 }
               />

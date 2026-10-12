@@ -30,7 +30,7 @@ func Tracing(serviceName string) func(http.Handler) http.Handler {
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(
 					attribute.String("http.request.method", r.Method),
-					attribute.String("url.path", r.URL.Path),
+					attribute.String("url.path", RedactPath(r.URL.Path)),
 					attribute.String("url.scheme", r.URL.Scheme),
 					attribute.String("server.address", r.Host),
 					attribute.String("http.route", normalizedPath),

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { deletePlatformIdP, savePlatformIdP } from '../api/use-platform-idp'
 import { adminErrorMessage } from './totp-step-form'
 import type { PlatformIdP, PlatformIdPInput } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** Splits a comma- or space-separated list. */
 export function parseList(raw: string): string[] {
@@ -85,13 +86,26 @@ export function PlatformIdPForm({
   hasBreakGlass: boolean
   onSaved: () => void
 }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState<FormState>(() => toForm(idp))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmRequire, setConfirmRequire] = useState(false)
 
-  useEffect(() => setForm(toForm(idp)), [idp])
+  // Reset the editable copy to the server record only when that record actually
+  // changes. The parent hands down a fresh `idp` reference on every SWR
+  // revalidation (focus refetch returns a new object with identical contents);
+  // resetting on the reference alone discards in-progress edits and — paired with
+  // `toForm` building a new object each time — risks a render loop. Gate on a
+  // content signature so the reset fires once per real server change.
+  const appliedIdpKey = useRef<string>('')
+  useEffect(() => {
+    const key = JSON.stringify(idp)
+    if (appliedIdpKey.current === key) return
+    appliedIdpKey.current = key
+    setForm(toForm(idp))
+  }, [idp])
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -142,7 +156,7 @@ export function PlatformIdPForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form method="post" onSubmit={submit} className="space-y-5">
       <Card>
         <CardHeader>
           <CardTitle>Identity provider (OIDC)</CardTitle>
@@ -361,9 +375,12 @@ export function PlatformIdPForm({
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title="Remove the identity provider?"
-        desc="Administrators sign in with their password and the console code again. Their IdP bindings are kept for the same issuer."
-        confirmText="Remove"
+        title={t('confirm.platformIdp.removeTitle', 'Remove the identity provider?')}
+        desc={t(
+          'confirm.platformIdp.removeDesc',
+          'Administrators sign in with their password and the console code again. Their IdP bindings are kept for the same issuer.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         isLoading={busy}
         handleConfirm={() => void remove()}
@@ -371,9 +388,12 @@ export function PlatformIdPForm({
       <ConfirmDialog
         open={confirmRequire}
         onOpenChange={setConfirmRequire}
-        title="Require the identity provider?"
-        desc="Administrators who are not break-glass accounts can no longer use their password for the console, and those in the console with a password are signed out now (you too, if you signed in with a password)."
-        confirmText="Require it"
+        title={t('confirm.platformIdp.requireTitle', 'Require the identity provider?')}
+        desc={t(
+          'confirm.platformIdp.requireDesc',
+          'Administrators who are not break-glass accounts can no longer use their password for the console, and those in the console with a password are signed out now (you too, if you signed in with a password).'
+        )}
+        confirmText={t('confirm.platformIdp.require', 'Require it')}
         destructive
         isLoading={busy}
         handleConfirm={() => void save()}

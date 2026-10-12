@@ -132,11 +132,11 @@ func (r *RelationshipSuggestionRepository) GetByID(ctx context.Context, tenantID
 }
 
 // ListPending retrieves pending suggestions for a tenant with pagination and optional search.
-func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tenantID shared.ID, search string, page pagination.Pagination) (pagination.Result[*relationship.Suggestion], error) {
+func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tenantID shared.ID, search string, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*relationship.Suggestion], error) {
 	// Build WHERE clause
-	where := "rs.tenant_id = $1 AND rs.status = 'pending'"
-	args := []any{tenantID.String()}
-	idx := 2
+	scopeCond, args := pairInScopeCond("rs.source_asset_id", "rs.target_asset_id", scope, []any{tenantID.String()})
+	where := "rs.tenant_id = $1 AND rs.status = 'pending' AND " + scopeCond
+	idx := len(args) + 1
 
 	if search != "" {
 		where += fmt.Sprintf(` AND (sa.name ILIKE $%d OR ta.name ILIKE $%d)`, idx, idx)
@@ -228,10 +228,11 @@ func (r *RelationshipSuggestionRepository) UpdateStatus(ctx context.Context, s *
 }
 
 // CountPending returns the number of pending suggestions for a tenant.
-func (r *RelationshipSuggestionRepository) CountPending(ctx context.Context, tenantID shared.ID) (int64, error) {
-	query := `SELECT COUNT(*) FROM relationship_suggestions WHERE tenant_id = $1 AND status = 'pending'`
+func (r *RelationshipSuggestionRepository) CountPending(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error) {
+	scopeCond, args := pairInScopeCond("source_asset_id", "target_asset_id", scope, []any{tenantID.String()})
+	query := `SELECT COUNT(*) FROM relationship_suggestions WHERE tenant_id = $1 AND status = 'pending' AND ` + scopeCond
 	var count int64
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to count pending suggestions: %w", err)
 	}
 	return count, nil
@@ -263,19 +264,22 @@ func (r *RelationshipSuggestionRepository) DeletePending(ctx context.Context, te
 }
 
 // ApproveAll marks all pending suggestions as approved and returns them.
-func (r *RelationshipSuggestionRepository) ApproveAll(ctx context.Context, tenantID, reviewerID shared.ID) ([]*relationship.Suggestion, error) {
+func (r *RelationshipSuggestionRepository) ApproveAll(ctx context.Context, tenantID, reviewerID shared.ID, scope *shared.DataScope) ([]*relationship.Suggestion, error) {
 	now := time.Now().UTC()
 
+	scopeCond, args := pairInScopeCond("source_asset_id", "target_asset_id", scope,
+		[]any{tenantID.String(), reviewerID.String(), now})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		UPDATE relationship_suggestions
 		SET status = 'approved', reviewed_by = $2, reviewed_at = $3
-		WHERE tenant_id = $1 AND status = 'pending'
+		WHERE tenant_id = $1 AND status = 'pending' AND ` + scopeCond + `
 		RETURNING id, tenant_id, source_asset_id, target_asset_id,
 		          relationship_type, reason, confidence, status,
 		          reviewed_by, reviewed_at, created_at
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), reviewerID.String(), now)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to approve all suggestions: %w", err)
 	}

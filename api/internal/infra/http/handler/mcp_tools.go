@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -127,12 +129,13 @@ type mcpCampaignMemberDTO struct {
 type mcpCampaignDTO struct {
 	ID                string                 `json:"id"`
 	Name              string                 `json:"name"`
-	Type              string                 `json:"type"`
+	Targets           []string               `json:"targets"`
+	Approach          string                 `json:"approach,omitempty"`
+	Environment       string                 `json:"environment,omitempty"`
+	TLP               string                 `json:"tlp"`
 	Status            string                 `json:"status"`
-	Priority          string                 `json:"priority"`
 	Description       string                 `json:"description,omitempty"`
 	ClientName        string                 `json:"client_name,omitempty"`
-	ClientContact     string                 `json:"client_contact,omitempty"`
 	StartDate         string                 `json:"start_date,omitempty"`
 	EndDate           string                 `json:"end_date,omitempty"`
 	Methodology       string                 `json:"methodology,omitempty"`
@@ -147,12 +150,13 @@ func toCampaignDTO(c *pentestdom.Campaign, members []*pentestdom.CampaignMember)
 	dto := mcpCampaignDTO{
 		ID:                c.ID().String(),
 		Name:              c.Name(),
-		Type:              string(c.CampaignType()),
+		Targets:           c.Targets(),
+		Approach:          string(c.Approach()),
+		Environment:       string(c.Environment()),
+		TLP:               string(c.TLP()),
 		Status:            string(c.Status()),
-		Priority:          string(c.Priority()),
 		Description:       c.Description(),
 		ClientName:        c.ClientName(),
-		ClientContact:     c.ClientContact(),
 		Methodology:       c.Methodology(),
 		Objectives:        c.Objectives(),
 		ScopeItems:        c.ScopeItems(),
@@ -332,6 +336,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"carrying open KEV/critical findings (crown jewels), for this tenant.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 			RequiredPerm: string(permission.AssetsRead),
+			Module:       moduledom.ModuleAttackSurface,
 			call:         h.toolExposureChains,
 		},
 		{
@@ -359,6 +364,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 			Description:  "Compliance posture rollup for this tenant: framework/control totals and overdue controls.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 			RequiredPerm: string(permission.ComplianceFrameworksRead),
+			Module:       moduledom.ModuleCompliance,
 			call:         h.toolCompliancePosture,
 		},
 		// --- pentest report-writing tools (campaign-membership gated) ---------
@@ -369,6 +375,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"key owner to be a member of the campaign.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 			RequiredPerm: string(permission.PentestCampaignsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolGetCampaign,
 		},
 		{
@@ -382,6 +389,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				`"status":{"type":"string"},` +
 				`"limit":{"type":"integer","description":"max rows (default 25, max 100)"}},"required":["campaign_id"]}`),
 			RequiredPerm: string(permission.PentestFindingsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolListCampaignFindings,
 		},
 		{
@@ -391,6 +399,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"campaign membership.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 			RequiredPerm: string(permission.PentestFindingsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolGetPentestFinding,
 		},
 		{
@@ -399,6 +408,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"notes, tested_at. Requires campaign membership.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"campaign_id":{"type":"string"}},"required":["campaign_id"]}`),
 			RequiredPerm: string(permission.PentestRetestsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolListRetests,
 		},
 		{
@@ -410,6 +420,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				`"search":{"type":"string"},` +
 				`"limit":{"type":"integer"}}}`),
 			RequiredPerm: string(permission.PentestTemplatesRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolListFindingTemplates,
 		},
 		{
@@ -418,6 +429,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"average and max CVSS, and progress. Requires campaign membership.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"campaign_id":{"type":"string"}},"required":["campaign_id"]}`),
 			RequiredPerm: string(permission.PentestCampaignsRead),
+			Module:       moduledom.ModulePentest,
 			call:         h.toolCampaignReportStats,
 		},
 	}
@@ -439,7 +451,7 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 		return nil, err
 	}
 
-	in := app.ListFindingsInput{
+	in := finding.ListFindingsInput{
 		TenantID:     tenantID,
 		ActingUserID: actingUser(ctx), // confine to the key owner's data-scope
 		IsAdmin:      false,           // API keys never get admin bypass
@@ -489,7 +501,7 @@ func (h *MCPHandler) toolFindingStats(ctx context.Context, tenantID string, _ js
 	// Scoped stats: confine the aggregate to the key owner's group data-scope
 	// (IsAdmin=false), mirroring how list_findings builds its scope — so a
 	// restricted key never sees posture for findings it can't list.
-	stats, err := h.findings.GetFindingStatsWithScope(ctx, app.GetFindingStatsInput{
+	stats, err := h.findings.GetFindingStatsWithScope(ctx, finding.GetFindingStatsInput{
 		TenantID:     tenantID,
 		ActingUserID: actingUser(ctx),
 		IsAdmin:      false,
@@ -530,7 +542,7 @@ func (h *MCPHandler) toolListActiveCVEs(ctx context.Context, tenantID string, ra
 		return nil, err
 	}
 
-	in := app.ListActiveCVEsInput{
+	in := finding.ListActiveCVEsInput{
 		TenantID: tenantID,
 		KEVOnly:  a.KEVOnly,
 		MinEPSS:  a.MinEPSS,
@@ -611,7 +623,7 @@ func (h *MCPHandler) toolListAssets(ctx context.Context, tenantID string, raw js
 		return nil, err
 	}
 
-	in := app.ListAssetsInput{
+	in := asset.ListAssetsInput{
 		TenantID:     tenantID,
 		ActingUserID: actingUser(ctx), // confine to the key owner's data-scope
 		IsAdmin:      false,           // API keys never get admin bypass

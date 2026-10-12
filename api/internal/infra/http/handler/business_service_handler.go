@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
@@ -21,8 +24,34 @@ import (
 // Customer Login) that spans multiple assets and is distinct from a
 // business unit (which is an organizational grouping).
 type BusinessServiceHandler struct {
-	db     *sql.DB
-	logger *logger.Logger
+	db        *sql.DB
+	dataScope *datascope.Enforcer
+	logger    *logger.Logger
+}
+
+// WithDataScope applies the caller's data scope (Layer 2) to the service's
+// asset links: the list shows only in-scope assets, and linking or unlinking
+// an out-of-scope asset answers 404 (a link changes the asset's effective
+// criticality). Nil leaves them tenant-wide.
+func (h *BusinessServiceHandler) WithDataScope(e *datascope.Enforcer) *BusinessServiceHandler {
+	h.dataScope = e
+	return h
+}
+
+// assetInScope reports whether the request's caller may see the asset.
+func (h *BusinessServiceHandler) assetInScope(r *http.Request, tenantID, assetID string) bool {
+	if h.dataScope == nil {
+		return true
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false
+	}
+	aid, err := shared.IDFromString(assetID)
+	if err != nil {
+		return false
+	}
+	return h.dataScope.AssertAsset(r.Context(), tid, aid) == nil
 }
 
 // NewBusinessServiceHandler creates a new BusinessServiceHandler.
@@ -34,8 +63,10 @@ func NewBusinessServiceHandler(db *sql.DB, log *logger.Logger) *BusinessServiceH
 func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	var total int64
 	err := h.db.QueryRowContext(r.Context(),
@@ -66,7 +97,7 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	items := make([]BusinessServiceResponse, 0, perPage)
+	items := make([]BusinessServiceResponse, 0, pagination.MaxPerPage)
 	for rows.Next() {
 		bs, err := scanBusinessService(rows)
 		if err != nil {
@@ -278,9 +309,9 @@ func (h *BusinessServiceHandler) LinkAsset(w http.ResponseWriter, r *http.Reques
 	// Verify asset belongs to the same tenant before linking.
 	var assetExists bool
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM assets WHERE tenant_id = $1 AND id = $2)",
+		"SELECT EXISTS(SELECT 1 FROM assets WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL)",
 		tenantID, req.AssetID,
-	).Scan(&assetExists); err != nil || !assetExists {
+	).Scan(&assetExists); err != nil || !assetExists || !h.assetInScope(r, tenantID, req.AssetID) {
 		apierror.NotFound("asset not found").WriteJSON(w)
 		return
 	}
@@ -313,6 +344,10 @@ func (h *BusinessServiceHandler) UnlinkAsset(w http.ResponseWriter, r *http.Requ
 		tenantID, id,
 	).Scan(&serviceExists); err != nil || !serviceExists {
 		apierror.NotFound("business service not found").WriteJSON(w)
+		return
+	}
+	if !h.assetInScope(r, tenantID, assetID) {
+		apierror.NotFound("link not found").WriteJSON(w)
 		return
 	}
 
@@ -353,7 +388,7 @@ func (h *BusinessServiceHandler) ListAssets(w http.ResponseWriter, r *http.Reque
 		`SELECT bsa.asset_id, bsa.dependency_type, bsa.created_at,
 		        a.name, a.asset_type
 		   FROM business_service_assets bsa
-		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $1
+		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $1 AND a.deleted_at IS NULL
 		  WHERE bsa.tenant_id = $1 AND bsa.service_id = $2
 		  ORDER BY bsa.created_at DESC`,
 		tenantID, id,
@@ -384,6 +419,12 @@ func (h *BusinessServiceHandler) ListAssets(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	items, err = filterLinksInScope(r, h.dataScope, tenantID, items, func(l BusinessServiceAssetLink) string { return l.AssetID })
+	if err != nil {
+		h.logger.Error("business service asset scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
 	writeJSON(w, http.StatusOK, items)
 }
 

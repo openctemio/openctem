@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assettype"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -19,13 +22,13 @@ import (
 // AssetTypeHandler handles asset type-related HTTP requests.
 // Asset types are read-only system configuration.
 type AssetTypeHandler struct {
-	service   *app.AssetTypeService
+	service   *assetapp.AssetTypeService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAssetTypeHandler creates a new asset type handler.
-func NewAssetTypeHandler(svc *app.AssetTypeService, v *validator.Validator, log *logger.Logger) *AssetTypeHandler {
+func NewAssetTypeHandler(svc *assetapp.AssetTypeService, v *validator.Validator, log *logger.Logger) *AssetTypeHandler {
 	return &AssetTypeHandler{
 		service:   svc,
 		validator: v,
@@ -144,211 +147,126 @@ func (h *AssetTypeHandler) handleServiceError(w http.ResponseWriter, err error) 
 
 // ===== Category Handlers =====
 
-// ListCategories handles GET /api/v1/asset-types/categories
-// @Summary      List asset type categories
-// @Description  Retrieves a paginated list of asset type categories. Use active_only=true to get all active categories without pagination.
-// @Tags         Asset Types
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        active_only query bool false "Return only active categories (bypasses pagination)"
-// @Param        search query string false "Search by name or code"
-// @Param        page query int false "Page number" default(1)
-// @Param        per_page query int false "Items per page" default(20)
-// @Success      200  {object}  object{data=[]CategoryResponse,total=int,page=int,per_page=int,total_pages=int}
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Router       /asset-types/categories [get]
-func (h *AssetTypeHandler) ListCategories(w http.ResponseWriter, r *http.Request) { //nolint:dupl // Similar to FindingSourceHandler.ListCategories but different types
-	query := r.URL.Query()
-	activeOnly := query.Get("active_only") == queryParamTrue
-
-	if activeOnly {
-		categories, err := h.service.ListActiveCategories(r.Context())
-		if err != nil {
-			h.handleServiceError(w, err)
-			return
-		}
-
-		data := make([]CategoryResponse, len(categories))
-		for i, c := range categories {
-			data[i] = toCategoryResponse(c)
-		}
-
-		response := struct {
-			Data  []CategoryResponse `json:"data"`
-			Total int                `json:"total"`
-		}{
-			Data:  data,
-			Total: len(data),
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(response)
-		return
-	}
-
-	// Parse pagination
-	pageNum := 1
-	perPage := 20
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			pageNum = parsed
-		}
-	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 {
-			perPage = parsed
-		}
-	}
-	page := pagination.New(pageNum, perPage)
-
-	// Build filter
-	filter := assettype.NewCategoryFilter()
-	if search := query.Get("search"); search != "" {
-		filter = filter.WithSearch(search)
-	}
-
-	categories, err := h.service.ListCategories(r.Context(), filter, page)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	data := make([]CategoryResponse, len(categories.Data))
-	for i, c := range categories.Data {
-		data[i] = toCategoryResponse(c)
-	}
-
-	response := struct {
-		Data       []CategoryResponse `json:"data"`
-		Total      int64              `json:"total"`
-		Page       int                `json:"page"`
-		PerPage    int                `json:"per_page"`
-		TotalPages int                `json:"total_pages"`
-	}{
-		Data:       data,
-		Total:      categories.Total,
-		Page:       categories.Page,
-		PerPage:    categories.PerPage,
-		TotalPages: categories.TotalPages,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
-}
-
-// GetCategory handles GET /api/v1/asset-types/categories/{categoryId}
-// @Summary      Get a category by ID
-// @Description  Retrieves a single asset type category by its unique identifier
-// @Tags         Asset Types
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        categoryId path string true "Category ID (UUID)"
-// @Success      200  {object}  CategoryResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Router       /asset-types/categories/{categoryId} [get]
-func (h *AssetTypeHandler) GetCategory(w http.ResponseWriter, r *http.Request) {
-	categoryID := r.PathValue("categoryId")
-	if categoryID == "" {
-		apierror.BadRequest("Category ID is required").WriteJSON(w)
-		return
-	}
-
-	c, err := h.service.GetCategory(r.Context(), categoryID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toCategoryResponse(c))
-}
-
 // ===== Asset Type Handlers =====
 
+// AssetTypeRegistryResponse is the body of GET /api/v1/asset-types: the
+// RFC-042 asset type registry (version, lenses, classes, types, sections,
+// cards, core_fields, the property schema), generated from
+// api/configs/asset-types.yaml.
+//
+// data, total, page, per_page and total_pages are the legacy asset_types
+// rows that this route returned before the registry. They are kept,
+// unchanged, for one release (RFC-041 §7: changes within v1 are additive)
+// and are deprecated: read types instead.
+type AssetTypeRegistryResponse struct {
+	Version    string                    `json:"version"`
+	Lenses     []asset.LensDefinition    `json:"lenses"`
+	Classes    []asset.ClassDefinition   `json:"classes"`
+	Types      []asset.TypeDefinition    `json:"types"`
+	Sections   []asset.SectionDefinition `json:"sections"`
+	Cards      []string                  `json:"cards"`
+	CoreFields []string                  `json:"core_fields"`
+	// Properties is the property dictionary (RFC-042 §6.3.9): every key's
+	// labels, display format, synonyms and allowed classes;
+	// CommonProperties the keys every type may hold besides its attributes.
+	Properties       []asset.PropertyDefinition `json:"properties"`
+	CommonProperties []string                   `json:"common_properties"`
+
+	// Deprecated: the legacy asset_types rows; use Types.
+	Data       []AssetTypeResponse `json:"data"`
+	Total      int64               `json:"total"`
+	Page       int                 `json:"page,omitempty"`
+	PerPage    int                 `json:"per_page,omitempty"`
+	TotalPages int                 `json:"total_pages,omitempty"`
+}
+
 // ListAssetTypes handles GET /api/v1/asset-types
-// @Summary      List asset types
-// @Description  Retrieves a paginated list of system asset types. Asset types are read-only configuration. Use active_only=true to get all active types without pagination.
+// @Summary      Asset type registry
+// @Description  Returns the asset type registry (RFC-042): every asset type with its class, lens, attribute schema, facets, group-by fields, row columns, card renderer, detail sections, allowed relationships and identity keys, plus the classes, lenses, the closed sets of sections and cards, and the property schema (every property key with its labels, display format, synonyms and the classes that may hold it). The registry is generated from api/configs/asset-types.yaml and holds no tenant data. The response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages fields are the legacy asset_types rows (deprecated, kept for one release); the query parameters below filter only those.
 // @Tags         Asset Types
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        active_only query bool false "Return only active asset types (bypasses pagination)"
-// @Param        include_category query bool false "Include category details in response"
-// @Param        search query string false "Search by name or code"
-// @Param        category_id query string false "Filter by category ID"
-// @Param        code query string false "Filter by exact code"
-// @Param        is_system query bool false "Filter by system type"
-// @Param        is_scannable query bool false "Filter by scannable flag"
-// @Param        is_discoverable query bool false "Filter by discoverable flag"
-// @Param        sort query string false "Sort field (e.g., 'name', '-display_order')"
-// @Param        page query int false "Page number" default(1)
-// @Param        per_page query int false "Items per page" default(50)
-// @Success      200  {object}  object{data=[]AssetTypeResponse,total=int,page=int,per_page=int,total_pages=int}
+// @Param        If-None-Match header string false "ETag from a previous response"
+// @Param        active_only query bool false "Legacy rows: only active asset types, without pagination"
+// @Param        include_category query bool false "Legacy rows: include category details"
+// @Param        search query string false "Legacy rows: search by name or code"
+// @Param        category_id query string false "Legacy rows: filter by category ID"
+// @Param        code query string false "Legacy rows: filter by exact code"
+// @Param        is_system query bool false "Legacy rows: filter by system type"
+// @Param        is_scannable query bool false "Legacy rows: filter by scannable flag"
+// @Param        is_discoverable query bool false "Legacy rows: filter by discoverable flag"
+// @Param        sort query string false "Legacy rows: sort field (e.g., 'name', '-display_order')"
+// @Param        page query int false "Legacy rows: page number" default(1)
+// @Param        per_page query int false "Legacy rows: items per page" default(50)
+// @Success      200  {object}  AssetTypeRegistryResponse
+// @Success      304  "Not modified (If-None-Match matched the ETag)"
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /asset-types [get]
 func (h *AssetTypeHandler) ListAssetTypes(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
+	reg := asset.RegistryDocument()
+	resp := AssetTypeRegistryResponse{
+		Version:    reg.Version,
+		Lenses:     reg.Lenses,
+		Classes:    reg.Classes,
+		Types:      reg.Types,
+		Sections:   reg.Sections,
+		Cards:      reg.Cards,
+		CoreFields: reg.CoreFields,
 
-	// Check if active only
-	activeOnly := query.Get("active_only") == queryParamTrue
-	includeCategory := query.Get("include_category") == queryParamTrue
-
-	if activeOnly {
-		types, err := h.service.ListActiveAssetTypes(r.Context())
-		if err != nil {
-			h.handleServiceError(w, err)
-			return
-		}
-
-		data := make([]AssetTypeResponse, len(types))
-		for i, t := range types {
-			data[i] = toAssetTypeResponse(t)
-		}
-
-		response := struct {
-			Data  []AssetTypeResponse `json:"data"`
-			Total int                 `json:"total"`
-		}{
-			Data:  data,
-			Total: len(data),
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(response)
+		Properties:       reg.Properties,
+		CommonProperties: reg.CommonProperties,
+	}
+	if err := h.legacyAssetTypeRows(r, &resp); err != nil {
+		h.handleServiceError(w, err)
 		return
 	}
 
-	// Parse pagination
-	pageNum := 1
-	perPage := 50
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			pageNum = parsed
-		}
+	body, err := json.Marshal(resp)
+	if err != nil {
+		h.logger.Error("encode asset type registry", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
 	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 {
-			perPage = parsed
-		}
+	sum := sha256.Sum256(body)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
 	}
-	page := pagination.New(pageNum, perPage)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(append(body, '\n'))
+}
 
-	// Build filter
+// legacyAssetTypeRows fills the deprecated data/total/page fields from the
+// asset_types table, exactly as this route did before the registry.
+func (h *AssetTypeHandler) legacyAssetTypeRows(r *http.Request, resp *AssetTypeRegistryResponse) error {
+	query := r.URL.Query()
+
+	if query.Get("active_only") == queryParamTrue {
+		types, err := h.service.ListActiveAssetTypes(r.Context())
+		if err != nil {
+			return err
+		}
+		resp.Data = make([]AssetTypeResponse, len(types))
+		for i, t := range types {
+			resp.Data[i] = toAssetTypeResponse(t)
+		}
+		resp.Total = int64(len(resp.Data))
+		return nil
+	}
+
+	page, err := pagination.FromRequest(query, 50)
+	if err != nil {
+		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
+
 	filter := assettype.NewFilter()
-
 	if search := query.Get("search"); search != "" {
 		filter = filter.WithSearch(search)
 	}
@@ -359,84 +277,43 @@ func (h *AssetTypeHandler) ListAssetTypes(w http.ResponseWriter, r *http.Request
 		filter = filter.WithCode(code)
 	}
 	if query.Get("is_system") != "" {
-		isSystem := query.Get("is_system") == queryParamTrue
-		filter = filter.WithIsSystem(isSystem)
+		filter = filter.WithIsSystem(query.Get("is_system") == queryParamTrue)
 	}
 	if query.Get("is_scannable") != "" {
-		isScannable := query.Get("is_scannable") == queryParamTrue
-		filter = filter.WithIsScannable(isScannable)
+		filter = filter.WithIsScannable(query.Get("is_scannable") == queryParamTrue)
 	}
 	if query.Get("is_discoverable") != "" {
-		isDiscoverable := query.Get("is_discoverable") == queryParamTrue
-		filter = filter.WithIsDiscoverable(isDiscoverable)
+		filter = filter.WithIsDiscoverable(query.Get("is_discoverable") == queryParamTrue)
 	}
 
 	opts := assettype.NewListOptions()
 	if sortStr := query.Get("sort"); sortStr != "" {
-		allowedFields := assettype.AllowedSortFields()
-		opts = opts.WithSort(pagination.NewSortOption(allowedFields).Parse(sortStr))
+		opts = opts.WithSort(pagination.NewSortOption(assettype.AllowedSortFields()).Parse(sortStr))
 	}
 
-	if includeCategory {
+	if query.Get("include_category") == queryParamTrue {
 		result, err := h.service.ListAssetTypesWithCategory(r.Context(), filter, opts, page)
 		if err != nil {
-			h.handleServiceError(w, err)
-			return
+			return err
 		}
-
-		data := make([]AssetTypeResponse, len(result.Data))
+		resp.Data = make([]AssetTypeResponse, len(result.Data))
 		for i, t := range result.Data {
-			data[i] = toAssetTypeWithCategoryResponse(t)
+			resp.Data[i] = toAssetTypeWithCategoryResponse(t)
 		}
-
-		response := struct {
-			Data       []AssetTypeResponse `json:"data"`
-			Total      int64               `json:"total"`
-			Page       int                 `json:"page"`
-			PerPage    int                 `json:"per_page"`
-			TotalPages int                 `json:"total_pages"`
-		}{
-			Data:       data,
-			Total:      result.Total,
-			Page:       result.Page,
-			PerPage:    result.PerPage,
-			TotalPages: result.TotalPages,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(response)
-		return
+		resp.Total, resp.Page, resp.PerPage, resp.TotalPages = result.Total, result.Page, result.PerPage, result.TotalPages
+		return nil
 	}
 
 	result, err := h.service.ListAssetTypes(r.Context(), filter, opts, page)
 	if err != nil {
-		h.handleServiceError(w, err)
-		return
+		return err
 	}
-
-	data := make([]AssetTypeResponse, len(result.Data))
+	resp.Data = make([]AssetTypeResponse, len(result.Data))
 	for i, t := range result.Data {
-		data[i] = toAssetTypeResponse(t)
+		resp.Data[i] = toAssetTypeResponse(t)
 	}
-
-	response := struct {
-		Data       []AssetTypeResponse `json:"data"`
-		Total      int64               `json:"total"`
-		Page       int                 `json:"page"`
-		PerPage    int                 `json:"per_page"`
-		TotalPages int                 `json:"total_pages"`
-	}{
-		Data:       data,
-		Total:      result.Total,
-		Page:       result.Page,
-		PerPage:    result.PerPage,
-		TotalPages: result.TotalPages,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
+	resp.Total, resp.Page, resp.PerPage, resp.TotalPages = result.Total, result.Page, result.PerPage, result.TotalPages
+	return nil
 }
 
 // GetAssetType handles GET /api/v1/asset-types/{id}

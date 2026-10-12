@@ -71,7 +71,7 @@ func (m *mockACRepoForHooks) DeleteAutoAssignedForAsset(_ context.Context, _, _ 
 	return m.deleteAutoForAssetErr
 }
 
-func (m *mockACRepoForHooks) ListGroupsWithAssetGroupMatchRule(_ context.Context, _ shared.ID) ([]shared.ID, error) {
+func (m *mockACRepoForHooks) ListGroupsWithAssetGroupMatchRule(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
 	m.listGroupsWithMatchCalls++
 	if m.listGroupsWithMatchErr != nil {
 		return nil, m.listGroupsWithMatchErr
@@ -334,6 +334,7 @@ func TestEvaluateAsset_ListRulesError(t *testing.T) {
 // =============================================================================
 
 func TestReconcileByAssetGroup_NoReferencingRules(t *testing.T) {
+	tenantID := shared.NewID()
 	assetGroupID := shared.NewID()
 
 	acRepo := newMockACRepoForHooks()
@@ -343,7 +344,7 @@ func TestReconcileByAssetGroup_NoReferencingRules(t *testing.T) {
 	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Should be a no-op, no panic
-	svc.ReconcileByAssetGroup(context.Background(), assetGroupID)
+	svc.ReconcileByAssetGroup(context.Background(), tenantID, assetGroupID)
 
 	if acRepo.listGroupsWithMatchCalls != 1 {
 		t.Errorf("expected 1 ListGroupsWithAssetGroupMatchRule call, got %d", acRepo.listGroupsWithMatchCalls)
@@ -378,7 +379,7 @@ func TestReconcileByAssetGroup_TriggersReconcile(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
-	svc.ReconcileByAssetGroup(context.Background(), assetGroupID)
+	svc.ReconcileByAssetGroup(context.Background(), tenantID, assetGroupID)
 
 	if acRepo.listGroupsWithMatchCalls != 1 {
 		t.Errorf("expected 1 ListGroupsWithAssetGroupMatchRule call, got %d", acRepo.listGroupsWithMatchCalls)
@@ -395,6 +396,7 @@ func TestReconcileByAssetGroup_TriggersReconcile(t *testing.T) {
 }
 
 func TestReconcileByAssetGroup_ListError(t *testing.T) {
+	tenantID := shared.NewID()
 	assetGroupID := shared.NewID()
 
 	acRepo := newMockACRepoForHooks()
@@ -404,7 +406,7 @@ func TestReconcileByAssetGroup_ListError(t *testing.T) {
 	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Should not panic, error is logged
-	svc.ReconcileByAssetGroup(context.Background(), assetGroupID)
+	svc.ReconcileByAssetGroup(context.Background(), tenantID, assetGroupID)
 
 	if acRepo.listGroupsWithMatchCalls != 1 {
 		t.Errorf("expected 1 ListGroupsWithAssetGroupMatchRule call, got %d", acRepo.listGroupsWithMatchCalls)
@@ -439,7 +441,7 @@ func TestReconcileByAssetGroup_MultipleGroups(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
-	svc.ReconcileByAssetGroup(context.Background(), assetGroupID)
+	svc.ReconcileByAssetGroup(context.Background(), tenantID, assetGroupID)
 
 	if acRepo.listGroupsWithMatchCalls != 1 {
 		t.Errorf("expected 1 ListGroupsWithAssetGroupMatchRule call, got %d", acRepo.listGroupsWithMatchCalls)

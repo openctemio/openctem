@@ -52,10 +52,8 @@ var sensorRenameProbes = []upgradeProbe{
 
 	{area: "data", what: "permission catalog ids agents:*", query: `
 		SELECT count(*) FROM permissions WHERE id LIKE 'agents:%'`},
-	{area: "data", what: "role, group and permission-set grants of agents:*", query: `
-		SELECT (SELECT count(*) FROM role_permissions WHERE permission_id LIKE 'agents:%')
-		     + (SELECT count(*) FROM group_permissions WHERE permission_id LIKE 'agents:%')
-		     + (SELECT count(*) FROM permission_set_items WHERE permission_id LIKE 'agents:%')`},
+	{area: "data", what: "role grants of agents:*", query: `
+		SELECT count(*) FROM role_permissions WHERE permission_id LIKE 'agents:%'`},
 	{area: "data", what: "oct_ API keys with agents:* scopes", query: `
 		SELECT count(*) FROM api_keys k
 		WHERE EXISTS (SELECT 1 FROM unnest(k.scopes::text[]) s WHERE s LIKE 'agents:%')`},
@@ -67,13 +65,12 @@ var sensorRenameProbes = []upgradeProbe{
 		     + (SELECT count(*) FROM tenant_modules WHERE module_id = 'agents')`},
 	{area: "data", what: "notification event types agent.* and references to them", query: `
 		SELECT (SELECT count(*) FROM event_types WHERE id LIKE 'agent.%' OR category = 'agents')
-		     + (SELECT count(*) FROM webhooks WHERE event_types::text[] && ARRAY['agent.offline', 'agent.error'])
 		     + (SELECT count(*) FROM integration_notification_extensions
 		        WHERE jsonb_typeof(enabled_event_types) = 'array' AND enabled_event_types ?| ARRAY['agent.offline', 'agent.error'])
 		     + (SELECT count(*) FROM notification_preferences
 		        WHERE jsonb_typeof(muted_types) = 'array' AND muted_types ?| ARRAY['agent.offline', 'agent.error'])`},
 	{area: "data", what: "pipeline templates with settings.agent_preference", query: `
-		SELECT count(*) FROM pipeline_templates WHERE settings ? 'agent_preference'`},
+		SELECT count(*) FROM scan_workflows WHERE settings ? 'agent_preference'`},
 	{area: "data", what: "Tenable integrations with execution_mode 'agent' or an agent_id pin", query: `
 		SELECT count(*) FROM integrations
 		WHERE provider = 'tenable' AND (config ->> 'execution_mode' = 'agent' OR config ? 'agent_id')`},

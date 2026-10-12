@@ -24,10 +24,8 @@ import type {
   CloneScanConfigRequest,
   BulkActionRequest,
   BulkActionResponse,
-  PipelineRun,
-  PipelineRunWithFiltering,
-  ScanSession,
-  ScanSessionListResponse,
+  ScanRun,
+  ScanRunWithFiltering,
 } from './scan-types'
 
 // ============================================
@@ -230,7 +228,7 @@ export function useDisableScanConfig(configId: string) {
 
 /**
  * Trigger scan execution
- * Returns PipelineRunWithFiltering which includes filtering_result for smart filtering
+ * Returns ScanRunWithFiltering which includes filtering_result for smart filtering
  */
 export function useTriggerScan(configId: string) {
   const { currentTenant } = useTenant()
@@ -238,7 +236,7 @@ export function useTriggerScan(configId: string) {
   return useSWRMutation(
     currentTenant && configId ? scanEndpoints.trigger(configId) : null,
     async (url: string, { arg }: { arg?: TriggerScanRequest }) => {
-      return post<PipelineRunWithFiltering>(url, arg || {})
+      return post<ScanRunWithFiltering>(url, arg || {})
     }
   )
 }
@@ -252,6 +250,20 @@ export function useCloneScanConfig(configId: string) {
   return useSWRMutation(
     currentTenant && configId ? scanEndpoints.clone(configId) : null,
     async (url: string, { arg }: { arg: CloneScanConfigRequest }) => {
+      return post<ScanConfig>(url, arg)
+    }
+  )
+}
+
+/**
+ * Save an unsaved quick scan as a configuration ("Save as scan")
+ */
+export function useSaveQuickScan(scanId: string | null) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && scanId ? scanEndpoints.save(scanId) : null,
+    async (url: string, { arg }: { arg: { name: string } }) => {
       return post<ScanConfig>(url, arg)
     }
   )
@@ -318,154 +330,31 @@ export function useBulkDeleteScanConfigs() {
 }
 
 // ============================================
-// SCAN SESSIONS HOOKS (Real API)
+// SCAN RUNS
 // ============================================
 
-async function fetchScanSessions(url: string): Promise<ScanSessionListResponse> {
-  return get<ScanSessionListResponse>(url)
-}
-
-async function fetchScanSession(url: string): Promise<ScanSession> {
-  return get<ScanSession>(url)
-}
-
 interface ScanRunsResponse {
-  data: PipelineRun[]
+  data: ScanRun[]
   total: number
   page: number
   per_page: number
   total_pages: number
 }
 
-/**
- * Runs of one scan.
- *
- * Not to be confused with useScanSessions: a scan session is a sensor's
- * execution record and carries no scan_id, so it cannot be narrowed to a
- * single scan. Pipeline runs do carry scan_id, which makes this the only
- * hook that can answer "what has this scan done".
- */
-export function useScanRuns(scanId: string | null, perPage = 10, config?: SWRConfiguration) {
+/** Runs of one scan (workflow runs carry the scan id). */
+export function useScanRuns(
+  scanId: string | null,
+  page = 1,
+  perPage = 10,
+  config?: SWRConfiguration
+) {
   const { currentTenant } = useTenant()
-  const key = currentTenant && scanId ? scanEndpoints.listRuns(scanId, 1, perPage) : null
+  const key = currentTenant && scanId ? scanEndpoints.listRuns(scanId, page, perPage) : null
 
   return useSWR<ScanRunsResponse>(key, (url: string) => get<ScanRunsResponse>(url), {
     ...defaultConfig,
     ...config,
   })
-}
-
-export interface ScanSessionListFilters {
-  scanner_name?: string
-  asset_type?: string
-  asset_value?: string
-  branch?: string
-  status?: string
-  page?: number
-  per_page?: number
-}
-
-/**
- * Fetch all scan sessions for the tenant
- */
-export function useScanSessions(filters?: ScanSessionListFilters, config?: SWRConfiguration) {
-  const { currentTenant } = useTenant()
-
-  const params = new URLSearchParams()
-  if (filters?.page) params.set('page', String(filters.page))
-  if (filters?.per_page) params.set('per_page', String(filters.per_page))
-  if (filters?.scanner_name) params.set('scanner_name', filters.scanner_name)
-  if (filters?.asset_type) params.set('asset_type', filters.asset_type)
-  if (filters?.status) params.set('status', filters.status)
-
-  const queryString = params.toString()
-  const key = currentTenant ? `/api/v1/scan-sessions${queryString ? `?${queryString}` : ''}` : null
-
-  return useSWR<ScanSessionListResponse>(key, fetchScanSessions, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-/**
- * Fetch a specific scan session by ID
- */
-export function useScanSession(sessionId: string | null, config?: SWRConfiguration) {
-  const { currentTenant } = useTenant()
-
-  const key = currentTenant && sessionId ? `/api/v1/scan-sessions/${sessionId}` : null
-
-  return useSWR<ScanSession>(key, fetchScanSession, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-/**
- * Fetch scan session stats
- */
-export interface ScanSessionStats {
-  total: number
-  by_status: Record<string, number>
-  by_scanner: Record<string, number>
-  by_asset_type: Record<string, number>
-  findings_total: number
-  findings_by_severity: Record<string, number>
-}
-
-async function fetchScanSessionStats(url: string): Promise<ScanSessionStats> {
-  return get<ScanSessionStats>(url)
-}
-
-export function useScanSessionStats(since?: string, config?: SWRConfiguration) {
-  const { currentTenant } = useTenant()
-
-  const key = currentTenant ? `/api/v1/scan-sessions/stats${since ? `?since=${since}` : ''}` : null
-
-  return useSWR<ScanSessionStats>(key, fetchScanSessionStats, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-// The aliases useScanRuns/useAllScanRuns used to point at useScanSessions.
-// That naming is what made the scan-detail page list sessions and believe it
-// was listing runs. Both had zero callers; useScanRuns is now the real thing.
-
-// ============================================
-// SCAN SESSION ACTIONS
-// ============================================
-
-// useStopScanSession was removed: it posted to /scan-sessions/{id}/stop, and
-// the scan-sessions route group has no /stop — only GET stats/list/{id} and
-// DELETE. It had no callers. Cancel a run via pipelineRunEndpoints.cancel.
-
-/**
- * Retry a failed scan session
- */
-export function useRetryScanSession(sessionId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && sessionId ? `/api/v1/scan-sessions/${sessionId}/retry` : null,
-    async (url: string) => {
-      return post<ScanSession>(url, {})
-    }
-  )
-}
-
-/**
- * Invalidate scan sessions cache
- */
-export async function invalidateScanSessionsCache() {
-  const { mutate } = await import('swr')
-  await mutate(
-    (key) => typeof key === 'string' && key.includes('/api/v1/scan-sessions'),
-    undefined,
-    {
-      revalidate: true,
-    }
-  )
 }
 
 // ============================================

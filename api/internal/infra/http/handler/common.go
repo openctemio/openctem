@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // URL scheme constants
@@ -183,6 +186,41 @@ func parseQueryInt(s string, defaultVal int) int {
 // at the parse site — prevents go/uncontrolled-allocation-size false
 // positives in make() calls downstream.
 const MaxPerPage = 100
+
+// listPage reads a list request's `page` and `per_page` through the one
+// shared parser (pagination.FromRequest). A value that is not a positive whole
+// number is answered 400 and ok is false; per_page is capped at
+// pagination.MaxPerPage.
+// listPageMax is listPage with the list's own per_page cap
+// (pagination.FromRequestMax).
+func listPageMax(w http.ResponseWriter, r *http.Request, defaultPerPage, maxPerPage int) (pagination.Pagination, bool) {
+	p, err := pagination.FromRequestMax(r.URL.Query(), defaultPerPage, maxPerPage)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return pagination.Pagination{}, false
+	}
+	return p, true
+}
+
+// listLimit reads `limit` of a top-N list (pagination.LimitFromRequest),
+// answering 400 on a value that is not a positive whole number.
+func listLimit(w http.ResponseWriter, r *http.Request, defaultLimit, maxLimit int) (int, bool) {
+	n, err := pagination.LimitFromRequest(r.URL.Query(), defaultLimit, maxLimit)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return 0, false
+	}
+	return n, true
+}
+
+func listPage(w http.ResponseWriter, r *http.Request, defaultPerPage int) (pagination.Pagination, bool) {
+	p, err := pagination.FromRequest(r.URL.Query(), defaultPerPage)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return pagination.Pagination{}, false
+	}
+	return p, true
+}
 
 // parseQueryIntBounded parses a query parameter as an integer and
 // clamps the result to [minVal, maxVal]. Returns defaultVal when

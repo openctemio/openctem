@@ -7,7 +7,6 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // graph_enrichment.go wires the pure InferGraphEdges inference (Exposes /
@@ -24,16 +23,14 @@ import (
 // enrichmentAssetTypes are the asset types the enrichment reasons over. Naabu
 // open ports and HTTPX services normalize to the `service` core type; hosts /
 // ip_addresses are the containers; applications get RunsOn edges.
-var enrichmentAssetTypes = []assetdom.AssetType{
+// Rows still stored under a legacy alias name (website, http_service ...)
+// are included until the data normalisation (RFC-042 §6.3.8) moves them.
+var enrichmentAssetTypes = assetdom.WithLegacyNames(
 	assetdom.AssetTypeHost,
 	assetdom.AssetTypeIPAddress,
 	assetdom.AssetTypeService,
 	assetdom.AssetTypeApplication,
-	// Legacy (pre-consolidation) application types, harmless if unused.
-	assetdom.AssetTypeWebsite,
-	assetdom.AssetTypeWebApplication,
-	assetdom.AssetTypeAPI,
-}
+)
 
 // EnrichGraphResult reports what a single enrichment pass produced.
 type EnrichGraphResult struct {
@@ -151,24 +148,11 @@ func (s *RelationshipSuggestionService) persistSuggestions(ctx context.Context, 
 // loadEnrichmentAssets fetches every enrichment-relevant asset for the tenant,
 // paginating so large tenants are not silently truncated.
 func (s *RelationshipSuggestionService) loadEnrichmentAssets(ctx context.Context, tenantID string) ([]*assetdom.Asset, error) {
-	const pageSize = 200
 	filter := assetdom.Filter{
 		TenantID: &tenantID,
 		Types:    enrichmentAssetTypes,
 	}
-
-	var all []*assetdom.Asset
-	for page := 1; ; page++ {
-		res, err := s.assetRepo.List(ctx, filter, assetdom.ListOptions{}, pagination.New(page, pageSize))
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, res.Data...)
-		if len(all) >= int(res.Total) || len(res.Data) < pageSize {
-			break
-		}
-	}
-	return all, nil
+	return assetdom.ListAll(ctx, s.assetRepo, filter, 1000)
 }
 
 // confidenceToFloat maps the domain confidence level to the 0..1 score the

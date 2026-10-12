@@ -97,7 +97,8 @@ func (r *FindingRepository) ListThreatFindings(ctx context.Context, tenantID sha
 		        COALESCE(finding_type, ''), status, acceptance_expires_at
 		   FROM findings
 		  WHERE tenant_id = $1
-		    AND asset_id = ANY($2)`,
+		    AND asset_id = ANY($2)
+		    AND NOT branch_only`,
 		tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list threat findings: %w", err)

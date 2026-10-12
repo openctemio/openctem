@@ -50,7 +50,6 @@ export {
   tenants,
   invitations,
   assets,
-  projects,
   components,
   vulnerabilities,
   findings,
@@ -84,11 +83,6 @@ export {
   useUpdateCurrentUser,
 
   // User management hooks (admin)
-  useUser,
-  useUsers,
-  useCreateUser,
-  useUpdateUser,
-  useDeleteUser,
 
   // Tenant hooks (base)
   useTenants,
@@ -107,7 +101,6 @@ export {
   mutateMultiple,
   clearAllCache,
   optimisticUpdate,
-  useInfiniteUsers,
   useDependentData,
   usePolling,
 
@@ -169,7 +162,6 @@ export {
   securityEndpoints,
   assetEndpoints,
   assetGroupEndpoints,
-  componentEndpoints,
   findingEndpoints,
   scanEndpoints,
   runnerEndpoints,
@@ -186,27 +178,12 @@ export type {
   PaginationParams,
   AssetFilters,
   FindingFilters,
-  ComponentFilters,
   ScanFilters,
 } from './security-endpoints'
 
 // ============================================
-// PROJECT ENDPOINTS & HOOKS
+// PROJECT TYPES
 // ============================================
-
-export { projectEndpoints } from './project-endpoints'
-
-export {
-  useProjects,
-  useProject,
-  useCreateProject,
-  useUpdateProject,
-  useDeleteProject,
-  getProjectsListKey,
-  getProjectKey,
-  invalidateProjectsCache,
-  defaultProjectSwrConfig,
-} from './project-hooks'
 
 export type {
   Project,
@@ -253,15 +230,6 @@ export {
   useCreateAssetGroup,
   useUpdateAssetGroup,
   useDeleteAssetGroup,
-
-  // Component (SBOM) hooks
-  useComponents,
-  useComponent,
-  useVulnerableComponents,
-  useComponentsByEcosystem,
-  useComponentStats,
-  useEcosystemStats,
-  useLicenseStats,
 
   // Scan hooks
   useScans,
@@ -322,40 +290,21 @@ export {
   useTestIntegration,
 } from './security-hooks'
 
-// Scan Sessions hooks (from scan-hooks)
+// Scan hooks (from scan-hooks)
 export {
-  useScanSessions,
-  useScanSession,
-  useScanSessionStats,
   useScanConfigs,
   useScanConfig,
   useScanConfigStats,
   invalidateScanConfigsCache,
   invalidateAllScanConfigCaches,
-  type ScanSessionStats,
-  type ScanSessionListFilters,
 } from './scan-hooks'
 
 export type {
-  ScanSession,
-  ScanSessionListResponse,
   ScanConfig,
   ScanConfigListResponse,
   ScanConfigListFilters,
   ScanConfigStatsData,
-  ScanRunStatus,
-  ScanSessionStatus,
-} from './scan-types'
-
-export {
-  SCAN_RUN_STATUSES,
-  SCAN_RUN_STATUS_LABELS,
-  SCAN_SESSION_STATUSES,
-  SCAN_SESSION_STATUS_LABELS,
-  isTerminalStatus,
-  isActiveStatus,
-  isSuccessStatus,
-  isErrorStatus,
+  ScanLastRunStatus,
 } from './scan-types'
 
 // ============================================
@@ -376,21 +325,14 @@ export type {
   FindingStats,
 } from './finding-types'
 
-export { SEVERITY_CONFIG, STATUS_CONFIG, SOURCE_CONFIG } from './finding-types'
+export { SEVERITY_CONFIG, SOURCE_CONFIG } from './finding-types'
 
 // ============================================
-// AUDIT LOG HOOKS & TYPES
+// AUDIT LOG TYPES
 // ============================================
 
-export {
-  useAuditLogs,
-  useAuditLog,
-  useAuditLogStats,
-  useResourceAuditHistory,
-  useUserAuditActivity,
-  auditLogKeys,
-  invalidateAuditLogsCache,
-} from './audit-hooks'
+// The audit-log hooks live in '@/features/organization' (use-audit-logs.ts),
+// which follows the API's 1-based paging contract.
 
 export type {
   AuditAction,
@@ -399,75 +341,68 @@ export type {
   AuditSeverity,
   AuditChanges,
   AuditLog,
-  AuditLogListResponse,
-  AuditLogListFilters,
-  AuditLogStats,
 } from './audit-types'
 
 export { getActionLabel, getSeverityColor, getResultColor, getActionCategory } from './audit-types'
 
 // ============================================
-// PIPELINE HOOKS & TYPES
+// SCAN_WORKFLOW HOOKS & TYPES
 // ============================================
 
 export {
-  // Pipeline template hooks
-  usePipelines,
-  usePipeline,
-  useCreatePipeline,
-  useUpdatePipeline,
-  useDeletePipeline,
-  useActivatePipeline,
-  useDeactivatePipeline,
-  useClonePipeline,
+  // Workflow template hooks
+  useScanWorkflows,
+  useScanWorkflow,
+  useCreateScanWorkflow,
+  useUpdateScanWorkflow,
+  useDeleteScanWorkflow,
+  useActivateScanWorkflow,
+  useDeactivateScanWorkflow,
+  useCloneScanWorkflow,
 
-  // Pipeline step hooks
+  // Workflow step hooks
   useAddStep,
   useUpdateStep,
   useDeleteStep,
 
-  // Pipeline run hooks
-  usePipelineRuns,
-  usePipelineRun,
-  useTriggerPipelineRun,
-  useCancelPipelineRun,
-  useRetryPipelineRun,
+  // Workflow run hooks
+  useScanRuns,
+  useScanRun,
+  useCancelScanRun,
 
   // Scan management hooks
   useScanManagementStats,
   useQuickScan,
 
   // Cache utilities
-  pipelineKeys,
-  pipelineRunKeys,
+  scanWorkflowKeys,
+  scanRunKeys,
   scanManagementKeys,
-  invalidatePipelinesCache,
-  invalidatePipelineRunsCache,
+  invalidateScanWorkflowsCache,
+  invalidateScanRunsCache,
   invalidateScanManagementStatsCache,
-  invalidateAllPipelineCaches,
-} from './pipeline-hooks'
+  invalidateAllScanWorkflowCaches,
+} from './scan-workflow-hooks'
 
 export type {
-  // Pipeline types
-  PipelineTemplate,
-  PipelineStep,
-  PipelineTrigger,
-  PipelineSettings,
-  PipelineListFilters,
-  PipelineListResponse,
+  // Workflow types
+  ScanWorkflow,
+  ScanWorkflowStep,
+  ScanWorkflowSettings,
+  ScanWorkflowListFilters,
+  ScanWorkflowListResponse,
 
-  // Pipeline run types
-  PipelineRun,
+  // Workflow run types
+  ScanRun,
   StepRun,
-  PipelineRunListFilters,
-  PipelineRunListResponse,
+  ScanRunListFilters,
+  ScanRunListResponse,
 
   // Request types
-  CreatePipelineRequest,
-  UpdatePipelineRequest,
+  CreateScanWorkflowRequest,
+  UpdateScanWorkflowRequest,
   CreateStepRequest,
   UpdateStepRequest,
-  TriggerPipelineRunRequest,
   QuickScanRequest,
 
   // UI Position for workflow builder
@@ -479,32 +414,32 @@ export type {
   StatusCounts,
 
   // Enum types
-  PipelineTriggerType,
+  ScanWorkflowTriggerType,
   StepConditionType,
-  PipelineRunStatus,
+  ScanRunStatus,
   StepRunStatus,
-  PipelineSensorPreference,
-} from './pipeline-types'
+  ScanWorkflowSensorPreference,
+} from './scan-workflow-types'
 
 export {
-  PIPELINE_TRIGGERS,
-  PIPELINE_TRIGGER_LABELS,
+  SCAN_RUN_TRIGGERS,
+  SCAN_RUN_TRIGGER_LABELS,
   STEP_CONDITION_TYPES,
   STEP_CONDITION_LABELS,
-  PIPELINE_RUN_STATUSES,
-  PIPELINE_RUN_STATUS_LABELS,
+  SCAN_RUN_STATUSES,
+  SCAN_RUN_STATUS_LABELS,
   STEP_RUN_STATUSES,
-  DEFAULT_PIPELINE_SETTINGS,
-  PIPELINE_SENSOR_PREFERENCES,
-  PIPELINE_SENSOR_PREFERENCE_LABELS,
-  PIPELINE_SENSOR_PREFERENCE_DESCRIPTIONS,
-} from './pipeline-types'
+  DEFAULT_SCAN_WORKFLOW_SETTINGS,
+  SCAN_WORKFLOW_SENSOR_PREFERENCES,
+  SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
+  SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS,
+} from './scan-workflow-types'
 
 // ============================================
-// PIPELINE & SCAN MANAGEMENT ENDPOINTS
+// SCAN_WORKFLOW & SCAN MANAGEMENT ENDPOINTS
 // ============================================
 
-export { pipelineEndpoints, pipelineRunEndpoints, scanManagementEndpoints } from './endpoints'
+export { scanWorkflowEndpoints, scanRunEndpoints, scanManagementEndpoints } from './endpoints'
 
 // ============================================
 // WORKFLOW HOOKS & TYPES
@@ -581,14 +516,18 @@ export {
   WORKFLOW_NODE_TYPES,
   WORKFLOW_NODE_TYPE_LABELS,
   WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_UNSUPPORTED_TRIGGER_TYPES,
   WORKFLOW_TRIGGER_LABELS,
   WORKFLOW_ACTION_TYPES,
+  WORKFLOW_UNSUPPORTED_ACTION_TYPES,
   WORKFLOW_ACTION_LABELS,
   WORKFLOW_NOTIFICATION_TYPES,
   WORKFLOW_NOTIFICATION_LABELS,
   WORKFLOW_RUN_STATUSES,
   WORKFLOW_RUN_STATUS_LABELS,
   NODE_RUN_STATUSES,
+  getUnsupportedWorkflowFeatures,
+  formatUnsupportedWorkflowFeature,
 } from './workflow-types'
 
 // ============================================
@@ -607,7 +546,6 @@ export {
   useAllCapabilities,
   useCapability,
   useCapabilityCategories,
-  useCapabilitiesByCategory,
   useCreateCapability,
   useUpdateCapability,
   useDeleteCapability,
@@ -644,12 +582,7 @@ export type {
 } from './capability-types'
 
 // Fallback constants (deprecated - use helper functions with API data instead)
-export {
-  CAPABILITY_ICONS,
-  CAPABILITY_COLORS,
-  FALLBACK_CAPABILITY_ICONS,
-  FALLBACK_CAPABILITY_COLORS,
-} from './capability-types'
+export { FALLBACK_CAPABILITY_ICONS, FALLBACK_CAPABILITY_COLORS } from './capability-types'
 
 // Validation helpers
 export {
@@ -662,7 +595,7 @@ export {
 // CAPABILITY ENDPOINTS
 // ============================================
 
-export { capabilityEndpoints, customCapabilityEndpoints } from './endpoints'
+export { capabilityEndpoints } from './endpoints'
 
 // ============================================
 // SENSOR HOOKS & TYPES
@@ -935,19 +868,16 @@ export {
 // ============================================
 
 export {
-  // Platform hooks
-  usePlatformStats,
-  usePlatformUsage,
-
-  // Cache utilities
+  // Platform scanning
+  usePlatformScanning,
   platformKeys,
-  invalidatePlatformCache,
-  invalidatePlatformStatsCache,
 } from './platform-hooks'
 
-export type { PlatformSensorTier, TierStats, PlatformStatsResponse } from './platform-types'
-
-export { PLATFORM_SENSOR_TIERS, PLATFORM_TIER_LABELS } from './platform-types'
+export type {
+  PlatformScanningResponse,
+  PlatformScanningStatus,
+  PlatformRegion,
+} from './platform-types'
 
 // ============================================
 // PLATFORM ENDPOINTS

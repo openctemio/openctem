@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -19,8 +20,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/password"
@@ -34,6 +37,10 @@ var (
 	ErrAccountSuspended     = errors.New("account is suspended")
 	ErrEmailNotVerified     = errors.New("email is not verified")
 	ErrRegistrationDisabled = errors.New("registration is disabled")
+	// ErrSignupNotAvailable is the one refusal of every sign-up path the
+	// sign-up policy does not admit (signup.Admit). The caller has written
+	// nothing; the answer is the same whatever the reason.
+	ErrSignupNotAvailable = errors.New("sign-up is not available")
 	// ErrTenantCreationDisabled: TENANT_CREATION_MODE=admin_only, so only the
 	// platform administrator creates organizations (RFC-022).
 	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
@@ -55,9 +62,15 @@ var (
 // gate, factored out so it can be unit-tested exhaustively without any repo
 // wiring. It returns true when access MUST be denied.
 //
+// method is the session's method AS SEEN BY THIS TENANT
+// (Session.AuthMethodFor): federated only when the tenant's own identity
+// provider issued the session, password otherwise.
+//
 // Rules (fail-closed, but break-glass-safe):
-//   - Federated sessions (SSO/OAuth/SAML) ALWAYS pass — an SSO-enforced tenant
-//     must admit the very login method it requires. → never denied.
+//   - Sessions issued by this tenant's own IdP pass — an SSO-enforced tenant
+//     must admit the very login method it requires. → never denied. A session
+//     from another organization's IdP or from social OAuth arrives here as
+//     password and is handled like one.
 //   - The tenant OWNER is the break-glass exception and can always password-login
 //     so enabling enforcement can never lock every administrator out. → never
 //     denied.
@@ -78,6 +91,14 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// freePlan assigns the Free plan to self-service organizations. Nil: no
+	// plans (organizations unlimited).
+	freePlan FreePlan
+
+	// signupPolicy decides who may create an organization (the console
+	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
+	signupPolicy signupdom.PolicySource
+
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
@@ -108,7 +129,34 @@ type AuthService struct {
 	// revocations records revoked session ids so their access tokens stop
 	// working immediately (nil = they expire naturally).
 	revocations SessionRevocationStore
+	// inviteeClassifier classifies an invitee at acceptance (external
+	// members join as viewers with an expiry, RFC-058).
+	inviteeClassifier InviteeClassifier
+	// Home-realm sign-in for external members (home_realm.go, RFC-058).
+	homeTrusts TrustLookup
+	homeOwners HomeDomainOwnerLookup
+	// lapsedDomains refuses email-only password resets on a domain whose
+	// verified owner lost it (RFC-058).
+	lapsedDomains LapsedDomainChecker
 }
+
+// LapsedDomainChecker reports whether an email domain was verified for SSO by
+// an organization that lost it and nobody holds it now.
+type LapsedDomainChecker interface {
+	IsLapsedSSODomain(ctx context.Context, domain string) (bool, error)
+}
+
+// SetLapsedDomainChecker wires the lapsed-domain rule for password resets.
+func (s *AuthService) SetLapsedDomainChecker(c LapsedDomainChecker) { s.lapsedDomains = c }
+
+// InviteeClassifier classifies an invitee at acceptance and applies the outcome
+// to the new membership (TenantService.ClassifyAcceptedInvitation).
+type InviteeClassifier interface {
+	ClassifyAcceptedInvitation(ctx context.Context, inv *tenantdom.Invitation, m *tenantdom.Membership, now time.Time) error
+}
+
+// SetInviteeClassifier wires external-member classification at acceptance.
+func (s *AuthService) SetInviteeClassifier(c InviteeClassifier) { s.inviteeClassifier = c }
 
 // SMTPAvailabilityCheck reports whether outbound email is available, either via
 // the system SMTP config or for a specific tenant. Used by smart email
@@ -361,6 +409,12 @@ type RegisterResult struct {
 	VerificationToken    string // Only returned if email verification is required
 	RequiresVerification bool
 	EmailExisted         bool // Set to true if email already exists (for anti-enumeration)
+	// ExistingUnverified: the email belongs to a password account that never
+	// verified its address. The caller emails that address a set-password
+	// link (forgot-password), which verifies the address and replaces any
+	// password chosen before, so whoever registered first cannot keep the
+	// account (pre-hijacking). Never set for a new email.
+	ExistingUnverified bool
 }
 
 // Register creates a new local user account.
@@ -377,8 +431,22 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// an unknown, expired or mismatched token, gets the same generic refusal so
 	// the response says nothing about the token.
 	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
-	if !s.config.AllowRegistration && !invited {
-		return nil, ErrRegistrationDisabled
+	if !signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{
+		Intent: signupdom.IntentAccount, InvitedPending: invited, DisposableEmail: disposableEmail(email),
+	}).Admitted() {
+		return nil, ErrSignupNotAvailable
+	}
+
+	// SECURITY (anti-enumeration): everything that shapes the answer is
+	// decided before the account lookup, the same way for a new and an
+	// existing email: the password policy (a weak password is refused for
+	// both) and the verification rule a new account would get.
+	if err := s.passwordHasher.Validate(input.Password); err != nil {
+		return nil, fmt.Errorf("password validation failed: %w", err)
+	}
+	requireVerification := false
+	if !invited {
+		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
 	}
 
 	// Check if email already exists
@@ -395,17 +463,14 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return &RegisterResult{
 			User:                 nil, // Signal to handler that no actual registration happened
 			VerificationToken:    "",
-			RequiresVerification: true,
+			RequiresVerification: requireVerification,
 			EmailExisted:         true, // New field to indicate this case
+			ExistingUnverified: existingUser.AuthProvider() == userdom.AuthProviderLocal &&
+				existingUser.PasswordHash() != nil && !existingUser.EmailVerified(),
 		}, nil
 	}
 	if err != nil && !shared.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to check email: %w", err)
-	}
-
-	// Validate password against policy
-	if err := s.passwordHasher.Validate(input.Password); err != nil {
-		return nil, fmt.Errorf("password validation failed: %w", err)
 	}
 
 	// Hash password
@@ -426,11 +491,8 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// the rule is resolved from the invitation's tenant when a (non-matching)
 	// token was supplied, else the platform default (single-tenant heuristic /
 	// SMTP check / global env). The token is NOT consumed here; acceptance is a
-	// separate POST /invitations/{token}/accept.
-	requireVerification := false
-	if !invited {
-		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
-	}
+	// separate POST /invitations/{token}/accept. requireVerification was
+	// decided above.
 
 	var verificationToken string
 	if requireVerification {
@@ -535,7 +597,9 @@ type LoginResult struct {
 // Login authenticates a user and creates a session.
 // Returns a global refresh token and list of tenant memberships.
 // Client should call ExchangeToken to get a tenant-scoped access token.
-func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult, error) {
+func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
+	defer func() { recordLoginFailure(err) }()
+
 	// Normalize email
 	email := strings.TrimSpace(strings.ToLower(input.Email))
 
@@ -552,32 +616,23 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Check if account is locked
-	if u.IsLocked() {
-		return nil, ErrAccountLocked
-	}
-
-	// Check if account is suspended
-	if u.Status() == userdom.StatusSuspended {
-		return nil, ErrAccountSuspended
-	}
-
-	// Check if user is a local user
-	if u.AuthProvider() != userdom.AuthProviderLocal {
-		return nil, ErrInvalidCredentials
-	}
-
-	// Verify password
+	// The password is checked BEFORE the account state is revealed: answering
+	// "locked" or "suspended" to any password would tell an unauthenticated
+	// caller that the email has an account and what state it is in. Only the
+	// password holder learns why a correct password was refused.
 	passwordHash := u.PasswordHash()
-	if passwordHash == nil {
+	if u.AuthProvider() != userdom.AuthProviderLocal || passwordHash == nil {
+		_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
 		return nil, ErrInvalidCredentials
 	}
 	if err := s.passwordHasher.Verify(input.Password, *passwordHash); err != nil {
-		// Record failed login attempt
-		u.RecordFailedLogin(s.config.MaxLoginAttempts, s.config.LockoutDuration)
-		if updateErr := s.userRepo.Update(ctx, u); updateErr != nil {
-			s.logger.Error("failed to update user after failed login", "error", updateErr)
+		if u.IsLocked() {
+			// Already locked: do not extend the lockout or audit each guess
+			// against it; the answer is the same as any wrong password.
+			return nil, ErrInvalidCredentials
 		}
+		// Record failed login attempt
+		s.recordPasswordFailure(ctx, u)
 
 		// Audit failed login
 		actx := auditapp.AuditContext{
@@ -588,6 +643,14 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		_ = s.auditService.LogAuthFailed(ctx, actx, "invalid credentials")
 
 		return nil, ErrInvalidCredentials
+	}
+
+	// Correct password: now the account state may be stated.
+	if u.IsLocked() {
+		return nil, ErrAccountLocked
+	}
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
 	}
 
 	// Check if email is verified.
@@ -626,10 +689,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	}
 
 	// Reset failed login attempts on successful login
-	u.RecordSuccessfulLogin()
-	if err := s.userRepo.Update(ctx, u); err != nil {
-		s.logger.Error("failed to reset failed login attempts", "error", err)
-	}
+	s.recordLoginSuccess(ctx, u)
 
 	return s.completeLogin(ctx, u, input.IPAddress, input.UserAgent)
 }
@@ -796,13 +856,14 @@ type ExchangeTokenResult struct {
 // enforceSSOPolicy is the per-tenant SSO-enforcement gate. Both ExchangeToken
 // and RefreshToken call it right after resolving the caller's membership and
 // BEFORE minting a tenant-scoped access token — the single choke point through
-// which a password session must pass to gain access to a tenant. A federated
-// (SSO/OAuth/SAML) session and the tenant OWNER always pass (break-glass); a
-// password-authenticated non-owner is refused when the tenant enforces SSO.
+// which a password session must pass to gain access to a tenant. A session
+// issued by THIS tenant's own SAML/OIDC provider and the tenant OWNER always
+// pass (break-glass); any other non-owner session — password, social OAuth, or
+// another organization's IdP — is refused when the tenant enforces SSO.
 func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Session, tenantID, role string) error {
-	// Cheap exits: federated sessions and owners never trip enforcement, so skip
-	// the tenant lookup entirely for them.
-	if sess.AuthMethod().IsFederated() || role == string(tenantdom.RoleOwner) {
+	// Cheap exits: this tenant's own SSO sessions and owners never trip
+	// enforcement, so skip the tenant lookup entirely for them.
+	if sess.FederatedFor(tenantID) || role == string(tenantdom.RoleOwner) {
 		return nil
 	}
 	tid, err := shared.IDFromString(tenantID)
@@ -813,11 +874,17 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 	if err != nil {
 		return fmt.Errorf("failed to load tenant for SSO enforcement: %w", err)
 	}
-	if ssoEnforcementDenied(sess.AuthMethod(), role, t.TypedSettings().Security.SSOEnforced) {
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		// Fail closed: an unreadable security section never admits a session.
+		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
+	}
+	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) &&
+		!s.ssoExceptionAllows(ctx, sess, sec) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
-		s.logger.Warn("blocked password session from SSO-enforced tenant",
+		s.logger.Warn("blocked non-SSO session from SSO-enforced tenant",
 			"tenant_id", tid.String(), "user_id", sess.UserID().String())
 		return ErrSSORequired
 	}
@@ -921,10 +988,7 @@ func (s *AuthService) IdentifyRefreshSession(ctx context.Context, refreshToken s
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 	if storedToken.IsUsed() {
-		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
-		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
-			s.logger.Error("failed to revoke token family", "error", err)
-		}
+		s.onRefreshTokenReuse(ctx, storedToken)
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 	if !storedToken.IsValid() {
@@ -977,10 +1041,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// RefreshToken; without it, theft replayed via this endpoint went
 	// undetected.
 	if storedToken.IsUsed() {
-		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
-		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
-			s.logger.Error("failed to revoke token family", "error", err)
-		}
+		s.onRefreshTokenReuse(ctx, storedToken)
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
@@ -1027,9 +1088,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, ErrTenantAccessDenied
 	}
 
-	// Per-tenant SSO enforcement (break-glass safe): a password session cannot
-	// mint a tenant-scoped token for an SSO-enforced tenant unless it is the
-	// owner. Federated (SSO/SAML) sessions always pass.
+	// Per-tenant SSO enforcement (break-glass safe): a session not issued by
+	// this tenant's own IdP cannot mint a tenant-scoped token for an
+	// SSO-enforced tenant unless it is the owner.
 	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
 		return nil, err
 	}
@@ -1037,6 +1098,20 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
+	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+
+	// Rotate before minting: the presented token is spent first, and a
+	// failure to record that refuses the exchange. Marking it after minting
+	// (and only logging a failure) could leave the old token usable next to
+	// the new one.
+	if err := storedToken.MarkUsed(); err != nil {
+		return nil, err
+	}
+	if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
+		return nil, fmt.Errorf("failed to update refresh token: %w", err)
 	}
 
 	// Determine if user is admin (owner or admin role)
@@ -1058,7 +1133,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 			Role:       targetMembership.Role,
 		},
 		isAdminRole,
-		sess.AuthMethod().String(),
+		// The claim carries the method as seen by this tenant, so the
+		// per-request SSO gate decides exactly as token mint did.
+		s.authMethodAt(ctx, sess, u.ID(), targetMembership.TenantID).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1068,18 +1145,6 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	sess.UpdateActivity()
 	if err := s.sessionRepo.Update(ctx, sess); err != nil {
 		s.logger.Error("failed to update session activity", "error", err)
-	}
-
-	// S-3-rotate: rotate refresh token (mark old as used + issue new in same family).
-	// Matches the pattern used in CreateFirstTeam (line ~1300) and Refresh.
-	// Without rotation, a stolen refresh token remains valid for the full window;
-	// with rotation, theft is detected on the next legitimate use (token-already-used).
-	if err := storedToken.MarkUsed(); err != nil {
-		s.logger.Error("failed to mark refresh token as used", "error", err)
-	} else {
-		if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
-			s.logger.Error("failed to update refresh token", "error", err)
-		}
 	}
 
 	newRefreshTokenStr, _, err := s.tokenGenerator.GenerateGlobalRefreshToken(
@@ -1166,6 +1231,56 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// LogoutByRefreshToken ends the session a refresh token belongs to. Signing
+// out must not depend on the 15-minute access token: a user who idles past
+// it and then signs out holds only the refresh token, and the session (with
+// its refresh chain) used to stay valid for days after the browser dropped
+// its cookies. The token's signature is checked and the stored row names the
+// session; a token that is unknown, expired or forged ends nothing and is
+// not an error the caller can act on, so it returns nil.
+func (s *AuthService) LogoutByRefreshToken(ctx context.Context, refreshToken string) error {
+	if _, err := s.tokenGenerator.ValidateRefreshToken(refreshToken); err != nil {
+		return nil //nolint:nilerr // nothing to end; the caller clears cookies either way
+	}
+	stored, err := s.refreshTokenRepo.GetByTokenHash(ctx, sessiondom.HashToken(refreshToken))
+	if err != nil {
+		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
+			return nil
+		}
+		return fmt.Errorf("failed to get refresh token: %w", err)
+	}
+	return s.Logout(ctx, stored.SessionID().String())
+}
+
+// onRefreshTokenReuse handles a refresh token presented after it was already
+// rotated. Either the legitimate client or a thief holds a copy, and there is
+// no telling which, so the whole session ends: its token family, its other
+// refresh tokens and (through the revocation store) its access tokens, which
+// used to stay valid until they expired. The event is audited for alerting.
+func (s *AuthService) onRefreshTokenReuse(ctx context.Context, stored *sessiondom.RefreshToken) {
+	s.logger.Warn("SECURITY: refresh token reused; ending the session",
+		"family", stored.Family().String(), "session_id", stored.SessionID().String())
+	if err := s.refreshTokenRepo.RevokeByFamily(ctx, stored.Family()); err != nil {
+		s.logger.Error("failed to revoke token family", "error", err)
+	}
+	if sess, err := s.sessionRepo.GetByID(ctx, stored.SessionID()); err == nil && sess.IsActive() {
+		if err := sess.Revoke(); err == nil {
+			if err := s.sessionRepo.Update(ctx, sess); err != nil {
+				s.logger.Error("failed to revoke session after refresh token reuse", "error", err)
+			}
+		}
+	}
+	if err := s.refreshTokenRepo.RevokeBySessionID(ctx, stored.SessionID()); err != nil {
+		s.logger.Error("failed to revoke session refresh tokens", "error", err)
+	}
+	markSessionRevoked(ctx, s.revocations, s.revocationTTL(), stored.SessionID().String(), s.logger.Error)
+	s.audit(ctx, auditapp.AuditContext{ActorID: stored.UserID().String(), SessionID: stored.SessionID().String()},
+		auditapp.NewSuccessEvent(auditdom.ActionAuthSessionRevoked, auditdom.ResourceTypeUser, stored.UserID().String()).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage("Refresh token reused after rotation: session ended (possible token theft)").
+			WithMetadata("reason", "refresh_token_reuse"))
+}
+
 // RefreshTokenInput represents the input for token refresh.
 // Requires tenant_id to generate tenant-scoped access token.
 type RefreshTokenInput struct {
@@ -1214,11 +1329,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 
 	// Check if token has been used (replay attack detection)
 	if storedToken.IsUsed() {
-		// Possible replay attack - revoke entire token family
-		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
-		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
-			s.logger.Error("failed to revoke token family", "error", err)
-		}
+		s.onRefreshTokenReuse(ctx, storedToken)
 		return nil, sessiondom.ErrRefreshTokenUsed
 	}
 
@@ -1275,14 +1386,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	}
 
 	// Per-tenant SSO enforcement (break-glass safe): re-checked on every refresh
-	// so toggling sso_enforced on takes effect the next time a password session
-	// refreshes its tenant-scoped token. Federated sessions and the owner pass.
+	// so toggling sso_enforced on takes effect the next time a non-SSO session
+	// refreshes its tenant-scoped token. Sessions issued by this tenant's own
+	// IdP and the owner pass.
 	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
 		return nil, err
 	}
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -1331,7 +1446,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 			Role:       targetMembership.Role,
 		},
 		isRefreshAdminRole,
-		sess.AuthMethod().String(),
+		s.authMethodAt(ctx, sess, u.ID(), targetMembership.TenantID).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1416,6 +1531,20 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 	if u.AuthProvider() != userdom.AuthProviderLocal {
 		return &ForgotPasswordResult{}, nil
 	}
+	// A mailbox on a domain whose verified owner lost it (lapsed or
+	// re-registered) proves nothing (RFC-058): no reset link by email. The
+	// person recovers through an administrator-issued setup link. The answer
+	// is the same as for an unknown address.
+	if s.lapsedDomains != nil {
+		if at := strings.LastIndex(email, "@"); at >= 0 {
+			lapsed, lerr := s.lapsedDomains.IsLapsedSSODomain(ctx, email[at+1:])
+			if lerr != nil || lapsed {
+				s.logger.Warn("password reset by email refused: the email domain lost its verified owner",
+					"user_id", u.ID().String(), "lookup_failed", lerr != nil)
+				return &ForgotPasswordResult{}, nil //nolint:nilerr // fail closed, same answer as an unknown address
+			}
+		}
+	}
 
 	// Generate reset token
 	token, err := password.GenerateResetToken()
@@ -1440,6 +1569,8 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 type ResetPasswordInput struct {
 	Token       string `json:"token" validate:"required"`
 	NewPassword string `json:"new_password" validate:"required,min=8,max=128"`
+	IPAddress   string `json:"-"`
+	UserAgent   string `json:"-"`
 }
 
 // ResetPassword resets a user's password using the reset token.
@@ -1467,10 +1598,17 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 		return fmt.Errorf("password validation failed: %w", err)
 	}
 
+	// A first password (an administrator's setup link) is a set, not a
+	// change: no "your password was changed" notice for it.
+	firstPassword := u.PasswordHash() == nil
+
 	// Security: Clear reset token FIRST to prevent race condition reuse (CWE-640).
 	// If two concurrent requests use the same token, the first clears it and
 	// the second will fail at GetByPasswordResetToken (token no longer exists).
 	u.ClearPasswordResetToken()
+	// The link reached this mailbox, which proves the address: an account
+	// still waiting for its verification email is verified by it.
+	u.VerifyEmail()
 	if err := s.userRepo.Update(ctx, u); err != nil {
 		return fmt.Errorf("failed to clear reset token: %w", err)
 	}
@@ -1489,12 +1627,44 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 	// Revoke all sessions (and their refresh tokens) for security
 	s.revokeUserSessions(ctx, u.ID(), shared.ID{})
 
-	if err := s.userRepo.Update(ctx, u); err != nil {
+	if err := s.userRepo.UpdatePasswordHash(ctx, u.ID(), passwordHash); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	via, message := "reset", "Password reset by emailed link; all sessions signed out"
+	if firstPassword {
+		via, message = "setup", "Password set by setup link"
+	}
+	s.audit(ctx, auditapp.AuditContext{
+		ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress, UserAgent: input.UserAgent,
+	}, auditapp.NewSuccessEvent(auditdom.ActionAuthPasswordChanged, auditdom.ResourceTypeUser, u.ID().String()).
+		WithResourceName(u.Email()).
+		WithMessage(message).
+		WithMetadata("via", via))
+	if !firstPassword && s.securityNotifier != nil {
+		s.securityNotifier.NotifyPasswordChanged(ctx, u.Email(), u.Name(), input.IPAddress)
 	}
 
 	s.logger.Info("password reset completed", "user_id", u.ID().String())
 	return nil
+}
+
+// recordPasswordFailure counts a wrong password (sign-in, change-password,
+// 2FA enable/disable) against the account lockout, atomically in the
+// database, and mirrors it on u.
+func (s *AuthService) recordPasswordFailure(ctx context.Context, u *userdom.User) {
+	u.RecordFailedLogin(s.config.MaxLoginAttempts, s.config.LockoutDuration)
+	if _, err := s.userRepo.RecordFailedLogin(ctx, u.ID(), s.config.MaxLoginAttempts, s.config.LockoutDuration); err != nil {
+		s.logger.Error("failed to record failed password attempt", "error", err)
+	}
+}
+
+// recordLoginSuccess clears the failed attempts after a completed sign-in.
+func (s *AuthService) recordLoginSuccess(ctx context.Context, u *userdom.User) {
+	u.RecordSuccessfulLogin()
+	if err := s.userRepo.RecordSuccessfulLogin(ctx, u.ID()); err != nil {
+		s.logger.Error("failed to reset failed login attempts", "error", err)
+	}
 }
 
 // ChangePasswordInput represents the input for changing password.
@@ -1525,12 +1695,19 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 		return errors.New("password change not supported for this auth provider")
 	}
 
-	// Verify current password
+	// Verify current password. A wrong one counts against the account
+	// lockout like a failed sign-in, and a locked account takes no guesses,
+	// so a stolen session cannot guess the password here without limit
+	// (settings audit A-M2; the route is also rate limited).
 	passwordHash := u.PasswordHash()
 	if passwordHash == nil {
 		return errors.New("no password set for this user")
 	}
+	if u.IsLocked() {
+		return ErrAccountLocked
+	}
 	if err := s.passwordHasher.Verify(input.CurrentPassword, *passwordHash); err != nil {
+		s.recordPasswordFailure(ctx, u)
 		return ErrPasswordMismatch
 	}
 
@@ -1550,7 +1727,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 		return fmt.Errorf("failed to set password: %w", err)
 	}
 
-	if err := s.userRepo.Update(ctx, u); err != nil {
+	if err := s.userRepo.UpdatePasswordHash(ctx, u.ID(), newPasswordHash); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -1598,10 +1775,48 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
+// FreePlan is the slice of the entitlement service self-service creation uses.
+// create-first-team only assigns the plan: it serves people with no
+// organization, who own no Free one; POST /tenants checks the per-person cap.
+type FreePlan interface {
+	CheckFreeTeam(ctx context.Context, userID shared.ID) error
+	AssignFree(ctx context.Context, tenantID shared.ID) error
+}
+
+// SetFreePlan wires the Free plan for self-service organizations.
+func (s *AuthService) SetFreePlan(p FreePlan) { s.freePlan = p }
+
+// SetSignupPolicy wires the platform sign-up policy (the console setting).
+func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
+
+// signupPolicyNow is the sign-up policy in force: the console setting when
+// wired, else TENANT_CREATION_MODE from the config (admin_only unless
+// self_service).
+func (s *AuthService) signupPolicyNow(ctx context.Context) signupdom.Policy {
+	return policyOrConfig(ctx, s.signupPolicy, s.config)
+}
+
+// policyOrConfig is shared by the services that admit sign-ups.
+func policyOrConfig(ctx context.Context, src signupdom.PolicySource, cfg config.AuthConfig) signupdom.Policy {
+	if src != nil {
+		return src.Current(ctx)
+	}
+	if cfg.SelfServiceTenantCreation() {
+		return signupdom.Policy{Mode: signupdom.ModeSelfService}
+	}
+	return signupdom.Default()
+}
+
+// selfServiceTenantCreation reports whether people may create their own
+// organization (signup.Admit for an organization).
+func (s *AuthService) selfServiceTenantCreation(ctx context.Context) bool {
+	return signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{Intent: signupdom.IntentOrganization}).Admitted()
+}
+
 // CreateFirstTeam creates the first team for a user who has no tenants.
 // This endpoint uses refresh_token for authentication since user has no access_token yet.
 func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeamInput) (*CreateFirstTeamResult, error) {
-	if !s.config.SelfServiceTenantCreation() {
+	if !s.selfServiceTenantCreation(ctx) {
 		return nil, ErrTenantCreationDisabled
 	}
 
@@ -1621,6 +1836,10 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
+	if storedToken.IsUsed() {
+		s.onRefreshTokenReuse(ctx, storedToken)
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
 	if !storedToken.IsValid() {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
@@ -1684,6 +1903,13 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to create team: %w", err)
 	}
 
+	// A self-service organization starts on the Free plan.
+	if s.freePlan != nil {
+		if err := s.freePlan.AssignFree(ctx, newTenant.ID()); err != nil {
+			s.logger.Error("assign the Free plan to a new organization", "tenant_id", newTenant.ID().String(), "error", err)
+		}
+	}
+
 	s.logger.Info("first team created",
 		"user_id", u.ID().String(),
 		"tenant_id", newTenant.ID().String(),
@@ -1699,6 +1925,13 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		WithResourceName(newTenant.Name()).
 		WithMessage(fmt.Sprintf("Team '%s' created", newTenant.Name())).
 		WithMetadata("via", "create_first_team"))
+
+	// The new organization requires two-factor authentication for its owner:
+	// without it, no access token is minted. The organization exists; the
+	// owner signs in again, enrolls a second factor, then selects it.
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), newTenant.ID().String()); err != nil {
+		return nil, err
+	}
 
 	// Mark old refresh token as used (token rotation)
 	if err := storedToken.MarkUsed(); err != nil {
@@ -1749,7 +1982,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 			Role:       tenantdom.RoleOwner.String(),
 		},
 		true, // Owner is always admin - bypasses permission checks, keeps JWT small
-		sess.AuthMethod().String(),
+		sess.AuthMethodFor(newTenant.ID().String()).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1803,6 +2036,10 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
+	if storedToken.IsUsed() {
+		s.onRefreshTokenReuse(ctx, storedToken)
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
 	if !storedToken.IsValid() {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
@@ -1853,8 +2090,10 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	// Check if user is already a member. A suspended membership cannot be
 	// bypassed via invitation accept — that would silently erase the
 	// suspension audit trail. The admin must reactivate via Members page.
+	// An offboarded tombstone is not a membership: accepting re-joins from
+	// zero (AcceptInvitationTx re-activates the row).
 	existingMembership, err := s.tenantRepo.GetMembership(ctx, u.ID(), invitation.TenantID())
-	if err == nil {
+	if err == nil && !existingMembership.IsOffboarded() {
 		if existingMembership.IsSuspended() {
 			return nil, fmt.Errorf(
 				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
@@ -1863,7 +2102,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		}
 		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
@@ -1890,6 +2129,13 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	membership, err := tenantdom.NewMembership(u.ID(), invitation.TenantID(), accesscontrol.InvitationMembershipRole(invitation), &invitedBy)
 	if err != nil {
 		return nil, err
+	}
+	// Someone outside the organization joins as a viewer, with an expiry when
+	// no organization manages their address (RFC-058).
+	if s.inviteeClassifier != nil {
+		if err := s.inviteeClassifier.ClassifyAcceptedInvitation(ctx, invitation, membership, time.Now().UTC()); err != nil {
+			return nil, err
+		}
 	}
 
 	// Use transaction to ensure atomicity
@@ -1971,7 +2217,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 			Role:       membership.Role().String(),
 		},
 		isAdminRole,
-		sess.AuthMethod().String(),
+		s.authMethodAt(ctx, sess, u.ID(), t.ID().String()).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -2059,14 +2305,6 @@ func (s *AuthService) generateTenantScopedAccessToken(
 	)
 }
 
-// GenerateWSToken generates a short-lived token for WebSocket authentication.
-// This is needed because WebSocket connections cannot use httpOnly cookies
-// when the connection is cross-origin (different port in development).
-// The token is valid for 30 seconds - just enough time to establish the connection.
-func (s *AuthService) GenerateWSToken(ctx context.Context, userID, tenantID string) (string, error) {
-	return s.tokenGenerator.GenerateShortLivedToken(userID, tenantID, 30*time.Second)
-}
-
 // dummyPasswordHash returns a hash of a random secret, made with the same
 // hasher (and cost) as real passwords. Verifying a login password against it
 // costs what a real wrong-password check costs, so the user-not-found and
@@ -2083,4 +2321,29 @@ func (s *AuthService) dummyPasswordHash() string {
 		}
 	})
 	return s.dummyHash
+}
+
+// disposableEmail reports whether email is on a disposable-address service.
+func disposableEmail(email string) bool {
+	at := strings.LastIndex(email, "@")
+	return at >= 0 && emaildomain.IsDisposable(email[at+1:])
+}
+
+// recordLoginFailure counts a refused password sign-in by reason, for the
+// operator's login-failure alert (credential stuffing shows as a spike of
+// invalid_credentials). Only the reason is recorded: never the email or IP.
+func recordLoginFailure(err error) {
+	if err == nil {
+		return
+	}
+	reason := "other"
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		reason = "invalid_credentials"
+	case errors.Is(err, ErrAccountLocked):
+		reason = "locked"
+	case errors.Is(err, ErrAccountSuspended):
+		reason = "suspended"
+	}
+	metrics.LoginFailuresTotal.WithLabelValues(reason).Inc()
 }

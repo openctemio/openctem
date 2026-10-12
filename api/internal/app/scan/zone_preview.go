@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -72,6 +74,9 @@ type ZoneRoutingPreviewInput struct {
 	ScannerName   string
 	TargetsPerJob int
 	ScanZoneID    string // "" = Automatic
+	// Tier is the probe tier the scan windows are evaluated at; nil: the
+	// scanner's tier (single), or active (workflow).
+	Tier *int
 }
 
 // PreviewTarget is where one target would go.
@@ -119,6 +124,9 @@ type ZoneRoutingPreview struct {
 	SelectedZoneID   string          `json:"selected_zone_id,omitempty"`
 	Warnings         []string        `json:"warnings"`
 	Error            *PreviewError   `json:"error,omitempty"`
+	// Windows: what the scan windows mean for the targets now (nil: none
+	// applies).
+	Windows *WindowPreview `json:"windows,omitempty"`
 }
 
 // PreviewZoneRouting shows, for a scan about to be created, which targets go
@@ -212,7 +220,7 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 	switch {
 	case len(zones) == 0:
 		out.NotRoutedReason = "the tenant has no scan zones: targets are dispatched to any tenant sensor"
-	case scanType == scan.ScanTypeSingle && !s.toolReachesNetwork(ctx, sc.ScannerName):
+	case scanType == scan.ScanTypeSingle && !s.toolReachesNetwork(ctx, sc.TenantID, sc.ScannerName):
 		out.NotRoutedReason = fmt.Sprintf("scanner %q does not scan network targets, so scan zones do not apply", sc.ScannerName)
 	default:
 		out.Routed = true
@@ -225,6 +233,9 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 	out.Targets = previewTargets(resolved.Targets, plan, rejected)
 	sortByInputOrder(out.Targets, in.Targets)
 	out.UncoveredTargets = len(rejected)
+	if err := s.previewWindows(ctx, sc, in, resolved.Targets, plan, out); err != nil {
+		return nil, err
+	}
 	if plan == nil {
 		out.UnzonedTargets = len(resolved.Targets)
 		if len(resolved.Targets) > 0 {
@@ -280,14 +291,53 @@ type rejectedTarget struct {
 
 // previewValidateTargets applies scan creation's target validation, including
 // the admission of private targets a zone covers.
+// Targets the caller may not scan (the act-scope check a scan create
+// applies: free text no scope entry covers, an asset outside the caller's
+// data scope) are rejected here, before routing resolves them: the preview
+// must not let a member resolve arbitrary names through the platform's
+// resolver.
 func (s *Service) previewValidateTargets(ctx context.Context, tenantID string, targets []string) ([]string, []rejectedTarget, error) {
+	accepted, rejected, err := s.validateTargetsEach(ctx, tenantID, targets, maxPreviewDirectTargets)
+	if err != nil || len(accepted) == 0 {
+		return accepted, rejected, err
+	}
+	if s.actScope == nil {
+		return nil, nil, ErrActScopeUnavailable
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	d, err := s.actScope.Check(ctx, actscope.Input{TenantID: tid, Targets: accepted})
+	if err != nil {
+		return nil, nil, fmt.Errorf("act-scope check failed: %w", err)
+	}
+	if len(d.RefusedTargets) == 0 {
+		return accepted, rejected, nil
+	}
+	kept := accepted[:0:0]
+	for _, t := range accepted {
+		if reason, refused := d.RefusedTargets[t]; refused {
+			rejected = append(rejected, rejectedTarget{Target: t, Reason: reason})
+			continue
+		}
+		kept = append(kept, t)
+	}
+	return kept, rejected, nil
+}
+
+// validateTargetsEach is scan creation's target validation, target by target:
+// it returns the accepted targets (private ones only when a scan zone covers
+// them) and the rejected ones with the reason, instead of failing on the
+// first rejection.
+func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targets []string, maxTargets int) ([]string, []rejectedTarget, error) {
 	if len(targets) == 0 {
 		return nil, nil, nil
 	}
 	v := validator.NewTargetValidator(
 		validator.WithAllowInternalIPs(false),
 		validator.WithAllowLocalhost(false),
-		validator.WithMaxTargets(maxPreviewDirectTargets),
+		validator.WithMaxTargets(maxTargets),
 	)
 	result := v.ValidateTargets(targets)
 	var admitted []string
@@ -366,10 +416,7 @@ func previewTargets(targets []string, plan *zonePlan, rejected []rejectedTarget)
 			uncovered[u.Target] = u.Reason
 		}
 		for _, rt := range plan.Routing.Routes {
-			pt := PreviewTarget{Target: rt.Target}
-			for _, a := range rt.Addrs {
-				pt.Addresses = append(pt.Addresses, a.String())
-			}
+			pt := PreviewTarget{Target: rt.Target, Addresses: shownAddresses(rt)}
 			switch {
 			case uncovered[rt.Target] != "":
 				pt.Status, pt.Reason = PreviewStatusUncovered, uncovered[rt.Target]
@@ -418,6 +465,26 @@ func previewZones(plan *zonePlan, workflow bool) []PreviewZone {
 		case !workflow:
 			z.QueuedJobs++
 		}
+	}
+	return out
+}
+
+// shownAddresses are the answers of a hostname the preview may show: public
+// ones, and private ones inside the zone the target routed to (a range the
+// tenant declared). Any other private or denied answer means the resolver
+// knows a name the tenant has no range for; the status and reason say what
+// happens to the target without quoting it.
+func shownAddresses(rt scanzone.Route) []string {
+	out := make([]string, 0, len(rt.Addrs))
+	for _, a := range rt.Addrs {
+		a = a.Unmap()
+		switch {
+		case scanzone.IsDenied(a):
+			continue
+		case scanzone.IsPrivate(a) && (rt.Zone == nil || rt.Zone.Covers(netip.PrefixFrom(a, a.BitLen())) < 0):
+			continue
+		}
+		out = append(out, a.String())
 	}
 	return out
 }

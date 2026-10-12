@@ -8,7 +8,7 @@ import type { LicensingModule, ReleaseStatus } from '@/features/integrations/api
  * - sub-modules not loaded yet: visible, so the nav does not flash empty;
  * - the parent's sub-modules lack the key: hidden (the API lists only enabled,
  *   active sub-modules, so absence means "not available");
- * - release status `disabled`: hidden.
+ * - a hidden release status (`disabled`, `deprecated`, `coming_soon`): hidden.
  *
  * Returns `false` when hidden, otherwise the release status to apply (undefined
  * when there is nothing to apply). Shared by the main sidebar and the settings
@@ -23,6 +23,16 @@ export function subModuleStatus(
   if (Object.keys(subModules).length === 0) return undefined
   const sub = (subModules[parentModuleId] || []).find((m) => m.slug === subModuleKey)
   if (!sub) return false
-  if (sub.release_status === 'disabled') return false
+  if (isHiddenReleaseStatus(sub.release_status)) return false
   return sub.release_status
+}
+
+/**
+ * Release statuses whose module or sub-module is not shown anywhere: nav,
+ * settings rail or the Modules settings page. `coming_soon` is hidden too
+ * (owner decision D-31): a greyed-out "Soon" entry is UI for a feature that
+ * does not exist yet.
+ */
+export function isHiddenReleaseStatus(status: string | undefined | null): boolean {
+  return status === 'disabled' || status === 'deprecated' || status === 'coming_soon'
 }

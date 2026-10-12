@@ -32,14 +32,6 @@ func DefaultSensorScopes() []string {
 	}
 }
 
-// RunnerScopes returns scopes for a runner (CI/CD).
-func RunnerScopes() []string {
-	return []string{
-		string(ScopeIngestWrite),
-		string(ScopeSensorHeartbeat),
-	}
-}
-
 // CollectorScopes returns scopes for a collector.
 func CollectorScopes() []string {
 	return []string{

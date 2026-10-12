@@ -9,7 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	exposuresvc "github.com/openctemio/openctem/api/internal/app/exposure"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
@@ -21,14 +22,14 @@ import (
 
 // ExposureHandler handles exposure event HTTP requests.
 type ExposureHandler struct {
-	service     *app.ExposureService
-	userService *app.UserService
+	service     *exposuresvc.ExposureService
+	userService *tenant.UserService
 	validator   *validator.Validator
 	logger      *logger.Logger
 }
 
 // NewExposureHandler creates a new exposure handler.
-func NewExposureHandler(svc *app.ExposureService, userSvc *app.UserService, v *validator.Validator, log *logger.Logger) *ExposureHandler {
+func NewExposureHandler(svc *exposuresvc.ExposureService, userSvc *tenant.UserService, v *validator.Validator, log *logger.Logger) *ExposureHandler {
 	return &ExposureHandler{
 		service:     svc,
 		userService: userSvc,
@@ -73,7 +74,7 @@ type ExposureResponse struct {
 }
 
 // applyEnrichment copies read-time CTEM enrichment onto an exposure response.
-func applyEnrichment(resp *ExposureResponse, enr app.ExposureEnrichment) {
+func applyEnrichment(resp *ExposureResponse, enr exposuresvc.Enrichment) {
 	resp.EffectiveCriticality = enr.EffectiveCriticality
 	resp.IsInternetAccessible = enr.IsInternetAccessible
 	resp.OnAttackPath = enr.OnAttackPath
@@ -261,7 +262,7 @@ func (h *ExposureHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateExposureInput{
+	input := exposuresvc.CreateExposureInput{
 		TenantID: tenantID,
 
 		AssetID:     req.AssetID,
@@ -275,6 +276,12 @@ func (h *ExposureHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	event, err := h.service.CreateExposure(r.Context(), input)
 	if err != nil {
+		// A refused asset_id (unknown, deleted, another tenant's, or out of
+		// the caller's data scope) gets one generic answer.
+		if errors.Is(err, exposuresvc.ErrExposureAssetNotFound) {
+			apierror.NotFound("Asset").WriteJSON(w)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
@@ -365,7 +372,11 @@ func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	query := r.URL.Query()
-	input := app.ListExposuresInput{
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input := exposuresvc.ListExposuresInput{
 		TenantID: tenantID,
 
 		AssetID:         query.Get("asset_id"),
@@ -374,8 +385,8 @@ func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
 		FirstSeenBefore: parseQueryInt64(query.Get("first_seen_before"), 0),
 		LastSeenAfter:   parseQueryInt64(query.Get("last_seen_after"), 0),
 		LastSeenBefore:  parseQueryInt64(query.Get("last_seen_before"), 0),
-		Page:            parseQueryInt(query.Get("page"), 1),
-		PerPage:         parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:            paging.Page,
+		PerPage:         paging.PerPage,
 		SortBy:          query.Get("sort_by"),
 		SortOrder:       query.Get("sort_order"),
 	}
@@ -449,9 +460,9 @@ func (h *ExposureHandler) BulkIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inputs := make([]app.CreateExposureInput, 0, len(req.Exposures))
+	inputs := make([]exposuresvc.CreateExposureInput, 0, len(req.Exposures))
 	for _, exp := range req.Exposures {
-		inputs = append(inputs, app.CreateExposureInput{
+		inputs = append(inputs, exposuresvc.CreateExposureInput{
 			TenantID: tenantID,
 
 			AssetID:     exp.AssetID,

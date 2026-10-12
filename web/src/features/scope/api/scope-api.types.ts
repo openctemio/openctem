@@ -10,10 +10,10 @@
 import type {
   ApiResponse,
   Schemas,
-  ScanScheduleResponse,
+  BulkCreateScopeTargetsResponse,
   ScopeBulkOperationResponse,
   ScopeExclusionResponse,
-  ScopeMatchResponse,
+  CheckScopeResponse,
   ScopeStatsResponse,
   ScopeTargetResponse,
 } from '@/lib/api/generated'
@@ -36,23 +36,27 @@ import type {
 
 export type ApiScopeTarget = ScopeTargetResponse
 export type ApiScopeExclusion = ScopeExclusionResponse
-export type ApiScanSchedule = ScanScheduleResponse
 export type ApiScopeStats = ScopeStatsResponse
-export type ApiCheckScopeResponse = ScopeMatchResponse
+// POST /scope/check is a dry run of the active-probe gate (RFC-054 §6.4).
+export type ApiCheckScopeResponse = CheckScopeResponse
+// POST /scope/targets/bulk: one result per item (RFC-054 §14).
+export type ApiBulkScopeTargetsResponse = BulkCreateScopeTargetsResponse
 export type BulkOperationResponse = ScopeBulkOperationResponse
 
 export type PaginationLinks = Schemas['internal_infra_http_handler.PaginationLinks']
 
 export type ApiScopeTargetListResponse = ApiResponse<'/scope/targets', 'get'>
 export type ApiScopeExclusionListResponse = ApiResponse<'/scope/exclusions', 'get'>
-export type ApiScanScheduleListResponse = ApiResponse<'/scope/schedules', 'get'>
 
 /**
  * Input for checking if a value is in scope
  */
 export interface CheckScopeInput {
-  asset_type: string
-  value: string
+  targets: string[]
+  sensor_preference?: 'auto' | 'tenant' | 'platform'
+  tier?: 0 | 1 | 2
+  /** Without tier: check at the tier a scan with this scanner probes at (server-side). */
+  scanner_name?: string
 }
 
 // ============================================
@@ -68,17 +72,74 @@ export interface CreateScopeTargetInput {
   description?: string
   priority?: number
   tags?: string[]
+  /** Authority statement; required for one-off entries, requests and t2. */
+  reason?: string
+  /** 1..one_off_max_days: makes the entry a one-off that expires. */
+  expires_in_days?: number
+  /** Probe ceiling; the organization's default_max_tier when omitted. */
+  max_tier?: ScopeTier
+  /**
+   * Why the entry authorizes probes: ownership (default) or a letter of
+   * authorization (RFC-065 §13), named by letter_id. Program entries come
+   * from Programs.
+   */
+  authorization_source?: 'ownership' | 'authorization_letter'
+  letter_id?: string
 }
 
+/** One entry of POST /scope/targets/bulk. */
+export interface BulkScopeTargetItemInput {
+  target_type: string
+  pattern: string
+}
+
+/** Input of POST /scope/targets/bulk: 1..200 permanent entries. */
+export interface BulkCreateScopeTargetsInput {
+  items: BulkScopeTargetItemInput[]
+  reason?: string
+  /** refusal_fix when the entries fix the targets a scan refused. */
+  origin?: 'refusal_fix'
+}
+
+/** Probe tiers (RFC-036): t0 passive, t1 safe active, t2 intrusive. */
+export type ScopeTier = 't0' | 't1' | 't2'
+
 /**
- * Input for updating a scope target
+ * Input for updating a scope target. A later or removed expiry, or a higher
+ * tier, widens the entry (approver + step-up; it may go back to pending).
  */
 export interface UpdateScopeTargetInput {
   description?: string
-  status?: string
   priority?: number
   tags?: string[]
+  reason?: string
+  expires_in_days?: number
+  clear_expiry?: boolean
+  max_tier?: ScopeTier
 }
+
+/** GET/PUT /scope/settings (RFC-054 §6.3). */
+export type ApiScopeSettings = Schemas['internal_infra_http_handler.ScopeSettingsResponse']
+
+export type ScopeOneOffPolicy = 'admins' | 'admins_and_requests' | 'disabled'
+
+/** The longest an intrusive (t2) entry may last (owner-only, RFC-054 §12.4). */
+export type ScopeT2MaxDuration = '7d' | '30d' | '90d' | '365d' | 'permanent'
+
+export interface UpdateScopeSettingsInput {
+  auto_join_discovered: boolean
+  one_off_targets: ScopeOneOffPolicy
+  one_off_max_days: number
+  /** null: the default min(1, admins - 1). */
+  widening_approvals: number | null
+  default_max_tier: 't0' | 't1'
+}
+
+/** One result of POST /scope/check. */
+export type ApiScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
+export type ApiScopeCheckRouting = Schemas['internal_infra_http_handler.ScopeCheckRouting']
+/** A fix the API offers for a refused target (RFC-054 §6.5). */
+export type ApiScopeFix = Schemas['github_com_openctemio_openctem_api_pkg_domain_scope.Fix']
 
 /**
  * Input for creating a scope exclusion
@@ -88,6 +149,39 @@ export interface CreateScopeExclusionInput {
   pattern: string
   reason: string
   expires_at?: string
+  /** `path` exclusions (RFC-056): the pattern is a host pattern. */
+  path_prefix?: string
+  /** Methods the path rule blocks; empty blocks every method. */
+  methods?: string[]
+}
+
+/**
+ * How a path exclusion may be tested (RFC-056 §5, RFC-054 §6.2):
+ * blocked (nothing is sent), read_only (GET and HEAD), allowed (in scope
+ * until testing_until).
+ */
+export type ExclusionTesting = 'blocked' | 'read_only' | 'allowed'
+
+/**
+ * The path-exclusion fields of an exclusion response. Declared here until
+ * the generated contract carries them (they arrive with the API's path
+ * exclusions, #1326).
+ */
+export interface PathExclusionFields {
+  host_pattern?: string
+  path_prefix?: string
+  methods?: string[]
+  testing?: ExclusionTesting
+  testing_effective?: ExclusionTesting
+  testing_until?: string
+  testing_changed_by?: string
+  testing_changed_at?: string
+}
+
+/** PUT /scope/exclusions/{id}/testing */
+export interface SetExclusionTestingInput {
+  testing: ExclusionTesting
+  testing_until?: string
 }
 
 /**
@@ -97,44 +191,6 @@ export interface UpdateScopeExclusionInput {
   reason?: string
   status?: string
   expires_at?: string
-}
-
-/**
- * Input for creating a scan schedule
- */
-export interface CreateScanScheduleInput {
-  name: string
-  description?: string
-  scan_type: string
-  target_scope?: string
-  target_ids?: string[]
-  target_tags?: string[]
-  scanner_configs?: Record<string, unknown>
-  schedule_type: string
-  cron_expression?: string
-  interval_hours?: number
-  notify_on_completion?: boolean
-  notify_on_findings?: boolean
-  notification_channels?: string[]
-}
-
-/**
- * Input for updating a scan schedule
- */
-export interface UpdateScanScheduleInput {
-  name?: string
-  description?: string
-  target_scope?: string
-  target_ids?: string[]
-  target_tags?: string[]
-  scanner_configs?: Record<string, unknown>
-  schedule_type?: string
-  cron_expression?: string
-  interval_hours?: number
-  enabled?: boolean
-  notify_on_completion?: boolean
-  notify_on_findings?: boolean
-  notification_channels?: string[]
 }
 
 // ============================================
@@ -161,16 +217,6 @@ export interface ScopeExclusionFilters {
   sort_order?: 'asc' | 'desc'
 }
 
-export interface ScanScheduleFilters {
-  scan_type?: string
-  enabled?: boolean
-  search?: string
-  page?: number
-  per_page?: number
-  sort_by?: 'created_at' | 'updated_at' | 'name' | 'next_run_at'
-  sort_order?: 'asc' | 'desc'
-}
-
 // ============================================
 // Bulk Operation Types
 // ============================================
@@ -181,10 +227,6 @@ export interface BulkDeleteTargetsInput {
 
 export interface BulkDeleteExclusionsInput {
   exclusion_ids: string[]
-}
-
-export interface BulkDeleteSchedulesInput {
-  schedule_ids: string[]
 }
 
 export interface BulkUpdateTargetsInput {

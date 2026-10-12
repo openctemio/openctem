@@ -25,6 +25,11 @@ import {
   updateOrgIdentityProvider,
   useOrgIdentityProviders,
 } from '../api/use-sso-api'
+import { usePendingSSOChanges } from '@/features/saml/api/use-saml-config'
+import {
+  isPendingSSOChange,
+  PENDING_SSO_MESSAGE,
+} from '@/features/sso-approvals/api/use-sso-changes'
 import {
   SSO_PROVIDERS,
   SSO_DEFAULT_ROLES,
@@ -32,6 +37,7 @@ import {
   type IdentityProvider,
   type SSOProviderType,
 } from '../types/sso.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface IdentityProvidersPanelProps {
   /** Organization being configured. */
@@ -55,8 +61,10 @@ export function IdentityProvidersPanel({
   canManage,
   onChanged,
 }: IdentityProvidersPanelProps) {
+  const { t } = useTranslation()
   // SSO Identity Providers state
   const { data: identityProviders, mutate: mutateIdPs } = useOrgIdentityProviders(tenantId)
+  const { mutate: mutatePending } = usePendingSSOChanges(tenantId)
   const [ssoExpandedProvider, setSsoExpandedProvider] = useState<SSOProviderType | null>(null)
   const [ssoForms, setSsoForms] = useState<
     Record<
@@ -131,7 +139,7 @@ export function IdentityProvidersPanel({
 
       if (existing) {
         // Update existing
-        await updateOrgIdentityProvider(tenantId, existing.id, {
+        const res = await updateOrgIdentityProvider(tenantId, existing.id, {
           display_name: form.display_name,
           client_id: form.client_id,
           client_secret: form.client_secret || undefined,
@@ -141,7 +149,11 @@ export function IdentityProvidersPanel({
           default_role: form.default_role,
           is_active: form.is_active,
         })
-        toast.success(`${getProviderLabel(type)} updated`)
+        if (isPendingSSOChange(res)) {
+          toast.info(PENDING_SSO_MESSAGE)
+        } else {
+          toast.success(`${getProviderLabel(type)} updated`)
+        }
       } else {
         // Create new
         if (!form.client_secret) {
@@ -149,7 +161,7 @@ export function IdentityProvidersPanel({
           setSsoSaving(null)
           return
         }
-        await createOrgIdentityProvider(tenantId, {
+        const res = await createOrgIdentityProvider(tenantId, {
           provider: type,
           display_name: form.display_name,
           client_id: form.client_id,
@@ -159,9 +171,14 @@ export function IdentityProvidersPanel({
           auto_provision: form.auto_provision,
           default_role: form.default_role,
         })
-        toast.success(`${getProviderLabel(type)} configured`)
+        if (isPendingSSOChange(res)) {
+          toast.info(PENDING_SSO_MESSAGE)
+        } else {
+          toast.success(`${getProviderLabel(type)} configured`)
+        }
       }
       await mutateIdPs()
+      void mutatePending()
       onChanged?.()
       // Clear form cache so it reloads from API
       setSsoForms((prev) => {
@@ -438,15 +455,14 @@ export function IdentityProvidersPanel({
       <ConfirmDialog
         open={!!ssoDeleteTarget}
         onOpenChange={(open) => !open && setSsoDeleteTarget(null)}
-        title="Remove Identity Provider"
-        desc={
-          <>
-            Are you sure you want to remove{' '}
-            {ssoDeleteTarget ? getProviderLabel(ssoDeleteTarget.provider) : ''}? Users will no
-            longer be able to sign in using this provider. This action cannot be undone.
-          </>
-        }
-        confirmText="Remove"
+        title={t('confirm.idp.removeTitle', 'Remove the identity provider {name}?', {
+          name: ssoDeleteTarget ? getProviderLabel(ssoDeleteTarget.provider) : '',
+        })}
+        desc={t(
+          'confirm.idp.removeDesc',
+          'People can no longer sign in to this organization with it. Make sure they have another way to sign in first. This cannot be undone.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         handleConfirm={() => void handleDeleteSSO()}
       />

@@ -23,9 +23,6 @@ type Repository interface {
 	// Create creates a new command.
 	Create(ctx context.Context, cmd *Command) error
 
-	// GetByID retrieves a command by ID.
-	GetByID(ctx context.Context, id shared.ID) (*Command, error)
-
 	// GetByTenantAndID retrieves a command by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Command, error)
 
@@ -54,16 +51,16 @@ type Repository interface {
 	Update(ctx context.Context, cmd *Command) error
 
 	// Delete deletes a command.
-	Delete(ctx context.Context, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// FindExpired finds commands that have expired but not yet marked as expired.
 	// This is the ONLY expiry path. A second reaper (ExpireOldCommands, a raw
 	// `UPDATE commands SET status='expired'`) used to sit alongside it and won
 	// the race often enough that FindExpired no longer matched the row — so the
-	// command died and the owning pipeline run was never told. It was removed
+	// command died and the owning scan run was never told. It was removed
 	// from JobRecoveryController for that reason and has been deleted outright;
 	// do not reintroduce an expiry that does not go through ExpirationChecker,
-	// which calls pipeline.OnStepFailed.
+	// which calls scanrun.OnStepFailed.
 	FindExpired(ctx context.Context) ([]*Command, error)
 
 	// ==========================================================================
@@ -105,7 +102,7 @@ type Repository interface {
 	// queue longer than maxQueueMinutes.
 	//
 	// It returns the jobs rather than expiring them: the caller must expire each
-	// one *and* notify the owning pipeline run, otherwise the run waits on a
+	// one *and* notify the owning scan run, otherwise the run waits on a
 	// step that is already dead. A raw UPDATE here is what left scans hanging
 	// until an unrelated timeout controller reported a generic failure.
 	FindQueueExpiredPlatformJobs(ctx context.Context, maxQueueMinutes int) ([]*Command, error)
@@ -147,10 +144,10 @@ type Repository interface {
 	// This is optimized to avoid N queries when fetching stats.
 	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (CommandStats, error)
 
-	// CancelByPipelineRunID marks all non-terminal commands for a pipeline run as canceled.
+	// CancelByScanRunID marks all non-terminal commands for a scan run as canceled.
 	// Used when a scan is cancelled by the user to abort in-flight commands.
 	// Returns the number of commands canceled.
-	CancelByPipelineRunID(ctx context.Context, tenantID shared.ID, runID shared.ID) (int64, error)
+	CancelByScanRunID(ctx context.Context, tenantID shared.ID, runID shared.ID) (int64, error)
 }
 
 // CommandStats represents aggregated command statistics.
@@ -163,7 +160,7 @@ type CommandStats struct {
 	Canceled  int64
 }
 
-// StepBatch summarizes the commands that share one pipeline step run. A
+// StepBatch summarizes the commands that share one workflow step run. A
 // zone-routed scan (RFC-023) dispatches one command per zone batch under a
 // single step run, so the step may only finish when the last batch does.
 type StepBatch struct {
@@ -171,7 +168,21 @@ type StepBatch struct {
 	Active     int    // still pending, acknowledged or running
 	Failed     int    // failed, expired or canceled
 	Findings   int    // sum of the batches' reported findings_count
+	Skipped    int    // sum of the completed batches' refused_targets_total
+	Gaps       int    // sum of the completed batches' coverage_gaps_total
 	FirstError string // first failure message, in completion order
+}
+
+// ConditionalExpirer is implemented by the command repository. It is asserted
+// by the expiration checker (not part of Repository) so the many test doubles of
+// Repository do not all have to grow it.
+type ConditionalExpirer interface {
+	// ExpireIfUnchanged marks cmd expired with errorMessage only if the row
+	// still matches the snapshot the caller read: same status, sensor
+	// assignment, expiry and queue time. It reports whether this caller expired
+	// it. A command a sensor picked up or finished after the snapshot, or one
+	// another replica already expired, is left alone.
+	ExpireIfUnchanged(ctx context.Context, cmd *Command, errorMessage string) (bool, error)
 }
 
 // StepBatchGate is implemented by the command repository. It is an optional
@@ -183,4 +194,51 @@ type StepBatchGate interface {
 	// ClaimStepFinalization returns true for exactly one caller per step run:
 	// the one that may record the step's outcome once every batch is done.
 	ClaimStepFinalization(ctx context.Context, stepRunID shared.ID) (bool, error)
+}
+
+// StepSensorShare is how many of one step's commands (its chunks) one
+// sensor holds or ran. A command no sensor holds yet counts under no sensor
+// (SensorID nil, Platform false); a platform job counts under Platform,
+// without the platform sensor's identity.
+type StepSensorShare struct {
+	StepKey    string
+	SensorID   *shared.ID
+	SensorName string
+	Platform   bool
+	Total      int
+	Queued     int // pending, not yet taken
+	Running    int // acknowledged or running
+	Completed  int
+	Failed     int // failed, expired or canceled
+}
+
+// StepShareReader is implemented by the command repository (asserted where
+// needed): how the commands of a run's steps are spread over sensors.
+type StepShareReader interface {
+	StepSensorShares(ctx context.Context, tenantID, runID shared.ID) ([]StepSensorShare, error)
+}
+
+// ExhaustedFailer fails the commands that were handed out max-dispatch times
+// and never finished (poison commands), and returns them, so the owning
+// scan run can be told which step died and why. FailExhaustedCommands
+// only returns a count. Optional extension of Repository, asserted where
+// needed.
+type ExhaustedFailer interface {
+	FailExhaustedCommandsReturning(ctx context.Context, maxRetries int) ([]*Command, error)
+}
+
+// BatchClaimer claims several commands for one sensor in one statement
+// (claim-N, RFC-046 §11, RFC-030 §5.3). Optional extension of Repository,
+// asserted by the command service.
+type BatchClaimer interface {
+	// ClaimManyForSensor acknowledges, for sensorID, those of ids that are
+	// still pending in tenantID, pinned to the sensor or unpinned, and pass
+	// the poll's zone, tool and capability gates, skipping rows another
+	// claim holds locked (FOR UPDATE SKIP LOCKED). Every claimed command
+	// gets a lease and a new lease epoch. Returns the ids claimed.
+	ClaimManyForSensor(ctx context.Context, tenantID, sensorID shared.ID, capabilities []string, ids []shared.ID) ([]shared.ID, error)
+
+	// CountHeldScans counts the scan commands sensorID holds in tenantID
+	// (acknowledged or running): the slots it already uses.
+	CountHeldScans(ctx context.Context, tenantID, sensorID shared.ID) (int, error)
 }

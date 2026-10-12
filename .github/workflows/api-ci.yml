@@ -2,7 +2,22 @@ name: API CI
 
 # The Go API lives in api/. This workflow ALWAYS starts (no `paths:` filter, which
 # would leave required checks Pending); the `changes` job decides whether the
-# real jobs run, and `API CI OK` is the single required check.
+# real jobs run, and `API CI OK` is the single required check. The real jobs run
+# for api/ and shared files only (rules: .github/scripts/changed.sh), so a
+# web-only change costs this workflow two ~10 s jobs and nothing else.
+#
+# Two tiers:
+#   pull_request    `API static checks` (one job, every short gate as a step) +
+#                   `Tests (Postgres + Redis)`: the whole suite with -race
+#                   against real Postgres and Redis, so the tenant-isolation and
+#                   other DB-backed tests fail on the PR, not first in the merge
+#                   queue (owner decision D-30). PR runs are cancelled by a newer
+#                   push to the same PR (concurrency below).
+#   merge_group,    the same, plus `Release Binaries`, and on main the Docker
+#   push            build.
+# `API CI OK` needs the DB-backed tests on every event, so nothing reaches
+# develop/main without them, and they ran on the PR already. `Tests
+# (least-privilege DB role)` (D-6) runs on every event too.
 # Job bodies are carried over from openctemio/api's ci.yml; see git log for the
 # reasoning behind each gate.
 
@@ -12,18 +27,24 @@ on:
   pull_request:
     branches: [main, develop]
   merge_group:
+    types: [checks_requested]
 
-# A newer push to the same PR or branch cancels the older run. Tags (releases)
-# and the scheduled scan are never cancelled.
+# Only a PR's older run is cancelled by a newer push to it. Never a merge-queue
+# run (a cancelled required check ejects the group from the queue), a branch
+# push (it is the branch's baseline), a tag or a schedule.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
+  # Service containers pull the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
 
+# Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
+# version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
+# separate pin here would silently test and govulncheck an OLDER Go than ships.
 env:
-  GO_VERSION: "1.26.6"
   GOWORK: "off"
 
 defaults:
@@ -37,30 +58,66 @@ jobs:
     outputs:
       api: ${{ steps.f.outputs.api }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: f
         working-directory: .
         env:
           EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh api api/ .github/workflows/api- .github/scripts/
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/changed.sh
 
-  migrations:
-    name: Migration Safety
+      # Runs on every PR, also a docs-only one that skips the jobs below.
+      # Changelog entries live one file per change in api/changelog.d/, so
+      # pull requests never conflict on CHANGELOG.md. This also refuses
+      # merge-conflict markers committed anywhere in the repository.
+      - name: Changelog fragments
+        run: python3 scripts/changelog.py check
+
+  # Every short gate in ONE job (one runner, one checkout, one setup-go) instead
+  # of six. Steps run in order and the first failure fails the job; the step
+  # name says which gate it was.
+  static:
+    name: API static checks
     needs: changes
-    if: needs.changes.outputs.api == 'true' && github.event_name == 'pull_request'
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # need base branch for the diff
+          fetch-depth: 0 # base branch for the migration diff and golangci --new-from-rev
+
+      # security-lint.sh expects <root>/{api,agent,sdk-go}. The monorepo root
+      # already has api/; the two siblings are checked out next to it.
+      - name: Checkout sensor (as agent/)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: openctemio/sensor
+          path: agent
+
+      - name: Checkout sdk-go
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: openctemio/sdk-go
+          path: sdk-go
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
 
       - name: Fetch base branch
+        if: github.event_name == 'pull_request'
         run: git fetch --no-tags origin "${{ github.base_ref }}"
 
-      - name: Check for destructive migrations
+      # PR-only: it reads the PR's labels (allow-destructive-migration).
+      - name: Migration Safety
+        if: github.event_name == 'pull_request'
         env:
           ALLOW_DESTRUCTIVE_MIGRATION: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destructive-migration') }}
         run: |
@@ -68,156 +125,213 @@ jobs:
           export BASE_REF
           bash scripts/check-migrations.sh
 
-  sql-schema:
-    name: SQL Schema Drift
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+      # Parallel PRs pick the same "next" number (#767 and #773 both took
+      # 000261). Fails on a duplicate version, and on a PR or queued group
+      # that adds a version not above the base's highest: golang-migrate
+      # silently skips it on databases that are already past it. In the merge
+      # queue the base is merge_group.base_sha, i.e. including the groups
+      # ahead, so two queued PRs with the same number cannot both land.
+      # On pull_request "below the base max" is only a warning: the merge
+      # queue renumbers a PR's migrations when it enqueues it. merge_group and
+      # push keep it an error; duplicates fail everywhere.
+      - name: Migration Versions
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          bash .github/scripts/check-migration-versions.test.sh >/dev/null
+          bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
+          case "$EVENT" in
+            pull_request) MIGRATION_BELOW_BASE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
+            merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
+            *)            bash .github/scripts/check-migration-versions.sh ;;
+          esac
 
-      - name: Prepare every SQL statement against a migrations-only database
+      # PR only: a migration whose number develop has taken since is
+      # renumbered in this runner (never committed) so the checks and tests
+      # below see the tree the merge queue will merge. merge_group and push
+      # keep the hard error above.
+      - name: Renumber this PR's clashing migrations (this run only)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: bash .github/scripts/pr-migration-renumber.sh
+
+      - name: SQL Schema Drift
         run: bash scripts/check-sql-schema.sh
 
-  security-gates:
-    name: Security Gates
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      # security-lint.sh expects <root>/{api,agent,sdk-go}. The monorepo root
-      # already has api/; the two siblings are checked out next to it.
-      - name: Checkout monorepo
-        uses: actions/checkout@v7
+      # RFC-042: configs/asset-types.yaml is the one definition of asset
+      # types, classes and lenses. Fails when the generated Go/TS or the
+      # asset_types seed in the newest registry migration drifted from it.
+      # The live-schema half runs in internal/infra/postgres
+      # (TestAssetTypeRegistry_*) on the full tier.
+      - name: Asset Types Drift
+        run: GOWORK=off go run ./cmd/gen-asset-types -check
 
-      - name: Checkout sensor (as agent/)
-        uses: actions/checkout@v7
-        with:
-          repository: openctemio/sensor
-          path: agent
+      # The module registry (RFC-064): configs/modules/*.yaml generates the Go
+      # catalog, the web constants and the modules rows (newest registry
+      # migration). Fails when any of them drifted from the YAML.
+      - name: Module Registry Drift
+        run: GOWORK=off go run ./cmd/gen-modules -check
 
-      - name: Checkout sdk-go
-        uses: actions/checkout@v7
-        with:
-          repository: openctemio/sdk-go
-          path: sdk-go
+      # Sensor protocol v3 (RFC-059): buf lint, buf breaking against the
+      # base branch, and the committed Go code matches the .proto.
+      - name: Sensor Protocol v3 (buf lint, breaking, generated code)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$EVENT" in
+            pull_request) base="origin/${BASE_REF}" ;;
+            merge_group)  base="$MG_BASE" ;;
+            *)            base="HEAD~1" ;;
+          esac
+          bash scripts/check-proto.sh "$base"
 
-      - name: Run security lint
+      - name: Security Gates (security lint)
         working-directory: .
         env:
           SECLINT_ROOT: ${{ github.workspace }}
           SECLINT_STRICT: "1"
         run: bash api/scripts/security-lint.sh
 
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-          cache-dependency-path: api/go.sum
-
-      - name: Run tenant-scope analyzer
+      - name: Security Gates (tenant-scope analyzer)
         run: go test ./tools/lint/getbyid/... -count=1
 
-      - name: Sensor vocabulary guard
+      # D-11: no SELECT/UPDATE/DELETE of a tenant-scoped row by id without a
+      # tenant predicate (shrink-only allowlist). The schema half of this test
+      # (tenant_tables.txt vs the migrated DB) runs on the Postgres tier.
+      - name: Security Gates (tenantless SQL guard)
+        run: go test ./tools/lint/tenantsql/... -count=1
+
+      - name: Security Gates (sensor vocabulary guard)
         run: go test ./tools/lint/sensorvocab/... -count=1
 
-  openapi:
-    name: OpenAPI Contract
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+      # RFC-041: every route belongs to one plane and follows the API
+      # conventions; today's violations are a shrink-only baseline.
+      - name: Route Style (planes and conventions)
+        run: go test ./tools/lint/routestyle/... ./internal/infra/http/routes/plane/... -count=1
 
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-          cache-dependency-path: api/go.sum
-
-      - name: Spec matches the handler annotations
+      # Generates the spec from the handler annotations (it is not committed),
+      # then checks it against the routes (scripts/check-openapi.sh).
+      - name: OpenAPI Contract
         run: bash scripts/check-openapi.sh
 
-  # Gateway: the single public entry point (api/deploy/gateway). Validates the
-  # Caddyfile in every TLS mode, the entrypoint's refusals, and the routing
-  # table against stub upstreams; and that the production compose renders.
-  # The all-in-one image (deploy/allinone) embeds the same gateway files.
-  gateway:
-    name: Gateway Routing
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Routing smoke test
+      # Gateway: the single public entry point (api/deploy/gateway). Validates
+      # the Caddyfile in every TLS mode, the entrypoint's refusals, and the
+      # routing table against stub upstreams; and that the production compose
+      # renders. The all-in-one image (deploy/allinone) embeds the same files.
+      - name: Gateway Routing (smoke test)
         run: bash deploy/gateway/smoke-test.sh
 
-      - name: Production compose renders
+      - name: Gateway Routing (production compose renders)
         working-directory: api/deploy
         run: |
-          cp .env.example .env
-          sed -i -e 's/^DB_PASSWORD=.*/DB_PASSWORD=x/' -e 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=x/' \
-            -e 's/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=x/' -e 's/^APP_ENCRYPTION_KEY=.*/APP_ENCRYPTION_KEY=x/' \
-            -e 's/^CSRF_SECRET=.*/CSRF_SECRET=x/' .env
+          # The first-start path: setup.sh writes .env (host name + generated secrets).
+          ./setup.sh ctem.example.com
+          test "$(stat -c %a .env)" = 600
           docker compose config -q
           docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.plain-http.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml config -q
+          OPENCTEM_SENSOR_GATEWAY=passthrough SENSOR_PUBLIC_HOSTNAME=sensors.example.test SENSOR_PUBLIC_HOST=sensors.example.test:443 \
+            docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml config -q
           # Only the gateway publishes a port.
           published="$(docker compose config --format json | jq -r '.services | to_entries[] | select(.value.ports != null and (.value.ports | length) > 0) | .key')"
           echo "services with published ports: $published"
           test "$published" = "gateway"
+          rm .env
 
+      # The shards of the two DB-backed jobs below cover every package and
+      # every top-level test of tests/unit exactly once.
+      - name: Test shards cover every test
+        run: bash ../.github/scripts/go-shard.sh check 4 4 && bash ../.github/scripts/go-shard.sh check 3 3
+
+  # vet, staticcheck and golangci-lint run in their own job, in parallel with
+  # the gates in `API static checks` (they were two thirds of that job's time).
   lint:
-    name: Lint
+    name: API lint
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # golangci-lint --new-from-rev needs the base branch
+          fetch-depth: 0 # base branch for golangci --new-from-rev
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 
-      - name: Run go vet
-        run: go vet ./...
-
-      - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
-
-      - name: Run staticcheck
-        run: staticcheck ./...
+      # The analysis caches of golangci-lint, and the installed staticcheck
+      # binary (its version is in the key), so a run only re-analyses what
+      # changed. A cache is a speed-up only: a miss runs the same checks.
+      - name: Cache lint tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/golangci-lint
+            ~/go/bin/staticcheck
+          key: lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-${{ github.sha }}
+          restore-keys: |
+            lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-
+            lint-${{ runner.os }}-
 
       - name: Fetch base branch
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags origin "${{ github.base_ref }}"
 
-      - name: Run golangci-lint on new code
+      - name: Lint (go vet)
+        run: go vet ./...
+
+      - name: Lint (staticcheck)
+        run: |
+          STATICCHECK_VERSION=v0.7.0
+          if ! command -v staticcheck >/dev/null 2>&1 || ! staticcheck -version | grep -q "${STATICCHECK_VERSION#v}"; then
+            go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}
+          fi
+          staticcheck ./...
+
+      - name: Lint (golangci-lint on new code)
         if: github.event_name == 'pull_request'
         run: |
           base="$(bash ../.github/scripts/effective-base.sh api "origin/${{ github.base_ref }}")"
           make lint-new BASE_REF="$base"
 
+  # Every event (PRs included): the whole suite against real Postgres and
+  # Redis, so the DB-backed tests run too.
   test:
-    name: Test
+    name: Tests (Postgres + Redis)
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
+    # The suite is split into parallel shards (.github/scripts/go-shard.sh:
+    # tests/unit alone is most of the run time, so it has its own shards).
+    # `Static checks` proves the shards together cover every test once.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { kind: unit, shard: 0, total: 4 }
+          - { kind: unit, shard: 1, total: 4 }
+          - { kind: unit, shard: 2, total: 4 }
+          - { kind: unit, shard: 3, total: 4 }
+          - { kind: pkgs, shard: 0, total: 4 }
+          - { kind: pkgs, shard: 1, total: 4 }
+          - { kind: pkgs, shard: 2, total: 4 }
+          - { kind: pkgs, shard: 3, total: 4 }
     services:
       postgres:
-        image: postgres:17-alpine
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_USER: openctem
           # Job-scoped throwaway database: no password at all (trust auth on
@@ -232,7 +346,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - 6379:6379
         options: >-
@@ -242,17 +359,25 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # the test merge's base parent, for the renumber below
+
+      - name: Renumber this PR's clashing migrations (this run only)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: bash .github/scripts/pr-migration-renumber.sh
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 
-      - name: Download dependencies
-        run: go mod download
+      # The spec is generated, not committed; the contract tests read it.
+      - name: Generate the OpenAPI spec
+        run: make swagger
 
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
@@ -262,38 +387,90 @@ jobs:
         env:
           DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
 
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      # Explicit -timeout: the default 10m per package binary is too tight for
+      # the -race suite on a slow or busy runner (it takes ~5m normally).
+      # OPENCTEM_TEST_DB_REQUIRED: testdb fails instead of skipping when the
+      # database is missing or unreachable. -json feeds the skip check below;
+      # the jq filter prints the same log that -v would.
+      - name: Run tests (${{ matrix.kind }} shard ${{ matrix.shard }}/${{ matrix.total }})
+        # shell: bash means -o pipefail. Without it a failing go test is hidden
+        # by the pipe into tee/jq and the step goes green.
+        shell: bash
         env:
+          KIND: ${{ matrix.kind }}
+          SHARD: ${{ matrix.shard }}
+          TOTAL: ${{ matrix.total }}
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: openctem
           DB_NAME: app_test
           DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+          OPENCTEM_TEST_DB_REQUIRED: "1"
           REDIS_HOST: localhost
           REDIS_PORT: 6379
+        run: |
+          if [ "$KIND" = unit ]; then
+            run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
+            set -- -run "$run" ./tests/unit
+          else
+            mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
+            set -- "${pk[@]}"
+          fi
+          go test -json -race -timeout 20m -coverprofile=coverage.out -covermode=atomic "$@" \
+            | tee test.json \
+            | jq -Rrj '. as $l | (try fromjson catch null) as $e
+                | if $e == null then $l + "\n"
+                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
+                  else empty end'
+
+      # A test that skips itself on a failed ping (t.Skipf) would otherwise let
+      # this job go green without running its DB checks.
+      - name: No DB-backed test was skipped
+        if: ${{ !cancelled() }}
+        run: bash ../.github/scripts/check-db-test-skips.sh test.json
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./api/coverage.out
           flags: api
+          name: api-${{ matrix.kind }}-${{ matrix.shard }}
           fail_ci_if_error: false
 
-  compat-v1:
-    name: Protocol v1 Compatibility
+  # D-6: the API connects as a least-privilege role (docs/deployment/database-roles.md).
+  # Both tiers: bootstrap a fresh database with deploy/postgres/least-privilege-roles.sql,
+  # apply every migration AS THE MIGRATOR (no migration may need a superuser),
+  # re-run the script (idempotent), then run the DB-backed suite AS THE APP ROLE.
+  # Tests that replay a migration use DATABASE_MIGRATE_URL (testdb.MigratorURL).
+  # Any runtime statement the app role may not run fails here with 42501.
+  least-privilege:
+    name: Tests (least-privilege DB role)
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { kind: unit, shard: 0, total: 3 }
+          - { kind: unit, shard: 1, total: 3 }
+          - { kind: unit, shard: 2, total: 3 }
+          - { kind: pkgs, shard: 0, total: 3 }
+          - { kind: pkgs, shard: 1, total: 3 }
+          - { kind: pkgs, shard: 2, total: 3 }
     services:
       postgres:
-        image: postgres:17-alpine
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
-          POSTGRES_USER: openctem
-          # Job-scoped throwaway database: no password at all (trust auth on
-          # the service network), so no credential literal lives in the repo.
+          POSTGRES_USER: postgres
+          # Job-scoped throwaway database, trust auth on the service network:
+          # no credential literal in the repo. Role separation is what is
+          # under test, not passwords.
           POSTGRES_HOST_AUTH_METHOD: trust
-          POSTGRES_DB: app_compat
+          POSTGRES_DB: lp_test
         ports:
           - 5432:5432
         options: >-
@@ -302,7 +479,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - 6379:6379
         options: >-
@@ -311,112 +491,143 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgres://openctem@localhost:5432/app_compat?sslmode=disable
-      APP_ENV: development
-      DB_HOST: localhost
-      DB_PORT: 5432
-      DB_USER: openctem
-      DB_NAME: app_compat
-      DB_SSLMODE: disable
-      REDIS_HOST: localhost
-      REDIS_PORT: 6379
-      SERVER_PORT: 8080
-      AUTH_PROVIDER: local
-      AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
+      SUPER_URL: postgres://postgres@localhost:5432/lp_test?sslmode=disable
+      MIGRATOR_URL: postgres://openctem_migrator@localhost:5432/lp_test?sslmode=disable
+      APP_ROLE_URL: postgres://openctem_app@localhost:5432/lp_test?sslmode=disable
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # the test merge's base parent, for the renumber below
+
+      - name: Renumber this PR's clashing migrations (this run only)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: bash .github/scripts/pr-migration-renumber.sh
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
-          cache-dependency-path: |
-            api/go.sum
-            api/tests/compat/v1/go.sum
+          cache-dependency-path: api/go.sum
 
-      - name: Generate secrets
-        run: |
-          echo "AUTH_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-          echo "APP_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      # The spec is generated, not committed; the contract tests read it.
+      - name: Generate the OpenAPI spec
+        run: make swagger
 
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
 
-      - name: Apply migrations
-        run: migrate -path migrations -database "$DATABASE_URL" up
+      - name: Bootstrap the roles on a fresh database
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
 
-      - name: Build API and bootstrap-admin
-        run: go build -o bin/ ./cmd/server ./cmd/bootstrap-admin
+      - name: Apply every migration as the migrator (not a superuser)
+        run: migrate -path migrations -database "$MIGRATOR_URL" up
 
-      - name: Start API
-        run: |
-          nohup ./bin/server > server.log 2>&1 &
-          for _ in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8080/health >/dev/null && exit 0
-            sleep 1
-          done
-          echo "API did not become healthy"; cat server.log; exit 1
+      - name: Re-run the bootstrap (idempotent; verifies grants on the migrated schema)
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
 
-      - name: Run the last released SDK against this build
-        run: bash scripts/compat-v1.sh
+      - name: The app role can reach the database (so a skip cannot pass silently)
+        run: psql "$APP_ROLE_URL" -X -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM tenants'
+
+      # OPENCTEM_TEST_DB_REQUIRED + the skip check: a DB test that skipped for a
+      # missing database fails the job instead of passing silently. The two
+      # tests that need CREATEDB (a superuser) skip here by design and run in
+      # Tests (Postgres + Redis).
+      - name: Run the DB-backed suite as the app role (${{ matrix.kind }} shard ${{ matrix.shard }}/${{ matrix.total }})
+        shell: bash # -o pipefail: the pipe into tee/jq must not hide a failure
         env:
-          COMPAT_API_URL: http://127.0.0.1:8080
-          BOOTSTRAP_ADMIN_BIN: ./bin/bootstrap-admin
+          KIND: ${{ matrix.kind }}
+          SHARD: ${{ matrix.shard }}
+          TOTAL: ${{ matrix.total }}
+          OPENCTEM_TEST_DB_REQUIRED: "1"
+          DATABASE_URL: ${{ env.APP_ROLE_URL }}
+          DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
+          # testdb.PrivateDatabase only: CREATE DATABASE + migrations need a superuser.
+          DATABASE_ADMIN_URL: ${{ env.SUPER_URL }}
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: openctem_app
+          DB_NAME: lp_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: |
+          if [ "$KIND" = unit ]; then
+            run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
+            set -- -run "$run" ./tests/unit
+          else
+            mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
+            set -- "${pk[@]}"
+          fi
+          go test -json -timeout 30m "$@" \
+            | tee lp-test.json \
+            | jq -Rrj '. as $l | (try fromjson catch null) as $e
+                | if $e == null then $l + "\n"
+                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
+                  else empty end'
 
-      - name: API log on failure
-        if: failure()
-        run: tail -200 server.log
+      - name: No DB-backed test was skipped
+        if: ${{ !cancelled() }}
+        run: bash ../.github/scripts/check-db-test-skips.sh lp-test.json
 
-  build:
-    name: Build
-    needs: [changes, lint, test]
-    if: needs.changes.outputs.api == 'true'
+  # Merge queue and pushes only: the release-style static binaries (the former
+  # separate `Build` job).
+  binaries:
+    name: Release Binaries
+    needs: changes
+    if: needs.changes.outputs.api == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
 
-      - name: Build API Server
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/openctem ./cmd/server
-
-      - name: Build Bootstrap Admin
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/bootstrap-admin ./cmd/bootstrap-admin
+      - name: Build release binaries (linux/amd64, static)
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/openctem ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/bootstrap-admin ./cmd/bootstrap-admin
 
       - name: Upload API artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: api-linux-amd64
-          path: api/bin/openctem
+          path: api/dist/openctem
 
       - name: Upload Bootstrap Admin artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bootstrap-admin-linux-amd64
-          path: api/bin/bootstrap-admin
+          path: api/dist/bootstrap-admin
 
   docker:
     name: Docker Build
-    needs: [changes, build]
+    needs: [changes, static, test]
     if: needs.changes.outputs.api == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: api
           push: false
@@ -425,19 +636,32 @@ jobs:
           cache-to: type=gha,scope=api,mode=max
 
   # The ONE required status check for the API. Runs even when everything above
-  # was skipped (non-API change), and fails if any job failed or was cancelled.
-  # A skipped job is fine: it means the path filter or an event condition said
-  # it does not apply.
+  # was skipped (non-API change, or a tier that does not apply to this event),
+  # and fails if any job failed or was cancelled.
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, migrations, sql-schema, security-gates, openapi, gateway, lint, test, compat-v1, build, docker]
+    needs: [changes, static, lint, test, least-privilege, binaries, docker]
     runs-on: ubuntu-latest
     steps:
-      - name: All API jobs passed or were skipped
+      - name: All API jobs passed or were skipped; the event's tier actually ran
         working-directory: .
         env:
           NEEDS: ${{ toJSON(needs) }}
+          API: ${{ needs.changes.outputs.api }}
+          EVENT: ${{ github.event_name }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null
+          if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
+            echo "::error::a job failed or was cancelled"; exit 1
+          fi
+          # Skipped is fine only when the area did not change. When it did,
+          # the tier for this event must have RUN and passed, so a mistyped
+          # condition cannot wave a queued PR through without its tests.
+          if [ "$API" = true ]; then
+            if [ "$EVENT" = pull_request ]; then required="changes static lint test least-privilege"; else required="changes static lint test least-privilege binaries"; fi
+            for j in $required; do
+              r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
+              if [ "$r" != success ]; then echo "::error::$j must run and pass for $EVENT, got: $r"; exit 1; fi
+            done
+          fi

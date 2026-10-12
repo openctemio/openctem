@@ -32,7 +32,7 @@ var _ ingest.BackfillSource = (*AssetIdentityBackfillRepository)(nil)
 func (r *AssetIdentityBackfillRepository) PendingTenants(ctx context.Context, version int) ([]shared.ID, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT t.id FROM tenants t
-		WHERE EXISTS (SELECT 1 FROM assets a WHERE a.tenant_id = t.id)
+		WHERE EXISTS (SELECT 1 FROM assets a WHERE a.tenant_id = t.id AND a.deleted_at IS NULL)
 		  AND NOT EXISTS (SELECT 1 FROM asset_identity_backfill b WHERE b.tenant_id = t.id AND b.version >= $1)
 		ORDER BY t.id`, version)
 	if err != nil {
@@ -67,7 +67,7 @@ func (r *AssetIdentityBackfillRepository) ScanAssets(ctx context.Context, tenant
 		afterID = "00000000-0000-0000-0000-000000000000"
 	}
 	rows, err := r.db.QueryContext(ctx, storedAssetSelect+`
-		WHERE a.tenant_id = $1 AND a.id > $2::uuid
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id > $2::uuid
 		ORDER BY a.id
 		LIMIT $3`, tenantID.String(), afterID, limit)
 	if err != nil {
@@ -111,8 +111,8 @@ func (r *AssetIdentityBackfillRepository) RenamedHostCandidates(ctx context.Cont
 		FROM asset_identifiers ia
 		JOIN asset_identifiers ib ON ib.tenant_id = ia.tenant_id AND ib.kind = 'ip'
 		     AND ib.value = ia.value AND ib.asset_id > ia.asset_id
-		JOIN assets a ON a.id = ia.asset_id AND a.tenant_id = ia.tenant_id
-		JOIN assets b ON b.id = ib.asset_id AND b.tenant_id = ib.tenant_id
+		JOIN assets a ON a.id = ia.asset_id AND a.tenant_id = ia.tenant_id AND a.deleted_at IS NULL
+		JOIN assets b ON b.id = ib.asset_id AND b.tenant_id = ib.tenant_id AND b.deleted_at IS NULL
 		WHERE ia.tenant_id = $1 AND ia.kind = 'ip'
 		  AND a.asset_type IN ('host', 'ip_address') AND b.asset_type IN ('host', 'ip_address')
 		  AND a.name <> b.name

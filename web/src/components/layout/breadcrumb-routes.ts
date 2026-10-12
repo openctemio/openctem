@@ -28,26 +28,25 @@ export function isIdSegment(segment: string): boolean {
  */
 export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/admin/scanning',
+  '/admin/security',
   '/admin/system',
   '/auth',
   '/auth/callback',
   '/auth/sso',
   '/auth/sso/callback',
+  '/ci-cd/github-app',
   '/insights',
-  '/insights/analytics',
   '/insights/reports',
-  '/invitations',
+  '/mcp',
+  '/mcp/confirm',
+  '/oauth',
   '/onboarding',
   '/pentest',
   '/pentest/findings',
   '/pentest/findings/[id]',
-  '/pipelines/[id]',
-  '/relationships',
-  '/settings/access-control',
   '/settings/tenant',
   '/settings/pentest/templates/[id]',
   '/settings/scanning',
-  '/simulation',
 ])
 
 /** Whether `path` (a real URL path, ids included) has a page to link to. */

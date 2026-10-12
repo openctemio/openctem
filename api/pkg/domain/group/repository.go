@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -10,12 +11,13 @@ import (
 type Repository interface {
 	// Group CRUD operations
 	Create(ctx context.Context, g *Group) error
-	GetByID(ctx context.Context, id shared.ID) (*Group, error)
 	// GetByTenantAndID retrieves a group by tenant and ID (tenant-scoped access control).
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Group, error)
 	GetBySlug(ctx context.Context, tenantID shared.ID, slug string) (*Group, error)
+	// Update writes g; the row must belong to g.TenantID().
 	Update(ctx context.Context, g *Group) error
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete removes the group only when it belongs to tenantID.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// Group queries
 	List(ctx context.Context, tenantID shared.ID, filter ListFilter) ([]*Group, error)
@@ -42,12 +44,6 @@ type Repository interface {
 	// User-centric queries
 	ListGroupsByUser(ctx context.Context, tenantID, userID shared.ID) ([]*GroupWithRole, error)
 	ListGroupIDsByUser(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
-
-	// Permission set assignment
-	AssignPermissionSet(ctx context.Context, groupID, permissionSetID shared.ID, assignedBy *shared.ID) error
-	RemovePermissionSet(ctx context.Context, groupID, permissionSetID shared.ID) error
-	ListPermissionSetIDs(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
-	ListGroupsWithPermissionSet(ctx context.Context, permissionSetID shared.ID) ([]*Group, error)
 }
 
 // ListFilter contains filter options for listing groups.
@@ -95,8 +91,19 @@ type GroupWithMembers struct {
 	Members []*MemberWithUser
 }
 
-// GroupWithPermissionSets represents a group with its assigned permission sets.
-type GroupWithPermissionSets struct {
-	Group            *Group
-	PermissionSetIDs []shared.ID
+// ExpiredMember is a membership whose end date has passed.
+type ExpiredMember struct {
+	TenantID  shared.ID
+	GroupID   shared.ID
+	GroupName string
+	UserID    shared.ID
+	ExpiresAt time.Time
+	Reason    string
+}
+
+// ExpiredMemberLister lists memberships whose end date is at or before now,
+// across organizations, oldest first. Only the membership-expiry controller
+// uses it; it is never reachable from a request.
+type ExpiredMemberLister interface {
+	ListExpiredMembers(ctx context.Context, now time.Time, limit int) ([]ExpiredMember, error)
 }

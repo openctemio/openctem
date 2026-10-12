@@ -14,8 +14,8 @@ python3 --version # For test_oss_api.py only
 curl http://localhost:8080/health
 # {"status":"healthy"}
 
-# Registration must be enabled (for test user creation)
-# AUTH_ALLOW_REGISTRATION=true
+# Sign-up must be open (for test user creation): on a fresh database
+# TENANT_CREATION_MODE=self_service, or Console > System > Sign-up
 ```
 
 ## Quick Start

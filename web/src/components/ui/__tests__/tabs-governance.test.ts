@@ -15,12 +15,7 @@ const SRC = join(__dirname, '../../..')
  * Files still being migrated by in-flight work. Remove an entry once its
  * tabs use <TabsCount>; never add one for new code.
  */
-const PENDING = new Set([
-  'app/(dashboard)/(discovery)/components/vulnerable/page.tsx',
-  'features/assets/components/asset-detail-sheet.tsx',
-  'features/assets/components/api-detail-sheet.tsx',
-  'features/assets/components/container-detail-sheet.tsx',
-])
+const PENDING = new Set(['app/(dashboard)/(discovery)/components/vulnerable/page.tsx'])
 
 function* tsxFiles(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {

@@ -394,3 +394,18 @@ func TestRule_SetToolNameStoresCanonicalName(t *testing.T) {
 		t.Fatalf("tool name = %q, want semgrep", r.ToolName())
 	}
 }
+
+// A path-only rule must not match findings that have no file path (DAST,
+// network, infrastructure): "test/**" used to suppress all of them.
+func TestRule_PathOnlyRuleSkipsPathlessFindings(t *testing.T) {
+	r := ReconstituteRule(RuleData{
+		ID: shared.NewID(), TenantID: shared.NewID(), Name: "tests", PathPattern: "test/**",
+		SuppressionType: SuppressionTypeFalsePositive, Status: RuleStatusApproved,
+	})
+	if r.Matches(FindingMatch{ToolName: "nuclei", RuleID: "cve-2024-1", FilePath: ""}) {
+		t.Fatal("path-only rule matched a finding without a file path")
+	}
+	if !r.Matches(FindingMatch{ToolName: "semgrep", RuleID: "x", FilePath: "test/a_test.go"}) {
+		t.Fatal("path-only rule no longer matches a path under its pattern")
+	}
+}

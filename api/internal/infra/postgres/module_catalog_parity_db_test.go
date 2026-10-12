@@ -44,7 +44,7 @@ import (
 //
 // Direction matters: the database legitimately holds MORE rows than the Go
 // maps. UserFacingModuleIDs is deliberately sidebar-visible-only — its own
-// comment excludes sensors/tools/pipelines because toggling them has no sidebar
+// comment excludes sensors/tools/scan workflows because toggling them has no sidebar
 // effect. So DB ⊋ code is expected and never asserted; only code ⊆ DB is.
 
 // catalogRow is one row of the `modules` table. Column names verified
@@ -434,7 +434,7 @@ func TestModuleCatalog_GatedModulesHaveActiveRows(t *testing.T) {
 // UserFacingModuleIDs and ModulePermissionMapping must have a row.
 //
 // Existence only, not active: the maps legitimately retain retired IDs
-// (sources, secrets, scope, pipelines and webhooks are all seeded
+// (sources, secrets, scope, scan workflows and webhooks are all seeded
 // is_active = FALSE / deprecated) so that historic permission lookups still
 // resolve. What must never happen is an ID present in Go and absent from the
 // table entirely.
@@ -516,5 +516,31 @@ func TestModuleCatalog_SubModuleParentsResolve(t *testing.T) {
 			"FIX: in a migration, set parent_module_id to the part of the ID before the '.', e.g.\n"+
 			"  UPDATE modules SET parent_module_id = split_part(id, '.', 1) WHERE id LIKE '%%.%%';",
 			len(broken), strings.Join(broken, "\n  - "))
+	}
+}
+
+// TestModuleCatalog_CoreFlagMatches — CoreModuleIDs and the is_core column
+// must name the same modules. Go decides the gate (ModuleGate.IsEnabled,
+// ValidateToggle) and the database decides the settings page (the web locks a
+// module whose is_core is set), so a module core in one and toggleable in the
+// other is a switch that does nothing, or a gate the page says is open.
+func TestModuleCatalog_CoreFlagMatches(t *testing.T) {
+	catalog := loadModuleCatalog(t, openModuleCatalogDB(t))
+	requireDerivedNonEmpty(t, "CoreModuleIDs", len(module.CoreModuleIDs))
+
+	for id := range module.CoreModuleIDs {
+		row, ok := catalog[id]
+		if !ok {
+			t.Errorf("core module %q has no modules row", id)
+			continue
+		}
+		if !row.isCore {
+			t.Errorf("module %q is in CoreModuleIDs but modules.is_core is false: add a migration that sets it", id)
+		}
+	}
+	for id, row := range catalog {
+		if row.isCore && row.isActive && !module.CoreModuleIDs[id] {
+			t.Errorf("modules.is_core is true for %q but it is not in CoreModuleIDs", id)
+		}
 	}
 }

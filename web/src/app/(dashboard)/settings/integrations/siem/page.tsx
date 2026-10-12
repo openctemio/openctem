@@ -16,17 +16,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toast } from 'sonner'
 import { csrfFetch } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import {
   useNotificationIntegrationsApi,
   useCreateNotificationIntegrationApi,
   invalidateNotificationIntegrationsCache,
 } from '@/features/integrations'
+import { siemIntegrationsOnly } from '@/features/integrations/lib/integration-routing'
 import type { Integration } from '@/features/integrations'
 import {
   DataTable,
@@ -36,6 +38,7 @@ import {
   PageHeader,
   StackedCell,
 } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 
 const META = (i: Integration, k: string): string => {
   const v = i.metadata?.[k]
@@ -53,13 +56,11 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function SIEMIntegrationPage() {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useNotificationIntegrationsApi()
   const { trigger: createIntegration, isMutating: creating } = useCreateNotificationIntegrationApi()
 
-  const splunkIntegrations = useMemo(
-    () => (data?.data ?? []).filter((i) => i.provider === 'splunk'),
-    [data]
-  )
+  const splunkIntegrations = useMemo(() => siemIntegrationsOnly(data?.data ?? []), [data])
 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', hecUrl: '', token: '', index: '', sourcetype: '' })
@@ -177,7 +178,7 @@ export default function SIEMIntegrationPage() {
               icon: Send,
               onClick: () => void handleTest(row.original),
               disabled: testingId === row.original.id,
-              permission: Permission.IntegrationsManage,
+              route: 'PUT /api/v1/integrations/{id}',
             },
             {
               label: 'Delete',
@@ -185,7 +186,7 @@ export default function SIEMIntegrationPage() {
               onClick: () => setDeleteTarget(row.original),
               destructive: true,
               separatorBefore: true,
-              permission: Permission.IntegrationsManage,
+              route: 'PUT /api/v1/integrations/{id}',
             },
           ]}
         />
@@ -204,7 +205,7 @@ export default function SIEMIntegrationPage() {
         title="SIEM"
         description="Forward findings, exposures, scans and SLA breaches to Splunk through the HTTP Event Collector (HEC)."
       >
-        <Can permission={Permission.IntegrationsManage}>
+        <Can route="PUT /api/v1/integrations/{id}">
           <Button size="sm" onClick={() => setShowForm(true)}>
             <Plus className="me-2 h-4 w-4" />
             Add Splunk HEC
@@ -226,7 +227,7 @@ export default function SIEMIntegrationPage() {
             title="No SIEM integrations yet"
             description="Add a Splunk HTTP Event Collector to start forwarding security events to your SIEM."
             action={
-              <Can permission={Permission.IntegrationsManage}>
+              <Can route="PUT /api/v1/integrations/{id}">
                 <Button size="sm" onClick={() => setShowForm(true)}>
                   <Plus className="me-2 h-4 w-4" />
                   Add Splunk HEC
@@ -246,7 +247,7 @@ export default function SIEMIntegrationPage() {
       </div>
 
       <Dialog open={showForm} onOpenChange={(open) => (open ? setShowForm(true) : closeForm())}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>New Splunk HEC integration</DialogTitle>
             <DialogDescription>
@@ -254,54 +255,56 @@ export default function SIEMIntegrationPage() {
               non-sensitive routing config.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="siem-name">Name</Label>
-              <Input
-                id="siem-name"
-                placeholder="Production Splunk"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
+          <DialogBody>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="siem-name">Name</Label>
+                <Input
+                  id="siem-name"
+                  placeholder="Production Splunk"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="siem-url">HEC endpoint URL</Label>
+                <Input
+                  id="siem-url"
+                  placeholder="https://splunk.example.com:8088"
+                  value={form.hecUrl}
+                  onChange={(e) => setForm({ ...form, hecUrl: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="siem-token">HEC token</Label>
+                <Input
+                  id="siem-token"
+                  type="password"
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                  value={form.token}
+                  onChange={(e) => setForm({ ...form, token: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="siem-index">Index (optional)</Label>
+                <Input
+                  id="siem-index"
+                  placeholder="main"
+                  value={form.index}
+                  onChange={(e) => setForm({ ...form, index: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="siem-sourcetype">Sourcetype (optional)</Label>
+                <Input
+                  id="siem-sourcetype"
+                  placeholder="openctem:notification"
+                  value={form.sourcetype}
+                  onChange={(e) => setForm({ ...form, sourcetype: e.target.value })}
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="siem-url">HEC endpoint URL</Label>
-              <Input
-                id="siem-url"
-                placeholder="https://splunk.example.com:8088"
-                value={form.hecUrl}
-                onChange={(e) => setForm({ ...form, hecUrl: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="siem-token">HEC token</Label>
-              <Input
-                id="siem-token"
-                type="password"
-                placeholder="00000000-0000-0000-0000-000000000000"
-                value={form.token}
-                onChange={(e) => setForm({ ...form, token: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="siem-index">Index (optional)</Label>
-              <Input
-                id="siem-index"
-                placeholder="main"
-                value={form.index}
-                onChange={(e) => setForm({ ...form, index: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="siem-sourcetype">Sourcetype (optional)</Label>
-              <Input
-                id="siem-sourcetype"
-                placeholder="openctem:notification"
-                value={form.sourcetype}
-                onChange={(e) => setForm({ ...form, sourcetype: e.target.value })}
-              />
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeForm}>
               Cancel
@@ -317,9 +320,14 @@ export default function SIEMIntegrationPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete SIEM integration"
-        desc={`Stop forwarding events to "${deleteTarget?.name ?? ''}"? This cannot be undone.`}
-        confirmText="Delete"
+        title={t('confirm.siem.deleteTitle', 'Delete the SIEM integration "{name}"?', {
+          name: deleteTarget?.name ?? '',
+        })}
+        desc={t(
+          'confirm.siem.deleteDesc',
+          'Events stop being forwarded to it at once and its settings are deleted. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={deleting}
         handleConfirm={() => void handleDelete()}

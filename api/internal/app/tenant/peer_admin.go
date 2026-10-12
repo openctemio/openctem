@@ -44,8 +44,48 @@ func (s *TenantService) authorizeMemberChange(ctx context.Context, target *tenan
 		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
 	}
 	actor, err := s.repo.GetMembership(ctx, actorID, target.TenantID())
-	if err != nil || actor == nil || !actor.IsOwner() || actor.IsSuspended() {
+	if err != nil || actor == nil || !actor.IsOwner() || !actor.IsActive() {
 		return ErrOwnerRequiredForAdminChange
 	}
 	return nil
 }
+
+// ErrOwnerRequiredForAdminPromotion is returned when someone other than the
+// organization's owner tries to make a user an administrator (settings
+// decision B2, 2026-10-04): by adding them as admin, changing their role to
+// admin or inviting them with the admin role.
+var ErrOwnerRequiredForAdminPromotion = fmt.Errorf(
+	"%w: only the organization owner can make someone an administrator", shared.ErrForbidden)
+
+// authorizeAdminPromotion refuses to give the admin role unless the actor is
+// the organization's active owner who re-authenticated recently (step-up).
+// An empty actor is a system path (SCIM, SSO), bounded by its own rules.
+func (s *TenantService) authorizeAdminPromotion(ctx context.Context, tenantID shared.ID, actx auditapp.AuditContext) error {
+	if actx.ActorID == "" {
+		return nil
+	}
+	actorID, err := shared.IDFromString(actx.ActorID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+	}
+	actor, err := s.repo.GetMembership(ctx, actorID, tenantID)
+	if err != nil || actor == nil || !actor.IsOwner() || actor.IsSuspended() {
+		return ErrOwnerRequiredForAdminPromotion
+	}
+	return s.requireStepUp(ctx, actx.ActorID)
+}
+
+// requireStepUp asks the step-up gate, when one is wired, for the acting
+// user's recent re-authentication.
+func (s *TenantService) requireStepUp(ctx context.Context, actorID string) error {
+	if s.stepUp == nil {
+		return nil
+	}
+	return s.stepUp.RequireRecentAuth(ctx, actorID)
+}
+
+// SetStepUpGate wires step-up re-authentication for making someone an
+// administrator and renaming the organization's slug
+// (docs/architecture/step-up-reauth.md). Without it (a service built outside
+// the HTTP server, such as the bootstrap CLI) the check is skipped.
+func (s *TenantService) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }

@@ -57,6 +57,18 @@ func templateSignatureAllowed(sig string) bool {
 	return true
 }
 
+// TemplateSignatureAllowed is templateSignatureAllowed for other packages (the
+// retest service, RFC-039): a nuclei template id that may be re-run — no path
+// shape, no destructive-class marker.
+func TemplateSignatureAllowed(sig string) bool { return templateSignatureAllowed(sig) }
+
+// NucleiTechnique is the ATT&CK technique a nuclei single-template re-run is
+// recorded under (T1190); SafeCheckTechnique is the reachability probe's (T1046).
+const (
+	NucleiTechnique    = nucleiTechnique
+	SafeCheckTechnique = safeCheckTechnique
+)
+
 // nucleiSignature extracts the detection signature a nuclei re-verify would
 // re-run for a finding, and whether one usable + allowed signature exists.
 //

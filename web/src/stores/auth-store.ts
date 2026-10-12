@@ -10,12 +10,18 @@
  * - Token expiration checked automatically
  */
 
+import { clearFormDrafts } from '@/lib/form-drafts'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { clearAllStoredPermissions } from '@/lib/permission-storage'
 import { clearAllLogoCaches } from '@/lib/logo-storage'
 import { devLog } from '@/lib/logger'
+import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 import { csrfHeaders } from '@/lib/csrf-client'
+import { validateRedirectUrl } from '@/lib/redirect'
+import { getCookie, removeCookie } from '@/lib/cookies'
+import { env } from '@/lib/env'
+import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
 
 // ============================================
 // TYPES
@@ -127,20 +133,75 @@ function extractUser(token: string): AuthUser {
   }
 }
 
-function redirectToLogin(returnUrl?: string): void {
-  const url = new URL('/auth/login', window.location.origin)
-  if (returnUrl) {
-    url.searchParams.set('returnUrl', returnUrl)
+/**
+ * The sign-in page for a session that ended. There is no /auth/login route
+ * (it 404s); the page is /login and it reads `redirect`, which it validates.
+ * Without an explicit target, the user comes back to the page they were on.
+ */
+export function loginPageUrl(returnUrl?: string, reauth?: { org?: string }): string {
+  const target = returnUrl ?? `${window.location.pathname}${window.location.search}`
+  const url = new URL('/login', window.location.origin)
+  if (target && target !== '/' && !target.startsWith('/login')) {
+    url.searchParams.set('redirect', target)
   }
-  window.location.href = url.toString()
+  if (reauth) {
+    // Step-up for an SSO account: the organization's sign-in buttons, and the
+    // identity provider asked to authenticate the user again.
+    if (reauth.org) url.searchParams.set('org', reauth.org)
+    url.searchParams.set('reauth', '1')
+  }
+  return `${url.pathname}${url.search}`
+}
+
+/** The current organization's slug, from the (JS-readable) tenant cookie. */
+function currentTenantSlug(): string | undefined {
+  const raw = getCookie(env.cookies.tenant)
+  if (!raw) return undefined
+  try {
+    const slug = (JSON.parse(raw) as { slug?: unknown }).slug
+    return typeof slug === 'string' && slug ? slug : undefined
+  } catch {
+    return undefined
+  }
+}
+
+let sessionEnding = false
+
+/**
+ * The session is gone (the API answered 401 and the refresh failed): clear the
+ * session cookies, then go to the sign-in page, once per page.
+ *
+ * The cookies must go first. The proxy (src/proxy.ts) and /login treat a
+ * session cookie as "signed in" without validating it, so a stale cookie left
+ * behind would send the browser from /login straight back to the page that
+ * just failed. The JS store cannot clear the httpOnly cookies itself; the
+ * sign-out server action does (and ends the session on the API), then
+ * redirects to `/login?redirect=<this page>`.
+ */
+export function endSessionAndSignIn(returnUrl?: string, options?: { reauth?: boolean }): void {
+  if (sessionEnding || typeof window === 'undefined') return
+  sessionEnding = true
+  // Read the organization before its cookie is dropped below.
+  const target = loginPageUrl(returnUrl, options?.reauth ? { org: currentTenantSlug() } : undefined)
+  // The team cookies are JS-readable: drop them now, so even if the action
+  // below cannot run, /login shows the form instead of sending the browser
+  // back (it only skips the form when a team is selected).
+  removeCookie(env.cookies.tenant)
+  removeCookie(env.cookies.pendingTenants)
+  localLogoutAction(target).catch(() => {
+    window.location.href = target
+  })
+}
+
+function redirectToLogin(returnUrl?: string): void {
+  endSessionAndSignIn(returnUrl)
 }
 
 function redirectToLogout(options?: { post_logout_redirect_uri?: string }): void {
-  const url = new URL('/auth/logout', window.location.origin)
-  if (options?.post_logout_redirect_uri) {
-    url.searchParams.set('redirect', options.post_logout_redirect_uri)
-  }
-  window.location.href = url.toString()
+  // There is no /auth/logout route either. Sign out the way the sign-out
+  // dialog does: the server action ends the API session, clears the httpOnly
+  // cookies and redirects.
+  void localLogoutAction(validateRedirectUrl(options?.post_logout_redirect_uri, '/login'))
 }
 
 // ============================================
@@ -205,6 +266,7 @@ export const useAuthStore = create<AuthState>()(
 
         clearAllStoredPermissions()
         clearAllLogoCaches()
+        clearFormDrafts()
 
         redirectToLogout({
           post_logout_redirect_uri: postLogoutRedirectUri,
@@ -253,6 +315,7 @@ export const useAuthStore = create<AuthState>()(
 
         clearAllStoredPermissions()
         clearAllLogoCaches()
+        clearFormDrafts()
       },
 
       setError: (error: string) => {
@@ -335,11 +398,14 @@ async function attemptTokenRefresh(): Promise<void> {
   isRefreshingToken = true
 
   try {
-    const response = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-      headers: csrfHeaders(),
-    })
+    // Tabs take turns: the refresh token rotates and reuse revokes it.
+    const response = await withAuthRefreshLock(() =>
+      fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaders(),
+      })
+    )
 
     const data = await response.json()
 

@@ -22,7 +22,7 @@ import type {
 interface FindingsSummaryUI {
   total: number
   by_severity: Record<Severity, number>
-  by_status: Record<FindingStatus, number>
+  by_status: Partial<Record<FindingStatus, number>>
   by_type: Record<ScannerType, number>
   trend?: 'increasing' | 'decreasing' | 'stable'
 }
@@ -70,7 +70,7 @@ export const mockSCMConnections: SCMConnection[] = [
     provider: 'github',
     baseUrl: 'https://github.com',
     authType: 'oauth',
-    scmOrganization: 'vnsecurity',
+    scmOrganization: 'acme',
     status: 'connected',
     permissions: ['repo:read', 'repo:write', 'webhook:manage'],
     repositoryCount: 25,
@@ -83,7 +83,7 @@ export const mockSCMConnections: SCMConnection[] = [
     tenantId: 'tenant-1',
     name: 'GitLab Self-hosted',
     provider: 'gitlab',
-    baseUrl: 'https://gitlab.vnsecurity.net',
+    baseUrl: 'https://gitlab.example.net',
     authType: 'token',
     scmOrganization: 'security-team',
     status: 'connected',
@@ -114,12 +114,12 @@ const createFindingsSummary = (
     info: 0,
   },
   by_status: {
-    open: Math.floor(total * 0.6),
+    new: Math.floor(total * 0.6),
     confirmed: Math.floor(total * 0.1),
     in_progress: Math.floor(total * 0.1),
     resolved: Math.floor(total * 0.15),
     false_positive: Math.floor(total * 0.03),
-    accepted_risk: Math.floor(total * 0.02),
+    accepted: Math.floor(total * 0.02),
   },
   by_type: {
     sast: Math.floor(total * 0.3),
@@ -152,7 +152,7 @@ export const mockRepositories: RepositoryView[] = [
     metadata: {},
     // Legacy fields for UI compatibility
     scm_provider: 'github',
-    scm_organization: 'vnsecurity',
+    scm_organization: 'acme',
     default_branch: 'main',
     visibility: 'private',
     primary_language: 'Go',
@@ -171,10 +171,10 @@ export const mockRepositories: RepositoryView[] = [
     repository: {
       assetId: 'asset-repo-1',
       repoId: '123456',
-      fullName: 'vnsecurity/api-gateway',
-      scmOrganization: 'vnsecurity',
-      cloneUrl: 'https://github.com/vnsecurity/api-gateway.git',
-      webUrl: 'https://github.com/vnsecurity/api-gateway',
+      fullName: 'acme/api-gateway',
+      scmOrganization: 'acme',
+      cloneUrl: 'https://github.com/acme/api-gateway.git',
+      webUrl: 'https://github.com/acme/api-gateway',
       defaultBranch: 'main',
       visibility: 'private',
       language: 'Go',
@@ -215,7 +215,7 @@ export const mockRepositories: RepositoryView[] = [
     metadata: {},
     // Legacy fields for UI compatibility
     scm_provider: 'github',
-    scm_organization: 'vnsecurity',
+    scm_organization: 'acme',
     default_branch: 'main',
     visibility: 'private',
     primary_language: 'TypeScript',
@@ -234,10 +234,10 @@ export const mockRepositories: RepositoryView[] = [
     repository: {
       assetId: 'asset-repo-2',
       repoId: '123457',
-      fullName: 'vnsecurity/web-frontend',
-      scmOrganization: 'vnsecurity',
-      cloneUrl: 'https://github.com/vnsecurity/web-frontend.git',
-      webUrl: 'https://github.com/vnsecurity/web-frontend',
+      fullName: 'acme/web-frontend',
+      scmOrganization: 'acme',
+      cloneUrl: 'https://github.com/acme/web-frontend.git',
+      webUrl: 'https://github.com/acme/web-frontend',
       defaultBranch: 'main',
       visibility: 'private',
       language: 'TypeScript',
@@ -277,7 +277,7 @@ export const mockRepositories: RepositoryView[] = [
     metadata: {},
     // Legacy fields for UI compatibility
     scm_provider: 'github',
-    scm_organization: 'vnsecurity',
+    scm_organization: 'acme',
     default_branch: 'main',
     visibility: 'private',
     primary_language: 'Python',
@@ -296,10 +296,10 @@ export const mockRepositories: RepositoryView[] = [
     repository: {
       assetId: 'asset-repo-3',
       repoId: '123458',
-      fullName: 'vnsecurity/auth-service',
-      scmOrganization: 'vnsecurity',
-      cloneUrl: 'https://github.com/vnsecurity/auth-service.git',
-      webUrl: 'https://github.com/vnsecurity/auth-service',
+      fullName: 'acme/auth-service',
+      scmOrganization: 'acme',
+      cloneUrl: 'https://github.com/acme/auth-service.git',
+      webUrl: 'https://github.com/acme/auth-service',
       defaultBranch: 'main',
       visibility: 'private',
       language: 'Python',
@@ -375,6 +375,7 @@ export function getRepositoryStats(
     high: 0,
     medium: 0,
     low: 0,
+    none: 0,
   }
 
   const byVisibility: Record<RepoVisibility, number> = {

@@ -1,0 +1,9 @@
+- id: tools
+  const: ModuleTools
+  slug: tools
+  name: Tools
+  description: Security tools and capabilities management
+  icon: Wrench
+  category: operations
+  order: 81
+  permission: "scans:tools:read"

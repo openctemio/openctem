@@ -4,11 +4,16 @@ import { useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSWRConfig } from 'swr'
 import { useMembers } from '@/features/organization/api/use-members'
+import { memberDisplayName } from '@/features/organization/lib/member-lifecycle'
 import { useTenant } from '@/context/tenant-provider'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { ResolveCampaignDialog } from '@/features/remediation/components/resolve-campaign-dialog'
+import { useConfirmCampaignCompletion } from '@/features/remediation/components/complete-campaign-confirm'
+import { progressPercent } from '@/features/remediation/lib/campaign-completion'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -43,10 +48,10 @@ import {
 } from 'lucide-react'
 import {
   useRemediationCampaign,
+  useRemediationCampaignFindings,
   useUpdateRemediationCampaign,
   useUpdateCampaignStatus,
 } from '@/features/remediation/api/use-remediation-campaigns'
-import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import { SeverityBadge } from '@/features/shared'
 import { StatusSelect } from '@/features/findings/components/status-select'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
@@ -175,33 +180,37 @@ export default function CampaignDetailPage() {
   const id = params.id as string
 
   const { currentTenant } = useTenant()
-  const { members } = useMembers(currentTenant?.id)
+  // A name map, not a picker: it must also name people who were disabled or
+  // left (marked "(deactivated)"), so it lists every status.
+  const { members } = useMembers(currentTenant?.id, { status: 'all', limit: 500 })
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>()
     for (const mem of members) {
-      if (mem.user_id) m.set(mem.user_id, mem.name || mem.email || mem.user_id)
+      if (mem.user_id) m.set(mem.user_id, memberDisplayName(mem))
     }
     return m
   }, [members])
 
   const { data: campaign, error, isLoading, mutate: mutateCampaign } = useRemediationCampaign(id)
+  useBreadcrumbTitle(campaign?.name)
   const { trigger: updateCampaign, isMutating: isUpdating } = useUpdateRemediationCampaign(id)
   const { trigger: updateStatus, isMutating: isStatusUpdating } = useUpdateCampaignStatus(id)
+  // Completing with findings still open asks first and says how many.
+  const { confirmCompletion, completionDialog } = useConfirmCampaignCompletion()
 
-  // The campaign's explicitly-linked findings (one fix → many findings). Always
-  // pass a finding_ids filter (a nil-UUID sentinel when none) so the hook never
-  // degrades to fetching every finding in the tenant.
+  // The campaign's findings, from the server: the same set its finding_count
+  // counts (finding filter, remediation key or explicit finding_ids), on the
+  // caller's in-scope assets. Explicitly linked ids can be unlinked here.
   const linkedFindingIds = (campaign?.finding_filter?.finding_ids as string[] | undefined) ?? []
+  const { can } = usePermissions()
+  const canReadFindings = can(Permission.FindingsRead)
   const {
-    data: linkedFindingsData,
+    data: campaignFindingsData,
     isLoading: findingsLoading,
     mutate: mutateFindings,
-  } = useFindingsApi({
-    finding_ids:
-      linkedFindingIds.length > 0 ? linkedFindingIds : ['00000000-0000-0000-0000-000000000000'],
-    per_page: 100,
-  })
-  const linkedFindings = linkedFindingIds.length > 0 ? (linkedFindingsData?.data ?? []) : []
+  } = useRemediationCampaignFindings(id, canReadFindings)
+  const linkedFindings = campaignFindingsData?.data ?? []
+  const campaignFindingTotal = campaignFindingsData?.total ?? 0
   const [ticketFinding, setTicketFinding] = useState<{ id: string; title: string } | null>(null)
 
   // Inline finding actions on the campaign (reuse the finding endpoints).
@@ -225,6 +234,7 @@ export default function CampaignDetailPage() {
         },
       })
       await mutateCampaign()
+      setPendingUnlink(null)
       toast.success('Finding unlinked')
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to unlink finding'))
@@ -233,6 +243,8 @@ export default function CampaignDetailPage() {
 
   // Inline edit state
   const [resolveOpen, setResolveOpen] = useState(false)
+  const [pendingUnlink, setPendingUnlink] = useState<{ id: string; title: string } | null>(null)
+  const { t } = useTranslation()
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({
     name: '',
@@ -273,15 +285,22 @@ export default function CampaignDetailPage() {
   }
 
   const handleStatusChange = async (newStatus: string) => {
-    try {
-      await updateStatus({ status: newStatus })
-      await mutateCampaign()
-      globalMutate(
-        (key: unknown) => typeof key === 'string' && key.includes('/remediation/campaigns')
-      )
-      toast.success(`Campaign status changed to ${STATUS_CONFIG[newStatus]?.label || newStatus}`)
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to update status'))
+    const apply = async () => {
+      try {
+        await updateStatus({ status: newStatus })
+        await mutateCampaign()
+        globalMutate(
+          (key: unknown) => typeof key === 'string' && key.includes('/remediation/campaigns')
+        )
+        toast.success(`Campaign status changed to ${STATUS_CONFIG[newStatus]?.label || newStatus}`)
+      } catch (err) {
+        toast.error(getErrorMessage(err, 'Failed to update status'))
+      }
+    }
+    if (newStatus === 'completed') {
+      await confirmCompletion([id], apply, campaign ? { [id]: campaign } : undefined)
+    } else {
+      await apply()
     }
   }
 
@@ -418,17 +437,22 @@ export default function CampaignDetailPage() {
               <span className="text-muted-foreground">
                 {campaign.resolved_count} of {campaign.finding_count} findings resolved
               </span>
-              <span className="font-medium">{campaign.progress}%</span>
+              <span className="font-medium">{progressPercent(campaign.progress)}%</span>
             </div>
-            <Progress value={campaign.progress} className="h-2" />
+            <Progress value={progressPercent(campaign.progress)} className="h-2" />
             {campaign.finding_count > campaign.resolved_count ? (
-              <Can permission={Permission.RemediationWrite}>
-                <div className="flex justify-end pt-1">
-                  <Button size="sm" onClick={() => setResolveOpen(true)}>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                {(campaign.status === 'active' || campaign.status === 'validating') && (
+                  <span className="text-muted-foreground text-xs">
+                    Auto-completes when all findings are resolved.
+                  </span>
+                )}
+                <Can permission={Permission.RemediationWrite}>
+                  <Button size="sm" className="ms-auto" onClick={() => setResolveOpen(true)}>
                     Resolve open findings
                   </Button>
-                </div>
-              </Can>
+                </Can>
+              </div>
             ) : null}
           </CardContent>
         </Card>
@@ -438,20 +462,20 @@ export default function CampaignDetailPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Target className="h-4 w-4" />
-              Findings ({linkedFindingIds.length})
+              Findings ({canReadFindings ? campaignFindingTotal : campaign.finding_count})
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {linkedFindingIds.length === 0 ? (
+            {!canReadFindings ? (
               <p className="text-muted-foreground text-sm">
-                No findings linked yet. Link findings from the task list (Edit → Link Findings) so
-                this campaign resolves them together.
+                You need permission to view findings to see this campaign&apos;s findings.
               </p>
             ) : findingsLoading ? (
-              <p className="text-muted-foreground text-sm">Loading linked findings…</p>
+              <p className="text-muted-foreground text-sm">Loading findings…</p>
             ) : linkedFindings.length === 0 ? (
               <p className="text-muted-foreground text-sm">
-                The linked findings are no longer available (they may have been deleted or merged).
+                No findings match this campaign yet. Link findings from the task list (Edit → Link
+                Findings) so this campaign resolves them together.
               </p>
             ) : (
               <div className="divide-y">
@@ -513,22 +537,33 @@ export default function CampaignDetailPage() {
                         >
                           <Ticket className="me-2 h-4 w-4" /> Create ticket
                         </DropdownMenuItem>
-                        <Can permission={Permission.RemediationWrite}>
-                          <DropdownMenuItem
-                            className="text-red-500"
-                            onClick={() => handleUnlinkFinding(f.id)}
-                          >
-                            <Link2Off className="me-2 h-4 w-4" /> Unlink from campaign
-                          </DropdownMenuItem>
-                        </Can>
+                        {linkedFindingIds.includes(f.id) && (
+                          <Can permission={Permission.RemediationWrite}>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onSelect={() =>
+                                setPendingUnlink({ id: f.id, title: f.title || f.message || f.id })
+                              }
+                            >
+                              <Link2Off className="me-2 h-4 w-4" /> Unlink from campaign
+                            </DropdownMenuItem>
+                          </Can>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                 ))}
+                {campaignFindingTotal > linkedFindings.length && (
+                  <p className="text-muted-foreground px-2 pt-2 text-xs">
+                    Showing {linkedFindings.length} of {campaignFindingTotal} findings.
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
+
+        {completionDialog}
 
         <ResolveCampaignDialog
           open={resolveOpen}
@@ -675,6 +710,21 @@ export default function CampaignDetailPage() {
           </Card>
         )}
       </div>
+      <ConfirmDialog
+        open={pendingUnlink !== null}
+        onOpenChange={(open) => !open && setPendingUnlink(null)}
+        destructive
+        title={t('confirm.remediation.unlinkTitle', 'Unlink "{name}" from this campaign?', {
+          name: pendingUnlink?.title ?? '',
+        })}
+        desc={t(
+          'confirm.remediation.unlinkDesc',
+          'It is removed from the findings linked to "{campaign}". The finding itself is not changed, and you can link it again later.',
+          { campaign: campaign.name }
+        )}
+        confirmText={t('confirm.unlink', 'Unlink')}
+        handleConfirm={() => (pendingUnlink ? handleUnlinkFinding(pendingUnlink.id) : undefined)}
+      />
     </Main>
   )
 }

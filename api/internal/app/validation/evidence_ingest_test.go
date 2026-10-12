@@ -16,31 +16,34 @@ func newIngestSvc(repo *fakeFindingRepo, evRepo *memEvidenceRepo) (*EvidenceInge
 	return NewEvidenceIngestService(store, repo, notif, &captureRecorder{}, logger.NewNop()), notif
 }
 
-func TestIngest_NotDetected_RecordsAndResolves(t *testing.T) {
+// A sensor-asserted "not detected, reachable" never resolves a finding
+// (research 18 F6): the evidence is recorded, the finding stays fix_applied.
+func TestIngest_NotDetected_RecordsButDoesNotResolve(t *testing.T) {
 	repo := &fakeFindingRepo{current: atFixApplied(t)}
 	evRepo := &memEvidenceRepo{}
 	svc, notif := newIngestSvc(repo, evRepo)
 
 	tenantID, findingID := shared.NewID(), shared.NewID()
 	res, err := svc.Ingest(context.Background(), tenantID, findingID, nil, Evidence{
-		ExecutorKind: "safe-check",
+		ExecutorKind: "nuclei",
 		Outcome:      OutcomeNotDetected,
 		Summary:      "exposure gone",
+		RawMeta:      map[string]any{"reachable": true},
 	})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	if !res.StatusChanged {
-		t.Fatal("status should have changed (resolved)")
+	if res.StatusChanged {
+		t.Fatal("sensor-asserted reachability must not resolve the finding")
 	}
-	if repo.current.Status() != vulnerability.FindingStatusResolved {
-		t.Fatalf("status = %s, want resolved", repo.current.Status())
+	if repo.current.Status() != vulnerability.FindingStatusFixApplied {
+		t.Fatalf("status = %s, want fix_applied (unchanged)", repo.current.Status())
 	}
 	if len(evRepo.rows) != 1 {
 		t.Fatalf("evidence rows = %d, want 1", len(evRepo.rows))
 	}
 	if notif.calls != 0 {
-		t.Fatal("notifier must not fire when fix stood")
+		t.Fatal("notifier must not fire on a not-detected result")
 	}
 }
 

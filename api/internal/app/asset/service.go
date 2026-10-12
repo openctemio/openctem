@@ -11,11 +11,14 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -53,7 +56,6 @@ type AssetService struct {
 	repoExtRepo       assetdom.RepositoryExtensionRepository
 	assetGroupRepo    assetgroupdom.Repository // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
-	dataScopePolicy   DataScopePolicy          // Layer 2: fail-open vs fail-closed per tenant (nil = fail-open)
 	dataScope         *datascope.Enforcer      // Layer 2 enforcement on bulk-by-id paths (nil = unrestricted)
 	scoringProvider   assetdom.ScoringConfigProvider
 	redisClient       *redis.Client
@@ -66,7 +68,8 @@ type AssetService struct {
 	// Scope rule evaluator callback (set by services.go wiring)
 	scopeRuleEvaluator scope.RuleEvaluatorFunc
 
-	// User matcher for auto-resolving owner_ref to owner_id
+	// User matcher for resolving owner_ref (an email) to a tenant member, who
+	// becomes the asset's primary owner in asset_owners.
 	userMatcher UserMatcher
 
 	// Lifecycle repository for RFC-004 Phase 0 snooze operations.
@@ -91,6 +94,20 @@ type AssetService struct {
 	// effective value can raise a score, never lower it, and the asset's own
 	// criticality column is never mutated.
 	businessContext BusinessContextLookup
+
+	// Attribute reconciliation (RFC-069). Optional: nil records no source.
+	attrSources assetdom.AttributeSourceRepository
+	attrTenants ReconciliationSettingsReader
+	changes     assetdom.ChangeEventRepository
+	attrLister  AttributeSourceLister
+	// Freshness of attribute classes. Optional: nil serves no observation.
+	freshness  freshdom.Repository
+	enrichReqs freshdom.RequestRepository
+	// createdHook requests enrichment of assets a person created.
+	createdHook CreatedAssetsHook
+	// Background re-resolution after a precedence change, per tenant.
+	reresolving    sync.Map
+	reresolveAgain sync.Map
 }
 
 // UserMatcher resolves external references (email, username) to user IDs.
@@ -101,6 +118,35 @@ type UserMatcher interface {
 // SetUserMatcher sets the user matcher for owner auto-resolution.
 func (s *AssetService) SetUserMatcher(m UserMatcher) {
 	s.userMatcher = m
+}
+
+// syncOwnerRefOwner keeps the owner derived from owner_ref in step with it.
+// asset_owners is the only owner store: when ownerRef is the email of a member
+// of the tenant, that member becomes a primary owner (source owner_ref);
+// otherwise the row derived from a previous owner_ref is removed. Owners set by
+// a person or a scope rule are never touched, and an owner_ref owner never
+// grants data access. Best-effort: a failure is logged and never fails the
+// asset write (the owner-resolution controller retries every 30 minutes).
+func (s *AssetService) syncOwnerRefOwner(ctx context.Context, tenantID, assetID shared.ID, ownerRef string) {
+	if s.accessControlRepo == nil {
+		return
+	}
+	var matched *shared.ID
+	if strings.Contains(ownerRef, "@") && s.userMatcher != nil {
+		id, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, ownerRef)
+		if err != nil {
+			s.logger.Warn("owner_ref lookup failed", "asset_id", assetID.String(), "error", err)
+			return
+		}
+		matched = id
+	}
+	if err := s.accessControlRepo.SyncOwnerRefOwner(ctx, tenantID, assetID, matched); err != nil {
+		s.logger.Warn("owner_ref owner sync failed", "asset_id", assetID.String(), "error", err)
+		return
+	}
+	if matched != nil {
+		s.logger.Info("owner_ref matched a member", "asset_id", assetID.String(), "user_id", matched.String())
+	}
 }
 
 // NewAssetService creates a new AssetService.
@@ -124,21 +170,6 @@ func (s *AssetService) SetAssetGroupRepository(repo assetgroupdom.Repository) {
 // SetAccessControlRepository sets the access control repository for Layer 2 data scope checks.
 func (s *AssetService) SetAccessControlRepository(repo accesscontrol.Repository) {
 	s.accessControlRepo = repo
-}
-
-// DataScopePolicy reports whether a tenant enforces restricted (fail-closed)
-// data scope. Nil (or false) preserves the default fail-open behavior.
-type DataScopePolicy interface {
-	RestrictedDataScope(ctx context.Context, tenantID string) bool
-}
-
-// SetDataScopePolicy wires the per-tenant fail-open/closed policy. Nil-safe.
-func (s *AssetService) SetDataScopePolicy(p DataScopePolicy) {
-	s.dataScopePolicy = p
-}
-
-func (s *AssetService) dataScopeStrict(ctx context.Context, tenantID string) bool {
-	return s.dataScopePolicy != nil && s.dataScopePolicy.RestrictedDataScope(ctx, tenantID)
 }
 
 // SetScoringConfigProvider sets the scoring config provider for configurable risk scoring.
@@ -281,23 +312,67 @@ func (s *AssetService) InvalidateScoringConfigCache(tenantID shared.ID) {
 
 // CreateAssetInput represents the input for creating an asset.
 type CreateAssetInput struct {
-	TenantID    string         `validate:"omitempty,uuid"`
-	Name        string         `validate:"required,min=1,max=255"`
-	Type        string         `validate:"required,asset_type"`
-	Criticality string         `validate:"required,criticality"`
-	Scope       string         `validate:"omitempty,scope"`
-	Exposure    string         `validate:"omitempty,exposure"`
-	Description string         `validate:"max=1000"`
-	Tags        []string       `validate:"max=20,dive,max=50"`
-	OwnerRef    string         `validate:"max=500"` // Raw owner from external source
-	Properties  map[string]any // JSONB properties (known fields auto-promoted to columns)
+	TenantID    string   `validate:"omitempty,uuid"`
+	Name        string   `validate:"required,min=1,max=255"`
+	Type        string   `validate:"required,asset_type"`
+	SubType     string   `validate:"omitempty,max=50"` // kind from the type's closed list, or a legacy input
+	Criticality string   `validate:"required,criticality"`
+	Scope       string   `validate:"omitempty,scope"`
+	Exposure    string   `validate:"omitempty,exposure"`
+	Description string   `validate:"max=1000"`
+	Tags        []string `validate:"max=20,dive,max=50"`
+	OwnerRef    string   `validate:"max=500"` // Raw owner from external source
+	// ActorID is the person creating the asset: the values they set are
+	// recorded as their locks (RFC-069). Empty for a caller with no user.
+	ActorID    string
+	Properties map[string]any // JSONB properties (known fields auto-promoted to columns)
 }
 
-// CreateAsset creates a new asset.
+// DuplicateAssetError answers a create whose name (or an address the name
+// correlates to) matches an asset that already exists in the tenant. It is a
+// 409, never a silent merge. ExistingID is set only when the caller may see
+// that asset (it is in their data scope); otherwise it is zero and the
+// conflict reveals nothing about the asset.
+type DuplicateAssetError struct {
+	ExistingID shared.ID
+}
+
+func (e *DuplicateAssetError) Error() string {
+	return "an asset with this name already exists"
+}
+
+// Unwrap makes the error a shared.ErrAlreadyExists.
+func (e *DuplicateAssetError) Unwrap() error { return shared.ErrAlreadyExists }
+
+// CreateOutcome says what a create request did.
+type CreateOutcome struct {
+	// Merged is true when the name or address matched an existing asset,
+	// which was updated and returned instead of creating a new one.
+	Merged bool
+	// ChangedFields names the fields of the existing asset the merge
+	// changed (never values).
+	ChangedFields []string
+}
+
+// errCreateConflict answers a create whose name or address matches an asset
+// the caller may not see: a plain conflict that reveals nothing about it.
+var errCreateConflict = fmt.Errorf("%w: an asset with this name already exists", shared.ErrAlreadyExists)
+
+// CreateAsset creates a new asset. When the name (or an address the name
+// correlates to) matches an asset that already exists in the tenant, nothing
+// is created or changed and the result is a *DuplicateAssetError: a create is
+// not an edit, so it never merges into the existing asset. Ingest has its own
+// merge path; this is the human/API create.
 func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) (*assetdom.Asset, error) {
 	// Strip null bytes early — PostgreSQL rejects 0x00 in UTF-8
 	input.Name = strings.ReplaceAll(input.Name, "\x00", "")
 	input.Description = strings.ReplaceAll(input.Description, "\x00", "")
+
+	// Platform-owned keys (crown jewel, business impact, aliases, discovery
+	// fields) have their own endpoints and are never taken from properties.
+	if err := RejectReservedProperties(input.Properties); err != nil {
+		return nil, err
+	}
 
 	// Promote known fields from properties into proper columns.
 	// Collectors may send sub_type, scope, etc. inside properties JSONB.
@@ -305,9 +380,26 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 
 	s.logger.Info("creating asset", "name", input.Name)
 
-	assetType, err := assetdom.ParseAssetType(input.Type)
+	// Resolve the input type (core type, alias or legacy sub-type) to the
+	// stored (type, sub_type): aliases are never stored (RFC-042 §6.3.8).
+	// A sub_type in the request wins over one promoted from properties.
+	promotedSubType, _ := input.Properties["__promoted_sub_type"].(string)
+	delete(input.Properties, "__promoted_sub_type")
+	subTypeIn := input.SubType
+	if subTypeIn == "" {
+		subTypeIn = promotedSubType
+	}
+	resolved, err := assetdom.ResolveInputType(input.Type, subTypeIn)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err
+	}
+	assetType, subType := resolved.Type, resolved.SubType
+	// Flat properties (RFC-042 §6.3.10): a CTIS technical block a collector
+	// sends (domain.dns_records, certificate.not_after, ...) fills the
+	// stored type's keys, and the block goes.
+	input.Properties = assetdom.NormalizeAssetProperties(assetType, subType, input.Properties)
+	if err := rejectMisplacedProperties(assetType, subType, input.Properties); err != nil {
+		return nil, err
 	}
 
 	criticality, err := assetdom.ParseCriticality(input.Criticality)
@@ -324,31 +416,21 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		}
 	}
 
-	// Normalize name before lookup so it matches existing normalized assets (RFC-001)
-	normalizedName := assetdom.NormalizeName(input.Name, assetType, "")
+	// Normalize name before lookup so it matches existing normalized assets
+	// (RFC-001). The sub-type is part of the identity key (RFC-043 section 10):
+	// normalize, look up and create with the same (type, sub-type).
+	normalizedName := assetdom.NormalizeName(input.Name, assetType, subType)
 	if normalizedName != "" {
 		input.Name = normalizedName
 	}
 
-	// Upsert: if asset with same name already exists, merge and update instead of rejecting.
-	// This handles re-ingestion, manual re-creation, and multi-source discovery gracefully.
-	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)
-	if err != nil && !errors.Is(err, shared.ErrNotFound) {
-		return nil, fmt.Errorf("failed to check asset existence: %w", err)
-	}
-	if existing != nil {
-		return s.mergeAndUpdateExisting(ctx, existing, input, assetType, criticality, tenantID)
+	// An asset with the same name (or a correlated address) already exists:
+	// a conflict, never a merge.
+	if err := s.checkNotDuplicate(ctx, tenantID, input); err != nil {
+		return nil, err
 	}
 
-	// IP/hostname correlation: if input.Name looks like an IP, check if a host with
-	// that IP already exists. If input.Name looks like a hostname, check if an
-	// IP-named asset has that hostname in properties. This correlates ESXi hosts
-	// with Splunk IPs, CMDB records, etc.
-	if correlated := s.correlateByIPOrHostname(ctx, tenantID, input); correlated != nil {
-		return s.mergeAndUpdateExisting(ctx, correlated, input, assetType, criticality, tenantID)
-	}
-
-	a, err := assetdom.NewAsset(input.Name, assetType, criticality)
+	a, err := assetdom.NewAssetWithSubType(input.Name, assetType, subType, criticality)
 	if err != nil {
 		return nil, err
 	}
@@ -383,26 +465,17 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		a.AddTag(tag)
 	}
 
-	// Set properties (already cleaned by promoteKnownProperties)
+	// Set properties (already cleaned by promoteKnownProperties), then what
+	// the input type implied (provider, attributes) where nothing is set.
 	if len(input.Properties) > 0 {
-		// Extract promoted sub_type before setting properties
-		if st, ok := input.Properties["__promoted_sub_type"].(string); ok && st != "" {
-			a.SetSubType(st)
-			delete(input.Properties, "__promoted_sub_type")
-		}
 		a.SetProperties(input.Properties)
 	}
+	a.ApplyResolvedType(resolved)
 
-	// Set owner reference from external source and try auto-match
+	// Owner reference from an external source. The matching tenant member
+	// becomes the primary owner once the asset is stored (syncOwnerRefOwner).
 	if input.OwnerRef != "" {
 		a.SetOwnerRef(input.OwnerRef)
-		// Auto-match: if owner_ref looks like an email, try to find user
-		if strings.Contains(input.OwnerRef, "@") && s.userMatcher != nil {
-			if matchedID, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, input.OwnerRef); err == nil && matchedID != nil {
-				a.SetOwnerID(matchedID)
-				s.logger.Info("auto-matched owner_ref to user", "owner_ref", input.OwnerRef, "user_id", matchedID.String())
-			}
-		}
 	}
 
 	// Calculate initial risk score using tenant-specific config. A brand-new
@@ -414,6 +487,15 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	if err := s.repo.Create(ctx, a); err != nil {
 		return nil, fmt.Errorf("failed to create asset: %w", err)
 	}
+
+	if input.OwnerRef != "" {
+		s.syncOwnerRefOwner(ctx, tenantID, a.ID(), input.OwnerRef)
+	}
+
+	// The values a person chose for a new asset are theirs until released
+	// (RFC-069), as before: no source changed them.
+	s.recordManualAttributes(ctx, tenantID, a.ID(), input.ActorID,
+		editedAttributes(a, true, input.Exposure != "", input.OwnerRef != ""), nil)
 
 	// Record an "appeared" event for the state-history audit trail (powers
 	// shadow-IT detection, appearances, and the activity timeline).
@@ -428,6 +510,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					metrics.RecordPanic("scope_evaluate")
 					s.logger.Error("panic in scope rule evaluation", "asset_id", assetID.String(), "recover", r)
 				}
 			}()
@@ -442,6 +525,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 					"asset_id", assetID.String(), "error", err)
 			}
 		}()
+	}
+
+	if s.createdHook != nil {
+		s.createdHook(ctx, tenantID, []*assetdom.Asset{a})
 	}
 
 	s.logger.Info("asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()))
@@ -481,14 +568,13 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 		input.Properties["__promoted_sub_type"] = st
 	}
 
-	// type: if properties contains a type alias (e.g., "firewall"), resolve it
-	if propType := extractStr("type"); propType != "" {
-		if resolved, subType := assetdom.ResolveTypeAlias(assetdom.AssetType(propType)); resolved != "" {
-			// Override input.Type with resolved core type
-			input.Type = string(resolved)
-			if subType != "" {
-				input.Properties["__promoted_sub_type"] = subType
-			}
+	// type: a registry alias in properties (e.g. "firewall") names the type.
+	// Any other value (a vendor's own type such as "lan") stays a property:
+	// it used to overwrite input.Type and fail the request.
+	if propType, ok := input.Properties["type"].(string); ok && propType != "" {
+		if _, isAlias := assetdom.TypeAliases[assetdom.AssetType(strings.ToLower(strings.TrimSpace(propType)))]; isAlias {
+			delete(input.Properties, "type")
+			input.Type = propType
 		}
 	}
 
@@ -540,8 +626,6 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 	normalizedProps := make(map[string]any, len(input.Properties))
 	for key, val := range input.Properties {
 		snakeKey := camelToSnakeCase(key)
-		// Merge singular/plural aliases to canonical plural form
-		snakeKey = normalizePropertyAlias(snakeKey)
 		// If both camelCase and snake_case exist, prefer the snake_case value
 		if snakeKey != key {
 			if _, exists := normalizedProps[snakeKey]; exists {
@@ -550,56 +634,9 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 		}
 		normalizedProps[snakeKey] = val
 	}
-	input.Properties = normalizedProps
-
-	// Extract DNS fields from nested domain.dns_records → flat properties
-	// Collector sends: {"domain": {"dns_records": [{"type":"A","value":"1.2.3.4","ttl":300}]}}
-	// UI reads flat: record_type, resolved_ip, cname_target, ttl, dns_record_types, resolved_ips
-	if domainObj, ok := input.Properties["domain"].(map[string]any); ok {
-		if records, ok := domainObj["dns_records"].([]any); ok && len(records) > 0 {
-			var recordTypes []string
-			var resolvedIPs []string
-			for _, r := range records {
-				rec, ok := r.(map[string]any)
-				if !ok {
-					continue
-				}
-				recType, _ := rec["type"].(string)
-				recValue, _ := rec["value"].(string)
-				if recType != "" {
-					recordTypes = append(recordTypes, recType)
-				}
-				if recValue != "" && (recType == "A" || recType == "AAAA") {
-					resolvedIPs = append(resolvedIPs, recValue)
-				}
-			}
-			// First record as primary
-			if first, ok := records[0].(map[string]any); ok {
-				if rt, _ := first["type"].(string); rt != "" {
-					input.Properties["record_type"] = rt
-				}
-				if rv, _ := first["value"].(string); rv != "" {
-					rt, _ := first["type"].(string)
-					if rt == "A" || rt == "AAAA" {
-						input.Properties["resolved_ip"] = rv
-					} else if rt == "CNAME" {
-						input.Properties["cname_target"] = rv
-					}
-				}
-				if ttl, ok := first["ttl"]; ok {
-					input.Properties["ttl"] = ttl
-				}
-			}
-			// Aggregates
-			if len(recordTypes) > 0 {
-				input.Properties["dns_record_types"] = strings.Join(unique(recordTypes), ", ")
-			}
-			if len(resolvedIPs) > 0 {
-				input.Properties["resolved_ips"] = strings.Join(unique(resolvedIPs), ", ")
-			}
-			input.Properties["dns_record_count"] = len(records)
-		}
-	}
+	// One key per concept (RFC-042 §6.3.9): synonyms (ip, resolved_ips,
+	// nameserver, technology, san, ...) fold into their canonical key.
+	input.Properties = assetdom.NormalizeProperties(normalizedProps)
 
 	// Normalize root_domain (strip trailing dot)
 	if rd, ok := input.Properties["root_domain"].(string); ok && strings.HasSuffix(rd, ".") {
@@ -661,36 +698,6 @@ func camelToSnakeCase(s string) string {
 		}
 	}
 	return string(result)
-}
-
-// propertyAliases maps singular/legacy property keys to their canonical plural form.
-// This prevents duplicate facets like "nameserver" vs "nameservers".
-var propertyAliases = map[string]string{
-	"nameserver":  "nameservers",
-	"technology":  "technologies",
-	"san":         "sans",
-	"resolved_ip": "resolved_ips",
-}
-
-// normalizePropertyAlias maps known singular keys to their canonical plural form.
-func normalizePropertyAlias(key string) string {
-	if canonical, ok := propertyAliases[key]; ok {
-		return canonical
-	}
-	return key
-}
-
-// unique returns a deduplicated copy of a string slice, preserving order.
-func unique(ss []string) []string {
-	seen := make(map[string]bool, len(ss))
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // isLikelySubdomain checks if a domain name has more labels than a typical root domain.
@@ -761,12 +768,8 @@ func (s *AssetService) correlateByIPOrHostname(ctx context.Context, tenantID sha
 			return nil
 		}
 		if found != nil {
-			// Hostname is more descriptive than IP — update the asset name
-			if looksLikeIP(found.Name()) {
-				_ = found.UpdateName(name)
-				s.logger.Info("asset correlated by hostname, renamed from IP",
-					"hostname", logger.SanitizeValue(name), "old_name", logger.SanitizeValue(found.Name()), "id", found.ID().String())
-			}
+			s.logger.Info("asset correlated by hostname",
+				"hostname", logger.SanitizeValue(name), "id", found.ID().String())
 			return found
 		}
 	}
@@ -798,72 +801,41 @@ func looksLikeIP(s string) bool {
 	return true
 }
 
-// mergeAndUpdateExisting updates an existing asset with new data from CreateAssetInput.
-// Only non-empty fields from input override the existing values.
-// This implements the "create-or-update" (upsert) pattern for manual asset creation.
-func (s *AssetService) mergeAndUpdateExisting(
-	ctx context.Context,
-	existing *assetdom.Asset,
-	input CreateAssetInput,
-	_ assetdom.AssetType,
-	criticality assetdom.Criticality,
-	tenantID shared.ID,
-) (*assetdom.Asset, error) {
-	// Update criticality if provided and different
-	if criticality != existing.Criticality() {
-		_ = existing.UpdateCriticality(criticality)
+// checkNotDuplicate refuses a create whose name matches an existing asset of
+// the tenant, or whose address correlates to one (IP/hostname correlation: an
+// IP-named request finds a host with that IP, a hostname finds an IP-named
+// asset with that hostname). The *DuplicateAssetError names the existing
+// asset only when the caller may see it; a match outside the caller's data
+// scope is a plain conflict that reveals nothing about it. The lookups are
+// tenant-scoped, so another tenant's assets never match.
+func (s *AssetService) checkNotDuplicate(ctx context.Context, tenantID shared.ID, input CreateAssetInput) error {
+	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
+		return fmt.Errorf("failed to check asset existence: %w", err)
 	}
-
-	// Update description if provided
-	if input.Description != "" {
-		existing.UpdateDescription(input.Description)
+	if existing == nil {
+		existing = s.correlateByIPOrHostname(ctx, tenantID, input)
 	}
-
-	// Update scope if provided
-	if input.Scope != "" {
-		scope, err := assetdom.ParseScope(input.Scope)
-		if err == nil {
-			_ = existing.UpdateScope(scope)
-		}
+	if existing == nil {
+		return nil
 	}
-
-	// Update exposure if provided
-	if input.Exposure != "" {
-		exposure, err := assetdom.ParseExposure(input.Exposure)
-		if err == nil {
-			_ = existing.UpdateExposure(exposure)
-		}
+	if s.dataScope.AssertAsset(ctx, tenantID, existing.ID()) != nil {
+		return &DuplicateAssetError{}
 	}
+	return &DuplicateAssetError{ExistingID: existing.ID()}
+}
 
-	// Merge tags (add new, keep existing)
-	for _, tag := range input.Tags {
-		existing.AddTag(tag)
+// fullDataCaller reports whether the acting user is unrestricted through a
+// has_full_data_access role, decided by the one enforcer (false without it).
+func (s *AssetService) fullDataCaller(ctx context.Context, tenantID, actingUserID string) (bool, error) {
+	if s.dataScope == nil {
+		return false, nil
 	}
-
-	// Update owner ref if provided
-	if input.OwnerRef != "" {
-		existing.SetOwnerRef(input.OwnerRef)
-		if strings.Contains(input.OwnerRef, "@") && s.userMatcher != nil {
-			if matchedID, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, input.OwnerRef); err == nil && matchedID != nil {
-				existing.SetOwnerID(matchedID)
-			}
-		}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-
-	// Mark as seen (updates last_seen)
-	existing.MarkSeen()
-
-	// Recalculate risk score using the asset's effective (BU/service-aligned)
-	// criticality — MAX(own, its BU, the services it powers). Nil-safe: falls
-	// back to own criticality when no business context is wired/present.
-	s.scoreAsset(ctx, tenantID, existing)
-
-	if err := s.repo.Update(ctx, existing); err != nil {
-		return nil, fmt.Errorf("failed to update existing asset: %w", err)
-	}
-
-	s.logger.Info("asset upserted (updated existing)", "id", existing.ID().String(), "name", logger.SanitizeValue(existing.Name()))
-	return existing, nil
+	return s.dataScope.FullData(ctx, tid, actingUserID)
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer used on bulk-by-id
@@ -876,6 +848,23 @@ func (s *AssetService) SetDataScope(e *datascope.Enforcer) {
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (s *AssetService) GetAsset(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error) {
 	return s.GetAssetWithScope(ctx, tenantID, assetID, "", true)
+}
+
+// GetAssetInCallerScope is GetAsset for a path keyed on an asset that the
+// route guard does not see (another resource's URL, a query parameter): it
+// also answers shared.ErrNotFound when the request's caller may not see the
+// asset, through the data-scope enforcer.
+func (s *AssetService) GetAssetInCallerScope(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error) {
+	a, err := s.GetAsset(ctx, tenantID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	if s.dataScope != nil {
+		if err := s.dataScope.AssertAsset(ctx, a.TenantID(), a.ID()); err != nil {
+			return nil, err
+		}
+	}
+	return a, nil
 }
 
 // GetAssetWithScope retrieves an asset with optional data scope enforcement.
@@ -898,6 +887,16 @@ func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID,
 		return nil, err
 	}
 
+	// A role with has_full_data_access bypasses Layer 2 like an admin.
+	if !isAdmin && actingUserID != "" {
+		full, ferr := s.fullDataCaller(ctx, tenantID, actingUserID)
+		if ferr != nil {
+			s.logger.Error("failed to check full data access", "error", ferr)
+			return nil, shared.ErrNotFound // fail-closed
+		}
+		isAdmin = full
+	}
+
 	// Layer 2: Data Scope check for non-admin users
 	if !isAdmin && actingUserID != "" && s.accessControlRepo != nil {
 		userID, parseErr := shared.IDFromString(actingUserID)
@@ -906,29 +905,16 @@ func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID,
 			return nil, shared.ErrNotFound // fail-closed
 		}
 
-		// Check if user has any scope assignments (1 EXISTS query, no memory load)
-		hasScope, scopeErr := s.accessControlRepo.HasAnyScopeAssignment(ctx, parsedTenantID, userID)
-		if scopeErr != nil {
-			s.logger.Error("failed to check scope assignment", "error", scopeErr)
+		// The asset must be in the user's scope rows; a member with none
+		// sees nothing (fail closed). 404, so existence is not confirmed.
+		canAccess, accessErr := s.accessControlRepo.CanAccessAsset(ctx, userID, parsedID)
+		if accessErr != nil {
+			s.logger.Error("failed to check asset access", "error", accessErr)
 			return nil, shared.ErrNotFound // fail-closed
 		}
-
-		if hasScope {
-			// User has scope assignments — verify access to this specific asset
-			canAccess, accessErr := s.accessControlRepo.CanAccessAsset(ctx, userID, parsedID)
-			if accessErr != nil {
-				s.logger.Error("failed to check asset access", "error", accessErr)
-				return nil, shared.ErrNotFound // fail-closed
-			}
-			if !canAccess {
-				return nil, shared.ErrNotFound // don't leak asset existence
-			}
-		} else if s.dataScopeStrict(ctx, tenantID) {
-			// Fail-CLOSED (tenant RestrictedDataScope): no scope assignment ⇒ no
-			// access. Don't leak the asset's existence.
+		if !canAccess {
 			return nil, shared.ErrNotFound
 		}
-		// Else (fail-OPEN default): no scope assignments → show all (backward compat)
 	}
 
 	return a, nil
@@ -943,8 +929,11 @@ type UpdateAssetInput struct {
 	Description *string  `validate:"omitempty,max=1000"`
 	OwnerRef    *string  `validate:"omitempty,max=500"` // Free-text owner reference
 	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
+	// SubType changes the kind within the asset's type (closed list, or a
+	// legacy input of the same type). "" clears it. Nil = leave unchanged.
+	SubType *string `validate:"omitempty,max=50"`
 	// Properties patches per-type metadata. Merged (not replaced) into the
-	// asset's existing properties so keys like is_crown_jewel are preserved.
+	// asset's existing properties so keys like business_impact_score are preserved.
 	Properties map[string]any
 	// CIA impact rating (CTEM Scoping critical-asset register). Each is
 	// low | moderate | high; an empty string clears the rating. Nil = leave
@@ -952,6 +941,9 @@ type UpdateAssetInput struct {
 	ImpactConfidentiality *string `validate:"omitempty,impact_rating"`
 	ImpactIntegrity       *string `validate:"omitempty,impact_rating"`
 	ImpactAvailability    *string `validate:"omitempty,impact_rating"`
+	// ActorID is the person editing: a tracked attribute they change
+	// becomes their lock (RFC-069).
+	ActorID string
 }
 
 // UpdateAsset updates an existing asset.
@@ -973,6 +965,18 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		return nil, err
 	}
 
+	// Platform-owned keys cannot be changed through properties; an
+	// unchanged echo of the stored value is dropped.
+	if input.Properties != nil {
+		if err := stripUnchangedReservedProperties(input.Properties, a.Properties()); err != nil {
+			return nil, err
+		}
+		if err := rejectMisplacedProperties(a.Type(), a.SubType(), input.Properties); err != nil {
+			return nil, err
+		}
+	}
+
+	beforeAttrs := attributeSnapshot(a)
 	oldName := a.Name()
 	if input.Name != nil {
 		if err := a.UpdateName(*input.Name); err != nil {
@@ -1015,8 +1019,17 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		a.UpdateDescription(*input.Description)
 	}
 
+	ownerRefChanged := false
 	if input.OwnerRef != nil {
+		ownerRefChanged = *input.OwnerRef != a.OwnerRef()
 		a.SetOwnerRef(*input.OwnerRef)
+	}
+
+	oldSubType := a.SubType()
+	if input.SubType != nil {
+		if err := applySubTypeChange(a, *input.SubType); err != nil {
+			return nil, err
+		}
 	}
 
 	// CIA impact rating (CTEM Scoping critical-asset register).
@@ -1063,7 +1076,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	}
 
 	// Patch per-type metadata. Merge into existing properties (don't replace)
-	// so keys written elsewhere — e.g. is_crown_jewel — are not wiped.
+	// so keys written elsewhere — e.g. business_impact_score — are not wiped.
 	if input.Properties != nil {
 		merged := a.Properties()
 		if merged == nil {
@@ -1072,7 +1085,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		for k, v := range input.Properties {
 			merged[k] = v
 		}
-		a.SetProperties(merged)
+		a.SetProperties(assetdom.NormalizeAssetProperties(a.Type(), a.SubType(), merged))
 	}
 
 	// Recalculate risk score after updates using the asset's effective
@@ -1083,12 +1096,26 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		return nil, fmt.Errorf("failed to update asset: %w", err)
 	}
 
+	// A changed owner_ref replaces the owner derived from the old one (an
+	// emptied or unmatched owner_ref just removes it).
+	if ownerRefChanged {
+		s.syncOwnerRefOwner(ctx, parsedTenantID, parsedID, a.OwnerRef())
+	}
+
+	// What the person changed is theirs until they release it (RFC-069).
+	s.recordManualAttributes(ctx, parsedTenantID, parsedID, input.ActorID,
+		editedAttributes(a, input.Criticality != nil, input.Exposure != nil, input.OwnerRef != nil), beforeAttrs)
+
 	// Recalculate affected group stats (risk_score, finding_count, etc.)
 	s.recalculateAffectedGroups(ctx, parsedID)
 
 	if a.Name() != oldName {
 		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
 			assetdom.StateChangeRenamed, "name", oldName, a.Name(), assetdom.ChangeSourceManual, nil))
+	}
+	if a.SubType() != oldSubType {
+		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
+			assetdom.StateChangeReclassified, "sub_type", oldSubType, a.SubType(), assetdom.ChangeSourceManual, nil))
 	}
 
 	// A manual exposure change (e.g. an operator marking an asset public) is
@@ -1108,6 +1135,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					metrics.RecordPanic("scope_evaluate")
 					s.logger.Error("panic in scope rule evaluation", "asset_id", assetID.String(), "recover", r)
 				}
 			}()
@@ -1128,15 +1156,59 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	return a, nil
 }
 
+// applySubTypeChange sets a requested sub-type on an existing asset. The
+// value is resolved against the asset's own type: a legacy input of that
+// type is mapped, anything that would change the type is refused (the type
+// of an existing asset is not editable).
+func applySubTypeChange(a *assetdom.Asset, requested string) error {
+	if strings.TrimSpace(requested) == "" {
+		return a.ChangeSubType("")
+	}
+	resolved, err := assetdom.ResolveInputType(string(a.Type()), requested)
+	if err != nil {
+		return err
+	}
+	if resolved.Type != a.Type() {
+		return fmt.Errorf("%w: sub_type %q belongs to asset type %q, not %q; the type of an asset cannot be changed",
+			shared.ErrValidation, requested, resolved.Type, a.Type())
+	}
+	if err := a.ChangeSubType(resolved.SubType); err != nil {
+		return err
+	}
+	a.ApplyResolvedType(resolved)
+	return nil
+}
+
 // SaveAsset persists changes to an asset entity directly.
 // Used by handlers that modify the entity and need to persist without going through UpdateAssetInput.
 func (s *AssetService) SaveAsset(ctx context.Context, a *assetdom.Asset) error {
 	return s.repo.Update(ctx, a)
 }
 
-// DeleteAsset deletes an asset by ID.
+// UpdateCrownJewel marks or unmarks an asset of the tenant as a crown jewel
+// and records its business impact, then returns the stored asset. The flag
+// is the assets.is_crown_jewel column; this is its only writer.
+func (s *AssetService) UpdateCrownJewel(ctx context.Context, tenantID, assetID string, isCrownJewel bool, impactScore float64, impactNotes string) (*assetdom.Asset, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	parsedID, err := shared.IDFromString(assetID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	if err := s.repo.SetCrownJewel(ctx, parsedTenantID, parsedID, isCrownJewel, impactScore, impactNotes); err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, parsedTenantID, parsedID)
+}
+
+// DeleteAsset deletes an asset by ID on behalf of a person (actorID, may be
+// empty). An asset that has findings is refused with *assetdom.HasFindingsError
+// (a conflict): its history must be kept, so it should be archived instead.
+// Otherwise the asset is soft-deleted (see the repository's Delete).
 // Security: Requires tenantID to prevent cross-tenant deletion.
-func (s *AssetService) DeleteAsset(ctx context.Context, assetID string, tenantID string) error {
+func (s *AssetService) DeleteAsset(ctx context.Context, assetID, tenantID, actorID string) error {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -1147,14 +1219,20 @@ func (s *AssetService) DeleteAsset(ctx context.Context, assetID string, tenantID
 		return shared.ErrNotFound
 	}
 
-	// Get groups containing this asset BEFORE deletion
+	var deletedBy *shared.ID
+	if actor, aerr := shared.IDFromString(actorID); aerr == nil {
+		deletedBy = &actor
+	}
+
+	// Get groups containing this asset BEFORE deletion (the delete detaches
+	// it from them).
 	var groupIDs []shared.ID
 	if s.assetGroupRepo != nil {
 		groupIDs, _ = s.assetGroupRepo.GetGroupIDsByAssetID(ctx, parsedID)
 	}
 
 	// Delete with tenantID automatically enforces tenant isolation
-	if err := s.repo.Delete(ctx, parsedTenantID, parsedID); err != nil {
+	if err := s.repo.Delete(ctx, parsedTenantID, parsedID, deletedBy); err != nil {
 		return err
 	}
 
@@ -1195,11 +1273,14 @@ type ListAssetsInput struct {
 	TenantID         string              `validate:"omitempty,uuid"`
 	Name             string              `validate:"max=255"`
 	Types            []string            `validate:"max=20,dive,asset_type"`
+	Lenses           []string            `validate:"max=10,dive,asset_lens"`
 	Criticalities    []string            `validate:"max=5,dive,criticality"`
 	Statuses         []string            `validate:"max=3,dive,status"`
 	Scopes           []string            `validate:"max=6,dive,scope"`
 	Exposures        []string            `validate:"max=5,dive,exposure"`
 	Tags             []string            `validate:"max=20,dive,max=50"`
+	TagsMode         string              `validate:"omitempty,oneof=any all"` // any (default) or all of Tags
+	ExcludeTags      []string            `validate:"max=20,dive,max=50"`
 	Search           string              `validate:"max=255"` // Full-text search across name and description
 	MinRiskScore     *int                `validate:"omitempty,min=0,max=100"`
 	MaxRiskScore     *int                `validate:"omitempty,min=0,max=100"`
@@ -1209,7 +1290,20 @@ type ListAssetsInput struct {
 	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
-	BusinessUnitIDs      []string `validate:"max=50,dive,uuid"`
+	BusinessUnitIDs []string `validate:"max=50,dive,uuid"`
+	// AssetGroupIDs keeps the members of these asset groups.
+	AssetGroupIDs []string `validate:"max=20,dive,uuid"`
+	// OwnerIDs keeps the assets owned by these users or groups.
+	OwnerIDs []string `validate:"max=20,dive,uuid"`
+	// IDs narrows the list to these assets: one request instead of one
+	// GET /assets/{id} per row (research/81). At most a page of them.
+	IDs []string `validate:"max=100,dive,uuid"`
+	// UnderDomains keeps the names equal to or below these DNS names (the
+	// scan wizard's coverage expansion: one request for every typed domain).
+	UnderDomains []string `validate:"max=10,dive,fqdn"`
+	// InCIDRs keeps the address assets inside these ranges (the scan
+	// wizard's preview of an inventory-mode CIDR target, RFC-068).
+	InCIDRs              []string `validate:"max=10,dive,cidr"`
 	HasOwner             *bool    // Assets with/without an assigned owner
 	DataClassifications  []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
 	IsControlPlane       *bool    // Asset is a control-plane dependency
@@ -1218,6 +1312,21 @@ type ListAssetsInput struct {
 	Providers            []string `validate:"max=20,dive,max=50"`
 	LastSeenAfter        *time.Time
 	LastSeenBefore       *time.Time
+	ExpiresAfter         *time.Time
+	ExpiresBefore        *time.Time
+	// Attribution: attribution states (confirmed, needs_review, candidate,
+	// dependency, monitor_only, rejected) or the aliases unknown, unconfirmed
+	// and approved (RFC-036). Validated by attribution.ParseFilter.
+	Attribution []string `validate:"max=9,dive,max=20"`
+	// CoveredBy: assets the scope join confirmed through this scope entry
+	// (RFC-054 §4.3), the link behind "N assets confirmed".
+	CoveredBy string `validate:"omitempty,uuid"`
+	// ProgramAssets: only (bug-bounty program assets) or exclude (leave
+	// out program-only assets), RFC-065 §16.5.
+	ProgramAssets string `validate:"omitempty,oneof=only exclude"`
+	// Freshness: stale (an attribute class past its TTL) or never (a passive
+	// class that applies was never observed); docs/architecture/asset-freshness.md.
+	Freshness string `validate:"omitempty,oneof=stale never"`
 
 	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page    int    `validate:"min=0"`
@@ -1251,6 +1360,15 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 			}
 		}
 		filter = filter.WithTypes(types...)
+	}
+
+	// Lens filter (validated against the registry by the input tags).
+	if len(input.Lenses) > 0 {
+		lenses := make([]assetdom.Lens, 0, len(input.Lenses))
+		for _, l := range input.Lenses {
+			lenses = append(lenses, assetdom.Lens(l))
+		}
+		filter = filter.WithLenses(lenses...)
 	}
 
 	// Criticalities filter
@@ -1297,10 +1415,12 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		filter = filter.WithExposures(exposures...)
 	}
 
-	// Tags filter
+	// Tags filter: any of them (default) or all of them, minus the excluded.
 	if len(input.Tags) > 0 {
 		filter = filter.WithTags(input.Tags...)
+		filter.TagsMatchAll = input.TagsMode == "all"
 	}
+	filter.ExcludeTags = input.ExcludeTags
 
 	// Search filter
 	if input.Search != "" {
@@ -1339,9 +1459,38 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	if len(input.BusinessUnitIDs) > 0 {
 		filter = filter.WithBusinessUnitIDs(input.BusinessUnitIDs...)
 	}
+	if len(input.AssetGroupIDs) > 0 {
+		filter = filter.WithAssetGroupIDs(input.AssetGroupIDs...)
+	}
+	if len(input.OwnerIDs) > 0 {
+		filter = filter.WithOwnerIDs(input.OwnerIDs...)
+	}
+	if len(input.IDs) > 0 {
+		filter = filter.WithIDs(input.IDs...)
+	}
+	if len(input.UnderDomains) > 0 {
+		filter = filter.WithUnderDomains(input.UnderDomains...)
+	}
+	if len(input.InCIDRs) > 0 {
+		filter = filter.WithInCIDRs(input.InCIDRs...)
+	}
 	if input.HasOwner != nil {
 		filter = filter.WithHasOwner(*input.HasOwner)
 	}
+	if af, given, err := attribution.ParseFilter(input.Attribution); err != nil {
+		return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	} else if given {
+		filter = filter.WithAttribution(af)
+	}
+	if input.CoveredBy != "" {
+		id, err := shared.IDFromString(input.CoveredBy)
+		if err != nil {
+			return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: covered_by must be a scope entry id", shared.ErrValidation)
+		}
+		filter.CoveredByScopeTarget = &id
+	}
+	filter.ProgramAssets = input.ProgramAssets
+	filter.Freshness = input.Freshness
 	if len(input.DataClassifications) > 0 {
 		filter = filter.WithDataClassifications(input.DataClassifications...)
 	}
@@ -1371,14 +1520,24 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	if input.LastSeenBefore != nil {
 		filter = filter.WithLastSeenBefore(*input.LastSeenBefore)
 	}
+	filter.ExpiresAfter = input.ExpiresAfter
+	filter.ExpiresBefore = input.ExpiresBefore
 
 	// Layer 2: Data Scope - non-admin users only see assets in their groups
-	if !input.IsAdmin && input.ActingUserID != "" {
-		userID, err := shared.IDFromString(input.ActingUserID)
-		if err == nil {
-			filter = filter.WithDataScopeUserID(userID)
-			filter.DataScopeStrict = s.dataScopeStrict(ctx, input.TenantID)
+	access, err := s.listAccessScope(ctx, input.TenantID, input.ActingUserID, input.IsAdmin)
+	if err != nil {
+		return pagination.Result[*assetdom.Asset]{}, err
+	}
+	filter.DataScopeUserID = access.DataScopeUserID
+	filter.DataScopeUnrestricted = access.DataScopeUnrestricted
+	// A non-owner's tag filter matches only the system tags of programs
+	// not hidden from them (RFC-065 §15.3).
+	if input.ActingUserID != "" && !s.callerIsOwner(ctx, input.ActingUserID) {
+		uid, uerr := shared.IDFromString(input.ActingUserID)
+		if uerr != nil {
+			return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: invalid acting user id", shared.ErrForbidden)
 		}
+		filter.ProgramTagViewer = &uid
 	}
 
 	// Build list options with sorting
@@ -1392,44 +1551,142 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	return s.repo.List(ctx, filter, opts, page)
 }
 
-// GetPropertyFacets returns distinct property keys and values for faceted filtering.
-func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID string, types []string, subType string) ([]assetdom.PropertyFacet, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+// callerIsOwner reports whether actingUserID is the request's caller and
+// owns the tenant. Unwired or another user: false (private program tags
+// stay hidden, fail closed).
+func (s *AssetService) callerIsOwner(ctx context.Context, actingUserID string) bool {
+	if s.dataScope == nil {
+		return false
 	}
-	return s.repo.GetPropertyFacets(ctx, parsedTenantID, types, subType)
+	c := s.dataScope.CallerOf(ctx)
+	return c.IsOwner && c.UserID == actingUserID
 }
 
-// ListTags returns distinct tags across all assets for a tenant.
-// Supports prefix filtering for autocomplete.
-// GetAssetStats returns aggregated asset statistics using SQL aggregation.
-// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+// listAccessScope is the Layer-2 data scope the asset list applies, shared by
+// the list, the stats and the property facets so the counts a user sees match
+// what they can list. Admins and callers with no user (API keys) are not
+// narrowed. An acting user id that does not parse is refused (fail closed)
+// instead of silently dropping the scope.
+func (s *AssetService) listAccessScope(ctx context.Context, tenantID, actingUserID string, isAdmin bool) (assetdom.AccessScope, error) {
+	if actingUserID == "" {
+		return assetdom.AccessScope{}, nil
 	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags, subType, countByFields...)
+	userID, err := shared.IDFromString(actingUserID)
+	if err != nil {
+		return assetdom.AccessScope{}, fmt.Errorf("%w: invalid acting user id", shared.ErrForbidden)
+	}
+	if s.dataScope != nil {
+		// One decision for every caller (RFC-065 §15.3): an administrator
+		// or full-data role is not narrowed to scope rows, but private
+		// program assets of programs they are not a member of stay hidden.
+		tid, terr := shared.IDFromString(tenantID)
+		if terr != nil {
+			return assetdom.AccessScope{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		}
+		scope, rerr := s.dataScope.ResolveActing(ctx, tid, actingUserID, isAdmin)
+		if rerr != nil {
+			return assetdom.AccessScope{}, rerr
+		}
+		if scope == nil {
+			return assetdom.AccessScope{}, nil
+		}
+		return assetdom.AccessScope{DataScopeUserID: &scope.UserID, DataScopeUnrestricted: scope.Unrestricted}, nil
+	}
+	if isAdmin {
+		return assetdom.AccessScope{}, nil
+	}
+	return assetdom.AccessScope{DataScopeUserID: &userID}, nil
 }
 
-func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, types []string, limit int) ([]string, error) {
+// GetPropertyFacets returns distinct property keys and values for faceted
+// filtering, counted only over the assets the acting user may list.
+func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types []string, subType string) ([]assetdom.PropertyFacet, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetPropertyFacets(ctx, parsedTenantID, access, types, subType)
+}
 
-	if limit <= 0 || limit > 100 {
-		limit = 50
+// GetInventoryOverview returns the inventory overview counts, over the
+// assets the acting user may list only.
+func (s *AssetService) GetInventoryOverview(ctx context.Context, tenantID, actingUserID string, isAdmin bool) ([]assetdom.InventoryOverviewRow, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetInventoryOverview(ctx, parsedTenantID, access)
+}
+
+// GetAssetStats returns aggregated asset statistics using SQL aggregation,
+// counted only over the assets the acting user may list.
+// Filters: types (asset_type ANY), lenses (asset_lens ANY), tags (overlap,
+// matches List semantics).
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types, lenses, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range lenses {
+		if !assetdom.IsLens(l) {
+			return nil, fmt.Errorf("%w: unknown lens %q", shared.ErrValidation, l)
+		}
+	}
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, lenses, tags, subType, countByFields...)
+}
+
+// ListTags returns the tags of the tenant's assets the caller may list, most
+// used first, and with q.IncludeSystem the system tags they may see: a
+// non-owner gets only those of programs not hidden from them (RFC-065 §15.3).
+func (s *AssetService) ListTags(ctx context.Context, tenantID, actingUserID string, isAdmin bool, q assetdom.TagListQuery) (assetdom.TagList, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return assetdom.TagList{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return assetdom.TagList{}, err
 	}
 
-	// Sanitize prefix: trim and limit length to prevent abuse
-	prefix = strings.TrimSpace(prefix)
-	if len(prefix) > 50 {
-		prefix = prefix[:50]
+	if q.Limit <= 0 || q.Limit > 100 {
+		q.Limit = 50
+	}
+	q.Prefix = truncateTagQuery(q.Prefix)
+	q.Search = truncateTagQuery(q.Search)
+	if len(q.Types) > 20 {
+		q.Types = q.Types[:20]
+	}
+	q.ProgramTagViewer = nil
+	if q.IncludeSystem && actingUserID != "" && !s.callerIsOwner(ctx, actingUserID) {
+		uid, uerr := shared.IDFromString(actingUserID)
+		if uerr != nil {
+			return assetdom.TagList{}, fmt.Errorf("%w: invalid acting user id", shared.ErrForbidden)
+		}
+		q.ProgramTagViewer = &uid
 	}
 
-	return s.repo.ListDistinctTags(ctx, parsedTenantID, prefix, types, limit)
+	return s.repo.ListDistinctTags(ctx, parsedTenantID, access, q)
+}
+
+// truncateTagQuery trims a tag search and caps it at the tag length (50).
+func truncateTagQuery(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) > 50 {
+		v = v[:50]
+	}
+	return v
 }
 
 // ActivateAsset activates an asset.
@@ -1650,15 +1907,25 @@ type CreateRepositoryAssetInput struct {
 // CreateRepositoryAsset creates a new repository asset with its extension.
 // If an existing asset matches (by name or fullName), it will be updated with SCM data.
 func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRepositoryAssetInput) (*assetdom.Asset, *assetdom.RepositoryExtension, error) {
+	a, ext, _, err := s.CreateRepositoryAssetWithOutcome(ctx, input)
+	return a, ext, err
+}
+
+// CreateRepositoryAssetWithOutcome is CreateRepositoryAsset that also says
+// whether the request merged into an existing asset. As for CreateAsset, an
+// existing asset outside the caller's data scope is a plain conflict, and a
+// merge never changes the existing criticality.
+func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, input CreateRepositoryAssetInput) (*assetdom.Asset, *assetdom.RepositoryExtension, CreateOutcome, error) {
+	var none CreateOutcome
 	if s.repoExtRepo == nil {
-		return nil, nil, fmt.Errorf("%w: repository extension repository not configured", shared.ErrInternal)
+		return nil, nil, none, fmt.Errorf("%w: repository extension repository not configured", shared.ErrInternal)
 	}
 
 	s.logger.Info("creating repository asset", "name", input.Name, "fullName", input.FullName)
 
 	criticality, err := assetdom.ParseCriticality(input.Criticality)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, nil, none, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
 	// Parse tenant ID early for searching
@@ -1666,7 +1933,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 	if input.TenantID != "" {
 		tenantID, err = shared.IDFromString(input.TenantID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+			return nil, nil, none, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 		}
 	}
 
@@ -1679,22 +1946,26 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 			"existing_name", existingAsset.Name(),
 			"new_fullName", input.FullName,
 		)
-		return s.updateExistingRepositoryAsset(ctx, existingAsset, input, criticality)
+		if s.dataScope.AssertAsset(ctx, tenantID, existingAsset.ID()) != nil {
+			return nil, nil, none, errCreateConflict
+		}
+		a, ext, err := s.updateExistingRepositoryAsset(ctx, existingAsset, input)
+		return a, ext, CreateOutcome{Merged: true}, err
 	}
 
 	// Check if asset with same name exists (strict check for new assets)
 	exists, err := s.repo.ExistsByName(ctx, tenantID, input.Name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to check asset existence: %w", err)
+		return nil, nil, none, fmt.Errorf("failed to check asset existence: %w", err)
 	}
 	if exists {
-		return nil, nil, assetdom.AlreadyExistsError(input.Name)
+		return nil, nil, none, assetdom.AlreadyExistsError(input.Name)
 	}
 
 	// Create the base asset with Repository type
 	a, err := assetdom.NewAsset(input.Name, assetdom.AssetTypeRepository, criticality)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, none, err
 	}
 
 	// Set tenant ID if provided (already parsed above)
@@ -1706,7 +1977,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 	if input.Scope != "" {
 		scope, err := assetdom.ParseScope(input.Scope)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, none, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		_ = a.UpdateScope(scope)
 	}
@@ -1715,7 +1986,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 	if input.Exposure != "" {
 		exposure, err := assetdom.ParseExposure(input.Exposure)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, none, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		_ = a.UpdateExposure(exposure)
 	}
@@ -1750,7 +2021,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 
 	// Create the asset first
 	if err := s.repo.Create(ctx, a); err != nil {
-		return nil, nil, fmt.Errorf("failed to create asset: %w", err)
+		return nil, nil, none, fmt.Errorf("failed to create asset: %w", err)
 	}
 
 	// Parse visibility
@@ -1763,10 +2034,10 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 	repoExt, err := assetdom.NewRepositoryExtension(a.ID(), input.FullName, visibility)
 	if err != nil {
 		// Rollback: delete the asset if extension creation fails
-		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID()); deleteErr != nil {
+		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID(), nil); deleteErr != nil {
 			s.logger.Error("rollback delete failed after extension creation error", "assetID", a.ID(), "error", deleteErr)
 		}
-		return nil, nil, fmt.Errorf("failed to create repository extension: %w", err)
+		return nil, nil, none, fmt.Errorf("failed to create repository extension: %w", err)
 	}
 
 	// Apply optional repository extension fields
@@ -1774,14 +2045,14 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 
 	if err := s.repoExtRepo.Create(ctx, repoExt); err != nil {
 		// Rollback: delete the asset if extension creation fails
-		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID()); deleteErr != nil {
+		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID(), nil); deleteErr != nil {
 			s.logger.Error("rollback delete failed after repo extension save error", "assetID", a.ID(), "error", deleteErr)
 		}
-		return nil, nil, fmt.Errorf("failed to create repository extension: %w", err)
+		return nil, nil, none, fmt.Errorf("failed to create repository extension: %w", err)
 	}
 
 	s.logger.Info("repository asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()), "fullName", logger.SanitizeValue(input.FullName))
-	return a, repoExt, nil
+	return a, repoExt, none, nil
 }
 
 // applyRepoExtensionFields applies optional fields to a repository extension.
@@ -2236,7 +2507,6 @@ func (s *AssetService) updateExistingRepositoryAsset(
 	ctx context.Context,
 	existingAsset *assetdom.Asset,
 	input CreateRepositoryAssetInput,
-	criticality assetdom.Criticality,
 ) (*assetdom.Asset, *assetdom.RepositoryExtension, error) {
 	// Update asset fields with SCM data
 	// Only update name if the existing name looks like a sensor-generated name
@@ -2250,8 +2520,8 @@ func (s *AssetService) updateExistingRepositoryAsset(
 		}
 	}
 
-	// Update criticality
-	_ = existingAsset.UpdateCriticality(criticality)
+	// The criticality is left alone: a create is not an edit of a deliberate
+	// field (change it with an update).
 
 	// Update description if provided
 	if input.Description != "" {

@@ -1,5 +1,5 @@
 // Package app provides the security validator service for validating
-// pipeline steps, scan configurations, and command payloads to prevent
+// workflow steps, scan configurations, and command payloads to prevent
 // command injection and other security vulnerabilities.
 package app
 
@@ -13,7 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -154,8 +157,8 @@ func addValidationError(r *ValidationResult, field, message, code string) {
 	})
 }
 
-// ValidateStepConfig validates a pipeline step's tool name and configuration.
-// This is called before creating a pipeline step to ensure the tool is registered
+// ValidateStepConfig validates a workflow step's tool name and configuration.
+// This is called before creating a workflow step to ensure the tool is registered
 // and the configuration matches the tool's schema.
 func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID shared.ID, toolName string, capabilities []string, config map[string]any) *ValidationResult {
 	result := &ValidationResult{Valid: true}
@@ -178,12 +181,13 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 		}
 	}
 
-	// 3. If tool is selected, validate capabilities must match tool's capabilities
+	// 3. A pinned tool must be able to run every capability of the step. A
+	// capability is a catalog key ("resolve.dns") or a pre-catalog word
+	// ("dns"); stage.ToolCanRun maps the two onto each other.
 	if toolName != "" && len(toolCapabilities) > 0 && len(capabilities) > 0 {
-		// Check that all provided capabilities are in the tool's capabilities
 		for _, cap := range capabilities {
-			if !slices.Contains(toolCapabilities, strings.ToLower(cap)) {
-				addValidationError(result, "capabilities", fmt.Sprintf("capability '%s' is not supported by tool '%s' (allowed: %v)", cap, toolName, toolCapabilities), "CAPABILITY_TOOL_MISMATCH")
+			if !stage.ToolCanRun(toolName, toolCapabilities, cap) {
+				addValidationError(result, "capabilities", capabilityMismatchMessage(toolName, toolCapabilities, cap), "CAPABILITY_TOOL_MISMATCH")
 			}
 		}
 	}
@@ -206,7 +210,38 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 		}
 	}
 
+	// 6. The settings the tool's sensor declares: right type and range, no
+	// flag-like or intrusive values (the sensor refuses the same; this
+	// refuses them when the step is saved).
+	if config != nil {
+		if _, err := scanworkflow.NormalizeStepConfig(toolName, config); err != nil {
+			addValidationError(result, "config", err.Error(), "INVALID_STEP_SETTING")
+		}
+	}
+
 	return result
+}
+
+// capabilityMismatchMessage says, in words, why a tool cannot run a step's
+// capability: what the tool can run instead, and how to fix the step.
+func capabilityMismatchMessage(toolName string, toolCaps []string, capability string) string {
+	can := make([]string, 0, len(toolCaps))
+	named := map[string]bool{}
+	for _, st := range stage.ForTool(toolName) {
+		can = append(can, fmt.Sprintf("%s (%s)", st.Name, st.Key))
+		named[string(st.Key)] = true
+		for _, l := range st.Legacy {
+			named[l] = true
+		}
+	}
+	for _, c := range toolCaps {
+		if !named[c] {
+			can = append(can, c)
+		}
+	}
+	capability = strings.ToLower(strings.TrimSpace(capability))
+	return fmt.Sprintf("%s cannot run %q. It can run: %s. Choose one of these for the step, or pick a tool that runs %q.",
+		toolName, capability, strings.Join(can, ", "), capability)
 }
 
 // ValidateScannerConfig validates a scan configuration's scanner settings.
@@ -240,23 +275,24 @@ func (v *SecurityValidator) ValidateCommandPayload(ctx context.Context, tenantID
 	result := &ValidationResult{Valid: true}
 
 	// Check for required fields
-	requiredFields := []string{"pipeline_run_id", "step_run_id", "step_id"}
+	requiredFields := []string{"scan_run_id", "scan_run_step_id", "step_id"}
 	for _, field := range requiredFields {
 		if _, ok := payload[field]; !ok {
 			addValidationError(result, field, "required field missing", "MISSING_FIELD")
 		}
 	}
 
-	// Validate step_config if present
-	if stepConfig, ok := payload["step_config"].(map[string]any); ok {
+	// Validate the step's settings (payload key `config`, which the sensor
+	// reads) if present
+	if stepConfig, ok := payload[scanworkflow.PayloadKeyConfig].(map[string]any); ok {
 		if errs := v.validateConfigKeys(stepConfig); len(errs) > 0 {
 			for _, err := range errs {
-				addValidationError(result, "step_config", err, "DANGEROUS_CONFIG_KEY")
+				addValidationError(result, scanworkflow.PayloadKeyConfig, err, "DANGEROUS_CONFIG_KEY")
 			}
 		}
 		if errs := v.validateConfigValues(stepConfig); len(errs) > 0 {
 			for _, err := range errs {
-				addValidationError(result, "step_config", err, "DANGEROUS_CONFIG_VALUE")
+				addValidationError(result, scanworkflow.PayloadKeyConfig, err, "DANGEROUS_CONFIG_VALUE")
 			}
 		}
 	}
@@ -294,18 +330,18 @@ func (v *SecurityValidator) validateToolNameAndGetCapabilities(ctx context.Conte
 	}
 
 	// Check if tool exists in registry (platform or tenant-specific)
-	t, err := v.toolRepo.GetByName(ctx, toolName)
+	t, err := v.toolRepo.GetByName(ctx, tenantID, toolName)
 	if err != nil {
 		// Try tenant-specific tool
 		t, err = v.toolRepo.GetByTenantAndName(ctx, tenantID, toolName)
 		if err != nil {
-			return nil, fmt.Errorf("tool not found in registry: %s", toolName)
+			return nil, fmt.Errorf("tool %q is not installed in this organization", toolName)
 		}
 	}
 
 	// Check if tool is active
 	if !t.IsActive {
-		return nil, fmt.Errorf("tool is not active: %s", toolName)
+		return nil, fmt.Errorf("tool %q is turned off", toolName)
 	}
 
 	// Normalize capabilities to lowercase for comparison
@@ -320,7 +356,17 @@ func (v *SecurityValidator) validateToolNameAndGetCapabilities(ctx context.Conte
 // isValidCapability checks if a capability is in the allowed list.
 // Capabilities are loaded from the database and cached with periodic refresh.
 func (v *SecurityValidator) isValidCapability(cap string) bool {
-	return slices.Contains(v.getCapabilities(), strings.ToLower(cap))
+	cap = strings.ToLower(cap)
+	// A routed catalog capability key ("scan.ports") names a capability
+	// node; planned keys are not runnable and stay refused.
+	if _, ok := stage.Lookup(stage.Key(cap)); ok {
+		return true
+	}
+	// A pre-catalog word that names one catalog capability ("dns").
+	if _, ok := stage.ForWord(cap); ok {
+		return true
+	}
+	return slices.Contains(v.getCapabilities(), cap)
 }
 
 // Dangerous config keys that could be used for command injection

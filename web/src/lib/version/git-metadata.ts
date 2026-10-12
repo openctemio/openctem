@@ -7,7 +7,7 @@
  * packed refs, a detached HEAD, and a linked worktree's `.git` file
  * (`gitdir:` + `commondir`).
  *
- * The same reader exists in the API (openctemio/api pkg/version/gitinfo.go).
+ * The same reader exists in the API (api/pkg/version/gitinfo.go).
  */
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -18,7 +18,7 @@ export interface GitMetadata {
   /**
    * Highest vX.Y.Z tag in the repository. Not "the tag HEAD descends from":
    * release tags live on release branches, so on develop the highest tag is
-   * the honest base for "<tag>-dev".
+   * the honest base for "<tag>-dev+<commit>".
    */
   latestTag?: string
 }

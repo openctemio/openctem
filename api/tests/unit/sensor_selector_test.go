@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -61,8 +61,8 @@ func (m *sensorSelMockSensorRepo) List(_ context.Context, _ sensor.Filter, _ pag
 	return pagination.Result[*sensor.Sensor]{}, nil
 }
 func (m *sensorSelMockSensorRepo) Update(_ context.Context, _ *sensor.Sensor) error { return nil }
-func (m *sensorSelMockSensorRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
-	return nil
+func (m *sensorSelMockSensorRepo) RetireInlineKey(_ context.Context, _ shared.ID, _ []string, _ time.Time) (bool, error) {
+	return false, nil
 }
 func (m *sensorSelMockSensorRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ sensor.HeartbeatUpdate) (bool, error) {
 	return true, nil
@@ -112,9 +112,6 @@ func (m *sensorSelMockSensorRepo) GetAvailableCapabilitiesForTenant(_ context.Co
 func (m *sensorSelMockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
-func (m *sensorSelMockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	return nil, nil
-}
 func (m *sensorSelMockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
 	return nil, nil
 }
@@ -136,16 +133,15 @@ func makeSensorSelSensor(name string, currentJobs, maxJobs int) *sensor.Sensor {
 		CurrentJobs:       currentJobs,
 		MaxConcurrentJobs: maxJobs,
 		Capabilities:      []string{},
-		Tools:             []string{},
 	}
 }
 
 // newSensorSelector creates a SensorSelector wired to the mock repo.
 // commandRepo and sensorState are nil because the current implementation does
 // not use them in SelectSensor / CheckSensorAvailability.
-func newSensorSelSelector(repo *sensorSelMockSensorRepo) *app.SensorSelector {
+func newSensorSelSelector(repo *sensorSelMockSensorRepo) *sensorapp.SensorSelector {
 	log := logger.NewNop()
-	return app.NewSensorSelector(repo, nil, nil, log)
+	return sensorapp.NewSensorSelector(repo, nil, nil, log)
 }
 
 // =============================================================================
@@ -164,9 +160,9 @@ func TestSensorSelSelectSensor_SingleSensor(t *testing.T) {
 	sel := newSensorSelSelector(repo)
 
 	tenantID := shared.NewID()
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: tenantID,
-		Mode:     app.SelectTenantOnly,
+		Mode:     sensorapp.SelectTenantOnly,
 	})
 
 	if err != nil {
@@ -204,9 +200,9 @@ func TestSensorSelSelectSensor_MultipleSensors_LeastLoaded(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
-		Mode:     app.SelectTenantOnly,
+		Mode:     sensorapp.SelectTenantOnly,
 	})
 
 	if err != nil {
@@ -230,16 +226,16 @@ func TestSensorSelSelectSensor_NoSensors_Error(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID:   shared.NewID(),
-		Mode:       app.SelectTenantOnly,
+		Mode:       sensorapp.SelectTenantOnly,
 		AllowQueue: false,
 	})
 
 	if result != nil {
 		t.Error("expected nil result")
 	}
-	if !errors.Is(err, app.ErrNoSensorAvailable) {
+	if !errors.Is(err, sensorapp.ErrNoSensorAvailable) {
 		t.Errorf("expected ErrNoSensorAvailable, got %v", err)
 	}
 }
@@ -254,9 +250,9 @@ func TestSensorSelSelectSensor_NoSensors_AllowQueue(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID:   shared.NewID(),
-		Mode:       app.SelectTenantOnly,
+		Mode:       sensorapp.SelectTenantOnly,
 		AllowQueue: true,
 	})
 
@@ -288,7 +284,7 @@ func TestSensorSelSelectSensor_RepoError(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 
@@ -317,11 +313,11 @@ func TestSensorSelSelectSensor_PassesToolAndCapabilities(t *testing.T) {
 	wantCaps := []string{"sast", "sca"}
 	wantTool := "semgrep"
 
-	_, _ = sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	_, _ = sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID:     shared.NewID(),
 		Capabilities: wantCaps,
 		Tool:         wantTool,
-		Mode:         app.SelectTenantOnly,
+		Mode:         sensorapp.SelectTenantOnly,
 	})
 
 	if repo.lastTool != wantTool {
@@ -349,7 +345,7 @@ func TestSensorSelSelectSensor_CorrectTenantID(t *testing.T) {
 	sel := newSensorSelSelector(repo)
 
 	tenantID := shared.NewID()
-	_, _ = sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	_, _ = sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: tenantID,
 	})
 
@@ -372,7 +368,7 @@ func TestSensorSelSelectSensor_EqualLoad(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 
@@ -403,7 +399,7 @@ func TestSensorSelSelectSensor_SensorWithUnlimitedCapacity(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 
@@ -434,7 +430,7 @@ func TestSensorSelSelectSensor_AllFullyLoaded(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 
@@ -462,7 +458,7 @@ func TestSensorSelSelectSensor_Message(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 
@@ -628,7 +624,7 @@ func TestSensorSelLeastLoaded_ZeroCurrentJobs(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 
@@ -651,7 +647,7 @@ func TestSensorSelLeastLoaded_SingleSensorPartialLoad(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 
@@ -677,7 +673,7 @@ func TestSensorSelLeastLoaded_MaxJobsOne(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 
@@ -723,7 +719,7 @@ func TestSensorSelLoadBalancing_CPUBreaksJobLoadTie(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 	if err != nil {
@@ -738,7 +734,7 @@ func TestSensorSelLoadBalancing_CPUBreaksJobLoadTie(t *testing.T) {
 	}
 }
 
-// TestSensorSelLoadBalancing_WeightsChangeSelection pins that the AGENT_LB_*
+// TestSensorSelLoadBalancing_WeightsChangeSelection pins that the SENSOR_LB_*
 // weights are the knob they claim to be: an operator who declares memory the
 // dominant signal must get a different placement decision than one who
 // declares CPU dominant, from identical sensor state.
@@ -760,7 +756,7 @@ func TestSensorSelLoadBalancing_WeightsChangeSelection(t *testing.T) {
 		sel := newSensorSelSelector(repo)
 		sel.SetLoadBalancingWeights(w)
 
-		result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+		result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 			TenantID: shared.NewID(),
 		})
 		if err != nil {
@@ -780,7 +776,7 @@ func TestSensorSelLoadBalancing_WeightsChangeSelection(t *testing.T) {
 	// Memory dominant → avoid the memory-heavy sensor instead.
 	if got := selectWith(sensor.LoadBalancingWeights{JobLoad: 0.1, Memory: 0.9}); got != "cpu-heavy" {
 		t.Errorf("with memory weighted 0.9 the memory-heavy sensor should lose; selected %q; "+
-			"AGENT_LB_* weights do not affect scheduling", got)
+			"SENSOR_LB_* weights do not affect scheduling", got)
 	}
 }
 
@@ -804,7 +800,7 @@ func TestSensorSelLoadBalancing_StaleMetricsIgnored(t *testing.T) {
 
 	sel := newSensorSelSelector(repo)
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 	if err != nil {
@@ -830,7 +826,7 @@ func TestSensorSelLoadBalancing_ZeroWeightsRejected(t *testing.T) {
 	sel := newSensorSelSelector(repo)
 	sel.SetLoadBalancingWeights(sensor.LoadBalancingWeights{}) // all zero
 
-	result, err := sel.SelectSensor(context.Background(), app.SelectSensorRequest{
+	result, err := sel.SelectSensor(context.Background(), sensorapp.SelectSensorRequest{
 		TenantID: shared.NewID(),
 	})
 	if err != nil {
@@ -851,11 +847,11 @@ func TestSensorSelLoadBalancing_ZeroWeightsRejected(t *testing.T) {
 func TestSensorSelModeConstants(t *testing.T) {
 	t.Parallel()
 
-	if app.SelectTenantOnly != "tenant_only" {
-		t.Errorf("SelectTenantOnly = %q, want %q", app.SelectTenantOnly, "tenant_only")
+	if sensorapp.SelectTenantOnly != "tenant_only" {
+		t.Errorf("SelectTenantOnly = %q, want %q", sensorapp.SelectTenantOnly, "tenant_only")
 	}
-	if app.SelectAny != "any" {
-		t.Errorf("SelectAny = %q, want %q", app.SelectAny, "any")
+	if sensorapp.SelectAny != "any" {
+		t.Errorf("SelectAny = %q, want %q", sensorapp.SelectAny, "any")
 	}
 }
 
@@ -864,10 +860,10 @@ func TestSensorSelModeConstants(t *testing.T) {
 func TestSensorSelErrNoSensorAvailable(t *testing.T) {
 	t.Parallel()
 
-	if app.ErrNoSensorAvailable == nil {
+	if sensorapp.ErrNoSensorAvailable == nil {
 		t.Fatal("ErrNoSensorAvailable should not be nil")
 	}
-	if app.ErrNoSensorAvailable.Error() == "" {
+	if sensorapp.ErrNoSensorAvailable.Error() == "" {
 		t.Error("ErrNoSensorAvailable should have a non-empty message")
 	}
 }

@@ -23,7 +23,8 @@ import { devLog } from '@/lib/logger'
 import { useTenant } from '@/context/tenant-provider'
 import { useBootstrapContextSafe } from '@/context/bootstrap-provider'
 import { usePermissionsSafe } from '@/context/permission-provider'
-import { getCookie, removeCookie } from '@/lib/cookies'
+import { getCookie } from '@/lib/cookies'
+import { endSessionAndSignIn } from '@/stores/auth-store'
 import { env } from '@/lib/env'
 import { Loader2 } from 'lucide-react'
 
@@ -97,10 +98,6 @@ function isAuthError(error: Error): boolean {
 function clearAuthAndRedirectToLogin() {
   devLog.log('[TenantGate] Auth error detected, clearing cookies and redirecting to login')
 
-  removeCookie(env.auth.cookieName)
-  removeCookie(env.cookies.tenant)
-  removeCookie(env.cookies.pendingTenants)
-
   // Clear session flag so next login goes through full bootstrap
   try {
     sessionStorage.removeItem(SESSION_KEY)
@@ -108,7 +105,8 @@ function clearAuthAndRedirectToLogin() {
     /* ignore */
   }
 
-  window.location.href = '/login'
+  // Clears the session cookies (httpOnly ones too, server-side), then /login.
+  endSessionAndSignIn()
 }
 
 // ============================================

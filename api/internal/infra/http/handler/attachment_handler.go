@@ -8,15 +8,16 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"path/filepath"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -27,29 +28,46 @@ import (
 // missing attachment) to avoid leaking existence.
 var errAttachmentAccessDenied = errors.New("attachment access denied")
 
+// Pentest attachment contexts. "finding" and "retest" both carry the finding
+// id as context_id; "campaign" carries the campaign id.
+const (
+	attachmentCtxFinding  = "finding"
+	attachmentCtxRetest   = "retest"
+	attachmentCtxCampaign = "campaign"
+)
+
 // FindingCampaignAccessChecker verifies that a user has access to a finding's
 // or campaign's attachments. Returns nil if access is allowed,
 // ErrNotFound/ErrForbidden otherwise.
 type FindingCampaignAccessChecker interface {
 	CheckFindingAccess(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
 	CheckCampaignAccess(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
+	// CheckFindingEvidenceWrite / CheckCampaignEvidenceWrite gate adding and
+	// removing evidence: the caller must be able to edit the finding (or
+	// write to the campaign), and the campaign must not be locked.
+	CheckFindingEvidenceWrite(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
+	CheckCampaignEvidenceWrite(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
 }
 
 // AttachmentHandler handles file upload/download/delete HTTP endpoints.
 type AttachmentHandler struct {
-	service         *app.AttachmentService
-	accessChecker   FindingCampaignAccessChecker // optional; when nil, no campaign check
-	storageResolver *app.SettingsStorageResolver // optional; for storage config CRUD
+	service         *integration.AttachmentService
+	accessChecker   FindingCampaignAccessChecker  // optional; when nil, no campaign check
+	storageResolver *auth.SettingsStorageResolver // optional; for storage config CRUD
+	audit           *auditapp.AuditService        // optional; audits storage config changes
 	logger          *logger.Logger
 }
 
+// SetAuditService wires the audit log for storage configuration changes.
+func (h *AttachmentHandler) SetAuditService(a *auditapp.AuditService) { h.audit = a }
+
 // NewAttachmentHandler creates a new handler.
-func NewAttachmentHandler(svc *app.AttachmentService, log *logger.Logger) *AttachmentHandler {
+func NewAttachmentHandler(svc *integration.AttachmentService, log *logger.Logger) *AttachmentHandler {
 	return &AttachmentHandler{service: svc, logger: log}
 }
 
 // SetStorageResolver wires the tenant storage config resolver for GET/PATCH storage settings.
-func (h *AttachmentHandler) SetStorageResolver(resolver *app.SettingsStorageResolver) {
+func (h *AttachmentHandler) SetStorageResolver(resolver *auth.SettingsStorageResolver) {
 	h.storageResolver = resolver
 }
 
@@ -58,12 +76,34 @@ func (h *AttachmentHandler) SetAccessChecker(checker FindingCampaignAccessChecke
 	h.accessChecker = checker
 }
 
-// verifyContextAccess checks the caller may write to (upload/link into) the
-// given context. finding/retest contexts require campaign membership for the
-// finding; campaign contexts require campaign membership. Empty/unknown
-// context (a private orphan attachment owned by the uploader) is allowed.
-// No-op when no checker is configured.
+// verifyContextWrite checks the caller may add evidence to (upload/link into)
+// the given context: finding/retest contexts need the right to edit the
+// finding, campaign contexts a role that can upload evidence, and in both the
+// campaign must not be completed or canceled. Observers stay read-only.
+// Empty/unknown context (a private orphan attachment owned by the uploader) is
+// allowed. No-op when no checker is configured.
 // Both "finding" and "retest" contexts use finding ID as context_id.
+func (h *AttachmentHandler) verifyContextWrite(r *http.Request, contextType, contextID string) error {
+	if h.accessChecker == nil || contextID == "" {
+		return nil
+	}
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	isAdmin := middleware.IsAdmin(r.Context())
+	switch contextType {
+	case attachmentCtxFinding, attachmentCtxRetest:
+		return h.accessChecker.CheckFindingEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
+	case attachmentCtxCampaign:
+		return h.accessChecker.CheckCampaignEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
+	default:
+		return nil
+	}
+}
+
+// verifyContextAccess checks the caller may read the given context's
+// attachments: finding/retest contexts require campaign membership for the
+// finding; campaign contexts require campaign membership. No-op when no
+// checker is configured.
 func (h *AttachmentHandler) verifyContextAccess(r *http.Request, contextType, contextID string) error {
 	if h.accessChecker == nil || contextID == "" {
 		return nil
@@ -72,9 +112,9 @@ func (h *AttachmentHandler) verifyContextAccess(r *http.Request, contextType, co
 	userID := middleware.GetUserID(r.Context())
 	isAdmin := middleware.IsAdmin(r.Context())
 	switch contextType {
-	case "finding", "retest":
+	case attachmentCtxFinding, attachmentCtxRetest:
 		return h.accessChecker.CheckFindingAccess(r.Context(), tenantID, contextID, userID, isAdmin)
-	case "campaign":
+	case attachmentCtxCampaign:
 		return h.accessChecker.CheckCampaignAccess(r.Context(), tenantID, contextID, userID, isAdmin)
 	default:
 		return nil
@@ -99,9 +139,9 @@ func (h *AttachmentHandler) authorizeAttachment(r *http.Request, att *attachment
 	userID := middleware.GetUserID(r.Context())
 	ct, cid := att.ContextType(), att.ContextID()
 	switch {
-	case cid != "" && (ct == "finding" || ct == "retest"):
+	case cid != "" && (ct == attachmentCtxFinding || ct == attachmentCtxRetest):
 		return h.accessChecker.CheckFindingAccess(r.Context(), tenantID, cid, userID, false)
-	case cid != "" && ct == "campaign":
+	case cid != "" && ct == attachmentCtxCampaign:
 		return h.accessChecker.CheckCampaignAccess(r.Context(), tenantID, cid, userID, false)
 	default:
 		// No / unknown context → private to the uploader.
@@ -110,6 +150,37 @@ func (h *AttachmentHandler) authorizeAttachment(r *http.Request, att *attachment
 		}
 		return errAttachmentAccessDenied
 	}
+}
+
+// authorizeAttachmentWrite decides whether the caller may remove an existing
+// attachment. Finding/retest and campaign contexts need the same rights as
+// adding evidence there (verifyContextWrite); an attachment with no (or
+// unknown) context stays private to its uploader. Admins bypass.
+func (h *AttachmentHandler) authorizeAttachmentWrite(r *http.Request, att *attachment.Attachment) error {
+	if middleware.IsAdmin(r.Context()) {
+		return nil
+	}
+	ct, cid := att.ContextType(), att.ContextID()
+	switch {
+	case cid != "" && (ct == attachmentCtxFinding || ct == attachmentCtxRetest || ct == attachmentCtxCampaign):
+		return h.verifyContextWrite(r, ct, cid)
+	default:
+		if att.UploadedBy().String() == middleware.GetUserID(r.Context()) {
+			return nil
+		}
+		return errAttachmentAccessDenied
+	}
+}
+
+// writeAttachmentAccessError answers a refused attachment change: a member
+// who may read but not change the evidence gets 403 with the reason; anyone
+// else gets 404, so the attachment's existence does not leak.
+func writeAttachmentAccessError(w http.ResponseWriter, err error) {
+	if errors.Is(err, shared.ErrForbidden) {
+		apierror.Forbidden("You cannot change this evidence: your campaign role, the finding's owner or the campaign's status does not allow it").WriteJSON(w)
+		return
+	}
+	apierror.NotFound("Attachment not found").WriteJSON(w)
 }
 
 // Upload handles multipart file upload.
@@ -129,7 +200,7 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	const maxBody = attachment.MaxFileSize + 1024*1024 // file + form overhead
 	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 
-	if err := r.ParseMultipartForm(attachment.MaxFileSize); err != nil {
+	if err := r.ParseMultipartForm(multipartMemory); err != nil {
 		apierror.BadRequest("File too large or invalid multipart form").WriteJSON(w)
 		return
 	}
@@ -137,8 +208,8 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	// Campaign membership check on upload
 	ctxType := r.FormValue("context_type")
 	ctxID := r.FormValue("context_id")
-	if err := h.verifyContextAccess(r, ctxType, ctxID); err != nil {
-		apierror.NotFound("Access denied").WriteJSON(w)
+	if err := h.verifyContextWrite(r, ctxType, ctxID); err != nil {
+		writeAttachmentAccessError(w, err)
 		return
 	}
 
@@ -149,37 +220,17 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Sniff content type from actual bytes first, then fallback to file extension
-	// for types that Go's sniffing table doesn't cover (markdown, har+json, mp4 variants).
-	buf := make([]byte, 512)
-	n, _ := file.Read(buf)
-	contentType := http.DetectContentType(buf[:n])
-	// http.DetectContentType returns parameters (e.g. "text/plain; charset=utf-8");
-	// strip them so the comparisons below and the service allowlist match on the
-	// bare media type. Without this, every textual upload (.md/.csv/.txt/.har)
-	// was rejected as unsupported.
-	if mt, _, perr := mime.ParseMediaType(contentType); perr == nil {
-		contentType = mt
-	}
-	// Reset reader — Seek back to start
-	if seeker, ok := file.(io.Seeker); ok {
-		_, _ = seeker.Seek(0, io.SeekStart)
-	}
-	// DetectContentType only returns ~14 MIME types. For generic results,
-	// use file extension as a more specific hint (e.g., .md → text/markdown).
-	if contentType == "application/octet-stream" || contentType == "text/plain" {
-		ext := strings.ToLower(filepath.Ext(header.Filename))
-		extMIME := map[string]string{
-			".md": "text/markdown", ".markdown": "text/markdown",
-			".csv": "text/csv", ".har": "application/har+json",
-			".mp4": "video/mp4", ".webm": "video/webm",
-		}
-		if better, ok := extMIME[ext]; ok {
-			contentType = better
-		}
+	// The type comes from the file's first bytes (the extension only refines
+	// generic text or binary); what the client declares is ignored.
+	head := make([]byte, attachment.SniffLen)
+	n, _ := io.ReadFull(file, head)
+	contentType := attachment.DetectContentType(head[:n], header.Filename)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		apierror.BadRequest("The file could not be read").WriteJSON(w)
+		return
 	}
 
-	att, err := h.service.Upload(r.Context(), app.UploadInput{
+	att, err := h.service.Upload(r.Context(), integration.UploadInput{
 		TenantID:    tenantID,
 		Filename:    header.Filename,
 		ContentType: contentType,
@@ -195,12 +246,27 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 			apierror.BadRequest(err.Error()).WriteJSON(w)
 		case errors.Is(err, attachment.ErrUnsupported):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
+		case errors.Is(err, attachment.ErrQuotaExceeded):
+			apierror.New(http.StatusRequestEntityTooLarge, "STORAGE_QUOTA_EXCEEDED",
+				"The organization's file storage is full: delete files or ask the operator to raise the quota").WriteJSON(w)
+		case errors.Is(err, attachment.ErrStorageUnavailable):
+			apierror.ServiceUnavailable("The organization's file storage cannot be reached: check the storage settings").WriteJSON(w)
 		default:
 			h.logger.Error("attachment upload failed", "error", err)
 			apierror.InternalServerError("Upload failed").WriteJSON(w)
 		}
 		return
 	}
+
+	logRequestChange(h.audit, h.logger, r,
+		auditapp.NewSuccessEvent(auditdom.ActionAttachmentUploaded, auditdom.ResourceTypeAttachment, att.ID().String()).
+			WithResourceName(att.Filename()).
+			WithMessage("Evidence file uploaded").
+			WithMetadata("content_type", att.ContentType()).
+			WithMetadata("size", att.Size()).
+			WithMetadata("sha256", att.ContentHash()).
+			WithMetadata("context_type", att.ContextType()).
+			WithMetadata("context_id", att.ContextID()))
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":           att.ID().String(),
@@ -238,6 +304,10 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
+		if errors.Is(err, attachment.ErrStorageUnavailable) {
+			apierror.ServiceUnavailable("The organization's file storage cannot be reached").WriteJSON(w)
+			return
+		}
 		h.logger.Error("attachment download failed", "error", err, "id", id)
 		apierror.InternalServerError("Download failed").WriteJSON(w)
 		return
@@ -267,74 +337,48 @@ func (h *AttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	att, aerr := h.service.GetByID(r.Context(), tenantID, id)
+	if aerr != nil {
+		apierror.NotFound("Attachment not found").WriteJSON(w)
+		return
+	}
+	// An authorization letter's file is evidence (RFC-065 §13): the letter
+	// is revoked, its file never deleted.
+	if att.ContextType() == "authorization_letter" {
+		apierror.Conflict("An authorization letter's file is kept; revoke the letter instead").WriteJSON(w)
+		return
+	}
+
 	// Campaign membership check before deletion
 	if h.accessChecker != nil {
-		att, aerr := h.service.GetByID(r.Context(), tenantID, id)
-		if aerr != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
-		if err := h.authorizeAttachment(r, att); err != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
+		if err := h.authorizeAttachmentWrite(r, att); err != nil {
+			writeAttachmentAccessError(w, err)
 			return
 		}
 	}
 
 	if err := h.service.Delete(r.Context(), tenantID, id); err != nil {
-		if errors.Is(err, attachment.ErrNotFound) {
+		switch {
+		case errors.Is(err, attachment.ErrNotFound):
 			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
+		case errors.Is(err, attachment.ErrStorageUnavailable):
+			apierror.ServiceUnavailable("The organization's file storage cannot be reached").WriteJSON(w)
+		default:
+			h.logger.Error("attachment delete failed", "error", err, "id", att.ID().String())
+			apierror.InternalServerError("Delete failed").WriteJSON(w)
 		}
-		h.logger.Error("attachment delete failed", "error", err, "id", id)
-		apierror.InternalServerError("Delete failed").WriteJSON(w)
 		return
 	}
+
+	logRequestChange(h.audit, h.logger, r,
+		auditapp.NewSuccessEvent(auditdom.ActionAttachmentDeleted, auditdom.ResourceTypeAttachment, att.ID().String()).
+			WithResourceName(att.Filename()).
+			WithMessage("Evidence file deleted").
+			WithMetadata("sha256", att.ContentHash()).
+			WithMetadata("context_type", att.ContextType()).
+			WithMetadata("context_id", att.ContextID()))
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// GetMeta returns attachment metadata (without file content).
-// GET /api/v1/attachments/{id}/meta
-func (h *AttachmentHandler) GetMeta(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	id := chi.URLParam(r, "id")
-
-	// Campaign membership check (same as Download/Delete)
-	if h.accessChecker != nil {
-		att, aerr := h.service.GetByID(r.Context(), tenantID, id)
-		if aerr != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
-		if err := h.authorizeAttachment(r, att); err != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
-	}
-
-	att, err := h.service.GetByID(r.Context(), tenantID, id)
-	if err != nil {
-		if errors.Is(err, attachment.ErrNotFound) {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
-		h.logger.Error("attachment meta failed", "error", err, "id", id)
-		apierror.InternalServerError("Failed to get attachment").WriteJSON(w)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"id":           att.ID().String(),
-		"filename":     att.Filename(),
-		"content_type": att.ContentType(),
-		"size":         att.Size(),
-		"url":          att.URL(),
-		"markdown":     att.MarkdownLink(),
-		"uploaded_by":  att.UploadedBy().StringOrEmpty(),
-		"context_type": att.ContextType(),
-		"context_id":   att.ContextID(),
-		"created_at":   att.CreatedAt(),
-	})
 }
 
 func isImageMIME(ct string) bool {
@@ -411,8 +455,8 @@ func (h *AttachmentHandler) LinkToContext(w http.ResponseWriter, r *http.Request
 	// Verify the caller may write to the destination context before linking,
 	// otherwise a user could attach their own evidence onto a finding/campaign
 	// they have no access to.
-	if err := h.verifyContextAccess(r, req.ContextType, req.ContextID); err != nil {
-		apierror.NotFound("Access denied").WriteJSON(w)
+	if err := h.verifyContextWrite(r, req.ContextType, req.ContextID); err != nil {
+		writeAttachmentAccessError(w, err)
 		return
 	}
 
@@ -480,9 +524,10 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 
 	existing, err := h.storageResolver.GetTenantStorageConfig(r.Context(), tenantID)
 	if err != nil {
-		h.logger.Error("failed to get storage config", "error", err)
-		apierror.InternalServerError("Failed to save storage config").WriteJSON(w)
-		return
+		// The stored keys cannot be decrypted (key rotation, corruption): the
+		// admin must re-enter them, so the stored config is not reused.
+		h.logger.Warn("stored storage config unreadable; new keys required")
+		existing = nil
 	}
 
 	cfg, err := tenantStorageConfigFromRequest(attachment.StorageConfig{
@@ -504,6 +549,22 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 		apierror.InternalServerError("Failed to save storage config").WriteJSON(w)
 		return
 	}
+
+	// The next upload uses the new setting, not a cached provider.
+	if h.service != nil {
+		h.service.InvalidateTenantStorage(tenantID)
+	}
+
+	// Where evidence files are written is security relevant (a changed
+	// bucket or endpoint redirects future uploads): High, keys redacted.
+	var before any
+	if existing != nil {
+		before = *existing
+	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+		auditapp.NewChangeEvent(auditdom.ActionStorageConfigUpdated, auditdom.ResourceTypeStorageConfig, tenantID, before, cfg).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage("Evidence storage configuration updated"))
 
 	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "provider": cfg.Provider})
 }

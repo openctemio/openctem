@@ -7,19 +7,22 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/sensorkey"
 )
 
 // SensorType represents the type of sensor.
-// The platform supports 4 main component types:
-//   - runner: CI/CD one-shot scans (execution_mode: standalone)
+// The platform supports 3 component types:
 //   - worker: Server-controlled daemon (execution_mode: daemon)
 //   - collector: Data collection sensor (execution_mode: daemon)
 //   - sensor: External Attack Surface Monitoring (EASM)
+//
+// CI pipelines are not sensors: they authenticate with their CI provider's
+// OIDC identity (RFC-051). The former "runner" type, a sensor key used from
+// CI, was removed (migration 001146).
 type SensorType string
 
 const (
 	// Primary types
-	SensorTypeRunner    SensorType = "runner"    // CI/CD one-shot scans
 	SensorTypeWorker    SensorType = "worker"    // Server-controlled daemon
 	SensorTypeCollector SensorType = "collector" // Data collection sensor
 	SensorTypeEASM      SensorType = "sensor"    // EASM sensor
@@ -28,15 +31,10 @@ const (
 // IsValid checks if the sensor type is valid.
 func (t SensorType) IsValid() bool {
 	switch t {
-	case SensorTypeRunner, SensorTypeWorker, SensorTypeCollector, SensorTypeEASM:
+	case SensorTypeWorker, SensorTypeCollector, SensorTypeEASM:
 		return true
 	}
 	return false
-}
-
-// IsRunner checks if this is a runner type (one-shot CI/CD).
-func (t SensorType) IsRunner() bool {
-	return t == SensorTypeRunner
 }
 
 // IsWorker checks if this is a worker type (server-controlled daemon).
@@ -57,8 +55,6 @@ func (t SensorType) IsSensor() bool {
 // DefaultExecutionMode returns the default execution mode for this sensor type.
 func (t SensorType) DefaultExecutionMode() ExecutionMode {
 	switch t {
-	case SensorTypeRunner:
-		return ExecutionModeStandalone
 	case SensorTypeWorker, SensorTypeCollector, SensorTypeEASM:
 		return ExecutionModeDaemon
 	default:
@@ -104,7 +100,7 @@ const (
 // IsValid checks if the sensor health is valid.
 func (h SensorHealth) IsValid() bool {
 	switch h {
-	case SensorHealthUnknown, SensorHealthOnline, SensorHealthOffline, SensorHealthError:
+	case SensorHealthUnknown, SensorHealthOnline, SensorHealthLate, SensorHealthStale, SensorHealthOffline, SensorHealthError:
 		return true
 	}
 	return false
@@ -146,30 +142,45 @@ const (
 // Sensor represents a registered sensor (runner, worker, collector, or sensor).
 type Sensor struct {
 	ID            shared.ID
-	TenantID      *shared.ID // nil for platform sensors (is_platform_sensor = true)
+	TenantID      *shared.ID // the owning row's tenant; a platform sensor is never that tenant's own sensor
 	Name          string
 	Type          SensorType
 	Description   string
 	Capabilities  []string
-	Tools         []string // Specific tools: semgrep, trivy, nuclei, nmap, etc.
 	ExecutionMode ExecutionMode
 	Status        SensorStatus // Admin-controlled: active, disabled, revoked
-	Health        SensorHealth // Automatic heartbeat: unknown, online, offline, error
+	Health        SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
 	StatusMessage string
 
-	// Platform sensor flag (SaaS model)
-	// Platform sensors are managed by OpenCTEM and don't count towards tenant's sensor limit.
-	// Tenants can use platform sensors for their scans without provisioning their own.
+	// Platform sensor flag (SaaS model): shared infrastructure the platform
+	// operator runs. It never counts towards, is listed as, or is managed as
+	// one of a tenant's sensors (the tenant plane answers 404 for it);
+	// tenants see platform scanning only as an aggregated service
+	// (GET /api/v1/platform/scanning).
 	IsPlatformSensor bool
 
-	// API key for authentication
-	APIKeyHash   string
-	APIKeyPrefix string
-	// KeyExpiresAt is when the current API key stops authenticating.
+	// Inline API key: the credential stored on the sensor row itself (the
+	// bootstrap key from creation or admin regeneration). Self-renewal under
+	// rotation overlap issues keys into sensor_api_keys instead and retires
+	// the inline key with a short grace (InlineKeyExpiresAt). These fields
+	// therefore describe the INLINE key only: authentication of that key and
+	// its retirement read them. Anything that describes "the sensor's key" to
+	// a person or a policy (responses, health, dispatch) must use KeyState.
+	APIKeyHash      string
+	InlineKeyPrefix string
+	// AuthKind is how the sensor authenticates: a bearer key (the fields
+	// above) or its own Ed25519 key with signed requests (RFC-052, key-bound;
+	// sensor_keys). A key-bound sensor has no bearer key: APIKeyHash holds
+	// an unmatchable placeholder (KeyBoundHashPlaceholder).
+	AuthKind AuthKind
+	// InlineKeyExpiresAt is when the inline key stops authenticating.
 	// nil = never expires (the default for created/admin-regenerated keys and
-	// every row predating RFC-014 Phase 1b). Self-renewal sets a fresh expiry
-	// when the server is configured with a key TTL.
-	KeyExpiresAt *time.Time
+	// every row predating RFC-014 Phase 1b).
+	InlineKeyExpiresAt *time.Time
+	// ActiveKey is the sensor's current rotating key (sensor_api_keys): the
+	// active, non-revoked row with the latest expiry. nil when the sensor has
+	// none and authenticates with its inline key.
+	ActiveKey *ActiveKey
 	// KeyLastUsedAt and KeyLastUsedIP record the last authenticated request
 	// with any of the sensor's keys and the client address it came from
 	// (trusted-proxy rule; never a header the sensor sets). nil = not recorded
@@ -193,6 +204,25 @@ type Sensor struct {
 	ManifestDigest string
 	ManifestAt     *time.Time
 	ManifestSource string
+
+	// LocalPolicy is the sensor-local policy the sensor last reported
+	// (RFC-040 §5.7, local_policy.go), and LocalPolicyReportedAt when. nil
+	// when it never reported one (an SDK before RFC-040, protocol v1).
+	// Display and dispatch-narrowing data only: enforcement is the sensor's.
+	LocalPolicy           *LocalPolicyReport
+	LocalPolicyReportedAt *time.Time
+	// Posture is the posture of the current manifest (posture.go): the
+	// platform TLS pin and the tool sandbox; nil when the current manifest
+	// has none. Display and alert data only: it never relaxes a check.
+	Posture *ManifestPosture
+
+	// The config report (config_report.go): the digest and the platform's
+	// health rollup of the latest report the sensor sent ("" before the
+	// first), and the digest its latest heartbeat echoed ("" when it
+	// echoed none). They differ when the stored report is stale.
+	ConfigReportDigest    string
+	ConfigHealth          string
+	ConfigHeartbeatDigest string
 
 	// Metadata and configuration
 	Labels   map[string]interface{}
@@ -234,13 +264,23 @@ type Sensor struct {
 	Protocol *ProtocolInfo
 
 	// Reported is what the sensor last reported it can do (reported.go).
-	// Tools, Capabilities and MaxConcurrentJobs above are the
-	// administrator's settings; dispatch uses the Effective* values.
+	// Capabilities and MaxConcurrentJobs above are the administrator's
+	// settings; dispatch uses the Effective* values. The tools are only
+	// the reported ones (EffectiveTools); the sensor grant narrows them.
 	Reported CapabilityReport
 
 	// Load is the load the sensor last reported (load.go): resources,
 	// capacity, local queue. Untrusted; it can only lower FreeSlots.
 	Load LoadReport
+
+	// HeartbeatInterval is the interval the sensor follows, stored at its
+	// last heartbeat (0 before the first since migration 000261), and
+	// HeartbeatDueAt the deadline of its next heartbeat (liveness.go).
+	HeartbeatInterval time.Duration
+	HeartbeatDueAt    *time.Time
+	// Control is the control-channel report of its last heartbeat that
+	// carried one (control.go); nil when it never did.
+	Control *ControlReport
 
 	// Statistics
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"
@@ -280,7 +320,6 @@ func NewSensor(
 	sensorType SensorType,
 	description string,
 	capabilities []string,
-	tools []string,
 	executionMode ExecutionMode,
 ) (*Sensor, error) {
 	if name == "" {
@@ -304,10 +343,9 @@ func NewSensor(
 		Description: description,
 		// Default to empty (not nil): Go marshals a nil slice as JSON `null`, and
 		// these fields carry no `omitempty`, so a nil here reaches clients as
-		// `"tools": null` and crashes any consumer doing `.length`/`.map` on it.
+		// `"capabilities": null` and crashes any consumer doing `.length`/`.map` on it.
 		// The adjacent Labels/Config/Metadata already make() for the same reason.
 		Capabilities:  defaultStrings(capabilities),
-		Tools:         defaultStrings(tools),
 		ExecutionMode: executionMode,
 		Status:        SensorStatusActive,  // Admin-controlled: enabled by default
 		Health:        SensorHealthUnknown, // Automatic: unknown until first heartbeat
@@ -336,15 +374,57 @@ func (a *Sensor) SetAPIKey(hash, prefix string) {
 // short-lived credential (RFC-014); the sensor renews again before it lapses.
 func (a *Sensor) SetAPIKeyWithExpiry(hash, prefix string, expiresAt *time.Time) {
 	a.APIKeyHash = hash
-	a.APIKeyPrefix = prefix
-	a.KeyExpiresAt = expiresAt
+	a.InlineKeyPrefix = prefix
+	a.InlineKeyExpiresAt = expiresAt
 	a.UpdatedAt = time.Now()
 }
 
-// IsKeyExpired reports whether the current API key has passed its expiry.
+// ActiveKey is the summary of a sensor's current rotating key.
+type ActiveKey struct {
+	Prefix     string
+	ExpiresAt  *time.Time // nil = never expires
+	LastUsedAt *time.Time
+}
+
+// KeyState is the sensor's effective credential: what a person, a health
+// check or the dispatcher should treat as "the sensor's API key".
+type KeyState struct {
+	Prefix    string
+	ExpiresAt *time.Time // nil = never expires
+	// Rotating is true when the key is a sensor_api_keys row (self-renewed),
+	// false for the inline key.
+	Rotating bool
+}
+
+// KeyState returns the sensor's effective credential. It is the single source
+// of truth for key prefix and expiry outside authentication: the active
+// rotating key when the sensor has one, otherwise the inline key.
+func (a *Sensor) KeyState() KeyState {
+	if k := a.ActiveKey; k != nil {
+		return KeyState{Prefix: k.Prefix, ExpiresAt: k.ExpiresAt, Rotating: true}
+	}
+	return KeyState{Prefix: a.InlineKeyPrefix, ExpiresAt: a.InlineKeyExpiresAt}
+}
+
+// IsLegacyKey reports whether the sensor's effective key (KeyState) is a
+// legacy rda_ key. Such a sensor moves to an octs_ key on its next renewal;
+// rda_ keys are retired 90 days after enrollment and key-bound identity
+// (RFC-032) ship.
+func (a *Sensor) IsLegacyKey() bool {
+	return a.KeyState().IsLegacy()
+}
+
+// IsLegacy reports whether this key is a legacy rda_ key, judged by its
+// stored display prefix.
+func (k KeyState) IsLegacy() bool {
+	return sensorkey.IsLegacy(k.Prefix)
+}
+
+// IsKeyExpired reports whether the INLINE API key has passed its expiry. It
+// gates authentication with that key; use KeyState for the sensor's key.
 // A nil KeyExpiresAt (never-expiring key, the default) is never expired.
 func (a *Sensor) IsKeyExpired() bool {
-	return a.KeyExpiresAt != nil && time.Now().After(*a.KeyExpiresAt)
+	return a.InlineKeyExpiresAt != nil && time.Now().After(*a.InlineKeyExpiresAt)
 }
 
 // UpdateLastSeen updates the last seen timestamp and sets health to online.
@@ -469,7 +549,7 @@ func (a *Sensor) UpdateExtendedMetrics(metrics ExtendedMetrics) {
 
 // UpdateExtendedMetricsWithWeights is UpdateExtendedMetrics with an explicit
 // weight set, so the persisted LoadScore reflects the deployment's
-// AGENT_LB_* configuration rather than the compiled-in defaults.
+// SENSOR_LB_* configuration rather than the compiled-in defaults.
 func (a *Sensor) UpdateExtendedMetricsWithWeights(metrics ExtendedMetrics, weights LoadBalancingWeights) {
 	a.CPUPercent = metrics.CPUPercent
 	a.MemoryPercent = metrics.MemoryPercent
@@ -504,7 +584,7 @@ const (
 )
 
 // LoadBalancingWeights defines the weights for load score computation.
-// These weights are operator-configurable via the AGENT_LB_* environment
+// These weights are operator-configurable via the SENSOR_LB_* environment
 // variables; config.LoadBalancingConfig.Weights() converts them.
 type LoadBalancingWeights struct {
 	JobLoad float64 // Weight for job load factor (default: 0.30)
@@ -641,9 +721,10 @@ func (a *Sensor) IsDaemon() bool {
 	return a.ExecutionMode == ExecutionModeDaemon || a.Type.IsWorker() || a.Type.IsCollector()
 }
 
-// IsOneShot checks if the sensor is a one-shot runner (CI/CD).
+// IsOneShot checks if the sensor runs one scan per start (execution mode
+// standalone) instead of polling for commands.
 func (a *Sensor) IsOneShot() bool {
-	return a.ExecutionMode == ExecutionModeStandalone || a.Type.IsRunner()
+	return a.ExecutionMode == ExecutionModeStandalone
 }
 
 // SetMaxConcurrentJobs sets the maximum number of concurrent jobs.
@@ -692,7 +773,7 @@ func (a *Sensor) CanExecutePlatformJob(capabilities []string, tool, preferredReg
 	if !a.IsPlatformSensor {
 		return false
 	}
-	if !a.IsAvailable() || a.Health != SensorHealthOnline {
+	if !a.IsAvailable() || !a.Health.IsDispatchable() {
 		return false
 	}
 	if !a.HasCapacity() {
@@ -706,25 +787,30 @@ func (a *Sensor) CanExecutePlatformJob(capabilities []string, tool, preferredReg
 }
 
 // =============================================================================
-// Platform Sensor Statistics
+// Platform scanning (what a tenant sees of platform sensors)
 // =============================================================================
 
-// TierBreakdown holds statistics for a single sensor tier.
-type TierBreakdown struct {
-	TotalSensors  int
-	OnlineSensors int
-	TotalCapacity int
-	CurrentLoad   int
+// PlatformRegionState is how one region of platform scanning stands, as a
+// tenant may see it: a state, never node counts, capacity or other tenants'
+// load.
+type PlatformRegionState struct {
+	Region string
+	// Online: at least one active platform sensor of the region can take work.
+	Online bool
+	// FreeSlot: one of them has a free job slot now.
+	FreeSlot bool
 }
 
-// PlatformSensorStatsResult holds aggregate platform sensor statistics.
-type PlatformSensorStatsResult struct {
-	TotalSensors      int
-	OnlineSensors     int
-	TotalCapacity     int
-	CurrentActiveJobs int
-	CurrentQueuedJobs int
-	TierBreakdown     map[string]TierBreakdown
+// PlatformScanningSummary is the platform scanning service seen by one
+// tenant: per-region states, the tools online platform sensors offer, and the
+// tenant's own platform jobs. It carries nothing that identifies a platform
+// sensor (id, name, host, address, version) and no other tenant's numbers.
+type PlatformScanningSummary struct {
+	Regions []PlatformRegionState
+	Tools   []string
+	// Queued and Running count the tenant's own platform jobs only.
+	Queued  int
+	Running int
 }
 
 // TenantSensorStats holds aggregate statistics for a tenant's sensors,

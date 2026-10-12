@@ -5,20 +5,23 @@ package routes
 // capabilities and concurrency on the heartbeat (v2 and v1), the report is
 // sanitized and stored, and dispatch (the selector and the command poll)
 // uses the effective values: what the sensor reports, narrowed by the
-// administrator, with the administrator's values for a sensor that never
-// reported.
+// administrator. Tools a sensor never reported are unverified and get no
+// work; capabilities keep the administrator's values for such a sensor.
 
 import (
 	"context"
 	"encoding/json"
+
 	"net/http"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/internal/app/command"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -26,12 +29,40 @@ import (
 
 func (h *ctlHarness) newLimitedSensor(tenantID, name string, tools, caps []string, maxJobs int) ctlSensor {
 	h.t.Helper()
-	out, err := h.sensors.CreateSensor(context.Background(), app.CreateSensorInput{TenantID: tenantID, Name: name,
-		Type: "worker", Capabilities: caps, Tools: tools, ExecutionMode: "daemon", MaxConcurrentJobs: maxJobs})
+	out, err := h.sensors.CreateSensor(context.Background(), sensorapp.CreateSensorInput{TenantID: tenantID, Name: name,
+		Type: "worker", Capabilities: caps, ExecutionMode: "daemon", MaxConcurrentJobs: maxJobs})
 	if err != nil {
 		h.t.Fatalf("create sensor: %v", err)
 	}
-	return ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey}
+	return ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey, tools: tools}
+}
+
+// verifyTools records the sensor's tools as reported installed, as a sensor
+// on a current SDK does on its first heartbeat. Dispatch only sends a sensor
+// the tools it verified.
+func (h *ctlHarness) verifyTools(s ctlSensor) {
+	h.t.Helper()
+	inv := make([]sensor.ReportedTool, 0, len(s.tools))
+	for _, t := range s.tools {
+		inv = append(inv, sensor.ReportedTool{Name: t, Installed: true})
+	}
+	raw, err := json.Marshal(inv)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if _, err := h.db.ExecContext(context.Background(),
+		`UPDATE sensors SET reported_tools = $2::jsonb, reported_tool_names = $3, reported_at = now() WHERE id = $1`,
+		s.id, string(raw), pq.Array(s.tools)); err != nil {
+		h.t.Fatalf("verify tools: %v", err)
+	}
+}
+
+// newVerifiedSensor is newLimitedSensor for a sensor that verified its tools.
+func (h *ctlHarness) newVerifiedSensor(tenantID, name string, tools, caps []string, maxJobs int) ctlSensor {
+	h.t.Helper()
+	s := h.newLimitedSensor(tenantID, name, tools, caps, maxJobs)
+	h.verifyTools(s)
+	return s
 }
 
 func (h *ctlHarness) heartbeatV2(s ctlSensor, body map[string]any) {
@@ -49,8 +80,8 @@ func (h *ctlHarness) load(s ctlSensor) *sensor.Sensor {
 	return got
 }
 
-func (h *ctlHarness) selector() *app.SensorSelector {
-	return app.NewSensorSelector(h.repo, nil, nil, logger.NewNop())
+func (h *ctlHarness) selector() *sensorapp.SensorSelector {
+	return sensorapp.NewSensorSelector(h.repo, nil, nil, logger.NewNop())
 }
 
 func ids(ss []*sensor.Sensor) []string {
@@ -76,10 +107,9 @@ func TestReportedCaps_DispatchByReportedTool(t *testing.T) {
 	b := h.newLimitedSensor(h.tenantID, "declared-nuclei", []string{"nuclei"}, []string{"nuclei"}, 0)
 	h.heartbeatV2(b, map[string]any{"status": "running",
 		"tools": []map[string]any{{"name": "nuclei", "installed": false}}, "capabilities": []string{}})
-	// C: an old sensor that reports nothing, declared semgrep (v1 heartbeat).
+	// C: a sensor that reports nothing, declared semgrep.
 	c := h.newLimitedSensor(h.tenantID, "old-semgrep", []string{"semgrep"}, []string{"semgrep"}, 0)
-	resp, raw := h.call(c.key, http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{"status": "running"})
-	h.want(resp, raw, 200, "")
+	h.heartbeatV2(c, map[string]any{"status": "running"})
 
 	got := h.load(a)
 	if got.Reported.ReportedAt == nil || got.Reported.OS != "linux" || got.Reported.Arch != "amd64" ||
@@ -94,7 +124,7 @@ func TestReportedCaps_DispatchByReportedTool(t *testing.T) {
 	if want := []string{a.id}; !slices.Equal(ids(nuclei), want) {
 		t.Fatalf("nuclei candidates %v, want only A %v (B lacks the tool)", ids(nuclei), want)
 	}
-	res, err := h.selector().SelectSensor(ctx, app.SelectSensorRequest{TenantID: tid, Capabilities: []string{"nuclei"}, Tool: "nuclei"})
+	res, err := h.selector().SelectSensor(ctx, sensorapp.SelectSensorRequest{TenantID: tid, Capabilities: []string{"nuclei"}, Tool: "nuclei"})
 	if err != nil || res.Sensor == nil || res.Sensor.ID.String() != a.id {
 		t.Fatalf("selector picked %+v, %v; want A", res, err)
 	}
@@ -103,12 +133,12 @@ func TestReportedCaps_DispatchByReportedTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{c.id}; !slices.Equal(ids(semgrep), want) {
-		t.Fatalf("semgrep candidates %v, want the old sensor C only (A reports semgrep not installed)", ids(semgrep))
+	if len(semgrep) != 0 {
+		t.Fatalf("semgrep candidates %v, want none: A reports semgrep not installed and C never verified its declared semgrep", ids(semgrep))
 	}
 
 	tools, err := h.repo.GetAvailableToolsForTenant(ctx, tid)
-	if err != nil || strings.Join(tools, ",") != "nuclei,semgrep" {
+	if err != nil || strings.Join(tools, ",") != "nuclei" {
 		t.Fatalf("available tools %v %v", tools, err)
 	}
 	if ok, _ := h.repo.HasSensorForTool(ctx, tid, "nuclei"); !ok {
@@ -118,17 +148,17 @@ func TestReportedCaps_DispatchByReportedTool(t *testing.T) {
 		t.Fatal("HasSensorForCapability(dast) = false: reported capability not used")
 	}
 
-	// B: declared but not installed is shown.
+	// B: a capability set but not reported is shown.
 	bs := h.load(b)
-	if m := bs.CapabilityMismatch(); !slices.Equal(m.ToolsNotInstalled, []string{"nuclei"}) ||
-		!slices.Equal(m.CapabilitiesNotReported, []string{"nuclei"}) {
+	if m := bs.CapabilityMismatch(); !slices.Equal(m.CapabilitiesNotReported, []string{"nuclei"}) {
 		t.Fatalf("B mismatch %+v", m)
 	}
 }
 
-// The administrator's list narrows the report and the report never widens
-// it; unknown and malformed names, oversized lists and absurd concurrency
-// are dropped or clamped.
+// The tools dispatch uses are the known installed tools the sensor reports
+// (the grant narrows them, not a list on the sensor); unknown and malformed
+// names, oversized lists and absurd concurrency are dropped or clamped, and
+// the administrator's capability and concurrency limits still narrow.
 func TestReportedCaps_MaliciousReportIsBounded(t *testing.T) {
 	h := newCtlHarness(t)
 	ctx := context.Background()
@@ -165,13 +195,12 @@ func TestReportedCaps_MaliciousReportIsBounded(t *testing.T) {
 	if got.Reported.MaxConcurrentJobs != sensor.MaxReportedJobs || got.Reported.OS != "linuxrmrf" || len(got.Reported.Arch) != sensor.MaxReportedPlatformLen {
 		t.Fatalf("not clamped: max=%d os=%q arch=%d", got.Reported.MaxConcurrentJobs, got.Reported.OS, len(got.Reported.Arch))
 	}
-	// Narrow only: semgrep (allowed and installed), never nuclei; capacity
-	// stays at the administrator's 5.
-	if !slices.Equal(got.EffectiveTools(), []string{"semgrep"}) || got.EffectiveMaxConcurrentJobs() != 5 {
+	// The known installed tools only; capacity stays at the administrator's 5.
+	if !slices.Equal(got.EffectiveTools(), []string{"nuclei", "semgrep"}) || got.EffectiveMaxConcurrentJobs() != 5 {
 		t.Fatalf("effective tools %v max %d", got.EffectiveTools(), got.EffectiveMaxConcurrentJobs())
 	}
-	if c, _ := h.repo.FindAvailableWithCapacity(ctx, tid, []string{"nuclei"}, "nuclei"); len(c) != 0 {
-		t.Fatalf("a report widened the administrator's tool list: %v", ids(c))
+	if c, _ := h.repo.FindAvailableWithCapacity(ctx, tid, []string{"validate"}, "evil"); len(c) != 0 {
+		t.Fatalf("an unknown reported tool is dispatched: %v", ids(c))
 	}
 	var dbTools []string
 	var dbMax int
@@ -231,29 +260,18 @@ func TestReportedCaps_PollUsesEffectiveCapabilities(t *testing.T) {
 		}
 		return cmd.ID.String()
 	}
-	polled := func(s ctlSensor, v2 bool) []string {
+	polled := func(s ctlSensor) []string {
 		t.Helper()
-		path := "/api/v1/agent/commands"
-		if v2 {
-			path = "/api/v2/sensor/commands"
-		}
-		resp, raw := h.call(s.key, http.MethodGet, path, nil)
+		resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/commands", nil)
 		h.want(resp, raw, 200, "")
-		type idOnly struct {
-			ID string `json:"id"`
+		var l struct {
+			Commands []struct {
+				ID string `json:"id"`
+			} `json:"commands"`
 		}
-		var out []idOnly
-		if v2 {
-			var l struct {
-				Commands []idOnly `json:"commands"`
-			}
-			_ = json.Unmarshal(raw, &l)
-			out = l.Commands
-		} else {
-			_ = json.Unmarshal(raw, &out) // v1: a bare array
-		}
+		_ = json.Unmarshal(raw, &l)
 		var got []string
-		for _, c := range out {
+		for _, c := range l.Commands {
 			got = append(got, c.ID)
 		}
 		return got
@@ -266,14 +284,14 @@ func TestReportedCaps_PollUsesEffectiveCapabilities(t *testing.T) {
 	h.heartbeatV2(declaredOnly, map[string]any{"capabilities": []string{}})
 	old := h.newLimitedSensor(h.tenantID, "old-validate", nil, []string{"validate"}, 0)
 
-	if !slices.Contains(polled(reports, true), cmd) {
-		t.Fatal("a sensor that reports validate does not see the validate command (v2)")
+	if !slices.Contains(polled(reports), cmd) {
+		t.Fatal("a sensor that reports validate does not see the validate command")
 	}
-	if slices.Contains(polled(declaredOnly, true), cmd) || slices.Contains(polled(declaredOnly, false), cmd) {
+	if slices.Contains(polled(declaredOnly), cmd) {
 		t.Fatal("a sensor whose report lacks validate sees the validate command")
 	}
-	if !slices.Contains(polled(old, false), cmd) {
-		t.Fatal("an old sensor lost its declared capability (v1)")
+	if !slices.Contains(polled(old), cmd) {
+		t.Fatal("a sensor that reports nothing lost its declared capability")
 	}
 }
 
@@ -286,8 +304,7 @@ func TestReportedCaps_AbsentPartsAreKept(t *testing.T) {
 		"capabilities": []string{"dast"}, "max_concurrent_jobs": 2})
 	first := h.load(s).Reported
 
-	resp, raw := h.call(s.key, http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{"status": "running"})
-	h.want(resp, raw, 200, "")
+	h.heartbeatV2(s, map[string]any{"status": "running"})
 	h.heartbeatV2(s, map[string]any{"tools": []map[string]any{{"name": "semgrep", "installed": true}}})
 
 	got := h.load(s).Reported
@@ -320,8 +337,8 @@ func (s *jsonStringsScanner) Scan(src any) error {
 
 // A scan for a tool is offered (poll and doorbell count) only to sensors
 // whose effective tools include it (the RFC-030 tool gate reads
-// effective_tools): the reported inventory narrowed by the limit, or the
-// declared tools of a sensor that never reported.
+// effective_tools): the reported installed tools; a sensor that never
+// reported has none.
 func TestReportedCaps_PollOffersToolScansOnlyToSensorsWithTheTool(t *testing.T) {
 	h := newCtlHarness(t)
 	ctx := context.Background()
@@ -364,8 +381,8 @@ func TestReportedCaps_PollOffersToolScansOnlyToSensorsWithTheTool(t *testing.T) 
 	if got := poll(lacks); slices.Contains(got, cmd.ID.String()) || !slices.Contains(got, other.ID.String()) {
 		t.Fatalf("the sensor without nuclei: %v (must not see the scan, must see the tool-less command)", got)
 	}
-	if got := poll(old); !slices.Contains(got, cmd.ID.String()) {
-		t.Fatalf("a sensor that never reported lost the scan for its declared tool: %v", got)
+	if got := poll(old); slices.Contains(got, cmd.ID.String()) || !slices.Contains(got, other.ID.String()) {
+		t.Fatalf("a sensor that never reported: %v (its declared nuclei is unverified, so no scan; the tool-less command still)", got)
 	}
 	if got := poll(oldNoTools); slices.Contains(got, cmd.ID.String()) {
 		t.Fatalf("a sensor with no tools at all is offered a nuclei scan: %v", got)

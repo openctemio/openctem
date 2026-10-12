@@ -1,0 +1,4 @@
+### Added: pair a sensor from the console (RFC-052)
+
+- Sensors → **Pair a sensor**: enter the code the sensor printed, or choose "Expect a sensor" to get a code for `openctemio-sensor pair <CODE>` and wait for it to connect. The dialog shows the fingerprint (three digits and three words), the host facts the sensor reports, the address the request came from and the key fingerprint; **Approve** stays disabled until "the fingerprint matches" is ticked and the step-up code or password is given. The profile list offers only the narrow profiles; the broad legacy grant is never offered. Every miss answers "Code not found or expired".
+- Organization settings → **Require key-bound sensor identity**: turning it on needs `sensors:grant:narrow`, turning it off `sensors:grant:widen`. Where it is on, the key-based "Install sensor" flow is hidden and the empty sensor list offers pairing instead.

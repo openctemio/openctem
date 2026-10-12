@@ -5,7 +5,6 @@ import { fetcher } from '@/lib/api/client'
 import type {
   ApiAssetType,
   ApiAssetTypeListResponse,
-  ApiAssetTypeCategoryListResponse,
   AssetTypeFilter,
 } from './asset-type-api.types'
 
@@ -51,34 +50,6 @@ export function useAssetTypes(filter?: AssetTypeFilter) {
  */
 export function useActiveAssetTypes() {
   return useAssetTypes({ active_only: true, include_category: true })
-}
-
-/**
- * Hook to fetch asset type categories
- */
-export function useAssetTypeCategories(activeOnly = true) {
-  const params = new URLSearchParams()
-  if (activeOnly) params.append('active_only', 'true')
-
-  const queryString = params.toString()
-  const endpoint = `/api/v1/asset-types/categories${queryString ? `?${queryString}` : ''}`
-
-  const { data, error, isLoading, mutate } = useSWR<ApiAssetTypeCategoryListResponse>(
-    endpoint,
-    fetcher<ApiAssetTypeCategoryListResponse>,
-    {
-      revalidateOnFocus: false,
-      dedupingInterval: 60000,
-    }
-  )
-
-  return {
-    categories: data?.data ?? [],
-    total: data?.total ?? 0,
-    isLoading,
-    error,
-    mutate,
-  }
 }
 
 /**

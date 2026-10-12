@@ -387,11 +387,23 @@ func TestInferFindingType_ExplicitCompliance(t *testing.T) {
 
 func TestInferFindingType_ExplicitTypeOverridesSource(t *testing.T) {
 	p := &FindingProcessor{}
-	// Explicit type "vulnerability" should override source "secret"
-	finding := &ctis.Finding{Type: ctis.FindingTypeVulnerability}
+	// An explicit specific type still overrides the source.
+	finding := &ctis.Finding{Type: ctis.FindingTypeMisconfiguration}
 
 	result := p.inferFindingType(vulnerability.FindingSourceSecret, finding)
-	assert.Equal(t, vulnerability.FindingTypeVulnerability, result)
+	assert.Equal(t, vulnerability.FindingTypeMisconfiguration, result)
+}
+
+// A secret scanner's finding is a secret even when its CTIS type is the
+// generic "vulnerability" (ctis FromSARIF writes that for betterleaks). It
+// used to be stored as a vulnerability and skip the secret handling, snippet
+// redaction included.
+func TestInferFindingType_SecretSourceBeatsGenericVulnerability(t *testing.T) {
+	p := &FindingProcessor{}
+	finding := &ctis.Finding{Type: ctis.FindingTypeVulnerability, RuleID: "github-pat"}
+
+	result := p.inferFindingType(vulnerability.FindingSourceSecret, finding)
+	assert.Equal(t, vulnerability.FindingTypeSecret, result)
 }
 
 func TestInferFindingType_SourceSecret(t *testing.T) {
@@ -1242,8 +1254,8 @@ func (s *stubFindingRepository) CreateBatchWithResult(_ context.Context, finding
 	return &vulnerability.BatchCreateResult{Created: len(findings)}, nil
 }
 
-func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]shared.ID, error) {
-	return map[string]shared.ID{}, nil
+func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
+	return map[string]vulnerability.ReopenedFinding{}, nil
 }
 
 // Remaining interface stubs (unused by ProcessBatch)
@@ -1282,7 +1294,7 @@ func (s *stubFindingRepository) ListAffectedAssetsByVulnerabilityID(_ context.Co
 func (s *stubFindingRepository) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (s *stubFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (s *stubFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (s *stubFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
@@ -1300,7 +1312,7 @@ func (s *stubFindingRepository) GetByFingerprint(_ context.Context, _ shared.ID,
 func (s *stubFindingRepository) ExistsByFingerprint(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
-func (s *stubFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _ string) (int64, error) {
+func (s *stubFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _, _ string) (int64, error) {
 	return 0, nil
 }
 func (s *stubFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Context, _ shared.ID, _ map[string]string) (int64, error) {
@@ -1309,7 +1321,7 @@ func (s *stubFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Conte
 func (s *stubFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
 	return nil, nil
 }
-func (s *stubFindingRepository) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID) error {
+func (s *stubFindingRepository) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }
 func (s *stubFindingRepository) DeleteByAssetID(_ context.Context, _, _ shared.ID) error {
@@ -1349,7 +1361,7 @@ func (s *stubFindingRepository) EnrichBatchByFingerprints(_ context.Context, _ s
 func (s *stubFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
-func (s *stubFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (s *stubFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 func (s *stubFindingRepository) FindRelatedCVEs(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter) ([]vulnerability.RelatedCVE, error) {
@@ -1419,7 +1431,7 @@ func buildMinimalReportNoVuln() *ctis.Report {
 // newTestSensor returns a minimal *sensor.Sensor for use in ProcessBatch tests.
 func newTestSensor(t *testing.T, tenantID shared.ID) *sensor.Sensor {
 	t.Helper()
-	agt, err := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
+	agt, err := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeWorker, "", nil, sensor.ExecutionModeStandalone)
 	require.NoError(t, err)
 	return agt
 }
@@ -1504,7 +1516,7 @@ func TestRedactSecretSnippet_UsesMaskedValueAndClearsContext(t *testing.T) {
 
 	p.redactSecretSnippet(f)
 
-	assert.Equal(t, "AKIA****************MPLE", f.Snippet(), "raw secret snippet must be replaced by masked value")
+	assert.Equal(t, "AKIA…MPLE", f.Snippet(), "raw secret snippet must be replaced by the masked preview")
 	assert.Equal(t, "", f.ContextSnippet(), "context snippet (may contain the secret) must be cleared")
 	assert.NotContains(t, f.Snippet(), "AKIAIOSFODNN7EXAMPLE")
 }
@@ -1637,4 +1649,59 @@ func TestBuildFinding_PersistsBaseWithSARIFPartialFingerprints(t *testing.T) {
 		"composite base must survive the SARIF partial_fingerprints replacement")
 	assert.Equal(t, "deadbeef", pf["primaryLocationLineHash"],
 		"SARIF partial fingerprint should also survive")
+}
+
+// A CTIS finding's SARIF-style enum fields went into CHECK-constrained columns
+// verbatim. SARIF spells kind "notApplicable" (camelCase); the column only
+// allows "not_applicable", so the INSERT failed with chk_kind and the whole
+// finding was dropped ("findings_skipped": 1). Same for any out-of-set
+// baseline_state / compliance result / impact / likelihood. A bad label must
+// never cost the finding: normalize what is recognizable, drop the rest.
+func TestBuildFinding_EnumFieldsNeverViolateCheckConstraints(t *testing.T) {
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, stubAssetRepoGetByID{}, logger.NewNop())
+	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "semgrep"}}
+
+	build := func(cf *ctis.Finding) *vulnerability.Finding {
+		t.Helper()
+		assetID := shared.NewID()
+		fp, base := generateFindingFingerprint(assetID, cf, report.Tool)
+		f, err := p.buildFinding(context.Background(), shared.NewID(), assetID, nil, shared.NewID(), report, cf, fp, base, nil)
+		require.NoError(t, err)
+		return f
+	}
+	base := func() *ctis.Finding {
+		return &ctis.Finding{ID: "f1", Type: ctis.FindingTypeVulnerability, Title: "t", Severity: ctis.SeverityHigh, RuleID: "r1"}
+	}
+
+	// SARIF spellings are normalized to the stored vocabulary.
+	cf := base()
+	cf.Kind = "notApplicable"
+	cf.BaselineState = "Unchanged"
+	cf.Impact = "High"
+	cf.Likelihood = "LOW"
+	f := build(cf)
+	require.Equal(t, "not_applicable", f.Kind())
+	require.Equal(t, "unchanged", f.BaselineState())
+	require.Equal(t, "high", f.Impact())
+	require.Equal(t, "low", f.Likelihood())
+
+	// Values outside the vocabulary are dropped, not stored.
+	cf = base()
+	cf.Kind = "warning"
+	cf.BaselineState = "modified"
+	cf.Impact = "info"
+	cf.Likelihood = "critical"
+	f = build(cf)
+	require.Empty(t, f.Kind())
+	require.Empty(t, f.BaselineState())
+	require.Empty(t, f.Impact())
+	require.Empty(t, f.Likelihood())
+
+	// Compliance result: same rule.
+	cf = base()
+	cf.Type = ctis.FindingTypeCompliance
+	cf.Compliance = &ctis.ComplianceDetails{Framework: "cis", ControlID: "1.1", Result: "notApplicable"}
+	require.Equal(t, "not_applicable", build(cf).ComplianceResult())
+	cf.Compliance.Result = "skipped"
+	require.Empty(t, build(cf).ComplianceResult())
 }

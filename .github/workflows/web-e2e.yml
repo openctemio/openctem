@@ -1,0 +1,205 @@
+name: Web E2E
+
+# Runs the Playwright suite (web/e2e) against a real stack: the production
+# images of the API and the web app, Postgres, Redis and the migrations, from
+# web/e2e/ci/compose.yml, seeded by web/e2e/ci/seed.sh.
+#
+# Not a required check (yet): it reports on its own and does not join the
+# `Web CI OK` aggregate. The `changes` job (.github/scripts/changed.sh) gates
+# the run, so an API-only change does not start the stack unless it touches the
+# API's HTTP layer (api/internal/infra/http/), where the web's contract comes
+# from. The suite needs the API as well, but the API has its own tests; this
+# job is about the web app.
+#
+# When it runs. It is the slowest job (three image builds and a full stack) and
+# not a required check, so it stays out of the merge queue: there it ran once
+# per queued entry and starved the required checks of runners until queue
+# groups timed out (2026-10-11). It runs once per merge batch on develop instead.
+#   develop       on every push (when the web changed)
+#   pull request  only with the `run-e2e` label, or when the suite itself
+#                 (web/e2e/, this workflow) changed
+
+on:
+  pull_request:
+    branches: [main, develop]
+    # labeled: adding `run-e2e` to a pull request starts the suite.
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # The e2e stack pulls the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
+
+jobs:
+  changes:
+    name: Detect web changes
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.f.outputs.web }}
+      suite: ${{ steps.suite.outputs.changed }}
+      http: ${{ steps.http.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: f
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/changed.sh
+      # The API's HTTP layer (handlers, routes, middleware) is where the contract
+      # the web compiles against comes from. Its generated files are not
+      # committed, so a change there no longer shows up as a web change; count
+      # it here so the suite still runs for it.
+      - id: http
+        if: github.event_name != 'push'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          if [ -n "$MG_BASE" ] && [ -n "$MG_HEAD" ]; then
+            git cat-file -e "${MG_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --quiet origin "$MG_BASE" || true
+            range="${MG_BASE}..${MG_HEAD}"
+          else
+            git fetch --no-tags --quiet origin "$BASE_REF"
+            range="origin/${BASE_REF}...HEAD"
+          fi
+          if ! files="$(git diff --name-only "$range")" || grep -q '^api/internal/infra/http/' <<<"$files"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Did a pull request change the suite itself? Then it runs on the PR.
+      - id: suite
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --quiet origin "$BASE_REF"
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qE '^(web/e2e/|\.github/workflows/web-e2e\.yml$)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  e2e:
+    name: Playwright e2e
+    needs: changes
+    if: >-
+      (needs.changes.outputs.web == 'true' || needs.changes.outputs.http == 'true') && (
+        github.event_name != 'pull_request' ||
+        needs.changes.outputs.suite == 'true' ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
+    runs-on: ubuntu-latest
+    # Two image builds (cold cache: about 11 min) plus the suite (3 min): 15
+    # minutes cut off runs whose tests had all passed.
+    timeout-minutes: 25
+    env:
+      API_IMAGE: local/openctem-api:e2e
+      WEB_IMAGE: local/openctem-web:e2e
+      ADMIN_IMAGE: local/admin-cli:e2e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The web image compiles against the generated contract files, which are
+      # not committed (api/docs/development/ci-cd.md).
+      - name: Generate the contract files
+        uses: ./.github/actions/generate-contract
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # The three images build in parallel (web/e2e/ci/docker-bake.hcl) with
+      # the GitHub Actions layer cache: on a web-only change the API and
+      # admin-cli layers come from the cache, so the web build sets the pace.
+      - name: Build images
+        uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
+        with:
+          source: .
+          files: web/e2e/ci/docker-bake.hcl
+
+      # Fresh random passwords and secrets for this run (masked in the log),
+      # written to web/e2e/ci/.env for compose and exported to later steps.
+      - name: Generate the stack's secrets
+        run: bash web/e2e/ci/make-env.sh
+
+      # postgres, redis and migrate come from the CI image mirror
+      # (.github/ci-images.txt); pulled first, with retries on registry limits.
+      - name: Pull the stack's third-party images
+        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis migrate
+
+      - name: Start the stack
+        run: docker compose -f web/e2e/ci/compose.yml up -d --wait --wait-timeout 180
+
+      - name: Seed a tenant
+        run: bash web/e2e/ci/seed.sh > web/e2e/.env
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Playwright version
+        id: pw
+        working-directory: web
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        working-directory: web
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Install Chromium system libraries
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        working-directory: web
+        run: npx playwright install-deps chromium
+
+      - name: Run the suite
+        working-directory: web
+        env:
+          CI: 'true'
+          E2E_BASE_URL: http://localhost:3000
+          E2E_API_BASE_URL: http://localhost:8080
+        run: npm run e2e
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f web/e2e/ci/compose.yml logs --no-color --tail 300 api web > e2e-stack.log 2>&1 || true
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+            e2e-stack.log
+          retention-days: 7

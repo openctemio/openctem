@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -163,7 +164,7 @@ func LoggerWithConfig(log *logger.Logger, cfg LoggerConfig) func(http.Handler) h
 			// Log with appropriate level based on status and duration
 			attrs := []any{
 				"method", r.Method,
-				"path", logger.SanitizeText(r.URL.Path), // decoded: may carry %0A
+				"path", logger.SanitizeText(RedactPath(r.URL.Path)), // decoded: may carry %0A
 				"status", wrapped.statusCode,
 				"duration", duration,
 				"request_id", GetRequestID(r.Context()),
@@ -215,6 +216,7 @@ func RecoveryWithConfig(log *logger.Logger, isProduction bool) func(http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err := recover(); err != nil {
+					metrics.RecordPanic("http")
 					if isProduction {
 						// SECURITY: Don't log stack traces in production
 						log.Error("panic recovered",
@@ -289,10 +291,4 @@ func CORSWithEnvironment(cfg *config.CORSConfig, appEnv string) func(http.Handle
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// CORS adds CORS headers based on configuration.
-// Deprecated: Use CORSWithEnvironment for production-safe CORS handling.
-func CORS(cfg *config.CORSConfig) func(http.Handler) http.Handler {
-	return CORSWithEnvironment(cfg, "")
 }

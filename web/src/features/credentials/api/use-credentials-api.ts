@@ -62,7 +62,7 @@ function buildCredentialsEndpoint(filters?: CredentialApiFilters): string {
   const params = new URLSearchParams()
 
   if (filters.page) params.set('page', String(filters.page))
-  if (filters.page_size) params.set('page_size', String(filters.page_size))
+  if (filters.per_page) params.set('per_page', String(filters.per_page))
   if (filters.search) params.set('search', filters.search)
   if (filters.sort) params.set('sort', filters.sort)
 
@@ -123,11 +123,16 @@ async function fetchCredentialEnums(url: string): Promise<ApiCredentialEnums> {
  * }
  * ```
  */
-export function useCredentialsApi(filters?: CredentialApiFilters, config?: SWRConfiguration) {
+export function useCredentialsApi(
+  filters?: CredentialApiFilters,
+  config?: SWRConfiguration,
+  /** false: the list is not shown (another view is), so it is not fetched. */
+  enabled = true
+) {
   const { currentTenant } = useTenant()
 
   // Ensure user has a tenant before making requests
-  const key = currentTenant ? buildCredentialsEndpoint(filters) : null
+  const key = currentTenant && enabled ? buildCredentialsEndpoint(filters) : null
 
   return useSWR<ApiCredentialListResponse>(key, fetchCredentials, { ...defaultConfig, ...config })
 }
@@ -171,7 +176,9 @@ export function useCredentialEnumsApi(config?: SWRConfiguration) {
  */
 export function useCredentialIdentitiesApi(
   filters?: CredentialApiFilters,
-  config?: SWRConfiguration
+  config?: SWRConfiguration,
+  /** false: the identity view is not shown, so it is not fetched. */
+  enabled = true
 ) {
   const { currentTenant } = useTenant()
 
@@ -181,7 +188,7 @@ export function useCredentialIdentitiesApi(
 
     const params = new URLSearchParams()
     if (filters.page) params.set('page', String(filters.page))
-    if (filters.page_size) params.set('page_size', String(filters.page_size))
+    if (filters.per_page) params.set('per_page', String(filters.per_page))
     if (filters.search) params.set('search', filters.search)
     if (filters.state?.length) params.set('state', filters.state.join(','))
 
@@ -189,7 +196,7 @@ export function useCredentialIdentitiesApi(
     return queryString ? `${baseUrl}?${queryString}` : baseUrl
   }
 
-  const key = currentTenant ? buildUrl() : null
+  const key = currentTenant && enabled ? buildUrl() : null
 
   return useSWR<ApiIdentityListResponse>(key, (url: string) => get<ApiIdentityListResponse>(url), {
     ...defaultConfig,
@@ -226,7 +233,7 @@ export function useRelatedCredentialsApi(credentialId: string | null, config?: S
  */
 export function useIdentityExposuresApi(
   identity: string | null,
-  filters?: { page?: number; page_size?: number },
+  filters?: { page?: number; per_page?: number },
   config?: SWRConfiguration
 ) {
   const { currentTenant } = useTenant()
@@ -241,7 +248,7 @@ export function useIdentityExposuresApi(
 
     const params = new URLSearchParams()
     if (filters.page) params.set('page', String(filters.page))
-    if (filters.page_size) params.set('page_size', String(filters.page_size))
+    if (filters.per_page) params.set('per_page', String(filters.per_page))
 
     const queryString = params.toString()
     return queryString ? `${baseUrl}?${queryString}` : baseUrl

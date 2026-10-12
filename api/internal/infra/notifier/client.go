@@ -4,6 +4,8 @@ package notifier
 import (
 	"context"
 	"fmt"
+
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // Message represents a notification message.
@@ -113,7 +115,16 @@ func NewClientFactory() *ClientFactory {
 }
 
 // CreateClient creates a notification client based on the configuration.
+// Every client it returns cleans each message first (see Message.Cleaned).
 func (f *ClientFactory) CreateClient(config Config) (Client, error) {
+	c, err := newProviderClient(config)
+	if err != nil {
+		return nil, err
+	}
+	return cleaningClient{Client: c}, nil
+}
+
+func newProviderClient(config Config) (Client, error) {
 	switch config.Provider {
 	case ProviderSlack:
 		return NewSlackClient(config)
@@ -130,6 +141,57 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
 	default:
 		return nil, fmt.Errorf("unsupported notification provider: %s", config.Provider)
 	}
+}
+
+// Length caps applied to notification text. Generous: they bound what a
+// hostile scan target can push into a channel, not normal messages.
+const (
+	maxNotificationTitleRunes = 300
+	maxNotificationFieldRunes = 2000
+	maxNotificationBodyRunes  = 20000
+)
+
+// Cleaned returns a copy of m whose text (title, body, fields, footer,
+// attachments) is valid UTF-8 without control, bidi-control or zero-width
+// characters, and capped in length. Titles, bodies and fields often carry
+// finding text a scan target controls; an RLO override in a title would
+// make a chat message display something other than what it says (Trojan
+// Source). Provider-specific escaping (Slack mrkdwn, Telegram markdown,
+// HTML e-mail) still applies on top. See RFC-040 §5.4.
+func (m Message) Cleaned() Message {
+	clean := func(s string, maxRunes int) string {
+		return safetext.Truncate(safetext.Clean(s), maxRunes)
+	}
+	m.Title = clean(m.Title, maxNotificationTitleRunes)
+	m.Body = clean(m.Body, maxNotificationBodyRunes)
+	m.FooterText = clean(m.FooterText, maxNotificationFieldRunes)
+	if m.Fields != nil {
+		fields := make(map[string]string, len(m.Fields))
+		for k, v := range m.Fields {
+			fields[clean(k, maxNotificationTitleRunes)] = clean(v, maxNotificationFieldRunes)
+		}
+		m.Fields = fields
+	}
+	if m.Attachments != nil {
+		atts := make([]Attachment, len(m.Attachments))
+		for i, a := range m.Attachments {
+			a.Title = clean(a.Title, maxNotificationTitleRunes)
+			a.Text = clean(a.Text, maxNotificationBodyRunes)
+			atts[i] = a
+		}
+		m.Attachments = atts
+	}
+	return m
+}
+
+// cleaningClient sends every message through Message.Cleaned.
+type cleaningClient struct {
+	Client
+}
+
+// Send cleans msg and sends it with the wrapped provider client.
+func (c cleaningClient) Send(ctx context.Context, msg Message) (*SendResult, error) {
+	return c.Client.Send(ctx, msg.Cleaned())
 }
 
 // GetSeverityColor returns a hex color for the given severity.

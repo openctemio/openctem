@@ -10,12 +10,33 @@
  * parsed from it on every render and written back with router.replace, so a
  * reload or a shared link restores the exact view (deep-linkable, scoped to the
  * viewer's own tenant). Saved / named views are intentionally deferred to v2.
+ *
+ * One page for every asset type (research/77): `?types=host` (and
+ * `&sub_type=` for a registry alias such as IAM users) switches it to typed
+ * mode, all from the type registry: the type's name in the header, its
+ * columns, attribute facets and yes/no counts, an "Add <type>" form built
+ * from its attributes, row actions, and an empty state that says how to find
+ * the type. Create, edit, delete and CSV export work for every type here.
+ * `?lens=` narrows it to one registry lens (every type of it, aliases
+ * included), picked from the lens pills above the table.
  */
 
 import { AssetsSectionTabs } from '../assets-section-tabs'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Lock, RefreshCw, Search } from 'lucide-react'
+import { Download, Lock, RefreshCw, Search } from 'lucide-react'
+import { toast } from 'sonner'
+import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
+import {
+  inSentence,
+  typeViewOf,
+  viewHasExpiry,
+  type TypeView,
+} from '@/features/asset-types/lib/type-view'
+import { propertyLabel } from '@/features/asset-types/lib/property-schema'
+import { exportInventory } from '../../lib/inventory-export'
+import { useInventoryAssetForms } from './inventory-asset-forms'
+import { InventoryAddButton } from './inventory-add-button'
 import { Main } from '@/components/layout'
 import { PageHeader, EmptyState, FilterPanelToggle, FilterSheet } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -29,12 +50,20 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { useAssets, useAssetStats, type AssetSearchFilters } from '../../hooks/use-assets'
 import type { Asset } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
-import { buildFacetGroups, deactivatePreset, type QuickPreset } from '../../lib/inventory-facets'
+import {
+  buildFacetGroups,
+  deactivatePreset,
+  expiryPresets,
+  type QuickPreset,
+} from '../../lib/inventory-facets'
 import {
   parseInventoryFilters,
+  attributionQuery,
+  ATTRIBUTION_FILTER_VALUES,
   serializeInventoryFilters,
   countActiveFilters,
   isInventoryFilterEmpty,
+  toggleIncludedTag,
   DEFAULT_PAGE_SIZE,
   type InventoryFilters,
 } from '../../lib/inventory-url'
@@ -43,6 +72,7 @@ import { InventoryStatStrip } from './inventory-stat-strip'
 import { InventoryBulkBar } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
+import { InventoryLensBar, inventoryLenses } from './inventory-lens-bar'
 
 const FILTERS_OPEN_KEY = 'openctem:assets-filters-open'
 
@@ -51,11 +81,17 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
   return {
     search: f.search,
     types: f.types,
+    lenses: f.lens ? [f.lens] : undefined,
+    subType: f.subType,
+    minRiskScore: f.minRiskScore,
+    propertiesFilter: f.propertiesFilter,
     criticalities: f.criticalities,
     statuses: f.statuses,
     scopes: f.scopes,
     exposures: f.exposures,
     tags: f.tags,
+    tagsMode: f.tagsMode,
+    excludeTags: f.excludeTags,
     dataClassifications: f.dataClassifications,
     environments: f.environments,
     providers: f.providers,
@@ -64,9 +100,14 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     isControlPlane: f.isControlPlane,
     isInternetAccessible: f.isInternetAccessible,
     isCrownJewel: f.isCrownJewel,
+    programAssets: f.programAssets,
+    freshness: f.freshness,
     hasFindings: f.hasFindings,
     lastSeenBefore: f.lastSeenBefore,
     lastSeenAfter: f.lastSeenAfter,
+    expiresAfter: f.expiresAfter,
+    expiresBefore: f.expiresBefore,
+    attribution: attributionQuery(f),
     sort: f.sort,
     page: f.page ?? 1,
     pageSize: f.pageSize ?? DEFAULT_PAGE_SIZE,
@@ -96,6 +137,19 @@ function useAssetsKeepingPrevious(filters: AssetSearchFilters) {
     /** True only before anything has ever loaded. */
     isFirstLoad: result.isLoading && !settled,
   }
+}
+
+/** How a type's assets get into the inventory, for its empty list. */
+function emptyHint(view: TypeView): string {
+  if (view.type === 'repository') {
+    return 'Connect a source-code integration in Settings to import repositories, or add one.'
+  }
+  if (view.type === 'cloud_account') {
+    return 'Connect a cloud integration in Settings to import accounts, or add one.'
+  }
+  return view.scannable
+    ? `Add one, or run a discovery scan to find ${inSentence(view.plural)}.`
+    : `Add one, or import ${inSentence(view.plural)} from a connected source.`
 }
 
 /** First-load placeholder shaped like the toolbar + table it stands in for. */
@@ -139,6 +193,12 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     },
     [router, pathname]
   )
+  // A tag chip in a row or the detail sheet adds that tag to the filter, or
+  // removes it when it is already there.
+  const toggleTagFilter = useCallback(
+    (tag: string) => setFilters(toggleIncludedTag(filters, tag)),
+    [filters, setFilters]
+  )
 
   // Local search input, debounced into the URL so we don't replace() per keystroke.
   const [searchInput, setSearchInput] = useState(filters.search ?? '')
@@ -147,12 +207,17 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   useEffect(() => {
     setSearchInput(filters.search ?? '')
   }, [filters.search])
-  useEffect(() => {
+  // Only the debounced input triggers a URL write. The other filters are read as
+  // an effect event (latest value, not a dependency): changing one of them must
+  // not push a stale debounced search back into the URL.
+  const commitSearch = useEffectEvent((next: string) => {
     const current = filters.search ?? ''
-    if (debouncedSearch !== current) {
-      setFilters({ ...filters, search: debouncedSearch || undefined, page: 1 })
+    if (next !== current) {
+      setFilters({ ...filters, search: next || undefined, page: 1 })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
+  useEffect(() => {
+    commitSearch(debouncedSearch)
   }, [debouncedSearch])
 
   // Filter panel: closed by default so the table gets the width; the viewer's
@@ -185,6 +250,52 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const { stats, isLoading: statsLoading, mutate: statsMutate } = useAssetStats()
   const { data: buData } = useBusinessUnits()
 
+  // Typed mode: the list is one type (and maybe one sub-type).
+  const { registry } = useAssetTypeRegistry()
+  const typeView = useMemo(
+    () => typeViewOf(registry, filters.types, filters.subType),
+    [registry, filters.types, filters.subType]
+  )
+  const facetKeys = useMemo(() => typeView?.facets.map((f) => f.key) ?? [], [typeView])
+  // The lens's label when the list is one lens (and not one type).
+  const lensLabel = useMemo(
+    () =>
+      !typeView && filters.lens
+        ? inventoryLenses(registry).find((l) => l.id === filters.lens)?.label
+        : undefined,
+    [registry, typeView, filters.lens]
+  )
+  // The type's (or lens's) own counts. Without either this is the same
+  // request as the tenant-wide stats above (SWR shares it).
+  const {
+    stats: typeStats,
+    isLoading: typeStatsLoading,
+    mutate: typeStatsMutate,
+  } = useAssetStats({
+    types: typeView ? [typeView.type] : undefined,
+    lenses: !typeView && filters.lens ? [filters.lens] : undefined,
+    subType: typeView?.subType,
+    countBy: facetKeys.length > 0 ? facetKeys : undefined,
+  })
+  const scopeLabel = typeView?.plural ?? lensLabel
+  const attributeFacets = useMemo(
+    () =>
+      (typeView?.facets ?? []).map((attribute) => ({
+        attribute,
+        label: propertyLabel(attribute.key),
+        counts: typeStats.metadataCounts?.[attribute.key] ?? {},
+      })),
+    [typeView, typeStats]
+  )
+  const boolFacets = useMemo(
+    () =>
+      (typeView?.facets ?? [])
+        .filter((f) => f.kind === 'bool')
+        .slice(0, 3)
+        .map((f) => ({ key: f.key, label: propertyLabel(f.key) })),
+    [typeView]
+  )
+
   const businessUnitLabels = useMemo(() => {
     const map: Record<string, string> = {}
     for (const bu of buData?.data ?? []) map[bu.id] = bu.name
@@ -192,6 +303,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   }, [buData])
 
   const facetGroups = useMemo(() => buildFacetGroups(businessUnitLabels), [businessUnitLabels])
+  // The expiry views, for a list that can hold expiring assets. Built on
+  // every render (two small objects) so their "now" is never stale.
+  const extraPresets = viewHasExpiry(typeView) ? expiryPresets() : []
 
   const togglePreset = useCallback(
     (preset: QuickPreset) => {
@@ -227,10 +341,25 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     clearSelection()
   }, [queryKey, clearSelection])
 
-  const refresh = () => {
+  const refresh = useCallback(() => {
     void mutate()
     void statsMutate()
-  }
+    void typeStatsMutate()
+  }, [mutate, statsMutate, typeStatsMutate])
+
+  const forms = useInventoryAssetForms(registry, refresh)
+  const [exporting, setExporting] = useState(false)
+  const handleExport = useCallback(async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      await exportInventory(searchFilters, typeView)
+    } catch {
+      toast.error('Failed to export assets')
+    } finally {
+      setExporting(false)
+    }
+  }, [exporting, searchFilters, typeView])
 
   if (!canRead) {
     return (
@@ -252,6 +381,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       filters={filters}
       stats={stats}
       onChange={setFilters}
+      attributeFacets={attributeFacets}
+      tagTypes={typeView ? [typeView.type] : undefined}
       activeCount={activeCount}
       onClearAll={clearAll}
     />
@@ -303,15 +434,43 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   return (
     <Main>
-      <PageHeader title="Assets">{viewSwitcher}</PageHeader>
+      <PageHeader title={scopeLabel ?? 'Assets'}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void handleExport()}
+          disabled={exporting}
+        >
+          <Download className="me-2 h-4 w-4" />
+          {exporting ? 'Exporting…' : 'Export'}
+        </Button>
+        {canWrite && (
+          <InventoryAddButton registry={registry} view={typeView} onAdd={forms.openCreate} />
+        )}
+        {viewSwitcher}
+      </PageHeader>
       <AssetsSectionTabs />
 
+      {!typeView && (
+        <InventoryLensBar
+          className="mt-5"
+          registry={registry}
+          value={filters.lens}
+          onChange={(lens) =>
+            // A lens replaces the type picks: a type outside it would match nothing.
+            setFilters({ ...filters, lens, types: undefined, subType: undefined, page: 1 })
+          }
+        />
+      )}
+
       <InventoryStatStrip
-        className="mt-5"
-        stats={stats}
+        className={typeView ? 'mt-5' : 'mt-4'}
+        stats={scopeLabel ? typeStats : stats}
         filters={filters}
-        isLoading={statsLoading}
+        isLoading={scopeLabel ? typeStatsLoading : statsLoading}
         onChange={setFilters}
+        typeLabel={scopeLabel}
+        boolFacets={boolFacets}
       />
 
       <div className="mt-5 flex items-start">
@@ -338,6 +497,21 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         </div>
 
         <div className="min-w-0 flex-1">
+          {!filters.attribution?.length && (
+            <p className="mb-2 text-sm text-muted-foreground" data-slot="attribution-default">
+              Showing assets that are yours. Names awaiting ownership review and names marked as not
+              yours are hidden.{' '}
+              <button
+                type="button"
+                className="font-medium text-foreground underline underline-offset-2"
+                onClick={() =>
+                  setFilters({ ...filters, attribution: [...ATTRIBUTION_FILTER_VALUES], page: 1 })
+                }
+              >
+                Show all
+              </button>
+            </p>
+          )}
           {isError ? (
             <Alert variant="destructive">
               <AlertTitle>Failed to load assets</AlertTitle>
@@ -370,6 +544,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
               onSortChange={(sort) => setFilters({ ...filters, sort, page: 1 })}
               onSelectionChange={setSelectedAssets}
               resetSelectionKey={selectionEpoch}
+              filterTags={filters.tags}
+              onToggleTagFilter={toggleTagFilter}
               toolbarStart={
                 <>
                   {filterButtons}
@@ -378,11 +554,25 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
               }
               toolbarEnd={
                 <>
-                  <InventoryViewsMenu filters={filters} onToggle={togglePreset} />
+                  <InventoryViewsMenu
+                    filters={filters}
+                    onToggle={togglePreset}
+                    extraPresets={extraPresets}
+                  />
                   {refreshButton}
                 </>
               }
               hasFilters={!isInventoryFilterEmpty(filters)}
+              typeView={typeView}
+              onEditAsset={forms.openEdit}
+              onDeleteAsset={forms.openDelete}
+              {...(typeView &&
+              isInventoryFilterEmpty({ ...filters, types: undefined, subType: undefined })
+                ? {
+                    emptyMessage: `No ${inSentence(typeView.plural)} yet`,
+                    emptyDescription: emptyHint(typeView),
+                  }
+                : {})}
             />
           )}
         </div>
@@ -397,6 +587,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           refresh()
         }}
       />
+
+      {forms.dialogs}
 
       <FilterSheet
         open={filterSheetOpen}

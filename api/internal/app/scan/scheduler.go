@@ -2,11 +2,17 @@ package scan
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/internal/metrics"
 
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -176,29 +182,35 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Acquire distributed advisory lock to prevent double-trigger across multiple
-	// API replicas. If another instance is already triggering this scan, skip it.
-	acquired, err := s.scanRepo.TryLockScanForScheduler(ctx, sc.ID)
-	if err != nil {
-		s.logger.Error("failed to acquire scheduler lock", "scan_id", sc.ID.String(), "error", err)
-		return
+	if sc.NextRunAt == nil {
+		return // not due; ListDueForExecution never returns this
 	}
-	if !acquired {
-		s.logger.Debug("scan locked by another scheduler instance, skipping", "scan_id", sc.ID.String())
-		return
-	}
-	defer func() {
-		if unlockErr := s.scanRepo.UnlockScanForScheduler(ctx, sc.ID); unlockErr != nil {
-			s.logger.Error("failed to release scheduler lock", "scan_id", sc.ID.String(), "error", unlockErr)
-		}
-	}()
 
-	// Update next_run_at immediately to prevent re-trigger on the next polling cycle.
-	// (The advisory lock prevents concurrent triggers; this update prevents the same
-	// instance from picking it up again on the next cycle.)
+	// Claim this occurrence: move next_run_at forward only if it still holds
+	// the value we were handed. Exactly one scheduler (on any replica) wins;
+	// the move also keeps the next polling cycle from picking it up again.
+	occurrence := *sc.NextRunAt
 	nextRunAt := sc.CalculateNextRunAt()
-	if err := s.scanRepo.UpdateNextRunAt(ctx, sc.ID, nextRunAt); err != nil {
-		s.logger.Error("failed to update next_run_at", "scan_id", sc.ID.String(), "error", err)
+	claimed, err := s.scanRepo.ClaimScheduledRun(ctx, sc.TenantID, sc.ID, occurrence, nextRunAt)
+	if err != nil {
+		s.logger.Error("failed to claim scheduled run", "scan_id", sc.ID.String(), "error", err)
+		return
+	}
+	if !claimed {
+		s.logger.Debug("scheduled run already claimed (another instance, or the scan changed)", "scan_id", sc.ID.String())
+		return
+	}
+
+	// Misfire grace (RFC-046 §6.1): an occurrence so late that the next one
+	// is also already due (the API was down) is skipped and recorded, not
+	// run late; the claim above already moved next_run_at to the future.
+	if isMisfire(sc, occurrence, time.Now()) {
+		metrics.ScanScheduleOutcomes.WithLabelValues("skipped_misfire").Inc()
+		s.logger.Info("scheduled run skipped: the occurrence was missed by more than one interval",
+			"scan_id", sc.ID.String(), "scheduled_for", occurrence, "next_run_at", nextRunAt)
+		s.scanService.recordScheduledOutcome(ctx, sc,
+			"Scheduled run skipped: its time was missed by more than one interval (the platform was unavailable)", nil)
+		return
 	}
 
 	// Trigger the scan
@@ -209,28 +221,54 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			"triggered_by": "scheduler",
 			"scheduled_at": time.Now().Unix(),
 		},
+		TriggerType:   scanworkflow.TriggerTypeSchedule,
+		SkipIfRunning: true,
+		// The run records the occurrence it serves; a second run for the
+		// same occurrence is refused by UNIQUE(scan_id, scheduled_for).
+		ScheduledFor: &occurrence,
 	})
+	if errors.Is(err, scanrun.ErrOccurrenceAlreadyRun) {
+		// Another scheduler instance already started this occurrence (the
+		// next_run_at claim makes this rare; the unique index makes it
+		// impossible to double-fire). Nothing to record: that run is real.
+		metrics.ScanScheduleOutcomes.WithLabelValues("duplicate_occurrence").Inc()
+		s.logger.Info("scheduled run skipped: this occurrence already has a run",
+			"scan_id", sc.ID.String(), "scheduled_for", occurrence)
+		return
+	}
+	if we := AsWindowDefer(err); we != nil {
+		// No target of the scan may be scanned now (scan windows): the
+		// occurrence is deferred to the next opening, not skipped.
+		s.deferToWindow(ctx, sc, nextRunAt, we)
+		return
+	}
+	if errors.Is(err, ErrScanRunInProgress) {
+		// Overlap policy (D4): skip this occurrence and say so. Not recorded in
+		// last_run_status, which belongs to the run that is still going.
+		metrics.ScanScheduleOutcomes.WithLabelValues("skipped_overlap").Inc()
+		s.logger.Info("scheduled run skipped: the previous run is still active",
+			"scan_id", sc.ID.String(), "scan_name", sc.Name, "next_run_at", nextRunAt)
+		s.scanService.recordScheduledOutcome(ctx, sc, "Scheduled run skipped: the previous run is still active", err)
+		return
+	}
 	if err != nil {
 		s.logger.Error("failed to trigger scan",
 			"scan_id", sc.ID.String(),
 			"scan_name", sc.Name,
 			"error", err,
 		)
-		// Record the failure in the scan's own state. next_run_at was already
-		// advanced above (to avoid re-trigger storms), so without this a scan
-		// that can never start — e.g. NO_SENSOR_AVAILABLE, which recurred silently
-		// for three nights on the demo deployment — looks identical to one that
-		// simply has not run yet: next run scheduled, last run blank. Best-effort;
-		// a failure to record must not mask the original trigger error.
-		if recErr := s.scanRepo.RecordTriggerFailure(ctx, sc.ID, "failed"); recErr != nil {
-			s.logger.Error("failed to record scan trigger failure",
-				"scan_id", sc.ID.String(), "error", recErr)
-		}
+		metrics.ScanScheduleOutcomes.WithLabelValues("failed").Inc()
+		// A refusal (e.g. NO_SENSOR_AVAILABLE) is already a blocked run of the
+		// scan, with its reason, recorded by TriggerScan: the scan shows it
+		// as its last run instead of looking as if it had not run yet.
+		// Also in the audit log, with the reason.
+		s.scanService.recordScheduledOutcome(ctx, sc, "Scheduled run could not start: "+err.Error(), err)
 		return
 	}
 
 	// Record metric
-	metrics.ScansScheduled.WithLabelValues(sc.TenantID.String()).Inc()
+	metrics.ScansScheduled.WithLabelValues().Inc()
+	metrics.ScanScheduleOutcomes.WithLabelValues("triggered").Inc()
 
 	s.logger.Info("scan triggered by scheduler",
 		"scan_id", sc.ID.String(),
@@ -242,4 +280,55 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 func (s *ScanScheduler) isRunning(scanID shared.ID) bool {
 	_, ok := s.runningRuns.Load(scanID)
 	return ok
+}
+
+// isMisfire reports whether occurrence is more than one interval late at now:
+// the schedule's following occurrence (at least MinScheduleInterval later)
+// is due too.
+func isMisfire(sc *scan.Scan, occurrence, now time.Time) bool {
+	// A one-off run has no following occurrence: it misfires once it is
+	// later than OnceMisfireGrace, so it never starts at a time nobody chose.
+	if sc.ScheduleType == scan.ScheduleOnce {
+		return now.Sub(occurrence) > scan.OnceMisfireGrace
+	}
+	following := sc.OccurrenceAfter(occurrence.Add(scan.MinScheduleInterval - time.Second))
+	return following != nil && !following.After(now)
+}
+
+// scheduleDeferrer moves a scheduled scan's next run (postgres.ScanRepository).
+type scheduleDeferrer interface {
+	DeferScheduledRun(ctx context.Context, tenantID, id shared.ID, from *time.Time, until time.Time) (bool, error)
+}
+
+// deferToWindow moves the scan's next run to the next opening of its
+// targets' scan windows (next_run_at was already moved to next by the
+// claim). Several occurrences inside one closed period become one run at the
+// opening; the schedule continues from there.
+func (s *ScanScheduler) deferToWindow(ctx context.Context, sc *scan.Scan, next *time.Time, we *WindowDeferError) {
+	metrics.ScanScheduleOutcomes.WithLabelValues("deferred_window").Inc()
+	d, ok := s.scanRepo.(scheduleDeferrer)
+	if !ok {
+		s.logger.Warn("scheduled run outside its scan windows cannot be deferred", "scan_id", sc.ID.String())
+		return
+	}
+	moved, err := d.DeferScheduledRun(ctx, sc.TenantID, sc.ID, next, we.Until)
+	if err != nil {
+		s.logger.Error("failed to defer a scheduled run to its scan window", "scan_id", sc.ID.String(), "error", err)
+		return
+	}
+	if !moved {
+		return // the scan changed meanwhile (edited, paused or claimed elsewhere)
+	}
+	windows := make([]string, 0, len(we.Blocking))
+	for _, b := range we.Blocking {
+		windows = append(windows, b.Name)
+	}
+	s.logger.Info("scheduled run deferred to its scan window", "scan_id", sc.ID.String(), "until", we.Until)
+	s.scanService.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+		NewSuccessEvent(audit.ActionScanWindowDeferred, audit.ResourceTypeScanConfig, sc.ID.String()).
+			WithResourceName(sc.Name).
+			WithMessage(fmt.Sprintf("Scheduled run deferred to %s: no target may be scanned before then (scan windows)",
+				we.Until.UTC().Format(time.RFC3339))).
+			WithMetadata("windows", windows).
+			WithMetadata("deferred_until", we.Until.UTC().Format(time.RFC3339)))
 }

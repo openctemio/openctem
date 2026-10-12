@@ -245,6 +245,52 @@ func (r *IngestReportRepository) ExpireStale(ctx context.Context, now time.Time)
 	return int(n), nil
 }
 
+// PurgeStaging bounds what reports that will never be applied keep
+// (RFC-026 staging): it empties the segment payloads of expired reports
+// (expired by their window or abandoned by the sensor: nothing reads them
+// again), and deletes, at most batch rows each, the failed and expired
+// reports (their jobs cascade) and the finished jobs without a report last
+// changed before before. Completed reports are kept: coverage and CI
+// coverage read them.
+func (r *IngestReportRepository) PurgeStaging(ctx context.Context, before time.Time, batch int) (ingestreport.StagingPurge, error) {
+	var out ingestreport.StagingPurge
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE ingest_jobs j SET payload = ''::bytea, updated_at = NOW()
+		WHERE j.id IN (
+			SELECT j2.id FROM ingest_jobs j2
+			JOIN ingest_reports ir ON ir.id = j2.ingest_report_id
+			WHERE ir.state = 'expired' AND octet_length(j2.payload) > 0
+			LIMIT $1)`, batch)
+	if err != nil {
+		return out, fmt.Errorf("clear expired report payloads: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	out.PayloadsCleared = int(n)
+
+	res, err = r.db.ExecContext(ctx, `
+		DELETE FROM ingest_reports WHERE id IN (
+			SELECT id FROM ingest_reports
+			WHERE state IN ('failed', 'expired') AND updated_at < $1
+			LIMIT $2)`, before, batch)
+	if err != nil {
+		return out, fmt.Errorf("delete stale ingest reports: %w", err)
+	}
+	n, _ = res.RowsAffected()
+	out.ReportsDeleted = int(n)
+
+	res, err = r.db.ExecContext(ctx, `
+		DELETE FROM ingest_jobs WHERE id IN (
+			SELECT id FROM ingest_jobs
+			WHERE ingest_report_id IS NULL AND status IN ('completed', 'dead') AND updated_at < $1
+			LIMIT $2)`, before, batch)
+	if err != nil {
+		return out, fmt.Errorf("delete finished ingest jobs: %w", err)
+	}
+	n, _ = res.RowsAffected()
+	out.JobsDeleted = int(n)
+	return out, nil
+}
+
 func scanIngestReport(row rowScanner) (*ingestreport.Report, error) {
 	var (
 		rep                ingestreport.Report

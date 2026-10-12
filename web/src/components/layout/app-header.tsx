@@ -66,7 +66,10 @@ export function Header({
     <header
       className={cn(
         'z-50 h-16 transition-shadow duration-200',
-        fixed && 'sticky top-0 w-full flex-shrink-0 backdrop-blur-sm',
+        // Phones: an opaque bar, no backdrop blur. A blur is re-rasterised
+        // whenever anything moves under or over it (a sheet sliding up, its
+        // backdrop fading), which is where phone animations dropped frames.
+        fixed && 'sticky top-0 w-full flex-shrink-0 max-md:bg-background md:backdrop-blur-sm',
         offset > 10 && fixed ? 'shadow-sm' : 'shadow-none',
         className
       )}
@@ -77,7 +80,7 @@ export function Header({
           'relative flex h-full items-center gap-3 px-4 sm:gap-4',
           offset > 10 &&
             fixed &&
-            'after:absolute after:inset-0 after:-z-10 after:bg-background/40 after:backdrop-blur-md'
+            'after:absolute after:inset-0 after:-z-10 after:bg-background/40 md:after:backdrop-blur-md'
         )}
       >
         {showTrigger && (

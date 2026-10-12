@@ -34,14 +34,13 @@ func registerAttachmentRoutes(
 		r.POST("/", h.Upload, middleware.Require(permission.PentestFindingsWrite))
 		// Download — requires read permission (images served inline for markdown)
 		r.GET("/{id}", h.Download, middleware.Require(permission.PentestFindingsRead))
-		// Meta — requires read permission
-		r.GET("/{id}/meta", h.GetMeta, middleware.Require(permission.PentestFindingsRead))
 		// Delete — requires write permission
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.PentestFindingsWrite))
 		// Link orphan attachments to a finding after creation
 		r.POST("/link", h.LinkToContext, middleware.Require(permission.PentestFindingsWrite))
-		// Storage config — admin only
+		// Storage config — admin only. Changing it (where evidence files go,
+		// with which credentials) needs step-up.
 		r.GET("/storage-config", h.GetStorageConfig, middleware.RequireAdmin())
-		r.PATCH("/storage-config", h.UpdateStorageConfig, middleware.RequireAdmin())
+		r.PATCH("/storage-config", h.UpdateStorageConfig, middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 }

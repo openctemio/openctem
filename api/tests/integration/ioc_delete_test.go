@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
@@ -12,6 +11,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/ioc"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -20,7 +20,7 @@ import (
 // returned it. A deleted indicator is now gone for every read; a second
 // delete is not found; re-creating the value brings it back.
 func TestIOCDelete_HiddenFromReads(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := testdb.URL()
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping IOC DB test")
 	}
@@ -29,7 +29,7 @@ func TestIOCDelete_HiddenFromReads(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	if err := db.Ping(); err != nil {
-		t.Skipf("database not available: %v", err)
+		testdb.Skipf(t, "database not available: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()

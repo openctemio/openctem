@@ -100,7 +100,7 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 ### Route Registration with Inline Middleware
 
 ```go
-// internal/infra/http/routes.go
+// internal/infra/http/routes/routes.go
 func RegisterRoutes(router Router, h Handlers, ...) {
     // Health routes (public)
     router.GET("/health", h.Health.Health)

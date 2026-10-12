@@ -24,8 +24,28 @@ const (
 	ActionTenantModulesUpdated         Action = "tenant.modules_updated"
 	ActionTenantRiskScoringUpdated     Action = "tenant.risk_scoring_updated"
 	ActionTenantRiskScoresRecalculated Action = "tenant.risk_scores_recalculated"
-	ActionTenantAssetSourceUpdated     Action = "tenant.asset_source_updated"
+	ActionTenantAssetSourceUpdated     Action = "tenant.asset_source_updated" // asset source precedence (RFC-069)
 	ActionTenantAssetLifecycleUpdated  Action = "tenant.asset_lifecycle_updated"
+	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
+	// settings (RFC-039).
+	ActionTenantRetestUpdated Action = "tenant.retest_updated"
+	// ActionTenantVulnMatchingUpdated records a change to the organization's
+	// vulnerability matching policy (RFC-066).
+	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
+
+	// Idle Free workspaces (docs/architecture/idle-workspaces.md).
+	ActionTenantIdleReminded         Action = "tenant.idle_reminded"
+	ActionTenantIdleReadOnly         Action = "tenant.idle_read_only"
+	ActionTenantIdleFinalWarning     Action = "tenant.idle_final_warning"
+	ActionTenantIdleDeletionDue      Action = "tenant.idle_deletion_due"
+	ActionTenantIdleReactivated      Action = "tenant.idle_reactivated"
+	ActionTenantIdleExemptionChanged Action = "tenant.idle_exemption_changed"
+	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
+	// settings (how long revealable secret values are kept).
+	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
+	// ActionTenantCyclePolicyUpdated records a change to the organization's
+	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
+	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -35,6 +55,77 @@ const (
 	ActionAssetReactivated        Action = "asset.reactivated"
 	ActionAssetLifecycleSnoozed   Action = "asset.lifecycle_snoozed"
 	ActionAssetLifecycleUnsnoozed Action = "asset.lifecycle_unsnoozed"
+	// ActionAssetAttributionDecided: a person set whether an asset is the
+	// organization's (RFC-036 attribution review).
+	ActionAssetAttributionDecided Action = "asset.attribution_decided"
+	// ActionAssetAttributionAutoConfirmed: the platform confirmed discovered
+	// names that a scope target or seed of the organization covers (RFC-054
+	// §4.3). A system decision; one event per run and organization.
+	ActionAssetAttributionAutoConfirmed Action = "asset.attribution_auto_confirmed"
+	// ActionScopeSettingsUpdated: the organization's scope settings changed
+	// (RFC-054 §6.3).
+	ActionScopeSettingsUpdated Action = "scope.settings_updated"
+	// ActionScopeTargetApproved / Rejected: an approver decided a pending
+	// scope entry (RFC-054 §6.1).
+	ActionScopeTargetApproved Action = "scope_target.approved"
+	ActionScopeTargetRejected Action = "scope_target.rejected"
+	// Bug-bounty programs (RFC-065). TermsAccepted is the attestation that
+	// puts a program's entries into effect instead of approvals.
+	ActionBountyProgramImported      Action = "bounty_program.imported"
+	ActionBountyProgramTermsAccepted Action = "bounty_program.terms_accepted"
+	ActionBountyProgramScopeReplaced Action = "bounty_program.scope_replaced"
+	ActionBountyProgramPaused        Action = "bounty_program.paused"
+	ActionBountyProgramResumed       Action = "bounty_program.resumed"
+	ActionBountyProgramEnded         Action = "bounty_program.ended"
+	// ActionBountyProgramSourceSet / Synced: where a program's scope comes
+	// from, and a sync that narrowed it or suspended it (RFC-065 §14).
+	ActionBountyProgramSourceSet Action = "bounty_program.source_set"
+	ActionBountyProgramSynced    Action = "bounty_program.synced"
+	// ActionBountyProgramViewed: someone read a private program (RFC-065 §15.3).
+	ActionBountyProgramViewed Action = "bounty_program.viewed"
+	// ActionBountyProgramSubscribed: an organization follows a public program
+	// (RFC-065 §16).
+	ActionBountyProgramSubscribed Action = "bounty_program.subscribed"
+	// ActionBountyProgramChannelAttached / Detached: a notification
+	// integration receives (or stops receiving) events about a private
+	// program's assets; ActionBountyProgramOrgChannelsChanged: an owner let
+	// them reach every organization-wide integration, or stopped it, with a
+	// reason (RFC-065 §15.4).
+	ActionBountyProgramChannelAttached    Action = "bounty_program.channel_attached"
+	ActionBountyProgramChannelDetached    Action = "bounty_program.channel_detached"
+	ActionBountyProgramOrgChannelsChanged Action = "bounty_program.org_channels_changed"
+	// Authorization letters (RFC-065 §13).
+	ActionScopeLetterUploaded Action = "scope_letter.uploaded"
+	ActionScopeLetterRevoked  Action = "scope_letter.revoked"
+	// ActionScopeTargetSelfApproved: an owner approved their own pending
+	// scope entry because no other approver existed, with a fresh
+	// authenticator code and a reason (RFC-054 §7). High severity.
+	ActionScopeTargetSelfApproved Action = "scope_target.self_approved"
+	// ActionScopeTargetApproversReminded: someone reminded the approvers of
+	// a pending scope entry.
+	ActionScopeTargetApproversReminded Action = "scope_target.approvers_reminded"
+	// ActionScopeTargetAttested: someone confirmed that a t2 entry keeps
+	// intrusive probes; ActionScopeTargetAttestationRequested: the system
+	// asked for it; ActionScopeTargetT2Downgraded: nobody confirmed in time
+	// and the system set the entry to t1 (RFC-054 §12.5).
+	ActionScopeTargetAttested             Action = "scope_target.attested"
+	ActionScopeTargetAttestationRequested Action = "scope_target.attestation_requested"
+	ActionScopeTargetT2Downgraded         Action = "scope_target.t2_downgraded"
+	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
+	// existing repository asset and attached its SCM data to it. POST
+	// /assets no longer merges (a duplicate is a 409); older rows from it
+	// keep this action. Metadata lists the changed field names.
+	ActionAssetCreateMerged Action = "asset.create_merged"
+
+	// Human changes to assets (API/UI). Metadata carries the names of the
+	// changed fields, counts and ids, never field values.
+	ActionAssetCreated           Action = "asset.created"
+	ActionAssetUpdated           Action = "asset.updated"
+	ActionAssetDeleted           Action = "asset.deleted"
+	ActionAssetStatusChanged     Action = "asset.status_changed"
+	ActionAssetBulkStatusChanged Action = "asset.bulk_status_changed"
+	ActionAssetCrownJewelChanged Action = "asset.crown_jewel_changed"
+	ActionAssetImported          Action = "asset.imported"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -42,6 +133,15 @@ const (
 	ActionMemberRoleChanged Action = "member.role_changed"
 	ActionMemberSuspended   Action = "member.suspended"
 	ActionMemberReactivated Action = "member.reactivated"
+	// ActionMemberOffboarded: access stripped, owned work reassigned, the
+	// membership kept as a tombstone (member lifecycle, RFC-050).
+	ActionMemberOffboarded Action = "member.offboarded"
+	// ActionMemberDataErased: an offboarded person's name and email were
+	// anonymised (owner only).
+	ActionMemberDataErased Action = "member.data_erased"
+	// ActionMemberAccessChanged: the end date of an external member's access
+	// was changed (RFC-058).
+	ActionMemberAccessChanged Action = "member.access_changed"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -81,9 +181,23 @@ const (
 	// ActionFindingEvidenceDeleted records the removal of a manually-attached
 	// evidence note from a generic (non-pentest) finding.
 	ActionFindingEvidenceDeleted Action = "finding.evidence_deleted"
+	// ActionFindingEvidenceRevealed records a reveal of masked secret values
+	// in a finding's evidence: the item, the placeholders and the purpose
+	// (view, copy, copy_curl). Never the values.
+	ActionFindingEvidenceRevealed Action = "finding.evidence_revealed"
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
+	// ActionFindingRetestRequested records a user pressing "Retest now" on a
+	// finding (RFC-039): who, which finding, which template against which target.
+	ActionFindingRetestRequested Action = "finding.retest_requested"
+	// ActionFindingCommentReactionRemoved records an administrator removing
+	// another member's reaction from a finding comment (moderation). A
+	// person adding or removing their own reaction is not audited.
+	ActionFindingCommentReactionRemoved Action = "finding.comment_reaction_removed"
+	// ActionFindingDuplicateMarked records a user folding a finding into the
+	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
+	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -94,6 +208,11 @@ const (
 
 	// SLA Policy actions
 	ActionSLAPolicyCreated Action = "sla_policy.created"
+
+	// Saved list views (D15).
+	ActionSavedViewCreated Action = "saved_view.created"
+	ActionSavedViewUpdated Action = "saved_view.updated"
+	ActionSavedViewDeleted Action = "saved_view.deleted"
 	ActionSLAPolicyUpdated Action = "sla_policy.updated"
 	ActionSLAPolicyDeleted Action = "sla_policy.deleted"
 
@@ -113,11 +232,16 @@ const (
 	// Account security actions (the user acting on their own account).
 	ActionAuthMFAEnabled                  Action = "auth.mfa_enabled"
 	ActionAuthMFADisabled                 Action = "auth.mfa_disabled"
+	ActionAuthMFAReset                    Action = "auth.mfa_reset"
 	ActionAuthMFAFailed                   Action = "auth.mfa_failed"
 	ActionAuthMFARecoveryCodeUsed         Action = "auth.mfa_recovery_code_used"
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
+	// Step-up re-authentication: the signed-in user proved their identity
+	// again (TOTP or password) before a sensitive action, or failed to.
+	ActionAuthStepUp       Action = "auth.step_up"
+	ActionAuthStepUpFailed Action = "auth.step_up_failed"
 
 	// Settings actions
 	ActionSettingsUpdated Action = "settings.updated"
@@ -137,18 +261,84 @@ const (
 	ActionSensorConnected      Action = "sensor.connected"
 	ActionSensorDisconnected   Action = "sensor.disconnected"
 	// ActionSensorKeyRenewed records a sensor rotating its OWN credential via
-	// POST /agent/renew (self-service, kubelet-style), as opposed to the admin
+	// POST /agent/renew (self-service), as opposed to the admin
 	// hard rotation recorded by ActionSensorKeyRegenerated.
 	ActionSensorKeyRenewed Action = "sensor.key_renewed"
+	// ActionSensorKeyRenewalRefused records a renewal refused because the key
+	// it authenticated with was revoked, expired or regenerated (or the
+	// sensor disabled) before it could rotate. A security signal: the old
+	// key is still in use after an administrator killed it.
+	ActionSensorKeyRenewalRefused Action = "sensor.key_renewal_refused"
 	// ActionSensorIdentityCloned records the platform seeing two live sensor
 	// processes use the same key (RFC-032 Phase 0 clone detection).
 	ActionSensorIdentityCloned Action = "sensor.identity_cloned"
+	// ActionSensorJobRefusedByLocalPolicy records a sensor refusing a job
+	// because the local policy its network owner installed forbids it
+	// (RFC-040 §5.7, detection A11): the platform asked for something the
+	// owner does not allow.
+	ActionSensorJobRefusedByLocalPolicy Action = "sensor.job_refused_local_policy"
+	// ActionSensorOptInChanged records an organization turning its
+	// interactsh or custom-template switch for sensor jobs on (critical,
+	// alerted) or off (research/25 D3, D9).
+	ActionSensorOptInChanged Action = "sensor.opt_in_changed"
 	// ActionSensorContentRefreshRequested records an administrator asking a
 	// sensor (or the fleet) to refresh its scanner content (RFC-031).
 	ActionSensorContentRefreshRequested Action = "sensor.content_refresh_requested"
 	// ActionSensorContentPolicyUpdated records a change of the tenant's
 	// scanner content policy (RFC-031).
 	ActionSensorContentPolicyUpdated Action = "sensor.content_policy_updated"
+	// ActionSensorCommandsReleased records the platform taking back the
+	// commands a sensor held when it was revoked or disabled (RFC-040 §5.2):
+	// which were re-queued for another sensor and which were failed.
+	ActionSensorCommandsReleased Action = "sensor.commands_released"
+
+	// ActionIntegrationSyncRequested records a connector sync queued for an
+	// integration's sensor (RFC-047), by a person or by the schedule.
+	ActionIntegrationSyncRequested Action = "integration.sync_requested"
+
+	// Sensor results without a command (RFC-040 §5.3).
+	// ActionSensorResultsQuarantined records an unsolicited report held for
+	// review instead of applied.
+	ActionSensorResultsQuarantined Action = "sensor.results_quarantined"
+	// ActionSensorResultsAccepted records a person accepting a quarantined
+	// report (it is then applied).
+	ActionSensorResultsAccepted Action = "sensor.results_accepted"
+	// ActionSensorResultsDiscarded records a person discarding one.
+	ActionSensorResultsDiscarded Action = "sensor.results_discarded"
+	// ActionSensorResultPolicyUpdated records a change of the tenant's
+	// policy for unsolicited sensor results.
+	ActionSensorResultPolicyUpdated Action = "sensor.result_policy_updated"
+
+	// Pairing and key-bound identity (RFC-052). Expected: an administrator
+	// created a reverse-mode code. Approved: a key was bound to the
+	// organization (high; administrators notified). Denied: a request was
+	// refused. Completed: the sensor confirmed its identity. Repaired: an
+	// existing sensor's keys were replaced by a pairing (high). KeyRevoked:
+	// one key of a key-bound sensor was revoked. IdentityPolicyChanged: the
+	// organization allowed or stopped bearer-key sensors.
+	ActionSensorPairingExpected  Action = "sensor.pairing_expected"
+	ActionSensorPairingApproved  Action = "sensor.pairing_approved"
+	ActionSensorPairingDenied    Action = "sensor.pairing_denied"
+	ActionSensorPairingCompleted Action = "sensor.pairing_completed"
+	ActionSensorRepaired         Action = "sensor.repaired"
+	ActionSensorKeyRevoked       Action = "sensor.key_revoked"
+	// ActionSensorKeyBound: a bearer-key sensor bound its own signing key
+	// (its API keys retired, one way); ActionSensorKeyBindRefused: such a
+	// bind was refused (policy, proof, state).
+	ActionSensorKeyBound          Action = "sensor.key_bound"
+	ActionSensorKeyBindRefused    Action = "sensor.key_bind_refused"
+	ActionSensorIdentityPolicySet Action = "sensor.identity_policy_changed"
+
+	// Per-sensor grants (RFC-052 §5). GrantChanged: an administrator changed
+	// a sensor's grant or trust level (high when it widened; the diff names
+	// every dimension). ClaimRefusedGrant: a sensor tried to claim a job its
+	// grant does not cover. CredentialRefused: the job carried credentials
+	// the sensor may not receive. PushRefusedGrant: a sensor sent results
+	// without a job and its grant does not allow push ingest.
+	ActionSensorGrantChanged      Action = "sensor.grant_changed"
+	ActionSensorClaimRefusedGrant Action = "sensor.claim_refused_grant"
+	ActionSensorCredentialRefused Action = "sensor.credential_refused"
+	ActionSensorPushRefusedGrant  Action = "sensor.push_refused_grant"
 
 	// Scan zone actions (RFC-023): every change to a zone or to which sensors
 	// serve it.
@@ -189,6 +379,23 @@ const (
 	ActionSSOVerifiedDomainAdded     Action = "sso.verified_domain_added"
 	ActionSSOVerifiedDomainVerified  Action = "sso.verified_domain_verified"
 	ActionSSOVerifiedDomainDeleted   Action = "sso.verified_domain_deleted"
+	// ActionSSOVerifiedDomainJITChanged: a domain's just-in-time provisioning
+	// (on/off, role) changed (RFC-058).
+	ActionSSOVerifiedDomainJITChanged Action = "sso.verified_domain_jit_changed"
+	// A platform administrator's SAML / identity-provider change waits for an
+	// owner of the organization, who approves (applies) or rejects it.
+	ActionSSOChangeRequested Action = "sso.change_requested"
+	ActionSSOChangeApproved  Action = "sso.change_approved"
+	ActionSSOChangeRejected  Action = "sso.change_rejected"
+	// Trusted organizations (RFC-058): recorded in both organizations' logs.
+	ActionSSOTrustRequested Action = "sso.trust_requested"
+	ActionSSOTrustAccepted  Action = "sso.trust_accepted"
+	ActionSSOTrustUpdated   Action = "sso.trust_updated"
+	ActionSSOTrustRevoked   Action = "sso.trust_revoked"
+	// ActionSCIMGroupMappingsUpdated: the SCIM group -> role mappings were
+	// replaced. Changes carry the before/after mapping of every group that
+	// changed; mapping a group to or from admin is owner-only.
+	ActionSCIMGroupMappingsUpdated Action = "scim.group_mappings_updated"
 
 	// Group actions
 	ActionGroupCreated Action = "group.created"
@@ -205,13 +412,64 @@ const (
 	ActionToolUpdated         Action = "tool.updated"
 	ActionToolDeleted         Action = "tool.deleted"
 	ActionToolCapabilitiesSet Action = "tool.capabilities_set"
+	ActionToolActivated       Action = "tool.activated"
+	ActionToolDeactivated     Action = "tool.deactivated"
+	// A tenant's configuration of a tool (enabled flag and settings).
+	ActionToolConfigUpdated Action = "tool.config_updated"
+	ActionToolConfigDeleted Action = "tool.config_deleted"
+
+	// Scope actions: what may be scanned (targets) and what must not be
+	// (exclusions). Every change is audited with before/after (RFC-040
+	// §5.11); a change that widens what is scanned is high severity.
+	ActionScopeTargetCreated        Action = "scope_target.created"
+	ActionScopeTargetUpdated        Action = "scope_target.updated"
+	ActionScopeTargetDeleted        Action = "scope_target.deleted"
+	ActionScopeTargetActivated      Action = "scope_target.activated"
+	ActionScopeTargetDeactivated    Action = "scope_target.deactivated"
+	ActionScopeExclusionCreated     Action = "scope_exclusion.created"
+	ActionScopeExclusionUpdated     Action = "scope_exclusion.updated"
+	ActionScopeExclusionDeleted     Action = "scope_exclusion.deleted"
+	ActionScopeExclusionActivated   Action = "scope_exclusion.activated"
+	ActionScopeExclusionDeactivated Action = "scope_exclusion.deactivated"
+	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
+	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
+
+	// Suppression rule approvals. A self-approval (the owner approving their
+	// own rule because nobody else can, owner decision B16) is Critical.
+	ActionSuppressionRuleApproved     Action = "suppression_rule.approved"
+	ActionSuppressionRuleSelfApproved Action = "suppression_rule.self_approved"
+
+	// Report schedule actions: a schedule mails organization posture to its
+	// recipients (members or the allowed domains, D12).
+	ActionReportScheduleCreated   Action = "report_schedule.created"
+	ActionReportScheduleActivated Action = "report_schedule.activated"
+	ActionReportScheduleDeleted   Action = "report_schedule.deleted"
+	// EASM seeds (RFC-036 §6.3): what discovery expands from.
+	ActionEASMSeedCreated Action = "easm_seed.created"
+	ActionEASMSeedUpdated Action = "easm_seed.updated"
+	ActionEASMSeedDeleted Action = "easm_seed.deleted"
+
+	// Scanner template actions: custom templates are code a sensor runs.
+	ActionScannerTemplateCreated    Action = "scanner_template.created"
+	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
+	ActionScannerTemplateDeprecated Action = "scanner_template.deprecated"
+	ActionScannerTemplateDeleted    Action = "scanner_template.deleted"
+	// ActionScannerTemplateApproved: a person approved a template version
+	// for sensors (RFC-040 §11.5).
+	ActionScannerTemplateApproved Action = "scanner_template.approved"
 
 	// Asset Ownership actions
 	ActionAssetAssigned         Action = "asset.assigned"
 	ActionAssetUnassigned       Action = "asset.unassigned"
 	ActionAssetOwnershipUpdated Action = "asset.ownership_updated"
 
+	// Explicit per-user data-scope grants on an asset (asset_access_grants).
+	ActionAssetAccessGranted Action = "asset.access_granted"
+	ActionAssetAccessRevoked Action = "asset.access_revoked"
+
 	// Permission Set actions
+	// Permission sets were removed (permissions come only from roles). The
+	// actions stay so historical audit rows still render.
 	ActionPermissionSetCreated    Action = "permission_set.created"
 	ActionPermissionSetUpdated    Action = "permission_set.updated"
 	ActionPermissionSetDeleted    Action = "permission_set.deleted"
@@ -230,19 +488,20 @@ const (
 	ActionRoleUnassigned   Action = "role.unassigned"
 	ActionUserRolesUpdated Action = "user.roles_updated"
 
-	// Pipeline actions
-	ActionPipelineTemplateCreated     Action = "pipeline_template.created"
-	ActionPipelineTemplateUpdated     Action = "pipeline_template.updated"
-	ActionPipelineTemplateDeleted     Action = "pipeline_template.deleted"
-	ActionPipelineTemplateActivated   Action = "pipeline_template.activated"
-	ActionPipelineTemplateDeactivated Action = "pipeline_template.deactivated"
-	ActionPipelineStepCreated         Action = "pipeline_step.created"
-	ActionPipelineStepUpdated         Action = "pipeline_step.updated"
-	ActionPipelineStepDeleted         Action = "pipeline_step.deleted"
-	ActionPipelineRunTriggered        Action = "pipeline_run.triggered"
-	ActionPipelineRunCompleted        Action = "pipeline_run.completed"
-	ActionPipelineRunFailed           Action = "pipeline_run.failed"
-	ActionPipelineRunCanceled         Action = "pipeline_run.canceled"
+	// Scan workflow actions
+	ActionScanWorkflowCreated     Action = "scan_workflow.created"
+	ActionScanWorkflowUpdated     Action = "scan_workflow.updated"
+	ActionScanWorkflowDeleted     Action = "scan_workflow.deleted"
+	ActionScanWorkflowActivated   Action = "scan_workflow.activated"
+	ActionScanWorkflowDeactivated Action = "scan_workflow.deactivated"
+	ActionScanWorkflowStepCreated Action = "scan_workflow_step.created"
+	ActionScanWorkflowStepUpdated Action = "scan_workflow_step.updated"
+	ActionScanWorkflowStepDeleted Action = "scan_workflow_step.deleted"
+	ActionScanRunTriggered        Action = "scan_run.triggered"
+	ActionScanRunCompleted        Action = "scan_run.completed"
+	ActionScanRunPartial          Action = "scan_run.partial"
+	ActionScanRunFailed           Action = "scan_run.failed"
+	ActionScanRunCanceled         Action = "scan_run.canceled"
 
 	// Pentest campaign team actions
 	ActionCampaignMemberAdded       Action = "campaign.member_added"
@@ -252,6 +511,24 @@ const (
 	ActionCampaignUpdated           Action = "campaign.updated"
 	ActionCampaignStatusChanged     Action = "campaign.status_changed"
 	ActionCampaignDeleted           Action = "campaign.deleted"
+	// Completion sign-off: a member signed off or withdrew, or the lead or an
+	// admin changed how many sign-offs completion needs.
+	ActionCampaignSignedOff               Action = "campaign.signed_off"
+	ActionCampaignSignoffWithdrawn        Action = "campaign.signoff_withdrawn"
+	ActionCampaignCompletionPolicyChanged Action = "campaign.completion_policy_changed"
+	// Test credentials vault and ticket links.
+	ActionCampaignSecretCreated  Action = "campaign.secret_created"
+	ActionCampaignSecretRevealed Action = "campaign.secret_revealed"
+	ActionCampaignSecretDeleted  Action = "campaign.secret_deleted"
+	ActionCampaignLinksChanged   Action = "campaign.links_changed"
+	ActionCampaignTicketsCreated Action = "campaign.tickets_created"
+
+	// Remediation campaign actions (Mobilization). Distinct from the pentest
+	// campaign.* actions above: a different resource with its own lifecycle.
+	ActionRemediationCampaignCreated       Action = "remediation_campaign.created"
+	ActionRemediationCampaignUpdated       Action = "remediation_campaign.updated"
+	ActionRemediationCampaignStatusChanged Action = "remediation_campaign.status_changed"
+	ActionRemediationCampaignDeleted       Action = "remediation_campaign.deleted"
 
 	// Scan config actions
 	ActionScanConfigCreated   Action = "scan_config.created"
@@ -263,6 +540,20 @@ const (
 	ActionScanConfigDisabled  Action = "scan_config.disabled"
 	ActionScanConfigExported  Action = "scan_config.exported"
 	ActionScanConfigImported  Action = "scan_config.imported"
+
+	// Scan profile actions
+	ActionScanProfileCreated            Action = "scan_profile.created"
+	ActionScanProfileUpdated            Action = "scan_profile.updated"
+	ActionScanProfileDeleted            Action = "scan_profile.deleted"
+	ActionScanProfileDefaultSet         Action = "scan_profile.default_set"
+	ActionScanProfileCloned             Action = "scan_profile.cloned"
+	ActionScanProfileQualityGateUpdated Action = "scan_profile.quality_gate_updated"
+
+	// Sensor command actions (made by a user through the API; the sensor's own
+	// poll/ack/complete traffic is not audited here)
+	ActionCommandCreated  Action = "command.created"
+	ActionCommandCanceled Action = "command.canceled"
+	ActionCommandDeleted  Action = "command.deleted"
 
 	// Security events
 	ActionSecurityValidationFailed  Action = "security.validation_failed"
@@ -292,6 +583,20 @@ const (
 	ActionIngestCompleted      Action = "ingest.completed"
 	ActionIngestFailed         Action = "ingest.failed"
 	ActionIngestPartialSuccess Action = "ingest.partial_success"
+	// Coverage-scoped auto-resolve of non-repository findings: what a dry
+	// run (or a run held by the blinding guard) would have closed, and what
+	// an enforcing run closed.
+	ActionIngestCoverageAutoResolveDryRun Action = "ingest.coverage_auto_resolve_dry_run"
+	ActionIngestCoverageAutoResolved      Action = "ingest.coverage_auto_resolved"
+	// Source-asserted resolve (RFC-047): what a dry run would have closed
+	// because the source (Tenable.sc) reported it mitigated, and what an
+	// enforcing run closed.
+	ActionIngestSourceResolveDryRun Action = "ingest.source_resolve_dry_run"
+	ActionIngestSourceResolved      Action = "ingest.source_resolved"
+	// VEX not_affected statements (CTIS 1.4): what a dry run would have
+	// closed, and what an enforcing run closed.
+	ActionIngestVEXDryRun  Action = "ingest.vex_dry_run"
+	ActionIngestVEXApplied Action = "ingest.vex_applied"
 
 	// AI Triage actions
 	ActionAITriageRequested       Action = "ai_triage.requested"
@@ -331,11 +636,26 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
+		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
-		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
+		ActionAssetAttributionAutoConfirmed, ActionScopeSettingsUpdated,
+		ActionScopeTargetApproved, ActionScopeTargetRejected,
+		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
+		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
+		ActionBountyProgramSourceSet, ActionBountyProgramSynced, ActionBountyProgramViewed, ActionBountyProgramSubscribed,
+		ActionBountyProgramChannelAttached, ActionBountyProgramChannelDetached, ActionBountyProgramOrgChannelsChanged,
+		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
+		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
+		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
+		ActionAssetCreateMerged,
+		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
-		ActionMemberSuspended, ActionMemberReactivated,
+		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
+		ActionMemberAccessChanged,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -343,18 +663,28 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
+		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
+		ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
-		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp, ActionAuthStepUpFailed,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorIdentityCloned,
-		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
+		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
+		ActionSensorResultPolicyUpdated,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
+		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
+		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
+		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -365,21 +695,40 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
+		ActionSCIMGroupMappingsUpdated,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
+		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
+		ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
+		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
+		ActionAssetAccessGranted, ActionAssetAccessRevoked,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
 		ActionPermissionSetAssigned, ActionPermissionSetUnassigned,
 		ActionPermissionGranted, ActionPermissionRevoked,
 		ActionRoleCreated, ActionRoleUpdated, ActionRoleDeleted,
 		ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
-		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineTemplateDeleted,
-		ActionPipelineTemplateActivated, ActionPipelineTemplateDeactivated,
-		ActionPipelineStepCreated, ActionPipelineStepUpdated, ActionPipelineStepDeleted,
-		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
+		ActionScanWorkflowCreated, ActionScanWorkflowUpdated, ActionScanWorkflowDeleted,
+		ActionScanWorkflowActivated, ActionScanWorkflowDeactivated,
+		ActionScanWorkflowStepCreated, ActionScanWorkflowStepUpdated, ActionScanWorkflowStepDeleted,
+		ActionScanRunTriggered, ActionScanRunCompleted, ActionScanRunPartial, ActionScanRunFailed, ActionScanRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
 		ActionScanConfigExported, ActionScanConfigImported,
+		ActionScanProfileCreated, ActionScanProfileUpdated, ActionScanProfileDeleted,
+		ActionScanProfileDefaultSet, ActionScanProfileCloned, ActionScanProfileQualityGateUpdated,
+		ActionCommandCreated, ActionCommandCanceled, ActionCommandDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionWorkflowCreated, ActionWorkflowUpdated, ActionWorkflowDeleted,
 		ActionWorkflowActivated, ActionWorkflowDeactivated,
@@ -387,16 +736,24 @@ func (a Action) IsValid() bool {
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
+		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
+		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved,
+		ActionIngestVEXDryRun, ActionIngestVEXApplied,
 		ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
+		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
+		ActionCampaignLinksChanged, ActionCampaignTicketsCreated,
+		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
 		ActionAuditChainRebaselined:
 		return true
 	}
-	return false
+	return isConfigAction(a) || isRegisteredAction(a)
 }
 
 // Category returns the category of the action (e.g., "user", "tenant").
@@ -410,7 +767,8 @@ func (a Action) Category() string {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
 	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
-		ActionMemberSuspended, ActionMemberReactivated:
+		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
+		ActionMemberAccessChanged:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"
@@ -424,15 +782,19 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded:
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
+	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
+		return "saved_view"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
 	case ActionScanStarted, ActionScanCompleted, ActionScanFailed:
 		return "scan"
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
-		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
-		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged:
+		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp, ActionAuthStepUpFailed:
 		return "security"
 	case ActionSettingsUpdated:
 		return "settings"
@@ -441,38 +803,78 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorIdentityCloned,
-		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated:
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
+		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
+		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
+		ActionSensorResultPolicyUpdated,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
+		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
+		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
+	case ActionIntegrationSyncRequested:
+		return "integration"
 	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
 		return "api_key"
 	case ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted:
 		return "capability"
-	case ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet:
+	case ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
+		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted:
 		return "tool"
+	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
+		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
+		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
+		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
+		return "scope"
+	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved:
+		return "suppression"
+	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
+		return "report_schedule"
+	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved:
+		return "scanner_template"
 	case ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted:
 		return "rule"
-	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess:
+	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
+		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
+		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved,
+		ActionIngestVEXDryRun, ActionIngestVEXApplied:
 		return "ingest"
 	case ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted:
 		return "ai_triage"
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
-		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
+		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
+		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
+		ActionCampaignLinksChanged, ActionCampaignTicketsCreated:
 		return "pentest_campaign"
+	case ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted:
+		return "remediation_campaign"
 	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
 	case ActionAuditChainRebaselined:
 		return "audit"
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
-		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted:
+		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
+		ActionSCIMGroupMappingsUpdated:
 		return "sso"
+	}
+	if c, ok := registeredCategory(a); ok {
+		return c
 	}
 	return "unknown"
 }
@@ -481,50 +883,77 @@ func (a Action) Category() string {
 type ResourceType string
 
 const (
-	ResourceTypeUser             ResourceType = "user"
-	ResourceTypeTenant           ResourceType = "tenant"
-	ResourceTypeMembership       ResourceType = "membership"
-	ResourceTypeInvitation       ResourceType = "invitation"
-	ResourceTypeRepository       ResourceType = "repository"
-	ResourceTypeBranch           ResourceType = "branch"
-	ResourceTypeComponent        ResourceType = "component"
-	ResourceTypeCredential       ResourceType = "credential"
-	ResourceTypeVulnerability    ResourceType = "vulnerability"
-	ResourceTypeFinding          ResourceType = "finding"
-	ResourceTypeFindingComment   ResourceType = "finding_comment"
-	ResourceTypeSLAPolicy        ResourceType = "sla_policy"
-	ResourceTypeScan             ResourceType = "scan"
-	ResourceTypeAsset            ResourceType = "asset"
-	ResourceTypeSettings         ResourceType = "settings"
-	ResourceTypeToken            ResourceType = "token"
-	ResourceTypeSensor           ResourceType = "sensor"
-	ResourceTypeScanZone         ResourceType = "scan_zone"
-	ResourceTypeGroup            ResourceType = "group"
-	ResourceTypePermissionSet    ResourceType = "permission_set"
-	ResourceTypeRole             ResourceType = "role"
-	ResourceTypePipelineTemplate ResourceType = "pipeline_template"
-	ResourceTypeCampaign         ResourceType = "pentest_campaign"
-	ResourceTypePipelineStep     ResourceType = "pipeline_step"
-	ResourceTypePipelineRun      ResourceType = "pipeline_run"
-	ResourceTypeScanConfig       ResourceType = "scan_config"
-	ResourceTypeWorkflow         ResourceType = "workflow"
-	ResourceTypeWorkflowRun      ResourceType = "workflow_run"
-	ResourceTypeCapability       ResourceType = "capability"
-	ResourceTypeTool             ResourceType = "tool"
-	ResourceTypeRuleSource       ResourceType = "rule_source"
-	ResourceTypeRuleOverride     ResourceType = "rule_override"
-	ResourceTypeIngest           ResourceType = "ingest"
-	ResourceTypeAITriage         ResourceType = "ai_triage"
-	ResourceTypeMCPTool          ResourceType = "mcp_tool"
-	ResourceTypeMCPPrompt        ResourceType = "mcp_prompt"
-	ResourceTypeAPIKey           ResourceType = "api_key"
-	ResourceTypeSAMLConfig       ResourceType = "saml_config"
-	ResourceTypeIdentityProvider ResourceType = "identity_provider"
-	ResourceTypeVerifiedDomain   ResourceType = "verified_domain"
+	ResourceTypeUser       ResourceType = "user"
+	ResourceTypeTenant     ResourceType = "tenant"
+	ResourceTypeMembership ResourceType = "membership"
+	// ResourceTypeOrgTrust is a trust between two organizations (RFC-058).
+	ResourceTypeOrgTrust       ResourceType = "organization_trust"
+	ResourceTypeInvitation     ResourceType = "invitation"
+	ResourceTypeRepository     ResourceType = "repository"
+	ResourceTypeBranch         ResourceType = "branch"
+	ResourceTypeComponent      ResourceType = "component"
+	ResourceTypeCredential     ResourceType = "credential"
+	ResourceTypeVulnerability  ResourceType = "vulnerability"
+	ResourceTypeFinding        ResourceType = "finding"
+	ResourceTypeFindingComment ResourceType = "finding_comment"
+	ResourceTypeSLAPolicy      ResourceType = "sla_policy"
+	ResourceTypeSavedView      ResourceType = "saved_view"
+	ResourceTypeScan           ResourceType = "scan"
+	ResourceTypeAsset          ResourceType = "asset"
+	ResourceTypeSettings       ResourceType = "settings"
+	ResourceTypeToken          ResourceType = "token"
+	ResourceTypeSensor         ResourceType = "sensor"
+	ResourceTypeScanZone       ResourceType = "scan_zone"
+	ResourceTypeGroup          ResourceType = "group"
+	ResourceTypePermissionSet  ResourceType = "permission_set"
+	ResourceTypeRole           ResourceType = "role"
+	ResourceTypeScanWorkflow   ResourceType = "scan_workflow"
+	ResourceTypeCampaign       ResourceType = "pentest_campaign"
+	// ResourceTypeRemediationCampaign is a Mobilization remediation campaign
+	// (table remediation_campaigns), not a pentest campaign.
+	ResourceTypeRemediationCampaign ResourceType = "remediation_campaign"
+	ResourceTypeScanWorkflowStep    ResourceType = "scan_workflow_step"
+	ResourceTypeScanRun             ResourceType = "scan_run"
+	ResourceTypeScanConfig          ResourceType = "scan_config"
+	ResourceTypeScanProfile         ResourceType = "scan_profile"
+	ResourceTypeCommand             ResourceType = "command"
+	ResourceTypeWorkflow            ResourceType = "workflow"
+	ResourceTypeWorkflowRun         ResourceType = "workflow_run"
+	ResourceTypeCapability          ResourceType = "capability"
+	ResourceTypeTool                ResourceType = "tool"
+	ResourceTypeRuleSource          ResourceType = "rule_source"
+	ResourceTypeRuleOverride        ResourceType = "rule_override"
+	ResourceTypeIngest              ResourceType = "ingest"
+	ResourceTypeAITriage            ResourceType = "ai_triage"
+	ResourceTypeMCPTool             ResourceType = "mcp_tool"
+	ResourceTypeMCPPrompt           ResourceType = "mcp_prompt"
+	ResourceTypeAPIKey              ResourceType = "api_key"
+	ResourceTypeSAMLConfig          ResourceType = "saml_config"
+	ResourceTypeIdentityProvider    ResourceType = "identity_provider"
+	ResourceTypeVerifiedDomain      ResourceType = "verified_domain"
+	ResourceTypeEASMLookalikeWatch  ResourceType = "easm_lookalike_watch"
+	ResourceTypeEASMNetworkSeed     ResourceType = "easm_network_seed"
+	// ResourceTypeSSOChange is an SSO change waiting for an owner's approval.
+	ResourceTypeSSOChange ResourceType = "sso_change"
+	// ResourceTypeSCIMGroupMapping is the organization's SCIM group -> role
+	// mapping set (resource id: the tenant id).
+	ResourceTypeSCIMGroupMapping ResourceType = "scim_group_mapping"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
 	ResourceTypeAuditChain     ResourceType = "audit_chain"
 	ResourceTypeTemplateSource ResourceType = "template_source"
+	ResourceTypeScopeTarget    ResourceType = "scope_target"
+	ResourceTypeScopeExclusion ResourceType = "scope_exclusion"
+	// ResourceTypeBountyProgram is a bug-bounty program (RFC-065).
+	ResourceTypeBountyProgram ResourceType = "bounty_program"
+	// ResourceTypeAuthorizationLetter is a letter of authorization (RFC-065 §13).
+	ResourceTypeAuthorizationLetter ResourceType = "authorization_letter"
+	// ResourceTypeSuppressionRule is a finding suppression rule.
+	ResourceTypeSuppressionRule ResourceType = "suppression_rule"
+	ResourceTypeScannerTemplate ResourceType = "scanner_template"
+	ResourceTypeIntegration     ResourceType = "integration"
+	ResourceTypeReportSchedule  ResourceType = "report_schedule"
+	ResourceTypeEASMSeed        ResourceType = "easm_seed"
 )
 
 // String returns the string representation of the resource type.
@@ -538,18 +967,22 @@ func (r ResourceType) IsValid() bool {
 	case ResourceTypeUser, ResourceTypeTenant, ResourceTypeMembership,
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
-		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeScan,
+		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
 		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
-		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
+		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
+		ResourceTypeScanProfile, ResourceTypeCommand,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
-		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain,
-		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource:
+		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeEASMNetworkSeed, ResourceTypeEASMLookalikeWatch, ResourceTypeSSOChange,
+		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
+		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
+		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
-	return false
+	return isConfigResourceType(r)
 }
 
 // Result represents the outcome of an action.
@@ -607,33 +1040,50 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthFailed, ActionPermissionDenied,
 		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
-		ActionAuditChainRebaselined:
+		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved:
 		return SeverityCritical
 
-	// High - privilege changes and pipeline failures
+	// High - privilege changes and scan workflow failures
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSCIMGroupMappingsUpdated,
 		ActionUserSuspended, ActionUserDeactivated,
-		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
-		ActionMemberRemoved, ActionMemberRoleChanged,
+		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthStepUpFailed,
+		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
-		ActionSensorDeactivated, ActionSensorKeyRegenerated,
+		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted, ActionCredentialRevealed,
 		ActionTemplateSourceCredentialAttached,
-		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled:
+		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
+		// Widening what sensors scan, and the code they run.
+		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
+		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved, ActionScopeTargetT2Downgraded,
+		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
+		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
+		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated, ActionScannerTemplateApproved,
+		// Deleting an asset also deletes its findings.
+		ActionAssetDeleted:
 		return SeverityHigh
 
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
 		ActionAuthMFAEnabled, ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
-		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
+		ActionAssetAttributionAutoConfirmed,
+		ActionAssetCreateMerged,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,
@@ -641,11 +1091,20 @@ func SeverityForAction(a Action) Severity {
 		ActionSensorCreated, ActionSensorActivated, ActionSensorKeyRenewed,
 		ActionAPIKeyCreated,
 		ActionRoleCreated, ActionRoleUpdated,
-		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
+		ActionScanWorkflowCreated, ActionScanWorkflowUpdated, ActionScanRunTriggered, ActionScanRunCompleted, ActionScanRunPartial,
 		ActionScanConfigCreated, ActionScanConfigTriggered,
+		ActionScanProfileDeleted, ActionScanProfileDefaultSet, ActionScanProfileQualityGateUpdated,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
+		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
+		ActionScopeTargetUpdated, ActionScopeTargetDeleted, ActionScopeTargetDeactivated,
+		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionSuppressionRuleApproved,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestFailed, ActionIngestPartialSuccess:
@@ -653,6 +1112,9 @@ func SeverityForAction(a Action) Severity {
 
 	// Low - regular operations (including sensor.updated, sensor.connected, sensor.disconnected)
 	default:
+		if sev, ok := registeredSeverity(a); ok {
+			return sev
+		}
 		return SeverityLow
 	}
 }

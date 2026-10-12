@@ -14,6 +14,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,12 +25,14 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { createTenantUser } from '../api/use-members'
 import { MAX_ROLES_PER_USER, type CreatedTenantUser } from '../types/member.types'
-import { RoleChecklist } from './role-checklist'
+import { RoleChecklist, defaultViewerRoleId } from './role-checklist'
 
 interface AddUserDialogProps {
   tenantSlug: string | undefined
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Only the owner may make someone an administrator (settings decision B2). */
+  canGrantAdmin?: boolean
   /** Called after the account is created (refresh the member list). */
   onCreated?: () => void
 }
@@ -37,22 +41,36 @@ interface AddUserDialogProps {
  * Create an account for someone directly (no self-registration). The API either
  * emails them a setup link or returns a one-time link that is shown here once.
  */
-export function AddUserDialog({ tenantSlug, open, onOpenChange, onCreated }: AddUserDialogProps) {
+export function AddUserDialog({
+  tenantSlug,
+  open,
+  onOpenChange,
+  onCreated,
+  canGrantAdmin = false,
+}: AddUserDialogProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
+  // Least privilege: start from the viewer role once the roles load.
+  const [seeded, setSeeded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Held only in this component's state; dropped when the dialog closes.
   const [created, setCreated] = useState<CreatedTenantUser | null>(null)
 
   const { roles, isLoading: rolesLoading } = useRoles({ skip: !open })
+  const viewerId = defaultViewerRoleId(roles)
+  if (open && !seeded && viewerId) {
+    setSeeded(true)
+    setRoleIds([viewerId])
+  }
 
   const close = () => {
     onOpenChange(false)
     setName('')
     setEmail('')
     setRoleIds([])
+    setSeeded(false)
     setError(null)
     setCreated(null)
   }
@@ -87,7 +105,7 @@ export function AddUserDialog({ tenantSlug, open, onOpenChange, onCreated }: Add
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         {created ? (
           <>
             <DialogHeader>
@@ -96,15 +114,17 @@ export function AddUserDialog({ tenantSlug, open, onOpenChange, onCreated }: Add
                 {created.user?.name || created.user?.email} can sign in after setting a password.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-2">
-              <SetupLinkResult outcome={created} email={created.user?.email ?? email.trim()} />
-            </div>
+            <DialogBody>
+              <div className="py-2">
+                <SetupLinkResult outcome={created} email={created.user?.email ?? email.trim()} />
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button onClick={close}>Done</Button>
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={submit}>
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>Add user</DialogTitle>
               <DialogDescription>
@@ -113,66 +133,69 @@ export function AddUserDialog({ tenantSlug, open, onOpenChange, onCreated }: Add
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-5 py-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="add-user-name">Name</Label>
-                  <Input
-                    id="add-user-name"
-                    required
-                    maxLength={255}
-                    autoComplete="off"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-user-email">Email</Label>
-                  <Input
-                    id="add-user-email"
-                    type="email"
-                    required
-                    autoComplete="off"
-                    placeholder="colleague@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Assign roles</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Roles define what this user can do (up to {MAX_ROLES_PER_USER}).
-                    </p>
+            <DialogBody>
+              <div className="space-y-5 py-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="add-user-name">Name</Label>
+                    <Input
+                      id="add-user-name"
+                      required
+                      maxLength={255}
+                      autoComplete="off"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
                   </div>
-                  {roleIds.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {roleIds.length} selected
-                    </Badge>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="add-user-email">Email</Label>
+                    <Input
+                      id="add-user-email"
+                      type="email"
+                      required
+                      autoComplete="off"
+                      placeholder="colleague@company.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <RoleChecklist
-                  roles={roles}
-                  selected={roleIds}
-                  onChange={setRoleIds}
-                  loading={rolesLoading}
-                  disabled={busy}
-                  max={MAX_ROLES_PER_USER}
-                />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Assign roles</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Roles define what this user can do (up to {MAX_ROLES_PER_USER}).
+                      </p>
+                    </div>
+                    {roleIds.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {roleIds.length} selected
+                      </Badge>
+                    )}
+                  </div>
+                  <RoleChecklist
+                    canGrantAdmin={canGrantAdmin}
+                    roles={roles}
+                    selected={roleIds}
+                    onChange={setRoleIds}
+                    loading={rolesLoading}
+                    disabled={busy}
+                    max={MAX_ROLES_PER_USER}
+                  />
+                </div>
+
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
               </div>
+            </DialogBody>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </div>
-
-            <DialogFooter className="gap-2">
+            <DialogFooter>
               <Button type="button" variant="ghost" onClick={close}>
                 Cancel
               </Button>
@@ -185,7 +208,7 @@ export function AddUserDialog({ tenantSlug, open, onOpenChange, onCreated }: Add
                 Add user
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>

@@ -20,7 +20,7 @@ const (
 	// ActionDrain: reserved. Finish running jobs, take no new ones.
 	ActionDrain Action = "drain"
 	// ActionRotateKey: the presented key is inside its renewal window; call
-	// POST /api/v1/agent/renew.
+	// POST /api/v2/sensor/keys.
 	ActionRotateKey Action = "rotate_key"
 	// ActionUpdate: reserved. A newer sensor release is required.
 	ActionUpdate Action = "update"
@@ -49,6 +49,12 @@ type PendingWork struct {
 	// ZoneFingerprint identifies the sensor's zone assignments and each
 	// zone's last change; it feeds the config version.
 	ZoneFingerprint string
+	// RecentlyCanceled is how many commands this sensor had claimed that
+	// were canceled within the last lease period, capped like Count. The
+	// sensor may still be running them, so it is asked to ring again soon
+	// and learns the cancel (cancel_command_ids) within seconds, not after
+	// an idle interval.
+	RecentlyCanceled int
 }
 
 // HeartbeatHints is the doorbell part of a heartbeat response. Zero values

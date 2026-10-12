@@ -193,20 +193,18 @@ func (r *ToolCategoryRepository) List(ctx context.Context, filter toolcategory.F
 	var args []any
 	argIdx := 1
 
-	// Always include platform categories OR tenant's own categories
-	if filter.TenantID != nil {
+	// Platform categories and/or the tenant's own; never another tenant's.
+	switch {
+	case filter.TenantID != nil && filter.OnlyCustom:
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+		args = append(args, filter.TenantID.String())
+		argIdx++
+	case filter.TenantID != nil:
 		conditions = append(conditions, fmt.Sprintf("(tenant_id IS NULL OR tenant_id = $%d)", argIdx))
 		args = append(args, filter.TenantID.String())
 		argIdx++
-	} else {
+	default:
 		conditions = append(conditions, "tenant_id IS NULL")
-	}
-
-	// Filter by builtin status
-	if filter.IsBuiltin != nil {
-		conditions = append(conditions, fmt.Sprintf("is_builtin = $%d", argIdx))
-		args = append(args, *filter.IsBuiltin)
-		argIdx++
 	}
 
 	// Search by name or display name

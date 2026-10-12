@@ -1,8 +1,9 @@
 # RFC-036 — External Attack Surface Management (EASM)
 
-> Status: **Proposed** (2026-10-02). Research and design only; nothing here is
-> implemented.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
+> Status: **Accepted** (2026-10-02; decisions O1–O10 in §12.3). P0 and P1
+> are implemented and P2 in part (§9 tracks which phase items have shipped;
+> seeds were later folded into scope entries by RFC-054); P3–P6 are not built.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-019](RFC-019-certificate-transparency-discovery.md) (CT
 > monitoring), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones, default
 > zone, D14 shared platform scanners), [RFC-026](RFC-026-sensor-results-ingest.md)
@@ -12,15 +13,15 @@
 > [RFC-034](RFC-034-sensor-network-egress.md) (egress; no evasion).
 > Architecture page: [easm.md](../architecture/easm.md).
 >
-> Owner's request (2026-10-02): "Research deeply and plan how to complete the
-> EASM part of this system in the best, most complete, most modern way."
+> Goal (2026-10-02): plan how to complete the EASM part of this system in
+> the most complete and modern way.
 
 ## 1. Answer in short
 
 **OpenCTEM already has most of what EASM stores and very little of what EASM
 does.** The asset model, relationships, identity resolution, exposure
 register, KEV/EPSS, P0–P3 priority, attack paths and "What changed" are built.
-What is missing is the loop that commercial EASM products are built around:
+What is missing is the discovery-and-monitoring loop that EASM is built around:
 
 1. **Seeds.** There is no place to say "these are our organisations, brands,
    root domains, ASNs and cloud accounts".
@@ -41,7 +42,7 @@ The design keeps OpenCTEM's registers and adds that loop:
   wildcard-aware pipeline: resolve → light ports → HTTP/TLS → nuclei. It uses
   the non-intrusive tier by default and follows RFC-030 politeness.
 - **An attribution engine** turns typed evidence into a 0–100 confidence with
-  five states, modelled on Microsoft Defender EASM: confirmed, candidate,
+  five states: confirmed, candidate,
   dependency, monitor-only, rejected. Strong evidence auto-confirms; the rest
   goes to a review queue. Decisions teach the engine.
 - **Observations** are hashed per facet, so every DNS, port, certificate and
@@ -60,7 +61,7 @@ The design keeps OpenCTEM's registers and adds that loop:
 
 The full loop (seeds, review queue, chained pipeline, monitoring, connectors)
 is P2–P5. Lookalike monitoring, opt-in intrusive checks, shared platform
-sensors with published IPs and any vendor-risk mode are owner decisions (§12.2).
+sensors with published IPs and any vendor-risk mode are separate decisions (§12.2).
 
 ## 2. Scope
 
@@ -72,8 +73,8 @@ non-intrusively under the customer's authorization.
 
 ### 2.1 Non-goals
 
-- **No internet-wide scanning dataset of our own.** Censys, Shodan and Xpanse
-  scan all of IPv4 continuously [9][6][34][90]. That is a data business, and the
+- **No internet-wide scanning dataset of our own.** Internet-wide datasets such
+  as Censys and Shodan scan all of IPv4 continuously [1][4][58]. That is a data business, and the
   infrastructure and abuse handling it needs are out of proportion for an
   open-source platform. OpenCTEM is **seed-driven**, and tenants can bring keys
   for those datasets (§6.12).
@@ -84,7 +85,7 @@ non-intrusively under the customer's authorization.
   authorization (§6.3). Candidates, dependencies and lookalikes get passive
   checks only.
 - **No third-party / vendor-risk scanning** in this RFC. If it is ever wanted,
-  it is a separate mode with passive public data only, and a separate owner
+  it is a separate mode with passive public data only, and a separate
   decision (§7, O6).
 - **No takedown service** for lookalike domains, even if O5 brings lookalike
   monitoring in.
@@ -94,8 +95,8 @@ non-intrusively under the customer's authorization.
 
 Verified on: api `origin/develop` 70a0d08f3, ui `origin/develop` cc9ebfe9,
 sdk-go `origin/main` 8324670, sensor `origin/main` 679e974. Three read-only
-passes covered the api, the ui with sdk-go and sensor, and the industry
-research. Items marked *needs runtime check* were read in code, not run.
+passes covered the api, the ui with sdk-go and sensor, and the
+source research. Items marked *needs runtime check* were read in code, not run.
 
 ### 3.1 Map by stage
 
@@ -103,9 +104,9 @@ research. Items marked *needs runtime check* were read in code, not run.
 |---|---|---|---|
 | **Seeds / org model** | `verified_domains` (DNS TXT, re-verified every 12 h; migration 000191), used only for SSO JIT. Scope target types include `domain`, `ip_range`, `cidr`, `cloud_account`, `email_domain`, `mobile_app` | Scope targets feed coverage stats and `/scope/check` only; they neither seed discovery nor gate scans (RFC-023 D17's "require in scope" setting is not built) | Seed concept; organisation/brand/subsidiary model; ASN and netblock asset types |
 | **Passive discovery** | CT monitor: crt.sh, daily, SSRF-guarded; emits `subdomain_discovered` and `certificate_expiring` exposures (`internal/app/certmonitor`) | Queries only `domain`-type assets, **at most 50 per tenant and always the same first 50** (`listDomains`, no cursor): tenants with more domains never get the rest queried. Results never become assets | Passive DNS, RDAP, ASN/RIR, reverse DNS, Censys/Shodan/SecurityTrails, cloud connectors (providers aws/gcp/azure declared in `pkg/domain/integration/entity.go` with no client; `internal/app/connector` is interface only), GitHub org, mobile apps, lookalikes |
-| **Attribution** | Relationship confidence (high/medium/low); dedup review queue for identity conflicts (RFC-028) | `asset_sources.confidence` exists (migration 000014) but its repository is never constructed; `data_sources` has no reader or writer | Asset-level confidence, evidence, review queue, feedback |
+| **Attribution** | Relationship confidence (high/medium/low); dedup review queue for identity conflicts (RFC-028) | `asset_sources` and `data_sources` were never written and are dropped (legacy cleanup, 2026-10) | Asset-level confidence, evidence, review queue, feedback |
 | **Enumeration** | sdk-go wrappers: subfinder, dnsx, naabu, httpx, katana; recon CTIS converter; ingest `/ingest/recon`; relationships `contains` (root → subdomain), `resolves_to` | Sensor `internal/executor/recon.go` has its own wrappers and parsers. It is **off by default** (`-enable-recon=false`), yet when enabled it advertises recon capabilities without checking the binaries. **No image ships subfinder/dnsx/httpx/naabu/katana** (`full`/`platform` contain semgrep, betterleaks, trivy, nuclei). httpx favicon, JARM, ASN and certificate fields are parsed and dropped (`core.LiveHost` lacks them). No certificate asset comes from a live handshake. One tool per job; pipeline steps share one context and **never pass outputs to the next step** (`internal/app/pipeline/run.go`). Seeded preset pipelines reference tools nothing provides (amass, tlsx, nmap, ffuf, dalfox, sqlmap; migration 000061) | Wildcard detection (dnsx `-rw` is passed; *needs runtime check* that it is a valid flag), permutation (alterx), tlsx, cdncheck, asnmap, screenshots, `cname_of` emission |
-| **Assessment** | nuclei on sensors (`full`/`platform` images); sdk-go `NewTakeoverScanner` preset (tags `takeover`); exposure bridge: certificate assets → `certificate_expiring`/`certificate_expired`/`ssl_issue`, service assets → `port_open`/`service_detected` | Takeover hits arrive as generic vulnerability findings. Nuclei default excludes only dos/local/fuzz/bruteforce/txt-service [67], so `intrusive` (622 templates [66]) runs unless excluded | Dangling-DNS check, email security (SPF/DMARC/MTA-STS; `DomainMetadata` has the keys, nothing evaluates them), open buckets, exposed management interfaces as a class, leaked-credential lookup, intrusiveness tiers |
+| **Assessment** | nuclei on sensors (`full`/`platform` images); sdk-go `NewTakeoverScanner` preset (tags `takeover`); exposure bridge: certificate assets → `certificate_expiring`/`certificate_expired`/`ssl_issue`, service assets → `port_open`/`service_detected` | Takeover hits arrive as generic vulnerability findings. Nuclei default excludes only dos/local/fuzz/bruteforce/txt-service [35], so `intrusive` (622 templates [34]) runs unless excluded | Dangling-DNS check, email security (SPF/DMARC/MTA-STS; `DomainMetadata` has the keys, nothing evaluates them), open buckets, exposed management interfaces as a class, leaked-credential lookup, intrusiveness tiers |
 | **Prioritization** | KEV + EPSS (global, daily); P0–P3 with internet-accessible, reachability, effective criticality; attack paths and exposure chains from public entry points | Attack-surface `/stats` trend fields are hard-coded 0 (`surface_service.go:177-180`) | Attribution confidence as an input |
 | **Monitoring** | `asset_state_history` (appeared, disappeared, newly exposed, exposure changes); `asset_discovered` trigger; throttled new-internet-facing notification ([change-detection.md](../architecture/change-detection.md)) | "Shadow IT" view is always empty: nothing sets asset scope `shadow` or `external` automatically | DNS/port/certificate/HTTP diffs: `dns_change`, `port_closed`, `service_changed`, `subdomain_removed`, `bucket_public`, `api_exposed`, `header_missing` exposure types exist with no producer. Cadence tiers |
 | **Workflow** | Ownership (two models unified in api#520), ticketing, validation (RFC-011), reports | — | EASM-specific report section; review-queue SLA |
@@ -123,7 +124,7 @@ research. Items marked *needs runtime check* were read in code, not run.
 | `/assets/changes` | Real | State-history endpoints |
 | `/attack-paths`, `/exposure-chains`, `/exposures` | Real | |
 | `/exposures/{vulnerabilities,secrets,code,misconfigurations}` | Partial | Side cards show tenant-wide numbers under type titles; none covers nuclei/`easm` sources |
-| `/scoping`, `/scope-config` | Real | |
+| `/scoping`, `/scope` | Real | |
 
 **No EASM page is a scaffold.** Discovery and EASM have no `useDashboardStats`-only
 pages. Every new page in this RFC gets its own endpoint, and
@@ -145,47 +146,56 @@ pages. Every new page in this RFC gets its own endpoint, and
 | E10 | Nothing sets asset scope `external`/`shadow` | ingest | Shadow-IT view empty |
 | E11 | RFC index table split by a stray blank line after RFC-020 | `docs/rfcs/README.md` | Rows from RFC-021 on render outside the table (**fixed in this PR**) |
 
-## 4. What the market does
+## 4. Design patterns adopted
 
-Vendor documentation was read on 2026-10-02. Marketing-only sources are marked
-[W] in §14.
-
-| Product | Seeds | Discovery model | Attribution | Active depth and cadence | Scanner IPs |
-|---|---|---|---|---|---|
-| **Microsoft Defender EASM** (ex-RiskIQ) | Org names, domains, IP blocks, hosts, email contacts, ASNs, WHOIS orgs, cert CNs; grouped into discovery groups with exclusions [3] | Own internet scan + recursive pivots: WHOIS registrant/email/NS, co-resolution, MX, shared certs, ASN; confidence drops at 3rd/4th hop [1] | **Approved / Dependency / Monitor only / Candidate / Requires investigation** [2] | Approved assets daily, discovery weekly by default [2][3]; billed per host:IP pair, domain, active IP seen in 30 days [4] | Not found |
-| **Palo Alto Cortex Xpanse** | Seed terms built by their research team [5] | Internet-wide: ~250 ports twice weekly; Known Assets Monitoring daily, **opt-in after range validation** [6] | Very high / High / Medium; tags *Has your content*, *Registered to you*, *Discovered*, *Provided*; evidence = seed term + matched datum [5] | Attack Surface Tests: daily benign exploits [7] | **Published** (9 IPv4 blocks, 3 IPv6 /64s) [6] |
-| **Censys ASM** | Domains, DNS names, IPs, CIDRs, ASNs + cloud connectors [10][12] | Internet Map: 100+ ports, rescans anything older than 24 h, ~16 h average age; never logs in [9] | Discovery **paths**; excluding a node removes everything discovered through it [11] | Dangling CNAME/NS daily, "with takeover" = high [13] | **Published** ASNs and opt-out [8] |
-| **Mandiant / Google ASM** | 14 typed seeds incl. ASN, netblock, GitHub account, S3 bucket, **UniqueToken** (analytics ID) [15] | Collections → entities → issues; cloud/DNS-provider integrations [19] | Confidence per entity, automatic in/out of scope [15] | **Active** benign checks vs **passive inference** from versions [18] | **Published** [16]; opt-out via support [17] |
-| **Tenable ASM** (Bit Discovery) | Domains; suggested domains with the rules that produced them [21] | Asset = (IP, FQDN, record type, value); TCP only [24] | Per-asset **timeline**: source, rule, time [22]; rule count ≈ likelihood [21] | Fortnightly or daily SKUs; rules every 24 h [23] | Not found |
-| **Rapid7 Surface Command** | Registered domains and public networks; dynamic seed queries [25] | Correlation across connectors (CAASM) | Not documented | Not documented | Not found |
-| **ProjectDiscovery Cloud** | Domains, ASNs | Chaos dataset, brute force + permutation, CT, ASN, Shodan/Censys/FOFA, subsidiaries [27] | "Associated domains" with typed evidence (acquisition, cert history, WHOIS history) [28]; asset policies [29] | nuclei | Dedicated scan IPs (Enterprise) [30] |
-| **Shodan Monitor** | Networks, domains, queries [33] | Whole internet at least weekly; on-demand 1 credit/IP [34] | — | Banner-level only | Not applicable |
-| **Detectify**, **runZero**, **CyCognito**, **Hadrian** | Root domains / ranges, ASNs, domains | Seed-driven (Detectify, runZero hosted explorer [32]) or "seedless" (CyCognito [37]) | CyCognito "discovery evidence" [37] | Payload-based tests (Detectify [31]); agentic validation (Hadrian [38]) | Not verified |
-
-**Patterns to copy:**
-
-1. **Typed seeds**, including pivot *tokens* (analytics IDs, favicon hashes) [15][36].
+1. **Typed seeds**, including pivot *tokens* (analytics IDs, favicon hashes) [6].
 2. **Five attribution states** with a separate *dependency* state for
-   provider-hosted assets [2].
-3. **Evidence = seed + matched datum + rule + time** [5][22]. Users trust
+   provider-hosted assets.
+3. **Evidence = seed + matched datum + rule + time.** Users trust
    attribution they can read.
 4. **Path-based exclusions:** excluding a parent removes its descendants unless
-   another path supports them [11].
-5. **Passive inference separated from active checks** [18]. Active depth is
-   opt-in after ownership is validated [6].
-6. **Daily cadence for confirmed assets, weekly for discovery** [2][3][6].
-   Dangling DNS is checked daily [13].
+   another path supports them.
+5. **Passive inference separated from active checks.** Active depth is
+   opt-in after ownership is validated.
+6. **Daily cadence for confirmed assets, weekly for discovery.** Dangling DNS
+   is checked daily.
 7. **Published scanner ranges, reverse DNS, an information page and opt-out**
-   [6][8][16][91]. The ZMap scanning guidelines [87] are the norm; a 2025 study
-   found ~70% of survey scanners do not identify themselves [89].
+   [59]. The ZMap scanning guidelines [55] are the norm; a 2025 study found
+   ~70% of survey scanners do not identify themselves [57].
 8. **Cloud and DNS-provider connectors as first-party truth**, ranked above
-   inference [5][19].
+   inference.
 
-Intrigue Core, the open-source EASM engine Mandiant acquired, is gone (its
-repository returns 404) [20], so there is no open-source reference product to
-follow either. No peer-reviewed system for organisation → internet-presence
-attribution was found. Vendor practice is the state of the art, and our rules (§6.4) are built
-from it.
+No peer-reviewed system for organisation → internet-presence attribution was
+found; our rules (§6.4) are built from these patterns.
+
+### 4.1 Recon pipeline decisions
+
+**What we build:**
+
+| Idea | Where it lands |
+|---|---|
+| Declarative, user-editable engine definitions: a stage list with per-tool settings, shipped presets, validated server-side | P3: the "External discovery (T1)" preset (§6.6) is expressed as such a definition, so tenants copy and edit it instead of building pipelines step by step |
+| Stage-to-stage data passing (subdomains → ports → HTTP probe → screenshots → endpoints → nuclei) | P3 (E6): the step-output chaining in §6.6, with `active_allowed` and exclusions applied at every hop |
+| Subscans from any result | P3: "Scan this" on an asset, a domain group or a review-queue row runs one stage (or a short engine) on that selection, through the normal scan path (zones, politeness, tier ceiling) |
+| Recon inventory UX: screenshot gallery, endpoints/URLs, technology stack, WHOIS/IP/ASN panels | P3 (screenshots, endpoints from katana and passive URL sources) and the Inventory tab (§6.11) |
+| "Interesting" names and URLs by keyword | P1–P2: a per-tenant keyword list (admin, vpn, jenkins, staging, dev, test, old …) that tags assets and raises their review-queue rank; never a finding on its own |
+| Continuous monitoring with change notifications | P4: facet observations and diffs (§6.5), richer than a subdomain set difference between two scans; notifications go through the existing outbox and channels |
+
+**Design rules:**
+
+| Rule | Why |
+|---|---|
+| Multi-tenant platform, distributed **sensors** in scan zones (RFC-023, RFC-030, RFC-033), never one host running every tool next to the web app | Scans must leave from the tenant's chosen vantage point, with per-host politeness and an auditable source IP |
+| **Non-intrusive by default** (O3): T1 nuclei excludes intrusive, default-login, fuzz, dos and bruteforce; directory fuzzing and payload tests are T2 only, opt-in per scope target with a verified seed, a named approver and an expiry | Our users scan production estates they own, not bug-bounty scopes |
+| Scope governance: boundaries, exclusions that win everywhere, verified domains, attribution states (§6.3–6.4), not a free-typed target with a per-scan regex list | "Who authorized this probe?" must have an answer |
+| No OSINT on people (employee and email harvesting, breach lookups by person) and no search-engine dorking; leaked-credential lookups only through HIBP with a tenant key (P5) | Personal data and search-engine terms of service |
+| No generated vulnerability reports or attack suggestions in EASM; the platform's AI triage applies to EASM findings as to any other source | Separate feature with its own review |
+| CTEM prioritisation (P0–P3, KEV/EPSS, reachability, effective criticality) over one inventory, not results per scan | EASM output joins the same register as every other source |
+
+**Sequencing.** These decisions shape P3 (chained pipeline, engine definitions,
+subscans) and the inventory UI. P0 and P1 continue as planned. P3 is not built
+before the separate scans proposal is accepted, which may define the
+same pipeline model; the two are reconciled then rather than built twice.
 
 ## 5. Techniques by stage
 
@@ -193,61 +203,61 @@ from it.
 
 | Seed kind | Expands by | Ownership proof |
 |---|---|---|
-| Organisation / subsidiary / brand name | RDAP registrant org (pre-2018 records, or where not redacted), certificate subject O, as2org (AS → org) [103] | Asserted |
+| Organisation / subsidiary / brand name | RDAP registrant org (pre-2018 records, or where not redacted), certificate subject O, as2org (AS → org) [71] | Asserted |
 | Root domain | CT, passive DNS, subfinder sources, DNS brute force/permutation, NS/MX co-hosting | `verified_domains` DNS TXT |
-| ASN | RIR/BGP announced prefixes (RIPEstat [53], Team Cymru [52]) | Asserted; RPKI ROA origin match is supporting evidence [54] |
+| ASN | RIR/BGP announced prefixes (RIPEstat [21], Team Cymru [20]) | Asserted; RPKI ROA origin match is supporting evidence [22] |
 | CIDR / netblock | Reverse DNS, TLS SANs of hosts in the block | Asserted; RIR record org match is evidence |
-| Cloud account (AWS/Azure/GCP) | Route 53 / DNS zones, public IPs, load balancers, buckets [55][56][57] | Connector credential = proof |
-| GitHub organisation | Public repos → secret scanning [58] | OAuth app install or asserted |
-| Analytics / tag ID, favicon hash | Search-engine pivots (Shodan `http.favicon.hash`, `google_analytics` [36]; httpx `-favicon` mmh3 [63]) | Asserted, weak |
+| Cloud account (AWS/Azure/GCP) | Route 53 / DNS zones, public IPs, load balancers, buckets [23][24][25] | Connector credential = proof |
+| GitHub organisation | Public repos → secret scanning [26] | OAuth app install or asserted |
+| Analytics / tag ID, favicon hash | Search-engine pivots (Shodan `http.favicon.hash`, `google_analytics` [6]; httpx `-favicon` mmh3 [31]) | Asserted, weak |
 | Mobile publisher | App-store listings → API hosts in app metadata | Asserted; no primary vendor documentation found, so it is listed and not designed further |
 
 **Registrant data after GDPR.** The ICANN Temporary Specification (2018) and
 the Registration Data Policy (effective 2025-08-21) redact registrant personal
 data. Port-43 WHOIS is no longer required for most gTLDs since 2025-01-28;
-RDAP (RFC 7480/9082/9083/9224) replaces it [47][48][49]. Reverse WHOIS is
-therefore weak evidence for modern registrations. Xpanse names redaction as a
-reason evidence is missing [5]. We use RDAP for nameservers, registrar and
+RDAP (RFC 7480/9082/9083/9224) replaces it [15][16][17]. Reverse WHOIS is
+therefore weak evidence for modern registrations, and redaction is a common
+reason evidence is missing. We use RDAP for nameservers, registrar and
 dates, plus org where present, and never treat a missing registrant as negative
 evidence.
 
 ### 5.2 Passive discovery
 
-- **Certificate Transparency.** RFC 6962 [39], with RFC 9162 [40] not deployed
+- **Certificate Transparency.** RFC 6962 [7], with RFC 9162 [8] not deployed
   in Chrome's list. In Google's log list v3 (2026-10-01), most usable logs are
-  **tiled (static-ct-api)** [41][42]. A direct log tailer must speak both APIs.
-  CT names are mined by attackers minutes after issuance [46], so CT is also a
+  **tiled (static-ct-api)** [9][10]. A direct log tailer must speak both APIs.
+  CT names are mined by attackers minutes after issuance [14], so CT is also a
   monitoring signal, not only discovery.
-  - **crt.sh** is free and returned 502 during this research [45]. Its usage
+  - **crt.sh** is free and returned 502 during this research [13]. Its usage
     limits are not published. It must not be the only source.
-  - **Cert Spotter** (SSLMate): free 100 host + 10 domain queries/hour [43].
-  - **CertStream:** free firehose, self-hostable [44].
+  - **Cert Spotter** (SSLMate): free 100 host + 10 domain queries/hour [11].
+  - **CertStream:** free firehose, self-hostable [12].
 - **Passive DNS.** Mostly commercial (DNSDB now DomainTools; SecurityTrails
-  quota-based [51]). CIRCL pDNS is limited to trusted partners [50]. Per-tenant
+  quota-based [19]). CIRCL pDNS is limited to trusted partners [18]. Per-tenant
   keys only.
 - **ASN/BGP/RIR.** Team Cymru IP-to-ASN (free; use DNS for recurring jobs; bulk
-  "a few thousand" per batch) [52]. RIPEstat (no hard cap, 8 concurrent per
-  IP, `sourceapp` required, register if >1k/day) [53]. bgpview.io no longer
+  "a few thousand" per batch) [20]. RIPEstat (no hard cap, 8 concurrent per
+  IP, `sourceapp` required, register if >1k/day) [21]. bgpview.io no longer
   resolves (2026-10-02).
 - **Reverse DNS.** Rapid7 Project Sonar is approval-gated and commercial since
-  2022 [26]. We do PTR lookups ourselves, only for seeded/confirmed netblocks.
+  2022 [3]. We do PTR lookups ourselves, only for seeded/confirmed netblocks.
 - **Search engines of scan data** (Censys, Shodan, FOFA, ZoomEye, Netlas,
   LeakIX, urlscan): per-tenant keys. Their terms differ (§6.12).
 - **Cloud connectors:** AWS Config / Route 53 `ListResourceRecordSets`, Azure
-  Resource Graph, GCP Cloud Asset Inventory [55][56][57]. These are
+  Resource Graph, GCP Cloud Asset Inventory [23][24][25]. These are
   authoritative, read-only, and the strongest attribution there is.
 - **SaaS discovery** (custom domains CNAME'd to SaaS providers) falls out of
   DNS resolution. The CNAME target's provider is recorded as `hosted_by`, and
   the asset is a *dependency* candidate.
-- **Lookalikes.** dnstwist-style permutation (Apache-2.0) with homoglyphs [59].
-  Unicode UTS #39 confusable skeletons [60]. Check registration (DNS/RDAP),
-  MX presence and CT issuance. Academic basis: email typosquatting [102].
+- **Lookalikes.** dnstwist-style permutation (Apache-2.0) with homoglyphs [27].
+  Unicode UTS #39 confusable skeletons [28]. Check registration (DNS/RDAP),
+  MX presence and CT issuance. Academic basis: email typosquatting [70].
 - **Code and secrets.** GitHub secret scanning is free on public repositories
-  [58]. Our sensor's betterleaks can scan an org's public repos.
+  [26]. Our sensor's betterleaks can scan an org's public repos.
 
 ### 5.3 Enumeration and fingerprinting
 
-- **Wildcard detection.** The puredns method [61]: per DNS level, resolve
+- **Wildcard detection.** The puredns method [29]: per DNS level, resolve
   several random labels. If they answer, record the wildcard answer set and drop
   candidates whose answers fall inside it, re-checking with trusted resolvers
   to defeat poisoning and load-balancing. puredns, massdns and shuffledns are
@@ -255,11 +265,11 @@ evidence.
   (MIT) rather than ship GPL code inside the SDK.
 - **Light ports.** naabu connect scan, top-100 by default, at the RFC-030
   per-host limit. No SYN scan from shared sensors.
-- **HTTP/TLS.** httpx [63] (title, status, server, tech via wappalyzergo (MIT)
-  [65], CDN, favicon mmh3, JARM, ASN, final URL, IP) plus tlsx for the leaf
+- **HTTP/TLS.** httpx [31] (title, status, server, tech via wappalyzergo (MIT)
+  [33], CDN, favicon mmh3, JARM, ASN, final URL, IP) plus tlsx for the leaf
   certificate (SANs, issuer, validity, key, self-signed, mismatch). CDN/WAF via
-  cdncheck. All ProjectDiscovery tools named here are MIT [62].
-- **Screenshots** (optional). gowitness is GPL-3.0 [64]. It may ship as a
+  cdncheck. All ProjectDiscovery tools named here are MIT [30].
+- **Screenshots** (optional). gowitness is GPL-3.0 [32]. It may ship as a
   separate executable in the sensor image (the same pattern as other tools),
   never linked into the SDK.
 - **API endpoints.** katana's known-files and JS crawl, and OpenAPI/GraphQL
@@ -269,35 +279,35 @@ evidence.
 
 | Check | Tier | How |
 |---|---|---|
-| Version → CVE | T0/T1 | Technology + version → CPE → existing vulnerability correlation. Marked *inferred* (Mandiant's passive inference [18]); confirmed by a template where one exists |
-| nuclei templates | T1 | `-etags intrusive,default-login,fuzz,dos,bruteforce` on top of the default ignore list [67][68]; `-dut` to refuse unsigned templates. Template counts: 622 `intrusive`, 345 `default-login`, 84 `takeover` [66] |
-| Subdomain takeover / dangling DNS | T0 + T1 | API: CNAME chain ends in NXDOMAIN/SERVFAIL or at a provider in the can-i-take-over-xyz list (CC-BY-4.0, 36 "vulnerable" fingerprints [69]); NS delegations that are lame/unregistered [72]. Sensor: nuclei `takeover` templates confirm. Basis: Liu et al. [70], Borgolte et al. (released cloud IPs) [71], HostingChecker [73], stale certificates [74] |
-| TLS | T1 | Expiry, protocol versions, weak keys/ciphers, hostname mismatch, self-signed; profile = TLSRef "intermediate" (Mozilla's successor guidance) [76]; testssl.sh (GPL-2.0) [75] is reference only, not shipped |
-| Email security | T0 | DNS only: SPF (RFC 7208 [77]: missing, `+all`/`?all`, >10 lookups), DMARC (**RFC 9989**, which obsoletes RFC 7489 [79]: missing, `p=none`, no reporting), MTA-STS + TLS-RPT (RFC 8461/8460 [80]); DKIM only for known selectors (RFC 6376 [78]) |
-| Exposed management interfaces | T1 | Ports/services in the CISA BOD 23-02 class (remote admin, database, VPN/firewall management UIs) [81]; a class in our service fingerprints, P-class raised by *publicly exposed* |
+| Version → CVE | T0/T1 | Technology + version → CPE → existing vulnerability correlation. Marked *inferred* (passive inference); confirmed by a template where one exists |
+| nuclei templates | T1 | `-etags intrusive,default-login,fuzz,dos,bruteforce` on top of the default ignore list [35][36]; `-dut` to refuse unsigned templates. Template counts: 622 `intrusive`, 345 `default-login`, 84 `takeover` [34] |
+| Subdomain takeover / dangling DNS | T0 + T1 | API: CNAME chain ends in NXDOMAIN/SERVFAIL or at a provider in the can-i-take-over-xyz list (CC-BY-4.0, 36 "vulnerable" fingerprints [37]); NS delegations that are lame/unregistered [40]. Sensor: nuclei `takeover` templates confirm. Basis: Liu et al. [38], Borgolte et al. (released cloud IPs) [39], HostingChecker [41], stale certificates [42] |
+| TLS | T1 | Expiry, protocol versions, weak keys/ciphers, hostname mismatch, self-signed; profile = TLSRef "intermediate" (Mozilla's successor guidance) [44]; testssl.sh (GPL-2.0) [43] is reference only, not shipped |
+| Email security | T0 | DNS only: SPF (RFC 7208 [45]: missing, `+all`/`?all`, >10 lookups), DMARC (**RFC 9989**, which obsoletes RFC 7489 [47]: missing, `p=none`, no reporting), MTA-STS + TLS-RPT (RFC 8461/8460 [48]); DKIM only for known selectors (RFC 6376 [46]) |
+| Exposed management interfaces | T1 | Ports/services in the CISA BOD 23-02 class (remote admin, database, VPN/firewall management UIs) [49]; a class in our service fingerprints, P-class raised by *publicly exposed* |
 | Open buckets | T1 | Anonymous list on S3/GCS/Azure names attributed as confirmed (from connectors, CNAMEs, page content). Never guessed names of others |
-| Leaked credentials | T0 | HIBP domain search (per-tenant key; free for ≤10 breached addresses) [95]; GitHub org secret scanning [58] |
-| Default logins, auth checks, fuzzing | **T2, opt-in** | Only on verified ownership, per scope target, with an expiry (§6.3). Censys never logs in [9]; Xpanse gates deeper payloads behind validation [6] |
+| Leaked credentials | T0 | HIBP domain search (per-tenant key; free for ≤10 breached addresses) [63]; GitHub org secret scanning [26] |
+| Default logins, auth checks, fuzzing | **T2, opt-in** | Only on verified ownership, per scope target, with an expiry (§6.3). Deeper payloads stay behind ownership validation |
 
 ### 5.5 Prioritization
 
 CISA's SSVC model for **BOD 26-04** takes *In KEV*, *Publicly Exposed*,
 *Automatable* and *Technical Impact* and maps them to response times
-(3 days with forensics … fix on upgrade) [84]. *Publicly exposed* is exactly
+(3 days with forensics … fix on upgrade) [52]. *Publicly exposed* is exactly
 what EASM produces. *Not verified:* whether 26-04 replaces BOD 22-01; cisa.gov
 refused fetches during the research. The KEV catalog has 1,731 entries
-(2026.10.01) [82]. EPSS is daily and free [83]. A study of 42,735 internet-facing
-devices found no correlation between CVE density and exploitation [86]. That
+(2026.10.01) [50]. EPSS is daily and free [51]. A study of 42,735 internet-facing
+devices found no correlation between CVE density and exploitation [54]. That
 supports weighting by KEV/EPSS rather than counting CVEs, which is what the P0–P3
-engine already does. EASM is the Discovery stage of Gartner's CTEM loop [85]
-(fetch refused during the research; the five stages are already OpenCTEM's IA).
+engine already does. EASM is the Discovery stage of the CTEM loop, whose five stages are already
+OpenCTEM's IA.
 
-### 5.6 Monitoring cadence (market norm)
+### 5.6 Monitoring cadence
 
-- Confirmed assets: daily [2][6][9].
-- Discovery: weekly [3].
-- Dangling DNS: daily [13].
-- Whole-internet datasets refresh every 16 h to 7 days [9][34].
+- Confirmed assets: daily.
+- Discovery: weekly.
+- Dangling DNS: daily.
+- Whole-internet datasets refresh every 16 h to 7 days [1][4].
 
 ## 6. Design
 
@@ -337,8 +347,8 @@ checks run as a sensor job instead.
   only, never hold tenant credentials, are opt-in per tenant, and are labelled
   "shared". They send from **published, stable egress ranges** with
   descriptive reverse DNS, an information web page on each source IP and an
-  abuse contact, following the ZMap guidelines [87][88] and the practice of
-  Censys, Xpanse, Mandiant and CISA [8][6][16][91]. This is owner decision O2.
+  abuse contact, following the ZMap guidelines [55][56] and the practice of
+  CISA's scanning service [59]. This is decision O2.
 
 ### 6.3 Seeds, authorization and tiers
 
@@ -358,8 +368,13 @@ checks run as a sensor job instead.
 | `attestation` | Who asserted ownership, and when |
 
 UI: Scoping › Boundaries gets a **Seeds** tab next to Targets and Exclusions.
-`root_domain` seeds reuse the `verified_domains` DNS TXT flow from SSO. One
-verification serves both.
+`root_domain` seeds reuse the `verified_domains` DNS TXT flow from SSO.
+**Amended by decision E6 (2026-10-04):** each row has a
+`purpose`. A tenant verifies a domain itself for EASM (`purpose=easm`,
+`/api/v1/easm/verified-domains`); that proves control for attribution but
+never admits SSO JIT or SCIM users. Using a domain for SSO stays a platform
+administrator action (`purpose=sso`, admin console), and an SSO domain also
+counts for EASM.
 
 **Authorization to touch an asset actively:**
 
@@ -371,6 +386,19 @@ active_allowed(asset) =
   AND tier(asset) <= tier_ceiling(scope_target or tenant default)
 ```
 
+**As built (2026-10-04, #1114).** One gate (`internal/app/easm/active_gate.go`)
+decides `active_allowed` on every active-scan path: typed targets and
+asset-group members, at scan create, clone, import, quick scan, `POST
+/commands`, every run (manual, scheduled, retry, workflow) and the dispatch
+gate (pipelines, coverage, validation, retests, simulations, connectors).
+An asset is allowed when its record is `confirmed`, or, with no record, when
+it is inside an active scope target or at/under a root-domain seed or verified
+domain (`derived_from_seed`); a rejected name refuses itself and every name
+under it. An internet-facing asset with no record outside all of them is
+`unattributed` and waits for a person. The tier ceiling is not enforced yet
+(sensor side). See
+[architecture/active-probe-gate.md](../architecture/active-probe-gate.md).
+
 | Tier | Touches the target | Default |
 |---|---|---|
 | **T0 passive** | No (third-party data, DNS) | All candidates, dependencies, lookalikes, confirmed |
@@ -379,7 +407,7 @@ active_allowed(asset) =
 
 Every run records the tier, ceiling, approver and source vantage (sensor/zone/
 egress) on the scan run. Unauthorized-access law (CFAA, UK Computer Misuse Act)
-is the background for this record [101]; it is not legal advice, and the
+is the background for this record [69]; it is not legal advice, and the
 attestation at seed creation is where the tenant states its authority. "Who authorized this probe?" then has an answer.
 
 ### 6.4 Attribution engine
@@ -421,7 +449,7 @@ monotone and explainable: each row says how much it added.
 | Favicon hash equals a seed or confirmed asset | 0.40 | weak |
 | Same nameservers as a confirmed domain (non-shared NS) | 0.30 | weak |
 | IP belongs to a CDN / shared hosting (cdncheck, ASN of a provider) | −0.6 | negative → suggests `dependency` |
-| Hop count from the seed > 2 | −0.2 per hop | negative (MS EASM: confidence drops at 3rd/4th hop [1]) |
+| Hop count from the seed > 2 | −0.2 per hop | negative (confidence drops with each pivot hop) |
 
 **Decision**
 
@@ -437,8 +465,8 @@ monotone and explainable: each row says how much it added.
 **Review queue**
 
 - Sorted by confidence × potential impact (open ports, high-risk tech).
-- Each row shows the evidence chain as sentences, for example: "`api.acme.io`
-  — SAN on the certificate also serving `www.acme.com` (confirmed) — seen in CT
+- Each row shows the evidence chain as sentences, for example: "`api.example.com`
+  — SAN on the certificate also serving `www.example.com` (confirmed) — seen in CT
   2026-09-30".
 - Actions: confirm / reject / dependency / monitor only, with bulk and "apply
   to all with this evidence".
@@ -451,7 +479,7 @@ monotone and explainable: each row says how much it added.
   a new *rule* (not just a new sighting) supports it.
 - Precision per rule is shown on the Overview page.
 
-**Exclusions cascade along discovery paths** (the Censys pattern [11]).
+**Exclusions cascade along discovery paths.**
 Excluding a node rejects its descendants unless another non-excluded path
 supports them.
 
@@ -476,7 +504,7 @@ the queue instead is O8.
   - `hosted_by` (asset → provider/CDN, as a property-tagged edge to a
     provider-kind node).
 - OWASP's Open Asset Model (Apache-2.0, 21 types: FQDN, IPAddress, Netblock,
-  AutonomousSystem, TLSCertificate, Service, Organization …) [100] is the
+  AutonomousSystem, TLSCertificate, Service, Organization …) [68] is the
   reference vocabulary. CTIS stays our wire format; a mapping table to OAM goes
   in the architecture page so an importer is easy later.
 - **Observations**, append-only, in `easm_observations`:
@@ -542,7 +570,7 @@ priority all apply unchanged.
 - CT runs daily (P0). Near-real-time CT comes later: Cert Spotter with a tenant
   key, or a static-ct-api tailer.
 - Dangling-DNS and email checks run daily (cheap; DNS only).
-- Discovery from seeds runs weekly, the MS EASM default [3].
+- Discovery from seeds runs weekly.
 - All cadences are tenant-tunable within platform floors, so nobody can
   schedule nuclei hourly on a shared sensor.
 - A per-tenant **budget** (targets × tier per day) is visible in the UI.
@@ -605,7 +633,7 @@ Discovery › **Attack Surface** becomes the EASM workspace (no URL change for
   action, freshness by tier, recent changes.
 - **Inventory:** `/assets` filtered `exposure=public`, plus attribution
   columns. Replaces `/attack-surface/external` (which gets a 308 redirect,
-  following ui#591's pattern).
+  following openctemio/ui#591's pattern).
 - **Review:** candidate table with an evidence drawer, bulk actions, rule chips.
 - **Graph:** seed-rooted, expand-on-click, colour by state/severity. Reuses the
   graph component planned for attack paths.
@@ -624,20 +652,20 @@ never shared across tenants.
 
 | Source | Key | Default | Terms that matter |
 |---|---|---|---|
-| crt.sh | none | on | Free; unpublished limits; outages seen [45] — fallback to Cert Spotter |
-| Cert Spotter | optional | on (free tier) | 100 host + 10 domain queries/h free; paid tiers [43] |
+| crt.sh | none | on | Free; unpublished limits; outages seen [13] — fallback to Cert Spotter |
+| Cert Spotter | optional | on (free tier) | 100 host + 10 domain queries/h free; paid tiers [11] |
 | RDAP (bootstrap RFC 9224) | none | on | Registry rate limits vary |
-| RIPEstat, Team Cymru | none | on | `sourceapp`; ≤8 concurrent; DNS interface for recurring Cymru lookups [52][53] |
-| Censys | tenant | off | Free 100 credits/month; research access non-commercial [14] |
-| Shodan | tenant | off | Commercial use with attribution; 1 req/s [35] |
-| SecurityTrails | tenant | off | Quota-based [51] |
-| Chaos (PD) | tenant | off | Commercial use needs Enterprise [94] |
-| VirusTotal | tenant | off | Public API **not for commercial products or business workflows** [92]; premium keys only |
-| urlscan.io | tenant | off | 1k searches/day free [93] |
-| HIBP | tenant | off | Free for ≤10 breached addresses [95] |
-| GreyNoise | tenant | off | Context for "who is scanning me", not discovery [96] |
-| Netlas, LeakIX, FOFA, ZoomEye | tenant | off | Free tiers personal use or delayed [97][98] |
-| BinaryEdge | — | not offered | Service transitioned to Coalition [99] |
+| RIPEstat, Team Cymru | none | on | `sourceapp`; ≤8 concurrent; DNS interface for recurring Cymru lookups [20][21] |
+| Censys | tenant | off | Free 100 credits/month; research access non-commercial [2] |
+| Shodan | tenant | off | Commercial use with attribution; 1 req/s [5] |
+| SecurityTrails | tenant | off | Quota-based [19] |
+| Chaos (ProjectDiscovery) | tenant | off | Commercial use needs Enterprise [62] |
+| VirusTotal | tenant | off | Public API **not for commercial products or business workflows** [60]; premium keys only |
+| urlscan.io | tenant | off | 1k searches/day free [61] |
+| HIBP | tenant | off | Free for ≤10 breached addresses [63] |
+| GreyNoise | tenant | off | Context for "who is scanning me", not discovery [64] |
+| Netlas, LeakIX, FOFA, ZoomEye | tenant | off | Free tiers personal use or delayed [65][66] |
+| BinaryEdge | — | not offered | Service transitioned to Coalition [67] |
 | AWS / Azure / GCP | tenant (read-only role) | off | Authoritative; connector framework exists (`internal/app/connector`), clients do not |
 | GitHub | tenant (app/token) | off | Public repos only unless the org grants more |
 
@@ -660,8 +688,8 @@ never shared across tenants.
 
 ## 7. Third-party / vendor-risk mode (separate decision)
 
-Vendor-risk ratings use public data about **other** organisations. If the owner
-ever wants it (O6), it must be:
+Vendor-risk ratings use public data about **other** organisations. If it is
+ever wanted (O6), it must be:
 
 - a separate register (`vendors`), never mixed with the tenant's inventory or
   attribution;
@@ -710,14 +738,92 @@ Effort is engineer-weeks across all repos.
 | **P0 — Make what exists honest** | E1 CT rotation cursor (oldest-checked first) and `certificate_expired` for the newest cert only; E2 recon tools in `full`/`platform` (pinned, checksummed), recon capabilities advertised only when the binary answers; E3 flags verified against each tool's `-h` and fixed, with golden tests; E4 parser type; E7 presets reference only shipped tools; E8 UI: server pagination, expiring from certificate assets, unknown ≠ valid/200; E9 real trends from state history, website bucket = application/website; E11 README (this PR) | 1.5–2 | Low | — | Tenant with 120 domains: every domain queried within 3 runs. Stock `platform` image + a test domain we own: subfinder → dnsx → httpx produce subdomain/IP/service assets live. UI cards match API counts on a fixture. No new findings from a run with zero data |
 | **P1 — Quick wins** | Dangling CNAME/NS check (API, daily, can-i-take-over-xyz fingerprints vendored with attribution) → `dangling_cname`/`dangling_ns` exposures; sensor nuclei `takeover` confirmation → `subdomain_takeover` (high); email posture (SPF/DMARC RFC 9989/MTA-STS/TLS-RPT) → `email_security_weak`; asset attribution columns + `easm_evidence` with the strong rules only; CT subdomains under **verified** domains promoted via internal ingest; `GET /easm/summary` + Overview tab | 3 | Low–medium (false positives on takeover → confirm step before *high*) | P0 | Fixture zone with a CNAME to an unclaimed provider is flagged medium within 24 h and high after confirmation. Fixture domains with `p=none` / no SPF flagged; correct ones not. Every promoted asset shows its evidence. Overview numbers equal list counts |
 | **P2 — Seeds and attribution** | `easm_seeds` + Boundaries › Seeds tab; `easm_candidates`, full rule table, noisy-OR, states, tombstones, path-cascading exclusions; collectors RDAP, RIPEstat/Cymru, PTR of seeded netblocks, SAN co-occurrence from CT; Review tab with evidence drawer and bulk; Beta learning; rule precision on Overview | 5–6 | Medium (precision; UI volume) | P1 | On a labelled test set (one real org's surface, ≥200 names), auto-confirmed precision ≥ 0.98 and queue precision ≥ 0.7. Rejected names never reappear without a new rule. Cross-tenant test: two tenants claiming one domain see nothing of each other |
-| **P3 — Active discovery pipeline** | Step-output chaining with `active_allowed` at each hop; wildcard filter in Go (puredns method); alterx bounded; naabu top-100; httpx+tlsx+cdncheck fields kept; certificate assets, `cname_of`, `serves_certificate`, `hosted_by`, `asn`/`netblock`; nuclei T1 flags; optional gowitness; one parser (sdk-go) | 5–6 | Medium–high (load on targets; tool behaviour) | P0; **RFC-030 P4 politeness** before enabling daily runs for more than pilot tenants | A wildcard test zone yields 0 false subdomains. One run on a 1k-name surface stays within per_host=1 and the zone `max_rps`. Every finding traces seed → … → asset. Excluded nodes are never probed (sensor log) |
+| **P3 — Active discovery pipeline** | Step-output chaining with `active_allowed` at each hop; wildcard filter in Go (puredns method); alterx bounded; naabu top-100; httpx+tlsx+cdncheck fields kept; certificate assets, `cname_of`, `serves_certificate`, `hosted_by`, `asn`/`netblock`; nuclei T1 flags; optional gowitness; one parser (sdk-go) | 5–6 | Medium–high (load on targets; tool behaviour) | P0; **RFC-030 P4 politeness** before enabling daily runs for more than pilot tenants; acceptance of the scans proposal (RFC-046) | A wildcard test zone yields 0 false subdomains. One run on a 1k-name surface stays within per_host=1 and the zone `max_rps`. Every finding traces seed → … → asset. Excluded nodes are never probed (sensor log) |
 | **P4 — Continuous monitoring** | `easm_observations` facets + hashes; diffs → state history + exposure events (`dns_change`, `port_open/closed`, `service_changed`, certificate change, `subdomain_removed`); cadence tiers + budget; notifications via outbox; MTTD and freshness metrics | 3 | Low–medium (noise) | P3 | Changing a fixture DNS record / opening a port / rotating a cert yields one event each within the tier's cadence. Unchanged rescans write no rows. MTTD shown per asset |
 | **P5 — Sources and connectors** | `discovery_source` integrations (Cert Spotter, Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, GitHub) with quota + cache; cloud connectors AWS (Route 53, public IPs, ELB, S3), Azure Resource Graph, GCP CAI as authoritative evidence; "cloud public IPs not in inventory" coverage metric | 6–8 (S per source, M per cloud) | Medium (credentials, terms) | P2 | Each source is per-tenant (`ListByProvider`) and isolation-tested. Quota exhaustion degrades to skip + warning. A connector-only asset auto-confirms with w = 1.0 |
-| **P6 — Optional modes** (each its own owner decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
+| **P6 — Optional modes** (each its own decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
 
-P0 and P1 can start immediately and need no owner input beyond accepting this
-RFC. P2 should not start before P1's attribution columns ship. P3's daily
-cadence waits on RFC-030 P4.
+**Status on `develop` (checked 2026-10-04).**
+
+| Phase | Status |
+|---|---|
+| P0 | Shipped on the api/web side: E1 CT rotation and retries (#811, migration `000266`), `certificate_expired` for the newest certificate only, E7 presets with shipped tools only (#815, `000270`), E8/E9 honest numbers and real trends (#829), E11 (#724); CT names promoted to assets and the scan attribution gate (#839). Open: E10 (automatic external/shadow scope). E2–E4 are tracked in sdk-go and the sensor. E5 (httpx certificate, favicon, JARM, ASN, CDN): api ingest of the certificate asset and `serves_certificate` shipped (migration `001026`); the ctis converter, sdk-go `LiveHost` and sensor defaults (`-tls-grab -favicon -jarm -cdn`, same-host redirects, same-host crawl, rate limit honoured) are open PRs in those repositories. |
+| P1 | Shipped: dangling CNAME/NS and email posture checks (#852, `000325`; on by default since P0-8 below, `EASM_DNS_CHECKS_ENABLED`) and the lame-delegation check (#1012); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); tenant-scan evidence `tenant_scanned` (#1004); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (#994 API, #1023 web: `/attack-surface/review`, inventory shows approved assets by default; [easm.md §4b](../architecture/easm.md)); findings on unconfirmed assets capped at P2 (#1009); takeover confirmation: a nuclei takeover-template match from a tenant scan on an open `dangling_cname` raises `subdomain_takeover` (high) (#1018, `000485`). Open: sensor-side C17 (dnsx resolver fallback, sensor repository). |
+| P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor; now scope entries, RFC-054); AS number and organization seeds with RIPEstat expansion ([RFC-082](RFC-082-network-seeds.md)). Open: candidates and tombstones, PTR collection in the sensor pipeline, noisy-OR learning, rule precision. |
+| P3–P6 | Not started (no `easm_observations`). |
+| P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor). Open: candidates and tombstones, CIDR/ASN/organization seeds with RDAP/RIPEstat/PTR collectors, noisy-OR learning, rule precision. |
+| P3–P6 | P6 in part: passive lookalike-domain monitoring ([RFC-083](RFC-083-lookalike-domains.md)). P3, P4 observations, P5 not started. |
+| P3–P6 | P4 in part: typed changes and the weekly digest over the existing records ([RFC-080](RFC-080-attack-surface-changes-and-digest.md)); no `easm_observations` yet. P3, P5, P6 not started. |
+
+**EASM maturity plan P0 (decisions E1–E13, 2026-10-04).**
+One entry per item; the sensor items (P0-1 to P0-4) live in the sensor and
+sdk-go repositories, P0-5 with the scan-engine work (RFC-046).
+
+- **P0-7 EASM alerts through the notification outbox:** shipped (this PR,
+  migration `001014`). The CT monitor, the DNS checks and takeover
+  confirmation write exposures through one writer that announces inserted
+  and reopened rows as `new_exposure` in the same transaction: immediate for
+  medium or higher on approved assets, a daily digest otherwise, never for
+  rejected or deleted assets, 30 immediate alerts per tenant per hour.
+  [easm.md §4c](../architecture/easm.md#4c-alerts-built-p0-7).
+
+- **P0-8 DNS checks on by default, takeover on dependency names (E3, E13):**
+  shipped (#1143, migration `001017`). `EASM_DNS_CHECKS_ENABLED` defaults to
+  true; the CT controller runs the DNS checks for each tenant right after its
+  CT sweep; the email check also covers root-domain seeds and verified
+  domains with no domain asset; a nuclei takeover-only scan may
+  probe a `dependency` asset with an open `dangling_cname`. The per-tenant
+  off switch comes with P0-11.
+
+- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** shipped
+  (#1145, migration `001018`). Rejected and tombstoned names (and names
+  under them) produce no CT exposure and their open CT and DNS-check
+  exposures are resolved on rejection; CT exposures link to the host's own
+  asset with an asset-independent fingerprint (stored rows re-keyed); every
+  decision queues an asset-scoped reclassify, drained every minute.
+  [easm.md §5a](../architecture/easm.md#5a-after-a-decision-built-p0-9).
+
+- **P0-10 tenant domain verification with a purpose (E6):** shipped
+  (#1151, migration `001081`). Tenants verify domains themselves through
+  `/api/v1/easm/verified-domains` (scope permissions, 10 checks per hour,
+  audited); each row has a `purpose`, and only `sso` rows (platform admin)
+  admit SSO JIT and SCIM users. Web: Verify on each seed.
+  [easm.md §4d](../architecture/easm.md#4d-verified-domains-built-p0-10).
+
+- **P0-11 EASM settings and run-now:** shipped (this PR, no migration).
+  `GET/PUT /api/v1/easm/settings` (CT and DNS-check switches, intervals
+  with a 6 h floor; the CT switch is the E8 opt-out) and
+  `POST /api/v1/easm/sweeps` (once per 15 minutes per tenant, audited); a
+  new seed starts a sweep; controllers tick hourly so tenant intervals take
+  effect. [easm.md §4e](../architecture/easm.md#4e-settings-and-run-now-built-p0-11).
+
+- **P0-12 review queue reachable, honest counts (E1):** shipped (this PR,
+  no migration). Attack surface has Overview | Review tabs and a sidebar
+  badge with the queue's own total (needs_review + candidate); `?tab=rejected`
+  opens "Not ours"; the overview, the exposed list and `/attack-surface/external`
+  count approved assets only; "internet-facing" means `exposure = public`
+  everywhere; `?attribution=all` is accepted. The E1 308 of
+  `/attack-surface/external` waits for the inventory's external columns.
+
+- **P0-13 honest EASM numbers:** shipped (this PR, no migration). The
+  summary counts only exposure types something produces; every type the API
+  can emit has a label in the web; wildcard-only CT names are no longer
+  counted as discovered subdomains; a root-domain seed under an existing
+  seed is refused; the dead certificate Validity filter is removed.
+
+- **P0-6 port and service results surfaced (B6):** shipped (this PR, no
+  migration). A port scan's open ports become `open_port` service assets
+  (through the normal exclusion, attribution and scope rules) with an
+  `exposes` edge from the address and a `port_open` exposure announced
+  through the outbox; the scanner's host name gets `resolves_to` when the
+  tenant has it; a port the next port scan no longer sees is closed
+  (inactive, "disappeared", exposure resolved) and comes back as
+  "recovered".
+
+**When and where.** Implementation is written directly in the monorepo
+(`api/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their
+own repositories. P2 may start: P1's attribution tables shipped (migration
+`000324`). P3's daily cadence waits on RFC-030 P4.
 
 ## 10. Metrics
 
@@ -742,17 +848,17 @@ Health page.
 
 | Alternative | Why not |
 |---|---|
-| Run our own internet-wide scan dataset (Censys/Xpanse model) | Cost, abuse handling, legal exposure; not an OSS platform's job. Tenants can bring keys for those datasets |
+| Run our own internet-wide scan dataset | Cost, abuse handling, legal exposure; not an OSS platform's job. Tenants can bring keys for those datasets |
 | Keep candidates as assets with a state | One table, but every inventory query, count and dashboard (dozens) would have to exclude candidates. A miss shows unconfirmed hosts as "yours" and scans them. A separate table fails safe |
 | Make the attribution score a multiplier in priority | A fifth competing score (RFC-017). A gate (cap at P2 until confirmed) is explainable |
 | Ship puredns/shuffledns/massdns | GPL-3.0 inside an MIT SDK; the wildcard algorithm is small enough to implement in Go over dnsx |
 | Run active steps from the API | Puts the control plane's IP on abuse lists, bypasses zones/politeness/egress |
-| Only crt.sh for CT | Single point of failure, observed outage [45]; tiled logs need a different client [42] |
-| Default nuclei settings | Runs 622 `intrusive` templates by default [66][67] |
+| Only crt.sh for CT | Single point of failure, observed outage [13]; tiled logs need a different client [10] |
+| Default nuclei settings | Runs 622 `intrusive` templates by default [34][35] |
 
 ## 12. Decisions
 
-### 12.1 Technical decisions taken here (no owner input needed)
+### 12.1 Technical decisions taken here
 
 | # | Decision |
 |---|---|
@@ -767,11 +873,11 @@ Health page.
 | T9 | Per-tenant keys and caches for licensed sources; no cross-tenant sharing |
 | T10 | `findings.source = easm`; provenance on evidence/sightings (ADR-004) |
 
-### 12.2 Owner decisions
+### 12.2 Decisions considered
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| **O1** | Data sources | (a) Free sources only, platform-wide; (b) free by default + paid only with **tenant-supplied keys**; (c) the platform buys a licensed dataset (Censys/Shodan/SecurityTrails) for all tenants | **(b).** On by default: crt.sh, Cert Spotter free tier, RDAP, RIPEstat, Team Cymru, our own DNS. Paid sources BYO-key, per tenant. (c) is a licensing and cost commitment, and most free tiers forbid commercial redistribution (VirusTotal, Censys research, Netlas) [92][14][97] |
+| **O1** | Data sources | (a) Free sources only, platform-wide; (b) free by default + paid only with **tenant-supplied keys**; (c) the platform buys a licensed dataset (Censys/Shodan/SecurityTrails) for all tenants | **(b).** On by default: crt.sh, Cert Spotter free tier, RDAP, RIPEstat, Team Cymru, our own DNS. Paid sources BYO-key, per tenant. (c) is a licensing and cost commitment, and most free tiers forbid commercial redistribution (VirusTotal, Censys research, Netlas) [60][2][65] |
 | **O2** | Run shared platform sensors for the external view? | (a) No, tenant sensors in the default zone only; (b) yes, opt-in per tenant, public targets only, from **published egress ranges** with rDNS, an info page and abuse contact; (c) yes, on by default | **(a) for OSS now, (b) for a hosted offering (P6).** (b) needs stable IPs, an abuse inbox someone reads, and a published range file kept true by an automated check. Never (c): RFC-023 D14 already rules out implicit platform use |
 | **O3** | Default intrusiveness tier | T0 / **T1** / T2 for confirmed assets | **T1** for confirmed, T0 for everything else. **T2 opt-in** per scope target, needs a verified seed, a named approver and an expiry |
 | **O4** | Auto-confirm threshold | Never auto-confirm; ≥ 90 with a strong rule; ≥ 75 | **≥ 90 and at least one strong rule** (verified root, seeded CIDR/ASN, connector, tenant-scanned). Everything else is reviewed |
@@ -781,6 +887,24 @@ Health page.
 | **O8** | Should results of tenant-triggered sensor scans under **unverified** roots go to the review queue instead of straight into the inventory? | Keep / change | **Keep for now** (today's behaviour, the tenant chose the target), with evidence stamped. Revisit after P2 precision data |
 | **O9** | Cadence floors on shared resources | — | Tier A daily light / weekly nuclei is the fastest a tenant can set on shared sensors; own sensors are free to go faster within RFC-030 politeness |
 | **O10** | Packaging | EASM in the existing `attack_surface` module / a new `easm` module | **Existing `attack_surface` module.** It already gates `/attack-surface/*` and the CT monitor; a new module would split one feature across two toggles |
+
+### 12.3 Decisions (approved 2026-10-02)
+
+O1–O10 were approved **as recommended** on 2026-10-02. These are now the
+design; §12.2 keeps the options that were considered.
+
+| # | Decision (approved 2026-10-02) |
+|---|---|
+| **O1** | Data sources: free sources on by default (crt.sh, Cert Spotter free tier, RDAP, RIPEstat, Team Cymru, our own DNS); paid sources (Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, VirusTotal premium …) only with **tenant-supplied keys**, per tenant. No platform-wide licensed dataset |
+| **O2** | No shared platform sensors for the external view in OSS now; tenants use their own sensor in the default (public) zone. A hosted offering may add them in P6: opt-in per tenant, public targets only, published stable egress ranges with rDNS, an information page and an abuse contact. Never on by default (RFC-023 D14) |
+| **O3** | Default tier **T1 (safe-active)** for confirmed assets, T0 for all others. **T2 intrusive is opt-in** per scope target and needs a verified seed, a named approver and an expiry |
+| **O4** | Auto-confirm only at confidence **≥ 90 with at least one strong rule** (verified root, seeded CIDR/ASN, connector, tenant-scanned); everything else goes to the review queue |
+| **O5** | Lookalike / brand monitoring **in**, passive only (T0), in P6; no probes of lookalike hosts; no takedown service |
+| **O6** | Third-party / vendor-risk mode **out**. If ever revisited: separate register, passive public data only, no packets to vendor hosts (§7) |
+| **O7** | Retention: changed observation rows 13 months; raw collector responses not stored; evidence kept while its subject exists; rejected tombstones 12 months; screenshots 30 days; state history unchanged |
+| **O8** | Results of tenant-triggered scans under unverified roots **keep going straight into the inventory**, with evidence stamped; revisit after P2 precision data |
+| **O9** | Fastest cadence on shared sensors: Tier A daily light checks and weekly nuclei; the tenant's own sensors may go faster within RFC-030 politeness |
+| **O10** | EASM ships in the existing **`attack_surface`** module; no new module |
 
 ## 13. Compatibility
 
@@ -806,115 +930,80 @@ Fetched 2026-10-02 unless noted. **[W]** = marketing page or blog (weaker).
 "403/502" = could not be fetched during the research; the claim relies on
 secondary text and is marked in the body.
 
-Vendors
-1. Microsoft Defender EASM, *What is discovery*. https://learn.microsoft.com/en-us/azure/external-attack-surface-management/what-is-discovery
-2. Microsoft Defender EASM, *Understand inventory assets*. https://learn.microsoft.com/en-us/azure/external-attack-surface-management/understanding-inventory-assets
-3. Microsoft Defender EASM, *Use and manage discovery*. https://learn.microsoft.com/en-us/azure/external-attack-surface-management/using-and-managing-discovery
-4. Microsoft Defender EASM, *Billable assets*. https://learn.microsoft.com/en-us/azure/external-attack-surface-management/understanding-billable-assets
-5. Cortex Xpanse, *Asset attribution*. https://cortex-docs.paloaltonetworks.com/cortex-xpanse/inventory/asset-attribution.md
-6. Cortex XDR ASM, *Scanning* (same engine as Xpanse: inference). https://cortex-docs.paloaltonetworks.com/cortex-xdr-5.x/detect-investigate-and-respond-to-threats/attack-surface-management/get-started-with-attack-surface-management/scanning.md
-7. Cortex Xpanse, *Attack Surface Tests*. https://cortex-docs.paloaltonetworks.com/cortex-xpanse/attack-surface-testing/attack-surface-tests.md
-8. Censys, *Opt out of data collection*. https://docs.censys.com/docs/opt-out-of-data-collection
-9. Censys, *Internet scanning*. https://docs.censys.com/docs/internet-scanning
-10. Censys ASM, *Seed your attack surface*. https://docs.censys.com/docs/asm-seed-your-attack-surface
-11. Censys ASM, *Exclude assets*. https://docs.censys.com/docs/asm-exclude-assets
-12. Censys ASM, *Inventory assets*. https://docs.censys.com/docs/asm-inventory-assets
-13. Censys ASM, *Dangling DNS risks*. https://docs.censys.com/docs/asm-dangling-dns-risks
-14. Censys, *Credits for Free/Starter*; *Scanning FAQ* (research access). https://docs.censys.com/docs/platform-credits-free-starter ; https://docs.censys.com/docs/scanning-faq
-15. Google Threat Intelligence ASM, *Understanding seeds*. https://gtidocs.readme.io/docs/understanding-attack-surface-management-seeds
-16. GTI ASM, *Scan ranges*. https://gtidocs.readme.io/docs/asm-scan-ranges
-17. GTI ASM, *Opt out*. https://gtidocs.readme.io/docs/asm-opt-out
-18. GTI ASM, *How issues work*. https://gtidocs.readme.io/docs/how-issues-work
-19. GTI ASM, *Collections tips and tricks*. https://gtidocs.readme.io/docs/collections-tips-and-tricks
-20. intrigueio GitHub organisation (intrigue-core repository returns 404). https://github.com/intrigueio
-21. Tenable ASM, *Suggested domains*. https://docs.tenable.com/attack-surface-management/Content/Topics/SuggestedDomains/SuggestedDomains.htm
-22. Tenable ASM, *Asset attribution*. https://docs.tenable.com/attack-surface-management/Content/Topics/Inventory/AssetAttribution.htm
-23. Tenable ASM, *Licensing*; *TXT records*. https://docs.tenable.com/attack-surface-management/Content/Topics/Welcome/ASMLicensing.htm ; https://docs.tenable.com/attack-surface-management/Content/Topics/TXTRecords/TXTRecords.htm
-24. Tenable ASM, *FAQ*. https://docs.tenable.com/attack-surface-management/Content/Topics/Welcome/ASM-FAQ.htm
-25. Rapid7 Surface Command, *External attack surface*. https://docs.rapid7.com/surface-command/manage-external-assets/
-26. Rapid7, *Sonar data* (approval-gated). https://sonardata.rapid7.com/
-27. ProjectDiscovery, *Asset discovery*. https://docs.projectdiscovery.io/cloud/assets/overview
-28. ProjectDiscovery, *Associated domains*. https://docs.projectdiscovery.io/cloud/assets/associated-domains
-29. ProjectDiscovery, *Asset policies*. https://docs.projectdiscovery.io/cloud/assets/asset-policies
-30. ProjectDiscovery, *Scan IPs*. https://docs.projectdiscovery.io/cloud/admin/scan-ips
-31. Detectify, *Getting started with Surface Monitoring* **[W]**. https://detectify.com/support/solutions/articles/48001049198-getting-started-with-surface-monitoring
-32. runZero, *Discovering assets* (hosted external explorer). https://help.runzero.com/docs/discovering-assets/
-33. Shodan Monitor, *Network vs domain vs query*. https://help.shodan.io/shodan-monitor/network-vs-domain-vs-query
-34. Shodan, *On-demand scanning*. https://help.shodan.io/the-basics/on-demand-scanning
-35. Shodan, *API plans*. https://account.shodan.io/billing
-36. Shodan, *Search filter reference*. https://www.shodan.io/search/filters
-37. CyCognito, *Platform* **[W]**. https://www.cycognito.com/platform/
-38. Hadrian **[W]**. https://hadrian.io/
+Passive data sources
+1. Censys, *Internet scanning*. https://docs.censys.com/docs/internet-scanning
+2. Censys, *Credits for Free/Starter*; *Scanning FAQ* (research access). https://docs.censys.com/docs/platform-credits-free-starter ; https://docs.censys.com/docs/scanning-faq
+3. Rapid7, *Sonar data* (approval-gated). https://sonardata.rapid7.com/
+4. Shodan, *On-demand scanning*. https://help.shodan.io/the-basics/on-demand-scanning
+5. Shodan, *API plans*. https://account.shodan.io/billing
+6. Shodan, *Search filter reference*. https://www.shodan.io/search/filters
 
 Standards, data sources, tools
-39. RFC 6962, Certificate Transparency. https://www.rfc-editor.org/rfc/rfc6962
-40. RFC 9162, Certificate Transparency v2.0. https://www.rfc-editor.org/rfc/rfc9162
-41. Google CT log list v3. https://www.gstatic.com/ct/log_list/v3/log_list.json
-42. C2SP static-ct-api. https://c2sp.org/static-ct-api
-43. SSLMate, Cert Spotter API pricing. https://sslmate.com/ct_search_api/
-44. CertStream. https://github.com/CaliDog/certstream-server
-45. crt.sh (HTTP 502 during research) and its schema. https://crt.sh/ ; https://github.com/crtsh/certwatch_db
-46. Scheitle et al., "The Rise of Certificate Transparency and Its Implications on the Internet Ecosystem", IMC 2018. https://doi.org/10.1145/3278532.3278562
-47. ICANN, Registration Data Policy. https://www.icann.org/resources/pages/registration-data-policy-2024-02-21-en
-48. ICANN, RDAP. https://www.icann.org/rdap
-49. RFC 7480, RFC 9082, RFC 9083, RFC 9224 (RDAP). https://www.rfc-editor.org/rfc/rfc7480 ; https://www.rfc-editor.org/rfc/rfc9082 ; https://www.rfc-editor.org/rfc/rfc9083 ; https://www.rfc-editor.org/rfc/rfc9224
-50. CIRCL Passive DNS. https://www.circl.lu/services/passive-dns/
-51. SecurityTrails, *Quotas and rate limits*. https://docs.securitytrails.com/docs/quotas-rate-limits
-52. Team Cymru, IP-to-ASN mapping. https://www.team-cymru.com/ip-asn-mapping
-53. RIPEstat Data API and terms. https://stat.ripe.net/docs/data_api ; https://www.ripe.net/about-us/legal/ripestat-service-terms-and-conditions
-54. RFC 6811, BGP prefix origin validation (and RFC 6480). https://www.rfc-editor.org/rfc/rfc6811
-55. AWS Config resource types; Route 53 `ListResourceRecordSets`. https://docs.aws.amazon.com/config/latest/developerguide/resource-config-reference.html ; https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListResourceRecordSets.html
-56. Azure Resource Graph. https://learn.microsoft.com/en-us/azure/governance/resource-graph/overview
-57. Google Cloud Asset Inventory. https://cloud.google.com/asset-inventory/docs/overview
-58. GitHub, *About secret scanning*. https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning
-59. dnstwist. https://github.com/elceef/dnstwist
-60. Unicode UTS #39, Security Mechanisms. https://www.unicode.org/reports/tr39/
-61. puredns. https://github.com/d3mondev/puredns
-62. ProjectDiscovery tools (subfinder, dnsx, naabu, httpx, tlsx, katana, cdncheck, asnmap, uncover, alterx, cloudlist). https://github.com/projectdiscovery
-63. httpx README. https://github.com/projectdiscovery/httpx
-64. gowitness. https://github.com/sensepost/gowitness
-65. wappalyzergo; webappanalyzer (Wappalyzer's original repository no longer exists). https://github.com/projectdiscovery/wappalyzergo ; https://github.com/enthec/webappanalyzer
-66. nuclei-templates statistics. https://github.com/projectdiscovery/nuclei-templates/blob/main/TEMPLATES-STATS.md
-67. nuclei-templates default ignore list. https://github.com/projectdiscovery/nuclei-templates/blob/main/.nuclei-ignore
-68. nuclei, *Running*. https://docs.projectdiscovery.io/tools/nuclei/running
-69. can-i-take-over-xyz. https://github.com/EdOverflow/can-i-take-over-xyz
-70. Liu, Hao, Wang, "All Your DNS Records Point to Us", CCS 2016. https://doi.org/10.1145/2976749.2978387
-71. Borgolte et al., "Cloud Strife: Mitigating the Security Risks of Domain-Validated Certificates", NDSS 2018. https://doi.org/10.14722/ndss.2018.23327
-72. Alowaisheq et al., "Zombie Awakening: Stealthy Hijacking of Active Domains through DNS Hosting Referral", CCS 2020. https://doi.org/10.1145/3372297.3417864
-73. Zhang et al., HostingChecker, POMACS 2023. https://doi.org/10.1145/3579440
-74. Ma et al., stale TLS certificates, IMC 2023. https://doi.org/10.1145/3618257.3624802
-75. testssl.sh. https://github.com/testssl/testssl.sh
-76. TLSRef (successor to Mozilla Server Side TLS). https://docs.tlsref.org/
-77. RFC 7208, SPF. https://www.rfc-editor.org/rfc/rfc7208
-78. RFC 6376, DKIM. https://www.rfc-editor.org/rfc/rfc6376
-79. RFC 9989, DMARC (obsoletes RFC 7489). https://www.rfc-editor.org/rfc/rfc9989
-80. RFC 8461, MTA-STS; RFC 8460, TLS-RPT. https://www.rfc-editor.org/rfc/rfc8461 ; https://www.rfc-editor.org/rfc/rfc8460
-81. CISA BOD 23-02 (403 during research; content from secondary knowledge). https://www.cisa.gov/news-events/directives/bod-23-02-mitigating-risk-internet-exposed-management-interfaces
-82. CISA KEV data. https://github.com/cisagov/kev-data
-83. FIRST EPSS. https://www.first.org/epss/
-84. CERT/CC SSVC, CISA BOD 26-04 decision model; *Publicly Exposed*. https://certcc.github.io/SSVC/howto/cisa_response/ ; https://certcc.github.io/SSVC/reference/decision_points/cisa/publicly_exposed/
-85. Gartner, CTEM (403 during research). https://www.gartner.com/en/articles/how-to-manage-cybersecurity-threats-not-episodes
-86. Harry, Sivan-Sevilla, McDermott, county attack surfaces, Journal of Cybersecurity 2024. https://doi.org/10.1093/cybsec/tyae032
-87. Durumeric, Wustrow, Halderman, "ZMap: Fast Internet-wide Scanning and Its Security Applications", USENIX Security 2013. https://www.usenix.org/conference/usenixsecurity13/technical-sessions/paper/durumeric
-88. Durumeric et al., "Ten Years of ZMap", IMC 2024. https://doi.org/10.1145/3646547.3689012
-89. Kasama et al., scanner identification and opt-out, IEEE Access 2025. https://doi.org/10.1109/ACCESS.2025.3551691
-90. Durumeric et al., "A Search Engine Backed by Internet-Wide Scanning" (Censys), CCS 2015. https://doi.org/10.1145/2810103.2813703
-91. CISA Vulnerability Management scanner source IPs. https://rules.vm.cyber.dhs.gov/all.txt
-92. VirusTotal, *Public vs Premium API*. https://docs.virustotal.com/reference/public-vs-premium-api
-93. urlscan.io, pricing. https://urlscan.io/pricing/
-94. ProjectDiscovery Chaos. https://chaos.projectdiscovery.io/
-95. Have I Been Pwned, subscriptions. https://haveibeenpwned.com/Subscription
-96. GreyNoise Community API. https://docs.greynoise.io/docs/using-the-greynoise-community-api
-97. Netlas pricing **[W]**. https://netlas.io/pricing/
-98. LeakIX plans **[W]**. https://leakix.net/plans
-99. BinaryEdge transition to Coalition. https://help.coalitioninc.com/hc/en-us/articles/34383910057371-BinaryEdge-Transition-FAQ
-100. OWASP Open Asset Model; asset-db; Amass. https://github.com/owasp-amass/open-asset-model ; https://github.com/owasp-amass/asset-db ; https://github.com/owasp-amass/amass
-101. 18 U.S.C. §1030 (CFAA); UK Computer Misuse Act 1990; *Van Buren v. United States* (2021). General background, not legal advice. https://www.law.cornell.edu/uscode/text/18/1030 ; https://www.legislation.gov.uk/ukpga/1990/18/contents ; https://www.supremecourt.gov/opinions/20pdf/19-783_k53l.pdf
-102. Szurdi, Christin, "Email Typosquatting", IMC 2017. https://doi.org/10.1145/3131365.3131399
-103. Arturi et al., "as2org+: Enriching AS-to-Organization Mappings with PeeringDB", PAM 2023. https://doi.org/10.1007/978-3-031-28486-1_17
+7. RFC 6962, Certificate Transparency. https://www.rfc-editor.org/rfc/rfc6962
+8. RFC 9162, Certificate Transparency v2.0. https://www.rfc-editor.org/rfc/rfc9162
+9. Google CT log list v3. https://www.gstatic.com/ct/log_list/v3/log_list.json
+10. C2SP static-ct-api. https://c2sp.org/static-ct-api
+11. SSLMate, Cert Spotter API pricing. https://sslmate.com/ct_search_api/
+12. CertStream. https://github.com/CaliDog/certstream-server
+13. crt.sh (HTTP 502 during research) and its schema. https://crt.sh/ ; https://github.com/crtsh/certwatch_db
+14. Scheitle et al., "The Rise of Certificate Transparency and Its Implications on the Internet Ecosystem", IMC 2018. https://doi.org/10.1145/3278532.3278562
+15. ICANN, Registration Data Policy. https://www.icann.org/resources/pages/registration-data-policy-2024-02-21-en
+16. ICANN, RDAP. https://www.icann.org/rdap
+17. RFC 7480, RFC 9082, RFC 9083, RFC 9224 (RDAP). https://www.rfc-editor.org/rfc/rfc7480 ; https://www.rfc-editor.org/rfc/rfc9082 ; https://www.rfc-editor.org/rfc/rfc9083 ; https://www.rfc-editor.org/rfc/rfc9224
+18. CIRCL Passive DNS. https://www.circl.lu/services/passive-dns/
+19. SecurityTrails, *Quotas and rate limits*. https://docs.securitytrails.com/docs/quotas-rate-limits
+20. Team Cymru, IP-to-ASN mapping. https://www.team-cymru.com/ip-asn-mapping
+21. RIPEstat Data API and terms. https://stat.ripe.net/docs/data_api ; https://www.ripe.net/about-us/legal/ripestat-service-terms-and-conditions
+22. RFC 6811, BGP prefix origin validation (and RFC 6480). https://www.rfc-editor.org/rfc/rfc6811
+23. AWS Config resource types; Route 53 `ListResourceRecordSets`. https://docs.aws.amazon.com/config/latest/developerguide/resource-config-reference.html ; https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListResourceRecordSets.html
+24. Azure Resource Graph. https://learn.microsoft.com/en-us/azure/governance/resource-graph/overview
+25. Google Cloud Asset Inventory. https://cloud.google.com/asset-inventory/docs/overview
+26. GitHub, *About secret scanning*. https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning
+27. dnstwist. https://github.com/elceef/dnstwist
+28. Unicode UTS #39, Security Mechanisms. https://www.unicode.org/reports/tr39/
+29. puredns. https://github.com/d3mondev/puredns
+30. ProjectDiscovery tools (subfinder, dnsx, naabu, httpx, tlsx, katana, cdncheck, asnmap, uncover, alterx, cloudlist). https://github.com/projectdiscovery
+31. httpx README. https://github.com/projectdiscovery/httpx
+32. gowitness. https://github.com/sensepost/gowitness
+33. wappalyzergo; webappanalyzer (Wappalyzer's original repository no longer exists). https://github.com/projectdiscovery/wappalyzergo ; https://github.com/enthec/webappanalyzer
+34. nuclei-templates statistics. https://github.com/projectdiscovery/nuclei-templates/blob/main/TEMPLATES-STATS.md
+35. nuclei-templates default ignore list. https://github.com/projectdiscovery/nuclei-templates/blob/main/.nuclei-ignore
+36. nuclei, *Running*. https://docs.projectdiscovery.io/tools/nuclei/running
+37. can-i-take-over-xyz. https://github.com/EdOverflow/can-i-take-over-xyz
+38. Liu, Hao, Wang, "All Your DNS Records Point to Us", CCS 2016. https://doi.org/10.1145/2976749.2978387
+39. Borgolte et al., "Cloud Strife: Mitigating the Security Risks of Domain-Validated Certificates", NDSS 2018. https://doi.org/10.14722/ndss.2018.23327
+40. Alowaisheq et al., "Zombie Awakening: Stealthy Hijacking of Active Domains through DNS Hosting Referral", CCS 2020. https://doi.org/10.1145/3372297.3417864
+41. Zhang et al., HostingChecker, POMACS 2023. https://doi.org/10.1145/3579440
+42. Ma et al., stale TLS certificates, IMC 2023. https://doi.org/10.1145/3618257.3624802
+43. testssl.sh. https://github.com/testssl/testssl.sh
+44. TLSRef (successor to Mozilla Server Side TLS). https://docs.tlsref.org/
+45. RFC 7208, SPF. https://www.rfc-editor.org/rfc/rfc7208
+46. RFC 6376, DKIM. https://www.rfc-editor.org/rfc/rfc6376
+47. RFC 9989, DMARC (obsoletes RFC 7489). https://www.rfc-editor.org/rfc/rfc9989
+48. RFC 8461, MTA-STS; RFC 8460, TLS-RPT. https://www.rfc-editor.org/rfc/rfc8461 ; https://www.rfc-editor.org/rfc/rfc8460
+49. CISA BOD 23-02 (403 during research; content from secondary knowledge). https://www.cisa.gov/news-events/directives/bod-23-02-mitigating-risk-internet-exposed-management-interfaces
+50. CISA KEV data. https://github.com/cisagov/kev-data
+51. FIRST EPSS. https://www.first.org/epss/
+52. CERT/CC SSVC, CISA BOD 26-04 decision model; *Publicly Exposed*. https://certcc.github.io/SSVC/howto/cisa_response/ ; https://certcc.github.io/SSVC/reference/decision_points/cisa/publicly_exposed/
+54. Harry, Sivan-Sevilla, McDermott, county attack surfaces, Journal of Cybersecurity 2024. https://doi.org/10.1093/cybsec/tyae032
+55. Durumeric, Wustrow, Halderman, "ZMap: Fast Internet-wide Scanning and Its Security Applications", USENIX Security 2013. https://www.usenix.org/conference/usenixsecurity13/technical-sessions/paper/durumeric
+56. Durumeric et al., "Ten Years of ZMap", IMC 2024. https://doi.org/10.1145/3646547.3689012
+57. Kasama et al., scanner identification and opt-out, IEEE Access 2025. https://doi.org/10.1109/ACCESS.2025.3551691
+58. Durumeric et al., "A Search Engine Backed by Internet-Wide Scanning" (Censys), CCS 2015. https://doi.org/10.1145/2810103.2813703
+59. CISA Vulnerability Management scanner source IPs. https://rules.vm.cyber.dhs.gov/all.txt
+60. VirusTotal, *Public vs Premium API*. https://docs.virustotal.com/reference/public-vs-premium-api
+61. urlscan.io, pricing. https://urlscan.io/pricing/
+62. ProjectDiscovery Chaos. https://chaos.projectdiscovery.io/
+63. Have I Been Pwned, subscriptions. https://haveibeenpwned.com/Subscription
+64. GreyNoise Community API. https://docs.greynoise.io/docs/using-the-greynoise-community-api
+65. Netlas pricing **[W]**. https://netlas.io/pricing/
+66. LeakIX plans **[W]**. https://leakix.net/plans
+67. BinaryEdge transition to Coalition. https://help.coalitioninc.com/hc/en-us/articles/34383910057371-BinaryEdge-Transition-FAQ
+68. OWASP Open Asset Model; asset-db; Amass. https://github.com/owasp-amass/open-asset-model ; https://github.com/owasp-amass/asset-db ; https://github.com/owasp-amass/amass
+69. 18 U.S.C. §1030 (CFAA); UK Computer Misuse Act 1990; *Van Buren v. United States* (2021). General background, not legal advice. https://www.law.cornell.edu/uscode/text/18/1030 ; https://www.legislation.gov.uk/ukpga/1990/18/contents ; https://www.supremecourt.gov/opinions/20pdf/19-783_k53l.pdf
+70. Szurdi, Christin, "Email Typosquatting", IMC 2017. https://doi.org/10.1145/3131365.3131399
+71. Arturi et al., "as2org+: Enriching AS-to-Organization Mappings with PeeringDB", PAM 2023. https://doi.org/10.1007/978-3-031-28486-1_17
 
 Not verified during the research (and therefore not relied on for a design
-choice): crt.sh limits; full BOD 23-02 and BOD 26-04 text on cisa.gov; Gartner's
-CTEM text; scanner IPs of Microsoft, Detectify, runZero, Tenable, Rapid7;
-free-tier numbers of SecurityTrails, FOFA, ZoomEye, Hunter.how, OTX; mobile-app
+choice): crt.sh limits; full BOD 23-02 and BOD 26-04 text on cisa.gov; free-tier numbers of SecurityTrails, FOFA, ZoomEye, Hunter.how, OTX; mobile-app
 discovery practice.

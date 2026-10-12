@@ -9,10 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -90,7 +92,7 @@ func candidates(ids ...shared.ID) []scanzone.SensorCandidate {
 	return out
 }
 
-func newZonedScanService(dir *fakeZoneDir, res tableResolver, excl valueExclusions) (*scanservice.Service, *testScanServiceDeps) {
+func newZonedScanService(dir *fakeZoneDir, res tableResolver, excl valueExclusions, extra ...scanservice.ServiceOption) (*scanservice.Service, *testScanServiceDeps) {
 	deps := &testScanServiceDeps{
 		scanRepo:       newMockScanRepo(),
 		templateRepo:   newMockTemplateRepo(),
@@ -112,7 +114,7 @@ func newZonedScanService(dir *fakeZoneDir, res tableResolver, excl valueExclusio
 	}
 	svc := scanservice.NewService(deps.scanRepo, deps.templateRepo, deps.assetGroupRepo, deps.runRepo,
 		deps.stepRepo, &mockStepRunRepo{}, deps.commandRepo, &mockScannerTemplateRepo{}, &mockTemplateSourceRepo{},
-		deps.toolRepo, &mockTemplateSyncer{}, deps.sensorSelector, deps.secValidator, logger.NewNop(), opts...)
+		deps.toolRepo, &mockTemplateSyncer{}, deps.sensorSelector, deps.secValidator, logger.NewNop(), allowAllTargetChecks(append(opts, extra...)...)...)
 	deps.toolRepo.tools["nuclei"] = &tool.Tool{ID: shared.NewID(), Name: "nuclei", IsActive: true, SupportedTargets: []string{"url", "domain", "ip"}}
 	deps.toolRepo.tools["betterleaks"] = &tool.Tool{ID: shared.NewID(), Name: "betterleaks", IsActive: true, SupportedTargets: []string{"file", "repository"}}
 	return svc, deps
@@ -134,7 +136,7 @@ func singleScan(t *testing.T, deps *testScanServiceDeps, tenant shared.ID, scann
 	return s
 }
 
-func trigger(t *testing.T, svc *scanservice.Service, s *scan.Scan) (*pipeline.Run, error) {
+func trigger(t *testing.T, svc *scanservice.Service, s *scan.Scan) (*scanrun.Run, error) {
 	t.Helper()
 	return svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{TenantID: s.TenantID.String(), ScanID: s.ID.String()})
 }
@@ -167,7 +169,7 @@ func commandsByTarget(t *testing.T, deps *testScanServiceDeps) map[string]*comma
 	return out
 }
 
-func warningsOf(run *pipeline.Run) []string {
+func warningsOf(run *scanrun.Run) []string {
 	switch w := run.Context["dispatch_warnings"].(type) {
 	case []string:
 		return w
@@ -469,8 +471,8 @@ func TestScanZones_WorkflowStaysInOneZone(t *testing.T) {
 	mkWorkflow := func(deps *testScanServiceDeps, targets ...string) *scan.Scan {
 		s := createTestScanInRepo(deps, tenant, "wf", scan.ScanTypeWorkflow)
 		s.SetTargets(targets)
-		pid := *s.PipelineID
-		deps.stepRepo.steps[pid.String()] = []*pipeline.Step{{ID: shared.NewID(), PipelineID: pid, StepKey: "s", StepOrder: 1, Tool: "nuclei"}}
+		pid := *s.ScanWorkflowID
+		deps.stepRepo.steps[pid.String()] = []*scanworkflow.Step{{ID: shared.NewID(), ScanWorkflowID: pid, StepKey: "s", StepOrder: 1, Tool: "nuclei"}}
 		return s
 	}
 
@@ -488,7 +490,7 @@ func TestScanZones_WorkflowStaysInOneZone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pipeline.ScanZoneFromContext(run.Context); got == nil || *got != a.ID {
+	if got := scanrun.ScanZoneFromContext(run.Context); got == nil || *got != a.ID {
 		t.Errorf("workflow run zone = %v, want a", got)
 	}
 	if !hasWarning(warningsOf(run), "192.168.0.1 not scanned") {
@@ -498,6 +500,25 @@ func TestScanZones_WorkflowStaysInOneZone(t *testing.T) {
 		if c.ScanZoneID == nil || *c.ScanZoneID != a.ID {
 			t.Errorf("workflow step command zone = %v, want a", c.ScanZoneID)
 		}
+	}
+}
+
+// A workflow scan has no scanner of its own: its steps plan their targets
+// (and cut them into chunks). It is never warned that only its first target
+// is scanned.
+func TestWorkflowScan_NoSingleTargetCaveat(t *testing.T) {
+	tenant := shared.NewID()
+	svc, deps := newZonedScanService(&fakeZoneDir{}, nil, nil)
+	s := createTestScanInRepo(deps, tenant, "wf", scan.ScanTypeWorkflow)
+	s.SetTargets([]string{"8.8.8.8", "1.1.1.1", "app.example.com"})
+	pid := *s.ScanWorkflowID
+	deps.stepRepo.steps[pid.String()] = []*scanworkflow.Step{{ID: shared.NewID(), ScanWorkflowID: pid, StepKey: "s", StepOrder: 1, Tool: "nuclei"}}
+	run, err := trigger(t, svc, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasWarning(warningsOf(run), "takes one target per job") {
+		t.Errorf("workflow scan warned that only one target is scanned: %v", warningsOf(run))
 	}
 }
 

@@ -1,6 +1,8 @@
 # Makefile Commands Guide
 
-This document provides a comprehensive guide to using Makefile commands for the OpenCTEM UI project.
+The targets of `web/Makefile` (run them in `web/`). They wrap the npm scripts in
+`package.json`. The repository root `Makefile` has the cross-component targets
+(`make setup`, `make generate`, `make dev-web`, `make web-<script>`).
 
 ## Quick Start
 
@@ -72,28 +74,34 @@ make dev
 
 ### Production
 
-| Command             | Description                            |
-| ------------------- | -------------------------------------- |
-| `make docker-prod`  | Start production environment           |
-| `make docker-clean` | Remove containers, volumes, and images |
+| Command             | Description                                            |
+| ------------------- | ------------------------------------------------------ |
+| `make docker-prod`  | Print how to start the production stack (`api/deploy`) |
+| `make docker-clean` | Remove containers, volumes, and images                 |
 
 ## Git Hooks
 
-This project uses **Husky** for git hooks (different from API which uses pre-commit).
+Git hooks live in the repository root's `.githooks/` and are shared with the API
+(there is no Husky any more). They are enabled by `git config core.hooksPath .githooks`,
+which `make hooks` / `make setup` at the repository root run, and which `npm ci` /
+`npm install` here also run (the `prepare` script).
 
-| Command                   | Description                 |
-| ------------------------- | --------------------------- |
-| `make husky-install`      | Install Husky git hooks     |
-| `make pre-commit-install` | Info about pre-commit setup |
+| Command                   | Description                                                 |
+| ------------------------- | ----------------------------------------------------------- |
+| `make hooks` (root)       | Enable the repository hooks                                 |
+| `make husky-install`      | Kept for compatibility: `npm install`, which runs `prepare` |
+| `make pre-commit-install` | Same as `make hooks` at the root                            |
 
-**Note**: Husky hooks are automatically installed when you run `npm install` or `make install`.
+When `web/` files are staged, `.githooks/pre-commit` runs `npm run type-check` and
+`lint-staged` (ESLint `--fix` + Prettier on staged files). `.githooks/commit-msg`
+rejects AI attribution lines.
 
 ## Common Workflows
 
 ### First-time Setup
 
 ```bash
-# 1. Install dependencies (also installs Husky hooks)
+# 1. Install dependencies (also enables the repository git hooks)
 make install
 
 # 2. Copy environment file
@@ -123,7 +131,7 @@ make validate
 # Run tests
 make test
 
-# Husky will automatically run lint-staged on commit
+# The pre-commit hook runs type-check + lint-staged on commit
 git commit -m "Your message"
 ```
 
@@ -161,11 +169,10 @@ Create `.env.local` from `.env.example`:
 cp .env.example .env.local
 ```
 
-Key variables:
+Key variables (full list: [ops/ENVIRONMENT_VARIABLES.md](./ops/ENVIRONMENT_VARIABLES.md)):
 
 - `BACKEND_API_URL` - Backend API URL (server-side only)
 - `NEXT_PUBLIC_APP_URL` - Frontend URL (public)
-- `NEXT_PUBLIC_AUTH_PROVIDER` - Auth provider: "local" | "oidc" | "hybrid"
 
 ### Docker Environment
 
@@ -226,7 +233,7 @@ Features:
    extra_hosts:
      - 'host.docker.internal:host-gateway'
    ```
-3. Or use direct IP: `BACKEND_API_URL=http://192.168.x.x:8080`
+3. Or use the host's address: `BACKEND_API_URL=http://192.0.2.10:8080`
 
 ### Build failures
 
@@ -246,8 +253,8 @@ make docker-dev
 # Run type checker
 make type-check
 
-# Generate types from OpenAPI (if applicable)
-# Check API docs for type generation commands
+# Regenerate the API contract types (repository root)
+make -C .. generate
 ```
 
 ## NPM Scripts vs Makefile
@@ -267,5 +274,5 @@ You can use either Makefile or npm scripts - they do the same thing!
 ## Related Documentation
 
 - [Architecture](./ARCHITECTURE.md) - System architecture
-- [Features](./features/) - Feature documentation
-- [Deployment](./guides/) - Deployment guides
+- [Calling the API](./guides/API_INTEGRATION.md)
+- [Docker and Sentry](./ops/DOCKER_SENTRY_SETUP.md)

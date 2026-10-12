@@ -1,5 +1,7 @@
 package handler
 
+import "strings"
+
 // sanitizeCSVCell defuses CSV formula injection. A spreadsheet program
 // interprets a cell starting with =, +, -, @, CR, or TAB as a formula,
 // which has historically allowed a malicious asset name or finding
@@ -7,13 +9,22 @@ package handler
 // when an exported report is opened in Excel/LibreOffice/Numbers.
 // Mitigation follows OWASP: prepend a single apostrophe to any cell
 // whose first byte is in the trigger set.
+//
+// Leading whitespace does not protect a cell: spreadsheet importers trim
+// it, so " =HYPERLINK(...)" is still a formula. The check skips it, like
+// the web client's sanitizeCsvCell (RFC-040 §5.4).
 func sanitizeCSVCell(s string) string {
 	if s == "" {
 		return s
 	}
-	switch s[0] {
-	case '=', '+', '-', '@', '\t', '\r':
+	if s[0] == '\t' || s[0] == '\r' {
 		return "'" + s
+	}
+	if trimmed := strings.TrimLeft(s, " \t\r\n\v\f"); trimmed != "" {
+		switch trimmed[0] {
+		case '=', '+', '-', '@':
+			return "'" + s
+		}
 	}
 	return s
 }

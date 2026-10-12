@@ -142,8 +142,10 @@ func (h *ThreatModelHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	var filter tmdom.ModelFilter
 	if st := r.URL.Query().Get("scope_type"); st != "" {

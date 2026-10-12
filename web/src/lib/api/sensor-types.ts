@@ -6,15 +6,15 @@
  */
 
 // Sensor types - maps to backend SensorType
-// runner = CI/CD one-shot, worker = daemon, collector = asset discovery, sensor = EASM
-export type SensorType = 'runner' | 'worker' | 'collector' | 'sensor'
+// worker = daemon, collector = asset discovery, sensor = EASM
+export type SensorType = 'worker' | 'collector' | 'sensor'
 
 /**
  * Sensor role (RFC-023 §9.1, decision D18): what a sensor does, as opposed to
  * its legacy `type`, which mixes what it does with how it runs. The API does
  * not send a role yet (it arrives with RFC-023 Phase 2, together with the
  * endpoint-agent and monitor roles); until then the role is derived from the
- * legacy type exactly as the RFC maps it: worker, runner and the old EASM
+ * legacy type exactly as the RFC maps it: worker and the old EASM
  * 'sensor' type scan, a collector collects.
  */
 export type SensorRole = 'scanner' | 'collector'
@@ -28,8 +28,12 @@ export function sensorRoleOf(type: SensorType): SensorRole {
 // Admin-controlled status
 export type SensorStatus = 'active' | 'disabled' | 'revoked'
 
-// Heartbeat-based health (automatic)
-export type SensorHealth = 'unknown' | 'online' | 'offline' | 'error'
+// Heartbeat-based health (automatic). late and stale are the heartbeat
+// ladder's steps between online and offline (api RFC-035 §5.6).
+export type SensorHealth = 'unknown' | 'online' | 'late' | 'stale' | 'offline' | 'error'
+
+/** Where a sensor stands on the heartbeat ladder (api RFC-035 §5.6). */
+export type SensorHeartbeatState = 'online' | 'late' | 'stale' | 'offline'
 
 export type ExecutionMode = 'standalone' | 'daemon'
 
@@ -39,7 +43,15 @@ export type ExecutionMode = 'standalone' | 'daemon'
  * Older APIs do not send it; `sensorState()` computes the same ladder then.
  */
 export type SensorState =
-  'online' | 'degraded' | 'stale' | 'offline' | 'idle' | 'never_connected' | 'disabled' | 'revoked'
+  | 'online'
+  | 'degraded'
+  | 'late'
+  | 'stale'
+  | 'offline'
+  | 'idle'
+  | 'never_connected'
+  | 'disabled'
+  | 'revoked'
 
 /** How a sensor's version compares with the platform's release channel. */
 export type SensorVersionStatus = 'latest' | 'update_available' | 'unsupported' | 'unknown'
@@ -65,6 +77,11 @@ export interface SensorHealthReason {
     | 'content_stale'
     | 'content_refresh_failed'
     | 'sdk_unsupported'
+    | 'heartbeat_late'
+    | 'control_slow'
+    | 'config_check_failed'
+    | 'config_check_warning'
+    | 'config_report_stale'
     | (string & {})
   severity: 'warning' | 'critical'
   message: string
@@ -82,6 +99,27 @@ export interface SensorOutbox {
 }
 
 /**
+ * How well the sensor's heartbeat loop keeps time, as it last reported it
+ * (sdk-go, api RFC-035 §5.5). Values are reported by the sensor (clamped).
+ */
+export interface SensorControl {
+  /** The heartbeat interval the sensor follows, in seconds. */
+  interval_s: number
+  /** Seconds between its last two delivered heartbeats. */
+  gap_s: number
+  /** How late its heartbeat timer fired (CPU starvation), in ms. */
+  lag_ms: number
+  /** How long building the heartbeat report took, in ms. */
+  build_ms: number
+  /** Round trip of its previous heartbeat, in ms. */
+  rtt_ms: number
+  /** Heartbeats lost before the last one. */
+  failures: number
+  /** Server time the report was stored. */
+  reported_at: string | null
+}
+
+/**
  * What the platform last saw of the sensor's protocol (RFC-029): null before
  * the first heartbeat that recorded it; `deprecated` for protocol v1.
  */
@@ -90,7 +128,17 @@ export interface SensorProtocol {
   user_agent: string
   seen_at: string
   deprecated: boolean
+  /**
+   * How the last heartbeat arrived (api RFC-059): `grpc` (protocol v3 over
+   * mutual TLS), `https` (protocol v3 over HTTPS) or `v2`; absent before the
+   * platform recorded it.
+   */
+  binding?: SensorTransportBinding
+  /** Why the sensor is not on gRPC, as it reported it. */
+  fallback_reason?: string
 }
+
+export type SensorTransportBinding = 'grpc' | 'https' | 'v2'
 
 /**
  * Scanner content (api RFC-031): the data a tool scans with (trivy's
@@ -221,10 +269,9 @@ export interface Sensor {
   type: SensorType
   description?: string
   capabilities: SensorCapability[]
-  tools: SensorTool[]
   execution_mode: ExecutionMode
   status: SensorStatus // Admin-controlled: active, disabled, revoked
-  health: SensorHealth // Automatic heartbeat: unknown, online, offline, error
+  health: SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
   status_message?: string
   api_key_prefix: string
   version?: string
@@ -248,6 +295,11 @@ export interface Sensor {
   last_offline_at?: string | null
   /** When the current API key stops working; null = never. */
   key_expires_at?: string | null
+  /**
+   * The current key is a legacy `rda_` key. It renews automatically to the
+   * `octs_` format; `rda_` keys are retired after enrollment ships.
+   */
+  legacy_key?: boolean
   /** Process start, from the uptime the heartbeat reports. */
   started_at?: string | null
   uptime_seconds?: number | null
@@ -264,7 +316,6 @@ export interface Sensor {
   state?: SensorState
   health_reasons?: SensorHealthReason[]
   version_status?: SensorVersionStatus
-  is_platform_sensor?: boolean
   /** Protocol telemetry (RFC-029); absent on APIs without it. */
   protocol?: SensorProtocol | null
   /** Scanner content (RFC-031); absent on APIs without it. */
@@ -273,11 +324,15 @@ export interface Sensor {
   content_refresh_supported?: boolean
   /**
    * What the sensor last reported it has (api RFC-029 §4.3.1); null before
-   * its first report, absent on APIs without it. `tools`, `capabilities`
-   * and `max_concurrent_jobs` above are then the administrator's limits.
+   * its first report, absent on APIs without it. `capabilities` and
+   * `max_concurrent_jobs` above are the administrator's limits.
    */
   reported?: SensorReported | null
-  /** What dispatch uses: the report narrowed by the limits. */
+  /**
+   * What dispatch uses: the reported installed tools (none before a
+   * report; the sensor grant narrows them), and the reported capabilities
+   * and capacity narrowed by the limits.
+   */
   effective?: SensorEffective
   /** The current manifest's digest (RFC-033); "" before the first one. */
   manifest_digest?: string
@@ -286,10 +341,25 @@ export interface Sensor {
   /** sensor: registered by the sensor; heartbeat: derived by the platform. */
   manifest_source?: 'sensor' | 'heartbeat' | '' | (string & {})
   /**
+   * The sensor-local policy the sensor reports (api RFC-040 §5.7): enforced
+   * on the sensor, shown here. Absent on APIs without it.
+   */
+  local_policy?: SensorLocalPolicy
+  /** The security posture (api RFC-040 §11.4); absent on an older API. */
+  posture?: SensorPosture
+  /**
    * The load the sensor last reported on its heartbeat (api RFC-030 §5.8);
    * null when it never reported one, absent on APIs without it.
    */
   load?: SensorLoad | null
+  /** Last control-channel report (api RFC-035); null when never reported. */
+  control?: SensorControl | null
+  /** The interval the sensor follows, stored at its last heartbeat; null before the first. */
+  heartbeat_interval_seconds?: number | null
+  /** When its next heartbeat is due. */
+  heartbeat_due_at?: string | null
+  /** Where it stands on the heartbeat ladder now; "" when it never connected. */
+  heartbeat_state?: SensorHeartbeatState | ''
   /** Limits the report contradicts (a tool set here that is not installed). */
   capability_mismatch?: SensorCapabilityMismatch | null
   /** The SDK the sensor binary is built with ("openctem-sdk-go"); "" when unknown. */
@@ -303,6 +373,11 @@ export interface Sensor {
   sensor_commit?: string
   /** When the sensor binary was built. */
   sensor_build_time?: string | null
+  /**
+   * The setup report's health (research/26 §4.6): null before the first
+   * report, absent on APIs without config reports.
+   */
+  config_health?: SensorConfigHealth | null
 }
 
 /** One tool of a sensor's reported inventory. */
@@ -357,7 +432,6 @@ export interface SensorEffective {
 }
 
 export interface SensorCapabilityMismatch {
-  tools_not_installed?: string[]
   capabilities_not_reported?: string[]
 }
 
@@ -400,7 +474,6 @@ export interface CreateSensorRequest {
   type: SensorType
   description?: string
   capabilities?: SensorCapability[]
-  tools?: SensorTool[]
   execution_mode?: ExecutionMode
   max_concurrent_jobs?: number
   labels?: Record<string, string>
@@ -422,7 +495,6 @@ export interface UpdateSensorRequest {
   name?: string
   description?: string
   capabilities?: SensorCapability[]
-  tools?: SensorTool[]
   execution_mode?: ExecutionMode
   status?: SensorStatus
   max_concurrent_jobs?: number
@@ -474,6 +546,22 @@ export interface AvailableCapabilitiesResponse {
 // SENSOR MANIFEST (api RFC-033: GET /api/v1/sensors/{id}/manifest[s])
 // ============================================
 
+/**
+ * A tool's tool-contract manifest (sdk-go docs/rfcs/sensor-sdk-v2.md), as the
+ * sensor declared it: by digest, with what the tool is and what it may
+ * produce. Ingest keeps only the declared output types of a ported tool.
+ */
+export interface SensorToolContract {
+  api_version: string
+  digest: string
+  version: string
+  class: 'target-scan' | 'connector' | 'parser' | 'enricher' | (string & {})
+  tier: 'T0' | 'T1' | 'T2' | (string & {})
+  network?: 'none' | 'targets' | 'egress-proxy' | 'vendor' | (string & {})
+  consumes?: string[] | null
+  produces: string[]
+}
+
 /** One tool of a sensor manifest. */
 export interface SensorManifestTool {
   name: string
@@ -484,6 +572,8 @@ export interface SensorManifestTool {
   target_types?: string[] | null
   content?:
     { name: string; version?: string; digest?: string; source?: string; managed: boolean }[] | null
+  /** Absent for a tool not ported to the tool contract. */
+  contract?: SensorToolContract | null
 }
 
 /** What a sensor is (RFC-033 §6.2), as the platform kept it. */
@@ -510,6 +600,7 @@ export interface SensorManifestIgnored {
     | 'unknown-tool'
     | 'invalid-name'
     | 'unknown-capability'
+    | 'invalid-contract'
     | 'limit'
     | (string & {})
 }
@@ -537,6 +628,8 @@ export interface SensorManifestDiff {
   tools_removed?: string[]
   versions?: { tool: string; from: string; to: string }[]
   installed?: { tool: string; from: string; to: string }[]
+  /** Tools whose tool-contract digest changed ("" when absent). */
+  contracts?: { tool: string; from: string; to: string }[]
   capabilities?: { tool?: string; added?: string[]; removed?: string[] }[]
   sensor_wide?: { added?: string[]; removed?: string[] } | null
   /** build, sdk, platform, resources, concurrency */
@@ -562,6 +655,7 @@ export type SensorActivityType =
   | 'online'
   | 'offline'
   | 'restarted'
+  | 'heartbeat_recovered'
   // updates
   | 'version_changed'
   | 'sdk_version_changed'
@@ -571,12 +665,14 @@ export type SensorActivityType =
   | 'content_updated'
   | 'content_refresh_failed'
   | 'manifest_changed'
+  | 'local_policy_changed'
   // jobs
   | 'job_claimed'
   | 'job_completed'
   | 'job_failed'
   | 'job_canceled'
   | 'job_expired'
+  | 'job_refused_local_policy'
   // people (an audit-log row)
   | 'audit'
   | (string & {})
@@ -608,6 +704,16 @@ export interface SensorActivityDetails {
   // online / offline
   offline_seconds?: number
   last_seen_at?: string
+  // heartbeat_recovered (RFC-035): the step the sensor had reached
+  was?: 'late' | 'stale' | 'offline' | (string & {})
+  gap_seconds?: number
+  interval_seconds?: number
+  // local_policy_changed (RFC-040): from/to above are display states
+  digest_from?: string
+  digest_to?: string
+  // job_refused_local_policy (RFC-040): the policy rule and the sensor's reason
+  rule?: string
+  reason?: string
   // job_*
   command_id?: string
   command_type?: string
@@ -653,10 +759,154 @@ export interface SensorActivityResponse {
   audit_included: boolean
 }
 
+/** One 15-minute bucket of a sensor's heartbeat history (RFC-035). */
+export interface SensorHeartbeatBucket {
+  /** Bucket start, RFC3339 UTC. */
+  at: string
+  /** Heartbeats received in the bucket. */
+  beats: number
+  /** Average and largest time between consecutive heartbeats (0: none). */
+  avg_gap_s: number
+  max_gap_s: number
+  /** The interval the sensor followed (what the gaps compare with). */
+  interval_s: number
+  /** Largest timer lag and heartbeats lost, from the sensor's control report. */
+  max_lag_ms: number
+  failures: number
+}
+
+/** GET /sensors/{id}/heartbeat-history: buckets that had a heartbeat, oldest first. */
+export interface SensorHeartbeatHistoryResponse {
+  bucket_seconds: number
+  hours: number
+  buckets: SensorHeartbeatBucket[]
+}
+
 export interface SensorActivityQuery {
   /** Empty = every category. */
   types?: SensorActivityCategory[]
   cursor?: string
   /** 1..100, default 30. */
   limit?: number
+}
+
+/** Display state of a sensor-local policy: paused while its kill switch is engaged. */
+export type SensorLocalPolicyState = 'enforced' | 'absent' | 'paused' | 'unknown'
+
+/** The shape of an enforced local policy (never its ranges). */
+export interface SensorLocalPolicySummary {
+  /** Number of allow entries; -1 when the policy sets no allow list. */
+  targets_allow: number
+  targets_deny: number
+  allow_private: boolean
+  /** Allowed ports ("" or absent = any). */
+  ports?: string
+  /** Allowed tools and job types (absent = any). */
+  tools?: string[]
+  checks?: string[]
+  allow_custom_templates: boolean
+  allow_interactsh: boolean
+  max_rps?: number
+  max_job_seconds?: number
+}
+
+/** Why the platform flags a sensor as unhardened (api RFC-040 §11.4). */
+export type SensorUnhardenedReason =
+  'policy_none' | 'pin_none' | 'network_unenforced' | 'bearer_key'
+
+/**
+ * A sensor's security posture as the API derives it from what the sensor
+ * reports (api RFC-040 §11.4). Display only.
+ */
+export interface SensorPosture {
+  local_policy: 'enforced' | 'absent_required' | 'absent_legacy' | 'unknown' | (string & {})
+  platform_pin: 'fingerprint' | 'ca_file' | 'none' | 'unknown' | (string & {})
+  /** null when the sensor did not report its sandbox. */
+  network_enforced: boolean | null
+  unhardened: (SensorUnhardenedReason | (string & {}))[]
+}
+
+/** A sensor's local policy as the API shows it (api RFC-040 §5.7). */
+export interface SensorLocalPolicy {
+  state: SensorLocalPolicyState | (string & {})
+  /** The sensor requires a local policy: absent and required, it refuses
+   * every job with a network target. */
+  required?: boolean
+  source?: 'file' | 'env' | (string & {})
+  digest?: string
+  kill_switch: boolean
+  summary?: SensorLocalPolicySummary
+  warnings?: string[]
+  reported_at?: string
+}
+
+// ---------------------------------------------------------------------------
+// Sensor setup report (research/26 §4.4–§4.8): GET /sensors/{id}/config-report
+// Hand-written to the API contract until the generated types carry it.
+// ---------------------------------------------------------------------------
+
+/** Rollup of the sensor's setup checks; "unknown" when the report is stale. */
+export type SensorConfigHealth = 'ok' | 'attention' | 'impaired' | 'blocked' | 'unknown'
+
+export type SensorConfigCheckStatus = 'pass' | 'warn' | 'fail' | 'skip' | 'error'
+
+export type SensorConfigCheckGroup =
+  | 'platform'
+  | 'identity'
+  | 'policy'
+  | 'tools'
+  | 'content'
+  | 'network'
+  | 'storage'
+  | 'runtime'
+  | 'config'
+  | 'connector'
+
+/** One setup check. `summary` and `excerpt` are the sensor's own words: data only. */
+export interface SensorConfigCheck {
+  id: string
+  group: SensorConfigCheckGroup | (string & {})
+  status: SensorConfigCheckStatus | (string & {})
+  severity: 'info' | 'warning' | 'critical' | (string & {})
+  code: string
+  /** The platform catalog explains this check; false for a newer sensor's check. */
+  known: boolean
+  /** Catalog title; the id for an unknown check. */
+  title: string
+  /** Catalog explanation, params substituted as plain text; absent when unknown. */
+  why?: string
+  /** "What we saw": the typed params as label/value pairs. */
+  observed?: { label: string; value: string }[]
+  summary?: string
+  excerpt?: string
+  keys?: string[]
+  blocks?: string[]
+  /** Fix snippets per install format, from the platform catalog only; {} when none. */
+  fix?: Partial<Record<string, string>>
+  docs_url?: string
+}
+
+/** A declared setting: whether it is set and where from. Never its value. */
+export interface SensorConfigSetting {
+  name: string
+  set: boolean
+  source: 'env' | 'option' | 'default' | 'unset' | (string & {})
+  secret: boolean
+  valid: boolean
+}
+
+export interface SensorConfigReport {
+  /** reported: sent by the sensor; derived: built by the platform from heartbeats; none: nothing yet. */
+  state: 'reported' | 'derived' | 'none' | (string & {})
+  /** The sensor's latest heartbeat names a different report (or none). */
+  stale: boolean
+  health: SensorConfigHealth | (string & {})
+  observed_at?: string | null
+  received_at?: string | null
+  truncated: boolean
+  runtime_kind?: string
+  derived_note?: string
+  counts?: Partial<Record<SensorConfigCheckStatus, number>>
+  checks?: SensorConfigCheck[]
+  settings?: SensorConfigSetting[]
 }

@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -34,6 +35,39 @@ func registerHealthRoutes(router Router, h *handler.HealthHandler, metricsAuth M
 	}
 }
 
+// Rate limits of POST /api/v1/client-errors: per client address, and for
+// all callers together, so an anonymous flood can neither grow memory nor
+// push the error count far (labels are a fixed set either way).
+const (
+	clientErrorPerIPPerSecond = 0.2 // 12 a minute
+	clientErrorPerIPBurst     = 10
+	clientErrorPerSecond      = 5.0
+	clientErrorBurst          = 50
+)
+
+// registerClientErrorRoute registers POST /api/v1/client-errors: the web
+// console reports an error kind there for the operator's alerting. Public,
+// because the worst web failures (a broken deploy) happen before sign-in;
+// it accepts only a kind from a fixed set and stores nothing.
+func registerClientErrorRoute(router Router, h *handler.ClientErrorHandler, log *logger.Logger) {
+	if h == nil {
+		return
+	}
+	perIP := middleware.NewTelemetryRateLimiter(clientErrorPerIPPerSecond, clientErrorPerIPBurst, time.Hour, log).
+		MiddlewareKeyed(middleware.ClientIPKey, "Too many error reports")
+	overall := middleware.NewTelemetryRateLimiter(clientErrorPerSecond, clientErrorBurst, time.Hour, log).
+		MiddlewareKeyed(func(*http.Request) string { return "all" }, "Too many error reports")
+	router.POST("/api/v1/client-errors", h.Report, perIP, overall)
+}
+
+// registerAnnouncementRoute registers GET /api/v1/announcements: the platform
+// operator's active notices (maintenance, warnings) for the banner. Any
+// signed-in user, like /version: plain text written by the operator, no
+// tenant data. authMiddleware is the JWT/session chain (no oct_ keys).
+func registerAnnouncementRoute(router Router, h *handler.AnnouncementHandler, authMiddleware Middleware) {
+	router.GET("/api/v1/announcements", h.Active, authMiddleware)
+}
+
 // registerVersionRoute registers GET /api/v1/version: the running build, for
 // Help > About. Any signed-in user, nothing more: it is not tenant data, and it
 // stays off the public /health so an unauthenticated client cannot fingerprint
@@ -42,13 +76,37 @@ func registerVersionRoute(router Router, authMiddleware Middleware) {
 	router.GET("/api/v1/version", handler.Version, authMiddleware)
 }
 
-// registerDocsRoutes registers API documentation endpoints (public).
-func registerDocsRoutes(router Router, h *handler.DocsHandler) {
-	// OpenAPI spec (YAML)
-	router.GET("/openapi.yaml", h.ServeOpenAPISpec)
+// registerLegalRoute registers GET /api/v1/legal: the operator's legal
+// information (links to the terms and privacy policy, the built-in legal
+// pages' values, the security.txt contact), public on purpose because the web
+// console shows it before sign-in. Nothing secret is stored there (RFC-079).
+func registerLegalRoute(router Router, h *handler.AdminLegalHandler) {
+	if h == nil {
+		return
+	}
+	router.GET("/api/v1/legal", h.Public)
+}
 
-	// Scalar API documentation UI
-	router.GET("/docs", h.ServeDocsUI)
+// registerDocsRoutes registers the API documentation (the OpenAPI spec and
+// the API reference page). The public documentation lives on the docs site,
+// so in production the API serves:
+//   - /openapi.yaml to signed-in users only (authMiddleware);
+//   - no public /docs page;
+//   - /api/v1/admin/docs and /api/v1/admin/openapi.yaml to platform
+//     administrators with a verified console session (consoleAuth).
+//
+// Outside production /docs and /openapi.yaml stay public for development.
+func registerDocsRoutes(router Router, h *handler.DocsHandler, production bool, authMiddleware, consoleAuth Middleware) {
+	if production {
+		router.GET("/openapi.yaml", h.ServeOpenAPISpec, authMiddleware)
+	} else {
+		router.GET("/openapi.yaml", h.ServeOpenAPISpec)
+		router.GET("/docs", h.ServeDocsUI)
+	}
+	if consoleAuth != nil {
+		router.GET("/api/v1/admin/openapi.yaml", h.ServeOpenAPISpec, consoleAuth)
+		router.GET("/api/v1/admin/docs", h.ServeConsoleDocsUI, consoleAuth)
+	}
 }
 
 // registerDashboardRoutes registers dashboard endpoints.
@@ -59,23 +117,30 @@ func registerDashboardRoutes(
 	h *handler.DashboardHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	log *logger.Logger,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// The dashboard's reads in one response (research/81). Each part is sent
+	// through this router with the caller's credentials, so it passes its own
+	// endpoint's gates; this route itself needs dashboard:read.
+	overview := handler.NewDashboardOverviewHandler(router.Handler, log)
+	// Build tenant middleware chain from JWT token. Program-only assets
+	// (RFC-065 §16.5) are left out of every dashboard number unless the
+	// request asks for them with include_program_assets=true.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), includeProgramAssets)
 
 	// Dashboard routes
 	router.Group("/api/v1/dashboard", func(r Router) {
-		r.GET("/stats/global", h.GetGlobalStats, middleware.Require(permission.DashboardRead))
-		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead))
-		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead))
-		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead))
-		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead))
-		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead))
-		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
 		r.GET("/executive-summary/export", h.ExportExecutiveSummary, middleware.Require(permission.DashboardRead))
-		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead))
-		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead))
-		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead))
+		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/overview", overview.Overview, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }
 
@@ -120,12 +185,11 @@ func registerAuditRoutes(
 		// running verify with wider permissions than read.
 		r.GET("/verify", h.VerifyChain, middleware.RequireAdmin())
 
-		// Re-baseline the hash-chain (re-sign from current data) to clear
-		// breaks from a known-benign hashing change. Owner-only + audited —
-		// it overwrites the tamper-evident chain, so an administrator must not
-		// be able to erase the evidence of their own changes (owner decision
-		// 2026-10-02).
-		r.POST("/rebaseline", h.RebaselineChain, middleware.RequireOwner())
+		// There is no rebaseline here: re-signing the tamper-evident chain is
+		// a platform-operator action, only in the admin console
+		// (POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline). The
+		// chain exists to make an insider's changes evident, and the
+		// organization's owner is that insider.
 	}, tenantMiddlewares...)
 }
 
@@ -136,11 +200,10 @@ func registerSLARoutes(
 	h *handler.SLAHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token.
-	// Append the module gate after tenant extraction so it can read the tenant.
-	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	// SLA is a core module (every finding carries a deadline), so these
+	// routes have no module gate; permissions still apply.
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	// SLA Policy routes - tenant from JWT token
 	router.Group("/api/v1/sla-policies", func(r Router) {
@@ -188,7 +251,7 @@ func registerIntegrationRoutes(
 		r.GET("/", h.List, middleware.Require(permission.IntegrationsRead))
 
 		// List SCM integrations specifically
-		r.GET("/scm", h.ListSCM, middleware.Require(permission.IntegrationsRead))
+		r.GET("/scm", h.ListSCM, middleware.RequireAll(permission.IntegrationsRead, permission.SCMConnectionsRead))
 
 		// List Notification integrations specifically
 		r.GET("/notifications", h.ListNotifications, middleware.Require(permission.IntegrationsRead))
@@ -204,11 +267,12 @@ func registerIntegrationRoutes(
 
 		// Per-tenant Jira inbound-webhook secret (static paths; must be before
 		// /{id} routes). Gated by IntegrationsManage because the response
-		// contains a secret.
-		r.GET("/jira/webhook-secret", h.GetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
-		r.POST("/jira/webhook-secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
-		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
-		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
+		// contains a secret, and by step-up: whoever holds the secret can
+		// forge inbound webhook events for the organization.
+		r.GET("/jira/webhook-secret", h.GetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.POST("/jira/webhook-secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// List Jira projects for the destination-project picker (static path;
 		// must be before /{id} routes). nil handler = no DB → skip.
@@ -230,7 +294,6 @@ func registerIntegrationRoutes(
 		// Integration actions
 		r.POST("/{id}/test", h.Test, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.IntegrationsManage))
-		r.POST("/{id}/import-repositories", h.ImportRepositories, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage))
 
@@ -239,7 +302,11 @@ func registerIntegrationRoutes(
 		r.POST("/{id}/test-notification", h.TestNotification, middleware.Require(permission.IntegrationsManage))
 		// NOTE: /send endpoint removed for security - notifications are triggered internally only
 		// Use BroadcastNotification from FindingService/ScanService instead
-		r.GET("/{id}/notification-events", h.GetNotificationEvents, middleware.Require(permission.IntegrationsRead))
+		// Delivery history carries every event's title, body and metadata
+		// (finding messages, asset names, owner emails) for the whole
+		// tenant, ignoring data scope: channel managers only, like the
+		// channel configuration that decides where those events go.
+		r.GET("/{id}/notification-events", h.GetNotificationEvents, middleware.Require(permission.IntegrationsManage))
 
 		// List repositories from SCM integration
 		r.GET("/{id}/repositories", h.ListRepositories, middleware.Require(permission.IntegrationsRead))
@@ -258,22 +325,30 @@ func registerOutboxRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Tenant-scoped routes - tenant from JWT token
+	// Tenant-scoped routes - tenant from JWT token.
+	//
+	// The outbox holds a row for every event, whether or not a channel is
+	// configured: new findings (message, asset id, owner name and email),
+	// new assets, exposures, SLA and approval events, tenant-wide and
+	// without data scope. That is delivery telemetry for whoever manages the
+	// channels, so every route also needs integrations:manage (owner/admin
+	// by default); members and viewers hold notifications:read for their
+	// own in-app notices, not for this stream. Research doc 15, L-03.
 	router.Group("/api/v1/notification-outbox", func(r Router) {
 		// Get outbox statistics for tenant
-		r.GET("/stats", h.GetStats, middleware.Require(permission.NotificationsRead))
+		r.GET("/stats", h.GetStats, middleware.RequireAll(permission.NotificationsRead, permission.IntegrationsManage))
 
 		// List outbox entries for tenant
-		r.GET("/", h.List, middleware.Require(permission.NotificationsRead))
+		r.GET("/", h.List, middleware.RequireAll(permission.NotificationsRead, permission.IntegrationsManage))
 
 		// Get single outbox entry (must belong to tenant)
-		r.GET("/{id}", h.Get, middleware.Require(permission.NotificationsRead))
+		r.GET("/{id}", h.Get, middleware.RequireAll(permission.NotificationsRead, permission.IntegrationsManage))
 
 		// Retry failed entry (must belong to tenant)
-		r.POST("/{id}/retry", h.Retry, middleware.Require(permission.NotificationsWrite))
+		r.POST("/{id}/retry", h.Retry, middleware.RequireAll(permission.NotificationsWrite, permission.IntegrationsManage))
 
 		// Delete entry (must belong to tenant)
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.NotificationsDelete))
+		r.DELETE("/{id}", h.Delete, middleware.RequireAll(permission.NotificationsDelete, permission.IntegrationsManage))
 	}, tenantMiddlewares...)
 }
 
@@ -307,9 +382,13 @@ func registerBootstrapRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerWebSocketRoutes registers WebSocket endpoints for real-time communication.
-// WebSocket replaces SSE for real-time features (activities, scans, notifications).
-// Authentication is handled by the UnifiedAuth middleware (JWT token in Authorization header).
+// registerWebSocketRoutes registers the real-time WebSocket endpoint
+// (RFC-045). The browser opens it on the UI's own origin and the upgrade is
+// authenticated by the auth_token session cookie (or a Bearer access token),
+// through realtimeMiddlewares: the same tenant gates as every tenant route.
+// No credential travels in the URL. The handler then requires an Origin from
+// the allowlist for a cookie-authenticated upgrade, and binds the socket to
+// the session and the token's expiry.
 //
 // Channels follow the format: {type}:{id}. The hub authorizes every
 // subscription against the connection's own user and tenant
@@ -325,27 +404,10 @@ func registerWebSocketRoutes(
 	h *websocket.Handler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	wsTicketMiddleware Middleware, // F-8: non-nil when the single-use ticket path is enabled.
 ) {
-	// F-8: When the single-use ticket middleware is wired (Redis available),
-	// use it as the ONLY authenticator for /ws. This prevents replay-via-URL
-	// because each ticket is atomically consumed on first redemption. We
-	// intentionally skip the JWT auth chain here so that a leaked query-
-	// string token is no longer an accepted credential for WS upgrades.
-	if wsTicketMiddleware != nil {
-		router.Group("/api/v1/ws", func(r Router) {
-			r.GET("/", h.ServeWS)
-		}, wsTicketMiddleware)
-		return
-	}
-
-	// Fallback: build tenant middleware chain from JWT token. Only used
-	// when Redis / WSTicketService is not configured — operators running
-	// without Redis inherit the old short-lived-JWT-in-URL behaviour.
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/ws", func(r Router) {
 		r.GET("/", h.ServeWS)
-	}, tenantMiddlewares...)
+	}, realtimeMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
 // registerAPIKeyRoutes registers API key management routes.
@@ -359,9 +421,9 @@ func registerAPIKeyRoutes(
 
 	router.Group("/api/v1/api-keys", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.APIKeysRead))
-		r.POST("/", h.Create, middleware.Require(permission.APIKeysWrite))
+		r.POST("/", h.Create, middleware.Require(permission.APIKeysWrite), requireStepUp())
 		r.GET("/{id}", h.Get, middleware.Require(permission.APIKeysRead))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.APIKeysDelete))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.APIKeysDelete), requireStepUp())
 		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.APIKeysWrite))
 	}, tenantMiddlewares...)
 }
@@ -387,46 +449,21 @@ func registerNotificationRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerPlatformStatsRoutes registers platform stats endpoints.
-// These are tenant-scoped routes for viewing platform sensor statistics.
-func registerPlatformStatsRoutes(
+// registerPlatformScanningRoutes registers platform scanning as a tenant sees
+// it: an aggregated service, for anyone who reads sensors or scans. No tenant
+// route reads or manages a platform sensor itself (admin console, RFC-022).
+func registerPlatformScanningRoutes(
 	router Router,
-	h *handler.PlatformStatsHandler,
+	h *handler.PlatformScanningHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	router.Group("/api/v1/platform", func(r Router) {
-		r.GET("/stats", h.GetStats)
+		r.GET("/scanning", h.Get, middleware.RequireAny(permission.SensorsRead, permission.ScansRead))
 	}, tenantMiddlewares...)
 }
-
-// registerWebhookRoutes registers webhook management routes.
-func registerWebhookRoutes(
-	router Router,
-	h *handler.WebhookHandler,
-	authMiddleware Middleware,
-	userSyncMiddleware Middleware,
-) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	router.Group("/api/v1/webhooks", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.WebhooksRead))
-		r.POST("/", h.Create, middleware.Require(permission.WebhooksWrite))
-		r.GET("/{id}", h.Get, middleware.Require(permission.WebhooksRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.WebhooksWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.WebhooksDelete))
-		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.WebhooksWrite))
-		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.WebhooksWrite))
-		r.GET("/{id}/deliveries", h.ListDeliveries, middleware.Require(permission.WebhooksRead))
-	}, tenantMiddlewares...)
-}
-
-// F-1: wire HMAC verification around the Jira webhook. The tenant query
-// param remains for routing, but the middleware now requires a valid
-// HMAC-SHA256 of the body signed with JIRA_WEBHOOK_SECRET before the
-// handler runs — preventing cross-tenant spoofing by external callers.
 
 // JiraWebhookSecretResolver returns the candidate HMAC secrets for a tenant's
 // inbound Jira webhooks (one per configured Jira integration). Implemented by
@@ -439,21 +476,16 @@ type JiraWebhookSecretResolver interface {
 // These endpoints are NOT protected by JWT — they are called by external services (e.g. Jira).
 // Tenant routing is done via a ?tenant= query parameter that each external service configures.
 //
-// Each request is verified with HMAC-SHA256 over the raw body (middleware.VerifyHMACMulti).
-// The accepted secrets are, in order:
-//   - the requesting tenant's own per-integration webhook secrets (resolved via
-//     resolver using the ?tenant= param) — this is what prevents cross-tenant
-//     spoofing, since a tenant only ever holds its own secrets;
-//   - the platform-wide jiraSecret as a backward-compatible fallback for
-//     deployments that have not yet configured per-tenant secrets.
-//
-// If neither resolves to anything the middleware fails closed (rejects every
-// request), so the endpoint is never reachable without explicit configuration.
+// Each request is verified with HMAC-SHA256 over the raw body
+// (middleware.VerifyHMACMulti) against the requesting organization's own
+// per-integration webhook secrets only, resolved from ?tenant=. An
+// organization only ever holds its own secrets, so one organization cannot
+// sign a delivery for another. There is no platform-wide secret. With no
+// secret for the named organization the middleware rejects the request.
 func registerIncomingWebhookRoutes(
 	router Router,
 	jiraHandler *handler.JiraWebhookHandler,
 	resolver JiraWebhookSecretResolver,
-	jiraSecret string,
 	log *logger.Logger,
 ) {
 	if jiraHandler == nil {
@@ -462,29 +494,58 @@ func registerIncomingWebhookRoutes(
 	hmacMW := middleware.VerifyHMACMulti(
 		"X-OpenCTEM-Signature",
 		func(r *http.Request) ([]string, bool) {
-			secrets := make([]string, 0, 2)
-
-			// Per-tenant secrets for the tenant named in ?tenant=. Failures to
-			// resolve (bad tenant id, lookup error) simply contribute no
+			// Failures to resolve (bad tenant id, lookup error) contribute no
 			// candidates — they never widen acceptance to another tenant.
-			if resolver != nil {
-				if tid, err := shared.IDFromString(r.URL.Query().Get("tenant")); err == nil {
-					if tenantSecrets, err := resolver.ListJiraWebhookSecrets(r.Context(), tid); err == nil {
-						secrets = append(secrets, tenantSecrets...)
-					} else {
-						log.Warn("failed to resolve tenant Jira webhook secrets", "error", err)
-					}
-				}
+			if resolver == nil {
+				return nil, false
 			}
-
-			// Backward-compatible platform fallback.
-			if jiraSecret != "" {
-				secrets = append(secrets, jiraSecret)
+			tid, err := shared.IDFromString(r.URL.Query().Get("tenant"))
+			if err != nil {
+				return nil, false
 			}
-
+			secrets, err := resolver.ListJiraWebhookSecrets(r.Context(), tid)
+			if err != nil {
+				log.Warn("failed to resolve tenant Jira webhook secrets", "error", err)
+				return nil, false
+			}
 			return secrets, len(secrets) > 0
 		},
 		log,
 	)
 	router.POST("/api/v1/webhooks/incoming/jira", jiraHandler.IncomingJiraWebhook, hmacMW)
+}
+
+// GitHub webhook budget per client IP. Generous: deliveries for every
+// organization arrive from GitHub's shared address pool. It bounds the
+// per-request secret lookup an unauthenticated caller can trigger.
+const (
+	githubWebhookPerIPPerSecond = 50
+	githubWebhookPerIPBurst     = 500
+)
+
+// registerGitHubWebhookRoute registers the public GitHub webhook. The handler
+// verifies GitHub's X-Hub-Signature-256 against the organization's own
+// secrets and refuses replays of a delivery id; the route adds a per-IP
+// budget in front of the secret lookup.
+func registerGitHubWebhookRoute(router Router, h *handler.GitHubWebhookHandler, log *logger.Logger) {
+	perIP := middleware.NewTelemetryRateLimiter(githubWebhookPerIPPerSecond, githubWebhookPerIPBurst, time.Hour, log).
+		MiddlewareKeyed(middleware.ClientIPKey, "Too many webhook deliveries")
+	router.POST("/api/v1/webhooks/incoming/github", h.IncomingGitHubWebhook, perIP)
+}
+
+// includeProgramAssets puts include_program_assets=true into the request
+// context (shared.WithProgramAssets); any other value keeps the default.
+func includeProgramAssets(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("include_program_assets") == "true" {
+			ctx := shared.WithProgramAssets(r.Context())
+			// Private program assets stay hidden from non-members who are
+			// not owners (RFC-065 §15.3); an unparseable user is a member
+			// of nothing.
+			uid, _ := shared.IDFromString(middleware.GetUserID(ctx))
+			ctx = shared.WithProgramViewer(ctx, shared.ProgramViewer{UserID: uid, Owner: middleware.IsOwner(ctx)})
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(w, r)
+	})
 }

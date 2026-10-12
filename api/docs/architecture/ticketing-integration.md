@@ -71,7 +71,7 @@ Only **Jira** has a ticketing client. `linear` and `asana` are declared in
 `pkg/domain/integration` but have no client, so creating one is refused with
 HTTP 400 (`ErrProviderNotSupported`) instead of being stored as an integration
 that never runs. The rule is general — `Provider.HasClient()` gates every
-category (Wiz, Snyk, CrowdStrike, AWS, GCP and Azure are refused the same way),
+category (any provider declared without a client is refused the same way),
 and the integration response carries `supported: false` for any older row of
 such a provider so the UI can show it honestly. GitHub Issues ticketing rides
 the GitHub **SCM** integration (see `github-issue-ticketing.md`).
@@ -145,6 +145,18 @@ retry/backoff. A Jira failure never fails the originating status change.
   (its `WorkItemURIs` contains `/browse/<PROJECT>-`) is not re-created.
 - **Secret redaction** (#135): secret-leak findings never copy the raw value into
   a ticket; descriptions are run through redaction patterns as defense-in-depth.
+- **Output encoding** (RFC-040 §5.4): finding text is attacker-influenced (a
+  scanned page title, a file path, a sensor report) and the description is Jira
+  wiki markup (REST API v2). Every value is secret-redacted first, then encoded
+  by `pkg/safetext`. One-line values (title, location, masked value) are
+  backslash-escaped (`JiraWikiInline`), and the scanner description goes into
+  a `{noformat}` block it cannot close (`JiraWikiBlock`). URLs are defanged
+  (`https[:]//…`), and control, bidi and zero-width characters are removed
+  (Trojan Source). Lengths are capped. The summary is plain text: one line,
+  cleaned, at most 240 characters. Scanner text therefore cannot add links,
+  `[~user]` mentions, `!image!` tracking pixels or `{html}` macros to a ticket.
+  The Mobilization brief is operator-written guidance: it keeps its formatting
+  and is only cleaned.
 - **Outbound opt-in** (#171): `sync_enabled` defaults to false — connecting an
   integration never silently writes to Jira.
 
@@ -228,12 +240,12 @@ target `project_key` (+ optional `issue_type`):
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 0 | Per-tenant client resolver | **Done** (#137, ui#152) |
+| 0 | Per-tenant client resolver | **Done** (#137, openctemio/ui#152) |
 | 1 | `MappingConfig` type + defaults (zero behaviour change) | **Done** (mapping.go) |
-| 2 | Configurable mapping (`status_outbound`/`status_inbound`/`sync_enabled`) backend + UI editor | **Done** (#168 backend; UI in ui#193) |
-| 2b | Wire mapping into **create** (project/issue-type/priority) + default project + project picker | **Done** (#207, ui#184) |
+| 2 | Configurable mapping (`status_outbound`/`status_inbound`/`sync_enabled`) backend + UI editor | **Done** (#168 backend; UI in openctemio/ui#193) |
+| 2b | Wire mapping into **create** (project/issue-type/priority) + default project + project picker | **Done** (#207, openctemio/ui#184) |
 | 3 | Outbound status sync (asynq + echo-guard, opt-in) | **Done** (#167, #171) |
-| 4a | Routing rules (severity/tag/asset scope/criticality → project_key) | **Done** (#209; UI in ui#189; asset_group dimension deferred) |
+| 4a | Routing rules (severity/tag/asset scope/criticality → project_key) | **Done** (#209; UI in openctemio/ui#189; asset_group dimension deferred) |
 | 4b | 2nd provider (ServiceNow/GitHub) + typed `ticket_links` table | Planned (optional) |
 
 ### UI surfaces (shipped)
@@ -242,15 +254,12 @@ The full operator UI is in the `ui` repo:
 
 | Surface | Where | PR |
 |---------|-------|-----|
-| Connect Jira (base URL + email + token) | Settings → Integrations → Ticketing | ui#152 |
-| **Default project picker** (lists `GET /integrations/jira/projects`) + sync toggle | Configure dialog | ui#184 |
-| **Mapping editor** (issue type, default priority, severity→priority, outbound status names) | Configure dialog | ui#193 |
-| **Routing rules editor** (severity/scope/criticality/tag → project) | "Routing" dialog on the integration card | ui#189 |
-| **Create ticket from a finding** | findings table row menu + finding **detail drawer** | ui#189 (row), ui#192 (drawer) |
+| Connect Jira (base URL + email + token) | Settings → Integrations → Ticketing | openctemio/ui#152 |
+| **Default project picker** (lists `GET /integrations/jira/projects`) + sync toggle | Configure dialog | openctemio/ui#184 |
+| **Mapping editor** (issue type, default priority, severity→priority, outbound status names) | Configure dialog | openctemio/ui#193 |
+| **Routing rules editor** (severity/scope/criticality/tag → project) | "Routing" dialog on the integration card | openctemio/ui#189 |
+| **Create ticket from a finding** | findings table row menu + finding **detail drawer** | openctemio/ui#189 (row), openctemio/ui#192 (drawer) |
 
-> Note: an earlier roadmap entry credited a `ui#170` mapping editor that was never
-> actually merged to `develop`; the real mapping/create-ticket/routing UI landed in
-> ui#184/#189/#192/#193 (some recovered from a stacked-PR mishap — see git history).
 > Inbound status-name mapping editor (arbitrary Jira status → finding status) is the
 > one remaining UI gap; stock-Jira inbound defaults cover the common case.
 

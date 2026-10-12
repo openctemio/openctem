@@ -33,7 +33,7 @@ describe('OnboardingBundlePicker', () => {
     expect(screen.getByText('Attack Surface Management')).toBeInTheDocument()
     expect(screen.getByText('Vulnerability Management Essentials')).toBeInTheDocument()
     // Default state: nothing selected = full platform.
-    expect(screen.getByText('Full platform — every module available')).toBeInTheDocument()
+    expect(screen.getByText('Every module your plan includes')).toBeInTheDocument()
   })
 
   it('toggles a bundle on click', async () => {
@@ -51,7 +51,7 @@ describe('OnboardingBundlePicker', () => {
       'aria-pressed',
       'true'
     )
-    expect(screen.getByText(/1 product selected/i)).toBeInTheDocument()
+    expect(screen.getByText('Starting set selected')).toBeInTheDocument()
   })
 
   it('shows a skeleton while loading', () => {

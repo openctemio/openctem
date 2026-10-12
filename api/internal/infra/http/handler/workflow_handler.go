@@ -7,24 +7,24 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // WorkflowHandler handles HTTP requests for workflows.
 type WorkflowHandler struct {
-	service   *app.WorkflowService
+	service   *automationsvc.WorkflowService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewWorkflowHandler creates a new WorkflowHandler.
-func NewWorkflowHandler(service *app.WorkflowService, v *validator.Validator, log *logger.Logger) *WorkflowHandler {
+func NewWorkflowHandler(service *automationsvc.WorkflowService, v *validator.Validator, log *logger.Logger) *WorkflowHandler {
 	return &WorkflowHandler{
 		service:   service,
 		validator: v,
@@ -97,6 +97,12 @@ type WorkflowResponse struct {
 	CreatedBy      *string        `json:"created_by,omitempty"`
 	CreatedAt      string         `json:"created_at"`
 	UpdatedAt      string         `json:"updated_at"`
+	// UnsupportedFeatures lists the trigger and action types this workflow
+	// uses that the platform does not execute ("trigger:schedule",
+	// "action:assign_team", ...). Such a workflow stays readable but cannot
+	// be activated or saved until they are removed. Only set when the graph
+	// is loaded.
+	UnsupportedFeatures []string `json:"unsupported_features,omitempty"`
 }
 
 // NodeResponse represents a node in the workflow response.
@@ -142,10 +148,17 @@ type EdgeResponse struct {
 
 // --- Run Request/Response Types ---
 
-// TriggerWorkflowRequest represents the request body for triggering a workflow run.
+// TriggerWorkflowRequest represents the request body for starting a workflow
+// run by hand. The run acts as the caller, on at most one subject named by id
+// (finding_id or asset_id); its data is built from the stored entity. Only
+// the manual trigger type is accepted, and trigger_data is refused: a caller
+// must not be able to make an automation act on an entity by forging the
+// event that names it.
 type TriggerWorkflowRequest struct {
-	TriggerType string         `json:"trigger_type" validate:"omitempty,oneof=manual schedule finding_created finding_updated finding_age asset_discovered scan_completed webhook"`
+	TriggerType string         `json:"trigger_type" validate:"omitempty,oneof=manual"`
 	TriggerData map[string]any `json:"trigger_data"`
+	FindingID   string         `json:"finding_id" validate:"omitempty,uuid"`
+	AssetID     string         `json:"asset_id" validate:"omitempty,uuid"`
 }
 
 // WorkflowRunResponse represents the response for a workflow run.
@@ -220,11 +233,11 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Convert nodes
-	nodes := make([]app.CreateNodeInput, len(req.Nodes))
+	nodes := make([]automationsvc.CreateNodeInput, len(req.Nodes))
 	for i, n := range req.Nodes {
-		nodes[i] = app.CreateNodeInput{
+		nodes[i] = automationsvc.CreateNodeInput{
 			NodeKey:     n.NodeKey,
-			NodeType:    workflow.NodeType(n.NodeType),
+			NodeType:    automation.NodeType(n.NodeType),
 			Name:        n.Name,
 			Description: n.Description,
 		}
@@ -238,9 +251,9 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Convert edges
-	edges := make([]app.CreateEdgeInput, len(req.Edges))
+	edges := make([]automationsvc.CreateEdgeInput, len(req.Edges))
 	for i, e := range req.Edges {
-		edges[i] = app.CreateEdgeInput{
+		edges[i] = automationsvc.CreateEdgeInput{
 			SourceNodeKey: e.SourceNodeKey,
 			TargetNodeKey: e.TargetNodeKey,
 			SourceHandle:  e.SourceHandle,
@@ -248,7 +261,7 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	input := app.CreateWorkflowInput{
+	input := automationsvc.CreateWorkflowInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		Name:        req.Name,
@@ -312,13 +325,17 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 		isActive = &active
 	}
 
-	input := app.ListWorkflowsInput{
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input := automationsvc.ListWorkflowsInput{
 		TenantID: tenantUUID,
 		IsActive: isActive,
 		Tags:     parseQueryArray(r.URL.Query().Get("tags")),
 		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     paging.Page,
+		PerPage:  paging.PerPage,
 	}
 
 	result, err := h.service.ListWorkflows(r.Context(), input)
@@ -383,7 +400,13 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	input := app.UpdateWorkflowInput{
+	// Switching a workflow on makes its steps run (as the caller, who
+	// becomes its owner): it needs the permission of every step.
+	if req.IsActive != nil && *req.IsActive && !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
+		return
+	}
+
+	input := automationsvc.UpdateWorkflowInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -483,11 +506,11 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 	}
 
 	// Convert nodes
-	nodes := make([]app.CreateNodeInput, len(req.Nodes))
+	nodes := make([]automationsvc.CreateNodeInput, len(req.Nodes))
 	for i, n := range req.Nodes {
-		nodes[i] = app.CreateNodeInput{
+		nodes[i] = automationsvc.CreateNodeInput{
 			NodeKey:     n.NodeKey,
-			NodeType:    workflow.NodeType(n.NodeType),
+			NodeType:    automation.NodeType(n.NodeType),
 			Name:        n.Name,
 			Description: n.Description,
 		}
@@ -501,9 +524,9 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 	}
 
 	// Convert edges
-	edges := make([]app.CreateEdgeInput, len(req.Edges))
+	edges := make([]automationsvc.CreateEdgeInput, len(req.Edges))
 	for i, e := range req.Edges {
-		edges[i] = app.CreateEdgeInput{
+		edges[i] = automationsvc.CreateEdgeInput{
 			SourceNodeKey: e.SourceNodeKey,
 			TargetNodeKey: e.TargetNodeKey,
 			SourceHandle:  e.SourceHandle,
@@ -511,7 +534,7 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	input := app.UpdateWorkflowGraphInput{
+	input := automationsvc.UpdateWorkflowGraphInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -565,17 +588,17 @@ func (h *WorkflowHandler) AddNode(w http.ResponseWriter, r *http.Request) {
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	// AuthZ: gate action nodes by their underlying mutation's permission.
-	if !h.requireActionPermissions(w, r, req.Config) {
+	// AuthZ: the new node and every step already in the workflow.
+	if !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID, req.Config) {
 		return
 	}
 
-	input := app.AddNodeInput{
+	input := automationsvc.AddNodeInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
 		NodeKey:     req.NodeKey,
-		NodeType:    workflow.NodeType(req.NodeType),
+		NodeType:    automation.NodeType(req.NodeType),
 		Name:        req.Name,
 		Description: req.Description,
 	}
@@ -644,12 +667,15 @@ func (h *WorkflowHandler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	// AuthZ: gate action nodes by their underlying mutation's permission.
-	if !h.requireActionPermissions(w, r, req.Config) {
+	// AuthZ: a config edit needs the edited config's permission and that of
+	// every step already in the workflow (a trigger or condition edit
+	// changes what those steps run on). A name or position edit changes
+	// nothing that runs.
+	if req.Config != nil && !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID, req.Config) {
 		return
 	}
 
-	input := app.UpdateNodeInput{
+	input := automationsvc.UpdateNodeInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -700,7 +726,14 @@ func (h *WorkflowHandler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteNode(r.Context(), tenantUUID, workflowUUID, nodeUUID); err != nil {
+	// AuthZ: deleting a node (a condition in front of an action) changes
+	// what the remaining steps run on.
+	if !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
+		return
+	}
+
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err := h.service.DeleteNode(r.Context(), tenantUUID, userUUID, workflowUUID, nodeUUID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -741,7 +774,13 @@ func (h *WorkflowHandler) AddEdge(w http.ResponseWriter, r *http.Request) {
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	input := app.AddEdgeInput{
+	// AuthZ: rewiring changes what the steps run on, so it needs the
+	// permission of every step, like editing a node.
+	if !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
+		return
+	}
+
+	input := automationsvc.AddEdgeInput{
 		TenantID:      tenantUUID,
 		UserID:        userUUID,
 		WorkflowID:    workflowUUID,
@@ -786,7 +825,14 @@ func (h *WorkflowHandler) DeleteEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteEdge(r.Context(), tenantUUID, workflowUUID, edgeUUID); err != nil {
+	// AuthZ: removing an edge (the one through a condition) changes what
+	// the steps run on.
+	if !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
+		return
+	}
+
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err := h.service.DeleteEdge(r.Context(), tenantUUID, userUUID, workflowUUID, edgeUUID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -825,22 +871,40 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	userUUID, _ := shared.IDFromString(userID)
-
-	triggerType := workflow.TriggerTypeManual
-	if req.TriggerType != "" {
-		triggerType = workflow.TriggerType(req.TriggerType)
+	if len(req.TriggerData) > 0 {
+		apierror.BadRequest("trigger_data is not accepted; name the subject with finding_id or asset_id").WriteJSON(w)
+		return
 	}
 
-	input := app.TriggerWorkflowInput{
-		TenantID:    tenantUUID,
-		UserID:      userUUID,
-		WorkflowID:  workflowUUID,
-		TriggerType: triggerType,
-		TriggerData: req.TriggerData,
+	userUUID, err := shared.IDFromString(userID)
+	if err != nil {
+		apierror.Forbidden("a manual run acts as the person who starts it").WriteJSON(w)
+		return
 	}
 
-	run, err := h.service.TriggerWorkflow(r.Context(), input)
+	input := automationsvc.ManualRunInput{
+		TenantID:   tenantUUID,
+		UserID:     userUUID,
+		WorkflowID: workflowUUID,
+	}
+	if req.FindingID != "" {
+		id, err := shared.IDFromString(req.FindingID)
+		if err != nil {
+			apierror.BadRequest("Invalid finding ID").WriteJSON(w)
+			return
+		}
+		input.FindingID = &id
+	}
+	if req.AssetID != "" {
+		id, err := shared.IDFromString(req.AssetID)
+		if err != nil {
+			apierror.BadRequest("Invalid asset ID").WriteJSON(w)
+			return
+		}
+		input.AssetID = &id
+	}
+
+	run, err := h.service.TriggerManualRun(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -888,10 +952,14 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.ListWorkflowRunsInput{
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input := automationsvc.ListWorkflowRunsInput{
 		TenantID: tenantUUID,
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     paging.Page,
+		PerPage:  paging.PerPage,
 	}
 
 	if wfID := r.URL.Query().Get("workflow_id"); wfID != "" {
@@ -902,7 +970,7 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if status := r.URL.Query().Get("status"); status != "" {
-		s := workflow.RunStatus(status)
+		s := automation.RunStatus(status)
 		input.Status = &s
 	}
 
@@ -959,22 +1027,22 @@ func (h *WorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 
 // --- Conversion Helpers ---
 
-func toNodeConfig(req *NodeConfigRequest) workflow.NodeConfig {
+func toNodeConfig(req *NodeConfigRequest) automation.NodeConfig {
 	if req == nil {
-		return workflow.NodeConfig{}
+		return automation.NodeConfig{}
 	}
-	return workflow.NodeConfig{
-		TriggerType:        workflow.TriggerType(req.TriggerType),
+	return automation.NodeConfig{
+		TriggerType:        automation.TriggerType(req.TriggerType),
 		TriggerConfig:      req.TriggerConfig,
 		ConditionExpr:      req.ConditionExpr,
-		ActionType:         workflow.ActionType(req.ActionType),
+		ActionType:         automation.ActionType(req.ActionType),
 		ActionConfig:       req.ActionConfig,
-		NotificationType:   workflow.NotificationType(req.NotificationType),
+		NotificationType:   automation.NotificationType(req.NotificationType),
 		NotificationConfig: req.NotificationConfig,
 	}
 }
 
-func toWorkflowResponse(wf *workflow.Workflow) *WorkflowResponse {
+func toWorkflowResponse(wf *automation.Workflow) *WorkflowResponse {
 	resp := &WorkflowResponse{
 		ID:             wf.ID.String(),
 		TenantID:       wf.TenantID.String(),
@@ -1005,6 +1073,8 @@ func toWorkflowResponse(wf *workflow.Workflow) *WorkflowResponse {
 		resp.CreatedBy = &id
 	}
 
+	resp.UnsupportedFeatures = wf.UnsupportedFeatures()
+
 	if len(wf.Nodes) > 0 {
 		resp.Nodes = make([]NodeResponse, len(wf.Nodes))
 		for i, n := range wf.Nodes {
@@ -1022,7 +1092,7 @@ func toWorkflowResponse(wf *workflow.Workflow) *WorkflowResponse {
 	return resp
 }
 
-func toNodeResponse(n *workflow.Node) *NodeResponse {
+func toNodeResponse(n *automation.Node) *NodeResponse {
 	return &NodeResponse{
 		ID:          n.ID.String(),
 		WorkflowID:  n.WorkflowID.String(),
@@ -1039,7 +1109,7 @@ func toNodeResponse(n *workflow.Node) *NodeResponse {
 			TriggerConfig:      n.Config.TriggerConfig,
 			ConditionExpr:      n.Config.ConditionExpr,
 			ActionType:         string(n.Config.ActionType),
-			ActionConfig:       n.Config.ActionConfig,
+			ActionConfig:       redactActionConfig(n.Config.ActionType, n.Config.ActionConfig),
 			NotificationType:   string(n.Config.NotificationType),
 			NotificationConfig: n.Config.NotificationConfig,
 		},
@@ -1047,7 +1117,34 @@ func toNodeResponse(n *workflow.Node) *NodeResponse {
 	}
 }
 
-func toEdgeResponse(e *workflow.Edge) *EdgeResponse {
+// redactedValue replaces a secret in a response.
+const redactedValue = "[redacted]"
+
+// redactActionConfig hides the header values of a stored http_request node
+// (they are often credentials). The action is refused for new nodes; a
+// stored one keeps its headers only to keep running, and no reader of the
+// workflow sees them.
+func redactActionConfig(t automation.ActionType, cfg map[string]any) map[string]any {
+	if t != automation.ActionTypeHTTPRequest || cfg == nil {
+		return cfg
+	}
+	hdrs, ok := cfg["headers"].(map[string]any)
+	if !ok || len(hdrs) == 0 {
+		return cfg
+	}
+	out := make(map[string]any, len(cfg))
+	for k, v := range cfg {
+		out[k] = v
+	}
+	masked := make(map[string]any, len(hdrs))
+	for k := range hdrs {
+		masked[k] = redactedValue
+	}
+	out["headers"] = masked
+	return out
+}
+
+func toEdgeResponse(e *automation.Edge) *EdgeResponse {
 	return &EdgeResponse{
 		ID:            e.ID.String(),
 		WorkflowID:    e.WorkflowID.String(),
@@ -1059,7 +1156,7 @@ func toEdgeResponse(e *workflow.Edge) *EdgeResponse {
 	}
 }
 
-func toWorkflowRunResponse(run *workflow.Run) *WorkflowRunResponse {
+func toWorkflowRunResponse(run *automation.Run) *WorkflowRunResponse {
 	resp := &WorkflowRunResponse{
 		ID:             run.ID.String(),
 		WorkflowID:     run.WorkflowID.String(),
@@ -1099,7 +1196,7 @@ func toWorkflowRunResponse(run *workflow.Run) *WorkflowRunResponse {
 	return resp
 }
 
-func toNodeRunResponse(nr *workflow.NodeRun) NodeRunResponse {
+func toNodeRunResponse(nr *automation.NodeRun) NodeRunResponse {
 	resp := NodeRunResponse{
 		ID:            nr.ID.String(),
 		WorkflowRunID: nr.WorkflowRunID.String(),
@@ -1147,14 +1244,33 @@ func (h *WorkflowHandler) handleValidationError(w http.ResponseWriter, err error
 func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code == automationsvc.ErrCodeRunNotAuthorized {
+			// A run subject outside the caller's data scope: the same
+			// answer as one that does not exist.
+			apierror.New(http.StatusNotFound, apierror.Code(de.Code), de.Message).WriteJSON(w)
+			return
+		}
 		apierror.NotFound("Workflow").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("Workflow already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
+		// A domain error carries a stable code (WORKFLOW_GRAPH_CYCLE,
+		// UNSUPPORTED_WORKFLOW_FEATURE, ...) the client can act on.
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code != "" && de.Code != "VALIDATION" {
+			apierror.New(http.StatusBadRequest, apierror.Code(de.Code), de.Message).WriteJSON(w)
+			return
+		}
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code == automationsvc.ErrCodeRunNotAuthorized {
+			apierror.Forbidden(de.Message).WriteJSON(w)
+			return
+		}
 		apierror.Forbidden("").WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)

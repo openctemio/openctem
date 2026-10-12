@@ -16,8 +16,7 @@ import (
 // userColumns is the list of columns to select for a user.
 const userColumns = `id, keycloak_id, email, name, avatar_url, phone, status, preferences, last_login_at, created_at, updated_at,
 	auth_provider, password_hash, email_verified, email_verification_token, email_verification_expires_at,
-	password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until,
-	federated_issuer, federated_subject`
+	password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until`
 
 // UserRepository implements user.Repository using PostgreSQL.
 type UserRepository struct {
@@ -40,10 +39,9 @@ func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 		INSERT INTO users (
 			id, keycloak_id, email, name, avatar_url, phone, status, preferences, last_login_at, created_at, updated_at,
 			auth_provider, password_hash, email_verified, email_verification_token, email_verification_expires_at,
-			password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until,
-			federated_issuer, federated_subject
+			password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -67,8 +65,6 @@ func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 		nullTime(u.PasswordResetExpiresAt()),
 		u.FailedLoginAttempts(),
 		nullTime(u.LockedUntil()),
-		u.FederatedIssuer(),
-		u.FederatedSubject(),
 	)
 
 	if err != nil {
@@ -196,13 +192,13 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		UPDATE users
 		SET keycloak_id = $2, email = $3, name = $4, avatar_url = $5, phone = $6,
 		    status = $7, preferences = $8, last_login_at = $9, updated_at = $10,
-		    auth_provider = $11, password_hash = $12, email_verified = $13,
-		    email_verification_token = $14, email_verification_expires_at = $15,
-		    password_reset_token = $16, password_reset_expires_at = $17,
-		    failed_login_attempts = $18, locked_until = $19,
-		    federated_issuer = $20, federated_subject = $21
+		    auth_provider = $11, email_verified = $12,
+		    email_verification_token = $13, email_verification_expires_at = $14,
+		    password_reset_token = $15, password_reset_expires_at = $16
 		WHERE id = $1
 	`
+	// password_hash, failed_login_attempts and locked_until are not written
+	// here: see RecordFailedLogin, RecordSuccessfulLogin, UpdatePasswordHash.
 
 	result, err := r.db.ExecContext(ctx, query,
 		u.ID().String(),
@@ -216,16 +212,11 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		nullTime(u.LastLoginAt()),
 		u.UpdatedAt(),
 		u.AuthProvider().String(),
-		u.PasswordHash(),
 		u.EmailVerified(),
 		u.EmailVerificationToken(),
 		nullTime(u.EmailVerificationExpiresAt()),
 		u.PasswordResetToken(),
 		nullTime(u.PasswordResetExpiresAt()),
-		u.FailedLoginAttempts(),
-		nullTime(u.LockedUntil()),
-		u.FederatedIssuer(),
-		u.FederatedSubject(),
 	)
 
 	if err != nil {
@@ -244,6 +235,64 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		return user.NotFoundError(u.ID())
 	}
 
+	return nil
+}
+
+// RecordFailedLogin atomically adds one failed attempt and locks the account
+// once the count reaches maxAttempts. Concurrent failures each count.
+func (r *UserRepository) RecordFailedLogin(ctx context.Context, id shared.ID, maxAttempts int, lockout time.Duration) (*time.Time, error) {
+	var lockedUntil sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE users
+		SET failed_login_attempts = failed_login_attempts + 1,
+		    locked_until = CASE
+		        WHEN failed_login_attempts + 1 >= $2 THEN NOW() + make_interval(secs => $3)
+		        ELSE locked_until
+		    END,
+		    updated_at = NOW()
+		WHERE id = $1
+		RETURNING locked_until`,
+		id.String(), maxAttempts, lockout.Seconds(),
+	).Scan(&lockedUntil)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, user.NotFoundError(id)
+		}
+		return nil, fmt.Errorf("record failed login: %w", err)
+	}
+	if !lockedUntil.Valid || !lockedUntil.Time.After(time.Now()) {
+		return nil, nil
+	}
+	t := lockedUntil.Time
+	return &t, nil
+}
+
+// RecordSuccessfulLogin clears the failed attempts and the lock and stamps
+// last_login_at.
+func (r *UserRepository) RecordSuccessfulLogin(ctx context.Context, id shared.ID) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), updated_at = NOW()
+		WHERE id = $1`, id.String())
+	if err != nil {
+		return fmt.Errorf("record successful login: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return user.NotFoundError(id)
+	}
+	return nil
+}
+
+// UpdatePasswordHash sets the password hash and nothing else.
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, id shared.ID, hash string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`, id.String(), hash)
+	if err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return user.NotFoundError(id)
+	}
 	return nil
 }
 
@@ -411,8 +460,6 @@ type userScanFields struct {
 	passwordResetExpiresAt     sql.NullTime
 	failedLoginAttempts        int
 	lockedUntil                sql.NullTime
-	federatedIssuer            sql.NullString
-	federatedSubject           sql.NullString
 }
 
 func (r *UserRepository) scanUser(row *sql.Row) (*user.User, error) {
@@ -425,7 +472,6 @@ func (r *UserRepository) scanUser(row *sql.Row) (*user.User, error) {
 		&f.emailVerificationToken, &f.emailVerificationExpiresAt,
 		&f.passwordResetToken, &f.passwordResetExpiresAt,
 		&f.failedLoginAttempts, &f.lockedUntil,
-		&f.federatedIssuer, &f.federatedSubject,
 	)
 	if err != nil {
 		return nil, err
@@ -444,7 +490,6 @@ func (r *UserRepository) scanUserFromRows(rows *sql.Rows) (*user.User, error) {
 		&f.emailVerificationToken, &f.emailVerificationExpiresAt,
 		&f.passwordResetToken, &f.passwordResetExpiresAt,
 		&f.failedLoginAttempts, &f.lockedUntil,
-		&f.federatedIssuer, &f.federatedSubject,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan user: %w", err)
@@ -517,16 +562,6 @@ func (r *UserRepository) reconstructUser(f userScanFields) (*user.User, error) {
 		lockedUntil = &f.lockedUntil.Time
 	}
 
-	var federatedIssuer *string
-	if f.federatedIssuer.Valid {
-		federatedIssuer = &f.federatedIssuer.String
-	}
-
-	var federatedSubject *string
-	if f.federatedSubject.Valid {
-		federatedSubject = &f.federatedSubject.String
-	}
-
 	return user.Reconstitute(
 		parsedID,
 		kcID,
@@ -548,8 +583,6 @@ func (r *UserRepository) reconstructUser(f userScanFields) (*user.User, error) {
 		passwordResetExpiresAt,
 		f.failedLoginAttempts,
 		lockedUntil,
-		federatedIssuer,
-		federatedSubject,
 	), nil
 }
 

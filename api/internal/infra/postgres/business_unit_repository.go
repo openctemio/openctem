@@ -166,7 +166,7 @@ func (r *BusinessUnitRepository) AddAsset(ctx context.Context, tenantID, buID, a
 	// foreign asset even if a caller bypasses the service.
 	query := `INSERT INTO business_unit_assets (id, tenant_id, business_unit_id, asset_id, created_at)
 		SELECT $1, $2, $3, $4, NOW()
-		WHERE EXISTS (SELECT 1 FROM assets WHERE id = $4 AND tenant_id = $2)
+		WHERE EXISTS (SELECT 1 FROM assets WHERE id = $4 AND tenant_id = $2 AND deleted_at IS NULL)
 		ON CONFLICT DO NOTHING`
 	_, err := r.db.ExecContext(ctx, query, shared.NewID().String(), tenantID.String(), buID.String(), assetID.String())
 	return err
@@ -185,12 +185,12 @@ func (r *BusinessUnitRepository) RecalculateCounts(ctx context.Context, tenantID
 			finding_count = COALESCE((
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
-				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1
+				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only
 			), 0),
 			critical_finding_count = COALESCE((
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
-				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.severity = 'critical'
+				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only AND f.severity = 'critical'
 			), 0),
 			avg_risk_score = COALESCE((
 				SELECT AVG(a.risk_score) FROM business_unit_assets bua

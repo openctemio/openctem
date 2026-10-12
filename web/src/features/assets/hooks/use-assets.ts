@@ -53,12 +53,18 @@ export interface AssetSearchFilters {
   // Filtering
   name?: string
   types?: AssetType[]
+  /** Registry lenses (the stored asset_lens), aliases included. */
+  lenses?: string[]
   subType?: string
   criticalities?: Criticality[]
   statuses?: ('active' | 'inactive' | 'archived')[]
   scopes?: AssetScope[]
   exposures?: ExposureLevel[]
   tags?: string[]
+  /** `all`: an asset must carry every tag of `tags` (default: any of them). */
+  tagsMode?: 'any' | 'all'
+  /** Leave out assets carrying any of these tags. */
+  excludeTags?: string[]
 
   // Search
   search?: string
@@ -70,8 +76,14 @@ export interface AssetSearchFilters {
   // Has findings filter
   hasFindings?: boolean
 
-  // Crown jewel filter (properties->>'is_crown_jewel')
+  // Crown jewel filter (the assets.is_crown_jewel column)
   isCrownJewel?: boolean
+
+  // Bug-bounty program assets (RFC-065 §16.5): only = assets a program
+  // lists or covers; exclude = leave out the program-only ones.
+  programAssets?: string
+  /** stale: a class past its freshness window; never: a passive class never observed (RFC-075). */
+  freshness?: string
 
   // CTEM inventory filter dimensions (api: all-assets-inventory).
   // All optional; multi-select where an array.
@@ -84,6 +96,13 @@ export interface AssetSearchFilters {
   providers?: string[]
   lastSeenBefore?: string // ISO timestamp — assets last seen before this instant
   lastSeenAfter?: string // ISO timestamp — assets last seen after this instant
+  // Expiry (properties of format expiry: certificate not_after, domain
+  // expires_at) after / before this ISO instant.
+  expiresAfter?: string
+  expiresBefore?: string
+  // Attribution (RFC-036): states, or the aliases unknown / unconfirmed /
+  // approved. Empty = no attribution filter (every asset).
+  attribution?: string[]
 
   // Properties filter: key=value pairs for JSONB containment (server-side)
   propertiesFilter?: Record<string, string[]>
@@ -115,6 +134,9 @@ interface BackendAsset {
   impact_integrity?: string
   impact_availability?: string
   is_control_plane?: boolean // CTEM Scoping: asset governs other assets (api #467)
+  is_crown_jewel?: boolean // the assets.is_crown_jewel column
+  system_tags?: string[] // derived from bug-bounty program links; never editable
+  program_only?: boolean // came with a program; no own scope covers it
   risk_score: number // 0-100
   finding_count: number
   finding_severity_counts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
@@ -166,6 +188,9 @@ function transformAsset(backend: BackendAsset): Asset {
     impactIntegrity: (backend.impact_integrity as ImpactRating) || undefined,
     impactAvailability: (backend.impact_availability as ImpactRating) || undefined,
     isControlPlane: backend.is_control_plane ?? undefined,
+    isCrownJewel: backend.is_crown_jewel ?? undefined,
+    systemTags: backend.system_tags,
+    programOnly: backend.program_only ?? undefined,
     riskScore: backend.risk_score,
     findingCount: backend.finding_count,
     // Detail fields the API always sent but the transform used to drop, so the
@@ -360,7 +385,7 @@ function transformAssetWithRepository(backend: BackendAssetWithRepository): Asse
  * Build query params from AssetSearchFilters
  * Converts frontend filter format to backend query string
  */
-function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, string> {
+export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, string> {
   if (!filters) return {}
 
   const params: Record<string, string> = {}
@@ -372,12 +397,17 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
   // Filtering - arrays need to be comma-separated for backend
   if (filters.name) params.name = filters.name
   if (filters.types?.length) params.types = filters.types.join(',')
+  if (filters.lenses?.length) params.lenses = filters.lenses.join(',')
   if (filters.subType) params.sub_type = filters.subType
   if (filters.criticalities?.length) params.criticalities = filters.criticalities.join(',')
   if (filters.statuses?.length) params.statuses = filters.statuses.join(',')
   if (filters.scopes?.length) params.scopes = filters.scopes.join(',')
   if (filters.exposures?.length) params.exposures = filters.exposures.join(',')
-  if (filters.tags?.length) params.tags = filters.tags.join(',')
+  if (filters.tags?.length) {
+    params.tags = filters.tags.join(',')
+    if (filters.tagsMode === 'all') params.tags_mode = 'all'
+  }
+  if (filters.excludeTags?.length) params.exclude_tags = filters.excludeTags.join(',')
 
   // Properties filter (JSONB key:value pairs, multi-value per key)
   if (filters.propertiesFilter && Object.keys(filters.propertiesFilter).length > 0) {
@@ -399,6 +429,11 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
   // Crown jewel
   if (filters.isCrownJewel !== undefined) params.is_crown_jewel = String(filters.isCrownJewel)
 
+  // Bug-bounty program assets
+  if (filters.programAssets) params.program_assets = filters.programAssets
+  if (filters.freshness === 'stale' || filters.freshness === 'never')
+    params.freshness = filters.freshness
+
   // CTEM inventory dimensions
   if (filters.businessUnitIds?.length) params.business_unit_ids = filters.businessUnitIds.join(',')
   if (filters.hasOwner !== undefined) params.has_owner = String(filters.hasOwner)
@@ -411,6 +446,9 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
   if (filters.providers?.length) params.providers = filters.providers.join(',')
   if (filters.lastSeenBefore) params.last_seen_before = filters.lastSeenBefore
   if (filters.lastSeenAfter) params.last_seen_after = filters.lastSeenAfter
+  if (filters.expiresAfter) params.expires_after = filters.expiresAfter
+  if (filters.expiresBefore) params.expires_before = filters.expiresBefore
+  if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
 
   // Sorting
   if (filters.sort) params.sort = filters.sort
@@ -513,8 +551,9 @@ export function useAsset(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendAsset>(
-    shouldFetch ? ['asset', assetId] : null,
-    () => get<BackendAsset>(endpoints.assets.get(assetId!)),
+    // The endpoint URL, so a mutate() of the asset URL reaches this cache.
+    shouldFetch ? endpoints.assets.get(assetId!) : null,
+    (url: string) => get<BackendAsset>(url),
     {
       revalidateOnFocus: false,
     }
@@ -574,6 +613,7 @@ export async function createAsset(input: CreateAssetInput): Promise<Asset> {
   const response = await post<BackendAsset>(endpoints.assets.create(), {
     name: input.name,
     type: input.type,
+    sub_type: input.subType || undefined,
     criticality: input.criticality || 'medium', // Default to medium if not specified
     description: input.description,
     scope: input.scope || 'internal',
@@ -587,10 +627,35 @@ export async function createAsset(input: CreateAssetInput): Promise<Asset> {
     tags: input.tags,
     // Per-type fields collected by the form live in `metadata`; the backend
     // stores them under `properties`. Without this they were silently dropped.
-    properties:
-      input.metadata && Object.keys(input.metadata).length > 0 ? input.metadata : undefined,
+    properties: editableProperties(input.metadata),
   })
   return transformAsset(response)
+}
+
+/**
+ * Property keys the API owns: the crown-jewel flag and business impact (set
+ * through PATCH /assets/{id}/crown-jewel), aliases (written on rename) and the
+ * discovery fields. The API refuses a PUT that changes them through
+ * `properties`, so they are never echoed back from a loaded asset.
+ */
+export const RESERVED_PROPERTY_KEYS: ReadonlySet<string> = new Set([
+  'is_crown_jewel',
+  'business_impact_score',
+  'business_impact_notes',
+  'aliases',
+  'discovery_source',
+  'discovery_tool',
+])
+
+/** `metadata` without the API-owned keys, or undefined when nothing is left. */
+export function editableProperties(
+  metadata: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!metadata) return undefined
+  const out = Object.fromEntries(
+    Object.entries(metadata).filter(([k]) => !RESERVED_PROPERTY_KEYS.has(k) && !k.startsWith('__'))
+  )
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
@@ -612,9 +677,9 @@ export async function updateAsset(assetId: string, input: UpdateAssetInput): Pro
     owner_ref: input.ownerRef,
     tags: input.tags,
     // Per-type form fields live in `metadata`; backend merges them into
-    // `properties` (preserving keys like is_crown_jewel). Previously dropped.
-    properties:
-      input.metadata && Object.keys(input.metadata).length > 0 ? input.metadata : undefined,
+    // `properties` (preserving the keys it does not send). API-owned keys are
+    // left out: a stale copy of them would be refused.
+    properties: editableProperties(input.metadata),
   })
   return transformAsset(response)
 }
@@ -627,9 +692,10 @@ export async function deleteAsset(assetId: string): Promise<void> {
 }
 
 /**
- * Bulk delete multiple assets
- * Deletes assets in batches with a concurrency limit.
- * Uses Promise.allSettled to preserve partial failure info.
+ * Bulk delete multiple assets (5 at a time). Throws when any delete fails,
+ * including an asset refused because it has findings; use
+ * bulkDeleteAssetsSafely (features/assets/lib/safe-delete) to get which were
+ * deleted, refused or failed.
  */
 export async function bulkDeleteAssets(assetIds: string[]): Promise<void> {
   const BATCH_SIZE = 5
@@ -655,16 +721,20 @@ export async function bulkDeleteAssets(assetIds: string[]): Promise<void> {
  * This provides comprehensive cached asset statistics with all breakdowns
  * Only fetches if user has assets:read permission
  *
- * Optionally filter by asset types and/or tags. Both filters mirror the List
- * endpoint semantics so the stats card always reflects whatever the user has
- * filtered to in the table (e.g. type=host AND tag=production).
+ * Optionally filter by asset types, lenses, tags and sub-type. The filters
+ * mirror the List endpoint semantics so the stats card always reflects
+ * whatever the user has filtered to in the table (e.g. type=host AND
+ * tag=production). `countBy` names property keys to count the values of.
  */
-export function useAssetStats(
-  types?: string[],
-  tags?: string[],
-  subType?: string,
+export interface AssetStatsQuery {
+  types?: string[]
+  lenses?: string[]
+  tags?: string[]
+  subType?: string
   countBy?: string[]
-) {
+}
+
+export function useAssetStats({ types, lenses, tags, subType, countBy }: AssetStatsQuery = {}) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const canReadAssets = can(Permission.AssetsRead)
@@ -674,21 +744,19 @@ export function useAssetStats(
 
   const params = new URLSearchParams()
   if (types && types.length > 0) params.set('types', types.join(','))
+  if (lenses && lenses.length > 0) params.set('lenses', lenses.join(','))
   if (tags && tags.length > 0) params.set('tags', tags.join(','))
   if (subType) params.set('sub_type', subType)
   if (countBy && countBy.length > 0) params.set('count_by', countBy.join(','))
   const queryString = params.toString()
   const querySuffix = queryString ? `?${queryString}` : ''
-  const cacheKey = shouldFetch ? `asset-stats${querySuffix}` : null
+  // Keyed by the endpoint URL (shared with every reader, and the dashboard
+  // overview hands its answer over under it).
+  const cacheKey = shouldFetch ? `${endpoints.assets.stats()}${querySuffix}` : null
 
   const { data, error, isLoading, mutate } = useSWR<BackendAssetStats>(
     cacheKey,
-    async () => {
-      // Fetch from dedicated asset stats endpoint with optional filters
-      const url = `${endpoints.assets.stats()}${querySuffix}`
-      const response = await get<BackendAssetStats>(url)
-      return response
-    },
+    (url: string) => get<BackendAssetStats>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000,
@@ -742,8 +810,8 @@ export function useAssetWithRepository(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendAssetWithRepository>(
-    shouldFetch ? ['asset-with-repository', assetId] : null,
-    () => get<BackendAssetWithRepository>(endpoints.assets.getFull(assetId!)),
+    shouldFetch ? endpoints.assets.getFull(assetId!) : null,
+    (url: string) => get<BackendAssetWithRepository>(url),
     {
       revalidateOnFocus: false,
     }
@@ -770,8 +838,8 @@ export function useRepositoryExtension(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendRepositoryExtension>(
-    shouldFetch ? ['repository-extension', assetId] : null,
-    () => get<BackendRepositoryExtension>(endpoints.assets.getRepository(assetId!)),
+    shouldFetch ? endpoints.assets.getRepository(assetId!) : null,
+    (url: string) => get<BackendRepositoryExtension>(url),
     {
       revalidateOnFocus: false,
     }

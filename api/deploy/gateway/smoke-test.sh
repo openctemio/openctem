@@ -2,20 +2,24 @@
 # Smoke test for the OpenCTEM gateway: validates the Caddyfile in every TLS
 # mode, checks the entrypoint's refusals, then runs the gateway (TLS mode
 # `internal`) against two stub upstreams that answer "api" or "web", and checks
-# where each request lands. Needs only Docker.
+# where each request lands. Then builds the gateway image with the layer4
+# module (deploy/gateway/Dockerfile; or uses GATEWAY_L4_IMAGE) and checks the
+# sensor ALPN and SNI routing next to the normal routing. Needs only Docker
+# (and network access for the image build and openssl from apk).
 #
 #   deploy/gateway/smoke-test.sh
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 image="caddy:${CADDY_VERSION:-2.11.4-alpine}"
-run="gwsmoke-$$"
+run="${SMOKE_PREFIX:-gwsmoke}-$$"
 net="$run-net"
 fail=0
 
 cleanup() {
-	docker rm -f "$run-gw" "$run-api" "$run-web" >/dev/null 2>&1 || true
+	docker rm -f "$run-gw" "$run-gwh" "$run-gwl4" "$run-api" "$run-web" "$run-mtls" >/dev/null 2>&1 || true
 	docker network rm "$net" >/dev/null 2>&1 || true
+	if [ -z "${GATEWAY_L4_IMAGE:-}" ]; then docker rmi "$run-l4" >/dev/null 2>&1 || true; fi
 	rm -rf "${certs:-}"
 }
 trap cleanup EXIT
@@ -62,6 +66,11 @@ refuses "internal without hostname" -e OPENCTEM_TLS_MODE=internal
 refuses "acme without ACME_EMAIL" -e OPENCTEM_TLS_MODE=acme -e OPENCTEM_HOSTNAME=x
 refuses "files without a certificate" -e OPENCTEM_TLS_MODE=files -e OPENCTEM_HOSTNAME=x
 refuses "plain http without opt-in" -e OPENCTEM_TLS_MODE=http
+refuses "unknown sensor gateway mode" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=tcp
+refuses "sensor passthrough without its host name" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=passthrough
+refuses "sensor passthrough with a port in the host name" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=s.x:443
+refuses "sensor passthrough on the platform host name" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=x
+refuses "sensor passthrough without the layer4 module" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=s.x
 if docker run --rm -e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -v "$here:/etc/caddy:ro" \
 	--entrypoint sh "$image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
 	ok "plain http with OPENCTEM_ALLOW_PLAIN_HTTP=true is accepted"
@@ -72,9 +81,12 @@ fi
 echo "== Routing (TLS mode internal, stub upstreams)"
 docker network create "$net" >/dev/null
 # Each stub echoes which upstream it is and the client-address headers it got.
+# The padding makes the body long enough for the gateway to compress it.
+pad="$(printf 'p%.0s' $(seq 1 1024))"
 stub() {
 	docker run -d --name "$run-$1" --network "$net" --network-alias "$1" "$image" \
-		caddy respond --listen :8000 --body "$1 xrealip={http.request.header.X-Real-IP}" >/dev/null
+		caddy respond --listen :8000 --header "Content-Type: application/json" \
+		--body "$1 xrealip={http.request.header.X-Real-IP} $pad" >/dev/null
 }
 stub api
 stub web
@@ -88,7 +100,7 @@ probe() { # probe <expected api|web|404> <method> <path> [curl args...]
 	shift 3
 	local got
 	got="$(docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 -X "$method" \
-		--resolve "gateway.test:443:$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")" \
+		--resolve "gateway.test:443:$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${GW:-$run-gw}")" \
 		-w ' %{http_code}' "$@" "https://gateway.test$path" 2>/dev/null || true)"
 	local label
 	case "$got" in
@@ -97,7 +109,7 @@ probe() { # probe <expected api|web|404> <method> <path> [curl args...]
 	*" 404") label=404 ;;
 	*) label="?($got)" ;;
 	esac
-	if [ "$label" = "$want" ]; then ok "$method $path $* -> $want"; else bad "$method $path $* -> $label, want $want"; fi
+	if [ "$label" = "$want" ]; then ok "${GW:+[l4] }$method $path $* -> $want"; else bad "${GW:+[l4] }$method $path $* -> $label, want $want"; fi
 }
 
 for _ in $(seq 1 30); do
@@ -107,16 +119,32 @@ for _ in $(seq 1 30); do
 	sleep 1
 done
 
+# Each plane the gateway sends straight to the API (planes.caddy, generated
+# from the API's plane table).
 probe api GET /api/v1/agent/heartbeat
 probe api PUT /api/v2/sensor/results/r1/segments/0
-probe api POST /api/v1/platform/poll
+probe api POST /api/v3/sensor/openctem.sensor.v3.SensorService/Heartbeat
+probe api POST /api/v1/validation/evidence
 probe api GET /scim/v2/Users
 probe api POST /api/v1/mcp
 probe api POST /api/v1/webhooks/incoming/github
+probe api POST /hooks/github
 probe api POST /api/v1/auth/saml/acme/acs
+probe api GET /api/v1/auth/saml/acme/metadata
 probe api POST /api/v1/auth/backchannel-logout
 probe api GET /api/v1/ws
 probe api GET /health
+probe api GET /openapi.yaml
+probe api GET /docs
+# Browser planes reach the API only by credential, never by path.
+probe web GET /api/v1/validation/coverage -H "Cookie: auth_token=abc"
+probe web POST /api/v1/auth/login
+probe web GET /api/v1/me/permissions -H "Cookie: auth_token=abc"
+probe web GET /api/v1/admin/tenants
+probe web GET /api/v1/admin/tenants -H "Cookie: admin_session=abc"
+# The stale protocol-v0 rule is gone (the API serves none of these).
+probe web POST /api/v1/platform/poll
+probe web GET /api/v1/platform/stats -H "Cookie: auth_token=abc"
 probe api GET /api/v1/findings -H "Authorization: Bearer oct_example"
 probe api GET /api/v1/findings -H "X-API-Key: oct_example"
 probe api GET /api/v1/findings -H "Authorization: Bearer eyJ.token"
@@ -127,8 +155,11 @@ probe web GET /api/auth/refresh
 probe web GET /
 probe web GET /login
 probe 404 GET /metrics
+probe 404 GET /metrics -H "Authorization: Bearer oct_example"
 probe 404 GET /ready
+probe 404 GET /ready/detail
 probe 404 GET /debug/pprof/
+probe 404 GET /debug
 
 echo "== Client address is set by the gateway, not the client"
 body="$(docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 \
@@ -138,6 +169,28 @@ case "$body" in
 *"xrealip=6.6.6.6"*) bad "client-supplied X-Real-IP reached the API: $body" ;;
 *"xrealip="[0-9]*) ok "X-Real-IP overwritten ($body)" ;;
 *) bad "unexpected: $body" ;;
+esac
+
+echo "== Behind a trusted front proxy, the client is the right-most untrusted X-Forwarded-For entry"
+# TLS mode http, with the whole test network as the "front proxy". A front
+# proxy that appends keeps whatever the client typed on the left; only the
+# entry the proxy appended (right-most) may become X-Real-IP.
+subnet="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$net")"
+docker run -d --name "$run-gwh" --network "$net" \
+	-e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_TRUSTED_PROXIES="$subnet" \
+	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
+	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+gwhip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gwh")"
+body=""
+for _ in $(seq 1 30); do
+	body="$(docker run --rm --network "$net" curlimages/curl:latest -s -m 2 \
+		-H 'X-Real-IP: 6.6.6.6' -H 'X-Forwarded-For: 6.6.6.6, 198.51.100.9' "http://$gwhip/health" 2>/dev/null || true)"
+	[ -n "$body" ] && break
+	sleep 1
+done
+case "$body" in
+*"xrealip=198.51.100.9"*) ok "X-Real-IP is the proxy-appended client ($body)" ;;
+*) bad "X-Real-IP should be 198.51.100.9 (right-most untrusted), got: $body" ;;
 esac
 
 echo "== Response headers"
@@ -150,6 +203,51 @@ if header_present 'x-content-type-options: nosniff'; then ok "nosniff"; else bad
 if header_present 'server:'; then bad "Server header present"; else ok "no Server header"; fi
 if header_present 'via:'; then bad "Via header present"; else ok "no Via header"; fi
 
+echo "== Compression"
+encoding() { # encoding <method> <path>: the Content-Encoding the gateway answers with
+	docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 -o /dev/null -X "$1" \
+		-H 'Accept-Encoding: zstd, gzip' -H 'Authorization: Bearer x' -w '%header{content-encoding}' \
+		--resolve "gateway.test:443:$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")" \
+		"https://gateway.test$2" 2>/dev/null || true
+}
+got="$(encoding GET /api/v1/findings)"
+if [ "$got" = zstd ]; then ok "GET JSON compressed ($got)"; else bad "GET JSON not compressed ('$got')"; fi
+for req in "POST /api/v1/findings" "GET /api/v1/auth/me" "GET /api/v2/sensor/hello" "GET /oauth/authorize"; do
+	got="$(encoding ${req% *} ${req#* })"
+	if [ -z "$got" ]; then ok "$req not compressed"; else bad "$req compressed ($got)"; fi
+done
+
+echo "== The access log never records an invitation token"
+# Links emailed before RFC-041 and the deprecated API aliases carry the token
+# in the path; the gateway's access log replaces it.
+invtok="Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8"
+probe web GET "/invitations/$invtok"
+probe web GET "/api/v1/invitations/$invtok/preview"
+probe web POST /api/v1/invitations/lookup
+probe api GET "/api/v1/ws?ticket=$invtok&x=1"
+sleep 1
+gwlog="$(docker logs "$run-gw" 2>&1)"
+if grep -q "$invtok" <<<"$gwlog"; then
+	bad "an invitation token reached the access log"
+else
+	ok "no invitation token in the access log"
+fi
+if grep -q "/invitations/REDACTED" <<<"$gwlog" && grep -q "/api/v1/invitations/REDACTED/preview" <<<"$gwlog"; then
+	ok "token paths logged as REDACTED"
+else
+	bad "token paths not logged as REDACTED"
+fi
+if grep -q "/api/v1/ws?ticket=REDACTED&x=1" <<<"$gwlog"; then
+	ok "WebSocket ticket logged as REDACTED"
+else
+	bad "WebSocket ticket not logged as REDACTED"
+fi
+if grep -q "/api/v1/invitations/lookup" <<<"$gwlog"; then
+	ok "body routes logged as is"
+else
+	bad "/api/v1/invitations/lookup missing from the access log"
+fi
+
 echo "== Plain HTTP only redirects to HTTPS"
 gwip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")"
 for path in /login /api/v1/agent/heartbeat; do
@@ -161,6 +259,106 @@ done
 echo "== Internal CA created"
 ca="$(docker exec "$run-gw" sh -c 'ls -l /data/caddy/pki/authorities/local/root.crt' 2>/dev/null || true)"
 if [ -n "$ca" ]; then ok "root CA created"; else bad "root CA not created"; fi
+
+echo "== Gateway image with the layer4 module: sensor ALPN and SNI routing (RFC-059 §5)"
+l4image="${GATEWAY_L4_IMAGE:-}"
+if [ -z "$l4image" ]; then
+	l4image="$run-l4"
+	docker build -q -t "$l4image" "$here" >/dev/null
+fi
+for sg in alpn passthrough; do
+	if docker run --rm -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=203.0.113.10 \
+		-e OPENCTEM_SENSOR_GATEWAY="$sg" -e SENSOR_PUBLIC_HOSTNAME=sensors.example.test \
+		-v "$here:/etc/caddy:ro" "$l4image" caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+		ok "OPENCTEM_SENSOR_GATEWAY=$sg validates"
+	else
+		bad "OPENCTEM_SENSOR_GATEWAY=$sg does not validate"
+	fi
+done
+refuses "sensor alpn without the layer4 module" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=alpn
+if docker run --rm -e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_SENSOR_GATEWAY=alpn \
+	-v "$here:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
+	bad "sensor alpn in plain HTTP mode was accepted"
+else
+	ok "sensor alpn in plain HTTP mode"
+fi
+if docker run --rm -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=alpn \
+	-v "$here:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
+	ok "sensor alpn on the layer4 image is accepted"
+else
+	bad "sensor alpn on the layer4 image was refused"
+fi
+
+# A stand-in for the API's mTLS listener: records the raw bytes it receives
+# (one file per connection), so a passed-through connection shows the PROXY
+# protocol v2 signature (it ends in "QUIT") and the untouched ClientHello.
+docker run -d --name "$run-mtls" --network "$net" --network-alias mtls --entrypoint sh "$image" -c \
+	'i=0; while :; do i=$((i+1)); nc -l -p 8443 -w 3 >"/tmp/conn.$i" 2>/dev/null; done' >/dev/null
+# Run as api/deploy/docker-compose.yml runs it: non-root, no capability,
+# no-new-privileges, ports below 1024 opened by the namespaced sysctl.
+docker run -d --name "$run-gwl4" --network "$net" \
+	--cap-drop ALL --security-opt no-new-privileges:true --sysctl net.ipv4.ip_unprivileged_port_start=0 \
+	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
+	-e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=sensors.gateway.test -e SENSOR_MTLS_UPSTREAM=mtls:8443 \
+	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
+	-v "$here:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh >/dev/null
+l4ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gwl4")"
+for _ in $(seq 1 30); do
+	docker run --rm --network "$net" curlimages/curl:latest -sk -m 2 -o /dev/null \
+		--resolve "gateway.test:443:$l4ip" https://gateway.test/health >/dev/null 2>&1 && break
+	sleep 1
+done
+# Browsers and token clients are served exactly as by the stock gateway,
+# over HTTP/2 and HTTP/1.1.
+GW="$run-gwl4"
+probe web GET / --http2
+probe web GET / --http1.1
+probe web GET /login
+probe api GET /health --http2
+probe api GET /health --http1.1
+probe api GET /api/v1/ws --http1.1
+probe api POST /api/v3/sensor/openctem.sensor.v3.SensorService/Heartbeat
+probe api GET /api/v1/findings -H "Authorization: Bearer oct_example"
+probe 404 GET /metrics
+unset GW
+got="$(docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 -o /dev/null -w '%{http_version}' \
+	--resolve "gateway.test:443:$l4ip" --http2 https://gateway.test/ 2>/dev/null || true)"
+if [ "$got" = 2 ]; then ok "[l4] browser request negotiated HTTP/2"; else bad "[l4] HTTP version '$got', want 2"; fi
+
+# hello <label> <openssl s_client args...>: a raw TLS ClientHello to the l4 gateway.
+hello() {
+	local label="$1"
+	shift
+	docker run --rm --network "$net" --entrypoint sh "$image" -c \
+		"apk add -q --no-cache openssl >/dev/null 2>&1; echo | timeout 4 openssl s_client -connect $l4ip:443 $* 2>&1" | tr -d '\000' || true
+}
+captured() { docker exec "$run-mtls" sh -c 'cat /tmp/conn.* 2>/dev/null' | tr -c '[:print:]' '.' || true; }
+passed_through() { captured | { grep -o 'QUIT' || true; } | wc -l; }
+seen_before="$(passed_through)"
+hello alpn -alpn openctem-sensor/3,h2 >/dev/null
+sleep 1
+after="$(captured)"
+if [ "$({ grep -o 'QUIT' || true; } <<<"$after" | wc -l)" -gt "$seen_before" ] && grep -q 'openctem-sensor/3' <<<"$after"; then
+	ok "[l4] ClientHello offering the sensor ALPN id (no SNI) passed through with PROXY v2"
+else
+	bad "[l4] sensor ALPN id was not passed through to the mTLS listener"
+fi
+seen_before="$(passed_through)"
+hello sni -servername sensors.gateway.test >/dev/null
+sleep 1
+if [ "$(passed_through)" -gt "$seen_before" ]; then
+	ok "[l4] ClientHello for the dedicated sensor host (SNI) passed through"
+else
+	bad "[l4] dedicated sensor host was not passed through"
+fi
+seen_before="$(passed_through)"
+out="$(hello web -servername gateway.test -alpn h2,http/1.1)"
+sleep 1
+if [ "$(passed_through)" -eq "$seen_before" ] && grep -q 'ALPN protocol: h2' <<<"$out"; then
+	ok "[l4] ClientHello without the sensor id is terminated by the gateway (h2)"
+else
+	bad "[l4] a browser ClientHello reached the mTLS listener or did not negotiate h2"
+fi
 
 if [ "$fail" -ne 0 ]; then
 	echo "gateway smoke test FAILED"

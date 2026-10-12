@@ -15,6 +15,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -28,8 +29,15 @@ import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
+import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '@/features/api-keys/lib/expiry'
 import type { CreateAPIKeyResponse } from '@/features/api-keys/types/api-key.types'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { useTenant } from '@/context/tenant-provider'
+import { revokeOrgConnection, useOrgConnections } from '@/features/mcp-oauth/api/connections'
+import { ConnectionsList } from '@/features/mcp-oauth/components/connections-list'
+import { McpPolicyCard } from '@/features/mcp-oauth/components/mcp-policy-card'
+import { OrgClientsCard } from '@/features/mcp-oauth/components/org-clients-card'
+import { useTranslation } from '@/context/i18n-provider'
 
 // A minted MCP key carries exactly the read scopes below — nothing more. The
 // user picks the key's purpose so it maps to what the server's MCP tools/prompts
@@ -70,13 +78,6 @@ const KEY_PRESETS: Record<
   },
 }
 
-const EXPIRY_OPTIONS = [
-  { label: 'Never', value: '0' },
-  { label: '30 days', value: '30' },
-  { label: '90 days', value: '90' },
-  { label: '1 year', value: '365' },
-]
-
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
   return (
@@ -99,10 +100,11 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 }
 
 export default function MCPConnectPage() {
+  const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [preset, setPreset] = useState<PresetId>('general')
   const [name, setName] = useState(KEY_PRESETS.general.defaultName)
-  const [expiry, setExpiry] = useState('90')
+  const [expiry, setExpiry] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
   const [created, setCreated] = useState<CreateAPIKeyResponse | null>(null)
   const { trigger, isMutating } = useCreateApiKey()
   const canWriteKeys = useHasPermission(Permission.ApiKeysWrite)
@@ -126,6 +128,18 @@ export default function MCPConnectPage() {
   useEffect(() => {
     setEndpoint(`${window.location.origin}/api/v1/mcp`)
   }, [])
+
+  // Most MCP clients sign in with OAuth: the server URL is all they need.
+  const oauthConfigJson = useMemo(
+    () => JSON.stringify({ mcpServers: { openctem: { type: 'http', url: endpoint } } }, null, 2),
+    [endpoint]
+  )
+
+  const { currentTenant } = useTenant()
+  const isOrgAdmin = currentTenant?.role === 'owner' || currentTenant?.role === 'admin'
+  const canReadPolicy = useHasPermission(Permission.SettingsRead)
+  const canWritePolicy = useHasPermission(Permission.SettingsWrite)
+  const orgConnections = useOrgConnections(isOrgAdmin)
 
   const configJson = useMemo(() => {
     const key = created?.key ?? 'oct_YOUR_KEY_HERE'
@@ -155,7 +169,7 @@ export default function MCPConnectPage() {
         name: trimmed,
         description: activePreset.description,
         scopes: activePreset.scopes,
-        expires_in_days: expiry === '0' ? undefined : Number(expiry),
+        expires_in_days: Number(expiry),
       })
       setCreated(res ?? null)
       setDialogOpen(false)
@@ -168,10 +182,13 @@ export default function MCPConnectPage() {
   return (
     <Main>
       <PageHeader
-        title="AI access (MCP)"
-        description="Connect Claude (Desktop, Code, or any MCP client) to this tenant's CTEM data — read-only."
+        title={t('settings.mcp.title', 'AI access (MCP)')}
+        description={t(
+          'settings.mcp.description',
+          'Connect Claude or another MCP client to this organization’s data, read-only.'
+        )}
       >
-        <Can permission={Permission.ApiKeysWrite}>
+        <Can route="POST /api/v1/api-keys">
           <Button size="sm" onClick={() => setDialogOpen(true)}>
             <KeyRound className="me-2 h-4 w-4" />
             Generate connection key
@@ -206,11 +223,56 @@ export default function MCPConnectPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Connect a client</CardTitle>
+            <CardTitle>Connect an AI assistant</CardTitle>
             <CardDescription>
-              Pick the key&apos;s purpose, generate a connection key, then add this configuration to
-              your MCP client. The key is scoped to exactly the read permissions above and is bound
-              to your account.
+              Add this server to your MCP client. On first use it opens OpenCTEM in your browser:
+              you sign in, choose what it may read, and approve. No key to copy; you can disconnect
+              it any time in My account, Connected applications.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Client configuration</Label>
+              <CopyButton value={oauthConfigJson} label="Configuration" />
+            </div>
+            <pre className="bg-muted overflow-x-auto rounded-md p-4 text-xs">
+              <code>{oauthConfigJson}</code>
+            </pre>
+          </CardContent>
+        </Card>
+
+        {canReadPolicy && <McpPolicyCard canEdit={canWritePolicy} />}
+
+        {canReadPolicy && <OrgClientsCard canEdit={canWritePolicy} />}
+
+        {isOrgAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Connected applications in this organization</CardTitle>
+              <CardDescription>
+                Every AI application a member connected. Disconnecting one ends its access at once.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ConnectionsList
+                connections={orgConnections.data?.data}
+                isLoading={orgConnections.isLoading}
+                showUser
+                onRevoke={revokeOrgConnection}
+                emptyTitle="No connected applications"
+                emptyDescription="When a member connects an AI assistant, it appears here."
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Connect a script with an API key</CardTitle>
+            <CardDescription>
+              For automation without a person at the keyboard. Pick the key&apos;s purpose, generate
+              a connection key, then add this configuration. The key is scoped to exactly the read
+              permissions above and is bound to your account.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -288,8 +350,10 @@ export default function MCPConnectPage() {
             <div className="border-primary/40 bg-primary/5 flex items-start gap-2 rounded-md border p-3">
               <Sparkles className="text-primary mt-0.5 h-4 w-4 shrink-0" />
               <p className="text-muted-foreground">
-                Evidence blobs are <strong>never</strong> exposed to the AI — the tools return only
-                counts, so raw proof and attachments stay inside OpenCTEM.
+                {t(
+                  'settings.mcp.evidenceNote',
+                  'Evidence files and attachments are never sent to the AI: the tools return only counts.'
+                )}
               </p>
             </div>
           </CardContent>
@@ -305,54 +369,56 @@ export default function MCPConnectPage() {
               or removed. Pick the purpose to scope the key.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="mcp-key-purpose">Purpose</Label>
-              <Select value={preset} onValueChange={(v) => handlePresetChange(v as PresetId)}>
-                <SelectTrigger id="mcp-key-purpose">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(KEY_PRESETS) as PresetId[]).map((id) => (
-                    <SelectItem key={id} value={id}>
-                      {KEY_PRESETS[id].label} ({KEY_PRESETS[id].hint})
-                    </SelectItem>
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="mcp-key-purpose">Purpose</Label>
+                <Select value={preset} onValueChange={(v) => handlePresetChange(v as PresetId)}>
+                  <SelectTrigger id="mcp-key-purpose">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(KEY_PRESETS) as PresetId[]).map((id) => (
+                      <SelectItem key={id} value={id}>
+                        {KEY_PRESETS[id].label} ({KEY_PRESETS[id].hint})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {activePreset.scopes.map((s) => (
+                    <Badge key={s} variant="outline" className="font-mono text-xs">
+                      {s}
+                    </Badge>
                   ))}
-                </SelectContent>
-              </Select>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {activePreset.scopes.map((s) => (
-                  <Badge key={s} variant="outline" className="font-mono text-xs">
-                    {s}
-                  </Badge>
-                ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-key-name">Name</Label>
+                <Input
+                  id="mcp-key-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Claude on my laptop"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-key-expiry">Expires</Label>
+                <Select value={expiry} onValueChange={setExpiry}>
+                  <SelectTrigger id="mcp-key-expiry">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {API_KEY_EXPIRY_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="mcp-key-name">Name</Label>
-              <Input
-                id="mcp-key-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Claude on my laptop"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="mcp-key-expiry">Expires</Label>
-              <Select value={expiry} onValueChange={setExpiry}>
-                <SelectTrigger id="mcp-key-expiry">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {EXPIRY_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isMutating}>
               Cancel

@@ -1,7 +1,7 @@
 'use client'
 
 import { useAuthProviders } from '../api/use-auth-providers'
-import { canSelfRegister, invitationTokenFromReturnTo } from '../lib/self-register'
+import { canSelfRegister, isInvitationReturnTo } from '../lib/self-register'
 
 export interface CanSelfRegister {
   /** Show sign-up affordances (open registration, or an invitation). */
@@ -20,7 +20,7 @@ export interface CanSelfRegister {
  * visitor holds an invitation, which does not depend on the server flag).
  */
 export function useCanSelfRegister(returnTo: string | null | undefined): CanSelfRegister {
-  const viaInvitation = invitationTokenFromReturnTo(returnTo) !== undefined
+  const viaInvitation = isInvitationReturnTo(returnTo)
   const { data, isLoading } = useAuthProviders()
   return {
     canRegister: canSelfRegister(data?.registration_enabled, returnTo),

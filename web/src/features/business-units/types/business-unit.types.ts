@@ -2,9 +2,11 @@
  * Business Unit Types
  */
 
+import type { RatedCriticality } from '@/lib/criticality'
+
 export type BusinessUnitStatus = 'active' | 'inactive' | 'archived'
 export type RiskTolerance = 'very_low' | 'low' | 'medium' | 'high' | 'very_high'
-export type Criticality = 'critical' | 'high' | 'medium' | 'low'
+export type Criticality = RatedCriticality
 
 export interface BusinessUnit {
   id: string

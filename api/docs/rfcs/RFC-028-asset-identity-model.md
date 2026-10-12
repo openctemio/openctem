@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner decisions 2026-10-01), implemented |
+| Status | Implemented (decisions 2026-10-01) |
 | Builds on | RFC-001 (identity resolution), api#645 (rename handling), api#647 (lossless merge) |
 | Repos | ctis (schema), sdk-go (scanners), api (matching, storage, backfill), ui (asset detail, duplicate review) |
 
@@ -23,7 +23,7 @@ Scanners already know better identifiers (Nessus reports the MAC and BIOS
 UUID; cloud collectors know instance IDs; SCM hosts assign repository IDs),
 but CTIS had nowhere to put them and the API had nowhere to keep them.
 
-## Decisions (owner, 2026-10-01)
+## Decisions (2026-10-01)
 
 1. Keep following renames, but an IP counts only if it was seen on the asset
    within the last **7 days** (was 30). Shipped first, separately (api#650).

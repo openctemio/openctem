@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -24,7 +24,7 @@ import (
 // SensorContentHandler serves the content policy and refresh endpoints.
 type SensorContentHandler struct {
 	service *sensorapp.ContentService
-	audit   func(r *http.Request) *app.AuditContext
+	audit   func(r *http.Request) *auditsvc.AuditContext
 	logger  *logger.Logger
 }
 

@@ -9,9 +9,9 @@ import { SEVERITY_BADGE_LIGHT } from '@/lib/severity-colors'
 // Finding severity levels
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
-// Finding status
-export type FindingStatus =
-  'new' | 'triaged' | 'in_progress' | 'resolved' | 'false_positive' | 'accepted_risk'
+// Finding status: the one registry (features/findings/types/finding.types.ts)
+import type { FindingStatus } from '@/features/findings/types/finding.types'
+export type { FindingStatus }
 
 // Finding source (how the finding was discovered)
 export type FindingSource =
@@ -173,41 +173,6 @@ export const SEVERITY_CONFIG: Record<
   medium: { label: 'Medium', ...lightSeverityStyles('medium') },
   low: { label: 'Low', ...lightSeverityStyles('low') },
   info: { label: 'Info', ...lightSeverityStyles('info') },
-}
-
-/**
- * Status configuration for UI display
- */
-export const STATUS_CONFIG: Record<
-  FindingStatus,
-  { label: string; color: string; bgColor: string }
-> = {
-  new: { label: 'New', color: 'text-blue-600', bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
-  triaged: {
-    label: 'Triaged',
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-100 dark:bg-purple-900/30',
-  },
-  in_progress: {
-    label: 'In Progress',
-    color: 'text-yellow-600',
-    bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
-  },
-  resolved: {
-    label: 'Resolved',
-    color: 'text-green-600',
-    bgColor: 'bg-green-100 dark:bg-green-900/30',
-  },
-  false_positive: {
-    label: 'False Positive',
-    color: 'text-gray-600',
-    bgColor: 'bg-gray-100 dark:bg-gray-900/30',
-  },
-  accepted_risk: {
-    label: 'Accepted Risk',
-    color: 'text-orange-600',
-    bgColor: 'bg-orange-100 dark:bg-orange-900/30',
-  },
 }
 
 /**

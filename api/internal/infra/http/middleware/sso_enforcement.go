@@ -24,6 +24,13 @@ type SSOEnforcedProvider interface {
 	IsSSOEnforced(ctx context.Context, tenantID string) (bool, error)
 }
 
+// SSOExceptionProvider, when the provider implements it, answers whether a
+// member has an unexpired exception to the tenant's SSO enforcement (RFC-058).
+// The token mint already required a second factor for such a member.
+type SSOExceptionProvider interface {
+	HasSSOException(ctx context.Context, tenantID, userID string) (bool, error)
+}
+
 // SSOEnforcementGate caches each tenant's sso_enforced flag with a short TTL so
 // the per-request check costs at most one tenant lookup per tenant per TTL
 // window (no N+1). Unlike the module gate this is a SECURITY boundary, so a
@@ -54,6 +61,17 @@ func NewSSOEnforcementGate(provider SSOEnforcedProvider, ttl time.Duration, log 
 		logger:   log.With("middleware", "sso_enforcement"),
 		cache:    make(map[string]cachedEnforced),
 	}
+}
+
+// excepted reports whether the member has an SSO exception; any lookup
+// failure answers no (fail closed).
+func (g *SSOEnforcementGate) excepted(ctx context.Context, tenantID, userID string) bool {
+	p, ok := g.provider.(SSOExceptionProvider)
+	if !ok || userID == "" {
+		return false
+	}
+	yes, err := p.HasSSOException(ctx, tenantID, userID)
+	return err == nil && yes
 }
 
 // isEnforced returns the tenant's sso_enforced flag, using the TTL cache. On a
@@ -91,12 +109,22 @@ func (g *SSOEnforcementGate) Invalidate(tenantID string) {
 // Enforce is the per-request SSO-enforcement middleware. It re-applies the
 // mint-time decision using the signed access-token claims:
 //
-//   - Federated sessions (auth_method sso/saml) ALWAYS pass — an SSO-enforced
-//     tenant must admit the very login method it requires.
+//   - Federated claims (auth_method sso/saml) pass — an SSO-enforced tenant
+//     must admit the very login method it requires. The claim is minted per
+//     tenant (Session.AuthMethodFor): it is federated only when THIS tenant's
+//     own identity provider issued the session; a sign-in through another
+//     organization's IdP or social OAuth carries "password" and is enforced.
 //   - The tenant OWNER always passes (break-glass — enabling enforcement can
 //     never lock every administrator out).
 //   - Any other (non-owner, non-federated) session is rejected when its token's
 //     tenant enforces SSO.
+//
+// On a route that names its organization in the URL (/api/v1/tenants/{tenant},
+// after TenantContext and RequireMembership), the gate governs THAT
+// organization: its enforcement flag, and the caller's membership role there.
+// The token's auth_method and role describe the organization the token was
+// minted for, so when the URL names a different one the session counts as a
+// password session and the token's role is ignored.
 //
 // Both cheap exits (federated / owner) skip the tenant lookup entirely, so the
 // common case costs nothing. Must run AFTER UnifiedAuth (needs the local claims).
@@ -118,6 +146,18 @@ func (g *SSOEnforcementGate) Enforce(next http.Handler) http.Handler {
 		}
 
 		tenantID := claims.TenantID
+		role := claims.Role
+		// Empty auth_method is treated as "password" (fail-safe) by AuthMethodFromString.
+		method := sessiondom.AuthMethodFromString(claims.AuthMethod)
+		if urlTenant := GetTeamID(r.Context()); !urlTenant.IsZero() {
+			if urlTenant.String() != claims.TenantID {
+				// auth_method is minted per organization: federated for the
+				// token's organization says nothing about this one's IdP.
+				method = sessiondom.AuthMethodPassword
+			}
+			tenantID = urlTenant.String()
+			role = string(GetTeamRole(r.Context()))
+		}
 		if tenantID == "" {
 			// Global/non-tenant token — enforcement is per-tenant only.
 			next.ServeHTTP(w, r)
@@ -126,9 +166,7 @@ func (g *SSOEnforcementGate) Enforce(next http.Handler) http.Handler {
 
 		// Cheap exits mirror AuthService.enforceSSOPolicy: federated sessions and
 		// owners never trip enforcement, so skip the tenant lookup for them.
-		// Empty auth_method is treated as "password" (fail-safe) by AuthMethodFromString.
-		method := sessiondom.AuthMethodFromString(claims.AuthMethod)
-		if method.IsFederated() || claims.Role == string(tenantdom.RoleOwner) {
+		if method.IsFederated() || role == string(tenantdom.RoleOwner) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -142,6 +180,9 @@ func (g *SSOEnforcementGate) Enforce(next http.Handler) http.Handler {
 				"tenant_id", tenantID, "user_id", claims.UserID)
 			apierror.Forbidden("This organization requires SSO sign-in").WriteJSON(w)
 			return
+		}
+		if enforced && g.excepted(r.Context(), tenantID, claims.UserID) {
+			enforced = false
 		}
 		if enforced {
 			g.logger.Info("blocked password session from SSO-enforced tenant (per-request)",

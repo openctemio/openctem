@@ -107,12 +107,20 @@ export function useUpdateSuppression(id: string) {
   )
 }
 
-/** Approve a pending rule. `POST /api/v1/suppressions/{id}/approve`. */
+/**
+ * Approve a pending rule. `POST /api/v1/suppressions/{id}/approve`.
+ *
+ * `reviewed_updated_at` is the rule's `updated_at` as the approver saw it: the
+ * API refuses (409) if the rule changed since, so an approval always covers
+ * the version that was reviewed. The requester cannot approve their own rule
+ * while someone else can (403).
+ */
 export function useApproveSuppression(id: string) {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant && id ? `${SUPPRESSIONS_URL}/${id}/approve` : null,
-    (url: string) => post<SuppressionRule>(url, {})
+    (url: string, { arg }: { arg: { reviewed_updated_at: string } }) =>
+      post<SuppressionRule>(url, arg)
   )
 }
 

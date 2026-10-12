@@ -63,7 +63,7 @@ describe('useFindingTypeStats', () => {
 
     await waitFor(() => expect(result.current.stats.total).toBe(7))
     expect(mockGet).toHaveBeenCalledTimes(1)
-    expect(mockGet).toHaveBeenCalledWith('/api/v1/findings/stats?sources=secret')
+    expect(mockGet).toHaveBeenCalledWith('/api/v1/findings/stats?source=secret')
     // Nothing walks the findings list any more.
     expect(mockGet.mock.calls.some(([url]) => String(url).startsWith('/api/v1/findings?'))).toBe(
       false
@@ -93,7 +93,7 @@ describe('useFindingTypeStats', () => {
     )
     renderHook(() => useFindingTypeStats('t1', ['sca', 'dast', 'bug_bounty']), { wrapper })
     await waitFor(() =>
-      expect(mockGet).toHaveBeenCalledWith('/api/v1/findings/stats?sources=sca%2Cdast%2Cbug_bounty')
+      expect(mockGet).toHaveBeenCalledWith('/api/v1/findings/stats?source=sca%2Cdast%2Cbug_bounty')
     )
     expect(mockGet).toHaveBeenCalledTimes(1)
   })

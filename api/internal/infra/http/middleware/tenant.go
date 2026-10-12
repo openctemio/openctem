@@ -67,7 +67,7 @@ func TenantContext(tenantRepo tenant.Repository) func(http.Handler) http.Handler
 
 // MembershipReader is the minimal lookup contract the membership-aware
 // middleware needs. Both the raw tenant.Repository and the cached
-// app.MembershipCacheService implement it via structural typing, so the
+// accesscontrol.MembershipCacheService implement it via structural typing, so the
 // middleware can transparently switch between direct DB access and a
 // Redis-backed cache without knowing the difference.
 type MembershipReader interface {
@@ -110,10 +110,11 @@ func RequireMembership(reader MembershipReader) func(http.Handler) http.Handler 
 				return
 			}
 
-			// Reject suspended members. The membership row stays in place
-			// (audit trail), but the user has no access until reactivated.
-			if membership.IsSuspended() {
-				apierror.Forbidden("Your access to this tenant has been suspended").WriteJSON(w)
+			// Admit an ACTIVE membership only (fail closed). A suspended
+			// (disabled) row stays for the audit trail; an offboarded row is
+			// a tombstone and answers like no membership at all.
+			if denial := inactiveMembershipDenial(membership); denial != nil {
+				denial.WriteJSON(w)
 				return
 			}
 
@@ -162,24 +163,41 @@ func RequireActiveMembershipFromJWT(reader MembershipReader) func(http.Handler) 
 				return
 			}
 
-			membership, err := reader.GetMembership(r.Context(), userID, tenantID)
-			if err != nil {
-				if errors.Is(err, shared.ErrNotFound) {
-					apierror.Forbidden("You are not a member of this tenant").WriteJSON(w)
-					return
-				}
-				apierror.InternalError(fmt.Errorf("failed to check membership")).WriteJSON(w)
-				return
-			}
-
-			if membership.IsSuspended() {
-				apierror.Forbidden("Your access to this tenant has been suspended").WriteJSON(w)
+			if denial := activeMembershipDenial(r.Context(), reader, userID, tenantID); denial != nil {
+				denial.WriteJSON(w)
 				return
 			}
 
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// activeMembershipDenial returns the error to send when userID is not an
+// ACTIVE member of tenantID (not a member, removed, or suspended), or nil
+// when the membership is active.
+func activeMembershipDenial(ctx context.Context, reader MembershipReader, userID, tenantID shared.ID) *apierror.Error {
+	membership, err := reader.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return apierror.Forbidden("You are not a member of this tenant")
+		}
+		return apierror.InternalError(fmt.Errorf("failed to check membership"))
+	}
+	return inactiveMembershipDenial(membership)
+}
+
+// inactiveMembershipDenial is the error for a membership that is not active,
+// or nil for an active one. Positive check: any status other than active
+// (suspended, offboarded, or one added later) is refused.
+func inactiveMembershipDenial(membership *tenant.Membership) *apierror.Error {
+	switch {
+	case membership == nil || membership.IsOffboarded():
+		return apierror.Forbidden("You are not a member of this tenant")
+	case !membership.IsActive():
+		return apierror.Forbidden("Your access to this tenant has been suspended")
+	}
+	return nil
 }
 
 // RequireTeamRole checks if the user has one of the required roles in the team.
@@ -200,7 +218,7 @@ func RequireTeamRole(roles ...tenant.Role) func(http.Handler) http.Handler {
 			}
 
 			if !slices.Contains(roleStrings, string(role)) {
-				apierror.Forbidden("Insufficient permissions in this tenant").WriteJSON(w)
+				roleRequired("Insufficient permissions in this tenant", lowestRole(roles)).WriteJSON(w)
 				return
 			}
 
@@ -236,7 +254,7 @@ func RequireMinTeamRole(minRole tenant.Role) func(http.Handler) http.Handler {
 			}
 
 			if role.Priority() < minRole.Priority() {
-				apierror.Forbidden("Insufficient permissions in this tenant").WriteJSON(w)
+				roleRequired("Insufficient permissions in this tenant", minRole.String()).WriteJSON(w)
 				return
 			}
 
@@ -300,4 +318,19 @@ func GetTeamMembership(ctx context.Context) *tenant.Membership {
 		return m
 	}
 	return nil
+}
+
+// lowestRole is the least privileged of the roles a gate admits, which is
+// what a refused caller needs at minimum.
+func lowestRole(roles []tenant.Role) string {
+	if len(roles) == 0 {
+		return ""
+	}
+	low := roles[0]
+	for _, r := range roles[1:] {
+		if r.Priority() < low.Priority() {
+			low = r
+		}
+	}
+	return low.String()
 }

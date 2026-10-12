@@ -5,7 +5,7 @@
 #
 # Usage:
 #   Development: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-#   Production:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   Production:  not this file; use deploy/docker-compose.yml (one HTTPS port)
 #
 # Note: This base file exposes DB/Redis ports for development convenience.
 #       Production override should NOT expose these ports externally.

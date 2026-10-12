@@ -13,6 +13,8 @@ import { User, Mail, Phone, Save, Loader2, AlertCircle, Check } from 'lucide-rea
 import { toast } from 'sonner'
 import { useProfile, useUpdateProfile } from '@/features/account'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { safeAvatarSrc } from '@/lib/safe-href'
+import { identityProviderLabel } from '@/lib/identity-provider-label'
 
 export default function ProfilePage() {
   const { profile, isLoading, isError, error, mutate } = useProfile()
@@ -108,7 +110,7 @@ export default function ProfilePage() {
                 one, otherwise initials. There is no picture upload. */}
             <div className="flex flex-col items-center">
               <Avatar className="h-24 w-24 ring-2 ring-border">
-                <AvatarImage src={profile?.avatar_url} alt="" />
+                <AvatarImage src={safeAvatarSrc(profile?.avatar_url)} alt="" />
                 <AvatarFallback className="bg-primary/10 text-2xl">{initials}</AvatarFallback>
               </Avatar>
             </div>
@@ -147,7 +149,8 @@ export default function ProfilePage() {
                 </div>
                 {profile?.auth_provider && profile.auth_provider !== 'local' && (
                   <p className="text-xs text-muted-foreground">
-                    Managed by your identity provider ({profile.auth_provider})
+                    Managed by your identity provider (
+                    {identityProviderLabel(profile.auth_provider)})
                   </p>
                 )}
               </div>
@@ -197,7 +200,7 @@ export default function ProfilePage() {
             </div>
             <div>
               <dt className="text-sm font-medium text-muted-foreground">Auth Provider</dt>
-              <dd className="text-sm mt-1 capitalize">{profile?.auth_provider || 'local'}</dd>
+              <dd className="text-sm mt-1">{identityProviderLabel(profile?.auth_provider)}</dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-muted-foreground">Created</dt>

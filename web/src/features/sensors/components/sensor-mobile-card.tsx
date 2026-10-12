@@ -1,5 +1,6 @@
 'use client'
 
+import type { SensorGrantSummary } from '@/lib/api/sensor-grant-hooks'
 import { formatDistanceStrict } from 'date-fns'
 
 import { useTranslation } from '@/context/i18n-provider'
@@ -7,7 +8,7 @@ import { cn } from '@/lib/utils'
 import type { Sensor } from '@/lib/api/sensor-types'
 
 import { SensorStateBadge } from './sensor-state-badge'
-import { ProtocolTag } from './sensor-cells'
+import { ConfigHealthTag, ProtocolTag, SensorGrantTags, SensorPostureTag } from './sensor-cells'
 import { sensorCapacity } from '../lib/capabilities'
 import { CONTENT_STATE_META, worstContentState } from '../lib/content'
 import { formatDurationShort, keyExpiry } from '../lib/format'
@@ -31,8 +32,11 @@ export function SensorMobileCard({
   thresholds,
   channel,
   onOpen,
+  grant,
 }: {
   sensor: Sensor
+  /** Grant flags (legacy broad, New). */
+  grant?: SensorGrantSummary
   now: number
   thresholds?: FleetThresholds
   channel: ReleaseChannel
@@ -81,6 +85,7 @@ export function SensorMobileCard({
   const k = keyExpiry(sensor.key_expires_at, now)
   if (k.kind === 'soon') facts.push({ text: `key expires in ${k.days}d`, tone: 'warning' })
   if (k.kind === 'expired') facts.push({ text: 'key expired', tone: 'destructive' })
+  if (sensor.legacy_key) facts.push({ text: 'legacy key' })
   const content = worstContentState(sensor.content)
   if (content === 'failed' || content === 'stale') {
     facts.push({
@@ -107,8 +112,11 @@ export function SensorMobileCard({
         <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
       </span>
       {/* A tag, not a full-width bar: the card is a column flexbox. */}
-      <span className="self-start">
+      <span className="flex flex-wrap items-center gap-1.5 self-start">
         <ProtocolTag sensor={sensor} />
+        <ConfigHealthTag health={sensor.config_health} />
+        <SensorPostureTag sensor={sensor} />
+        <SensorGrantTags grant={grant} />
       </span>
       {facts.length > 0 && (
         <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">

@@ -21,10 +21,10 @@ type Policy struct {
 	mediumDays   int
 	lowDays      int
 	infoDays     int
-	// F3: priority-class-driven SLA days. When a finding has a
-	// PriorityClass (P0..P3), these take precedence over severity-based
-	// days. Columns exist in migration 000142 but were previously
-	// unread — a false CTEM signal flagged in the framework audit.
+	// Priority-class SLA days. When a finding has a PriorityClass
+	// (P0..P3), these take precedence over severity-based days. They are
+	// persisted in sla_policies.p0_days..p3_days; NULL there means
+	// "inherit DefaultPriorityDays".
 	p0Days              int
 	p1Days              int
 	p2Days              int
@@ -38,12 +38,25 @@ type Policy struct {
 }
 
 // DefaultSLADays contains the default remediation days per severity.
+//
+// info is 0 = NoSLA: an informational finding reports a fact (a detected
+// technology, an open port by design) rather than a weakness, so it gets no
+// remediation deadline unless a tenant opts in by setting info days.
 var DefaultSLADays = map[string]int{
 	"critical": 2,
 	"high":     15,
 	"medium":   30,
 	"low":      60,
-	"info":     90,
+	"info":     NoSLA,
+}
+
+// NoSLA as a policy's info days means informational findings get no deadline.
+const NoSLA = 0
+
+// isInformational reports whether a raw severity is informational (info, or
+// none = CVSS 0.0). Kept local so the SLA domain does not import findings.
+func isInformational(severity string) bool {
+	return severity == "info" || severity == "none"
 }
 
 // DefaultPriorityDays is the default remediation window per CTEM priority
@@ -56,6 +69,9 @@ var DefaultPriorityDays = map[string]int{
 	"P2": 15, // Mitigated by compensating control OR unreachable critical.
 	"P3": 30, // Everything else.
 }
+
+// MaxSLADays is the longest remediation window a policy may set.
+const MaxSLADays = 365
 
 // NewPolicy creates a new SLA Policy with default values.
 func NewPolicy(
@@ -85,11 +101,14 @@ func NewPolicy(
 		p2Days:              DefaultPriorityDays["P2"],
 		p3Days:              DefaultPriorityDays["P3"],
 		warningThresholdPct: 80,
-		escalationEnabled:   false,
-		escalationConfig:    make(map[string]any),
-		isActive:            true,
-		createdAt:           now,
-		updatedAt:           now,
+		// Escalation (approaching/breached notifications) is on by default:
+		// a new policy must not silently stop the alerts a tenant without a
+		// policy gets.
+		escalationEnabled: true,
+		escalationConfig:  make(map[string]any),
+		isActive:          true,
+		createdAt:         now,
+		updatedAt:         now,
 	}, nil
 }
 
@@ -139,9 +158,9 @@ func Reconstitute(
 		mediumDays:   mediumDays,
 		lowDays:      lowDays,
 		infoDays:     infoDays,
-		// Priority-class days default to DefaultPriorityDays for rows
-		// persisted by legacy callers. Callers that need custom values
-		// should set them via WithPriorityDays after Reconstitute.
+		// Priority-class days start at DefaultPriorityDays; the repository
+		// applies the persisted values with WithPriorityDays (NULL = keep
+		// the default).
 		p0Days:              DefaultPriorityDays["P0"],
 		p1Days:              DefaultPriorityDays["P1"],
 		p2Days:              DefaultPriorityDays["P2"],
@@ -250,22 +269,36 @@ func (p *Policy) GetDaysForPriorityClass(priorityClass string) int {
 	}
 }
 
+// InformationalHasSLA reports whether the policy gives informational
+// findings a deadline at all (info days > 0).
+func (p *Policy) InformationalHasSLA() bool {
+	return p.infoDays > NoSLA
+}
+
 // CalculateDeadline calculates the SLA deadline using severity only.
 // Retained for backward compatibility; prefer CalculateDeadlineFor for
-// priority-aware deadlines.
+// priority-aware deadlines. It returns the zero time when the finding gets
+// no SLA (an informational finding under a policy with info days = 0).
 func (p *Policy) CalculateDeadline(severity string, detectedAt time.Time) time.Time {
 	days := p.GetDaysForSeverity(severity)
+	if days <= 0 {
+		return time.Time{}
+	}
 	return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
 }
 
 // CalculateDeadlineFor computes the SLA deadline honouring CTEM priority
 // class first, falling back to severity when the priority class is
-// empty or unknown (legacy findings without a class yet).
+// empty or unknown (legacy findings without a class yet). This is the
+// single entry point downstream services should use.
 //
-// F3: this is the single entry point that downstream services
-// SHOULD use. It closes the fake-signal gap where p0..p3 days existed
-// in the schema but were not read.
+// An informational finding under a policy without an info SLA gets no
+// deadline (zero time) whatever its priority class: the class must not hand
+// a remediation clock to a finding that has nothing to remediate.
 func (p *Policy) CalculateDeadlineFor(priorityClass, severity string, detectedAt time.Time) time.Time {
+	if isInformational(severity) && !p.InformationalHasSLA() {
+		return time.Time{}
+	}
 	if days := p.GetDaysForPriorityClass(priorityClass); days > 0 {
 		return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
 	}
@@ -298,15 +331,37 @@ func (p *Policy) SetDefault(isDefault bool) {
 	p.updatedAt = time.Now().UTC()
 }
 
+// UpdateSLADays sets the per-severity windows. critical..low must be at least
+// 1 day; info may be NoSLA (0) = informational findings get no deadline.
 func (p *Policy) UpdateSLADays(critical, high, medium, low, info int) error {
-	if critical < 1 || high < 1 || medium < 1 || low < 1 || info < 1 {
-		return fmt.Errorf("%w: SLA days must be at least 1", shared.ErrValidation)
+	if critical < 1 || high < 1 || medium < 1 || low < 1 || info < NoSLA {
+		return fmt.Errorf("%w: SLA days must be at least 1 (info may be 0 = no SLA)", shared.ErrValidation)
 	}
 	p.criticalDays = critical
 	p.highDays = high
 	p.mediumDays = medium
 	p.lowDays = low
 	p.infoDays = info
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// UpdatePriorityDays sets the P0..P3 remediation windows. Each must be
+// 1..365 days and they must be non-decreasing (P0 <= P1 <= P2 <= P3): a
+// more urgent class never gets a longer window.
+func (p *Policy) UpdatePriorityDays(p0, p1, p2, p3 int) error {
+	for _, d := range []int{p0, p1, p2, p3} {
+		if d < 1 || d > MaxSLADays {
+			return fmt.Errorf("%w: priority SLA days must be between 1 and %d", shared.ErrValidation, MaxSLADays)
+		}
+	}
+	if p0 > p1 || p1 > p2 || p2 > p3 {
+		return fmt.Errorf("%w: priority SLA days must be in order: P0 <= P1 <= P2 <= P3", shared.ErrValidation)
+	}
+	p.p0Days = p0
+	p.p1Days = p1
+	p.p2Days = p2
+	p.p3Days = p3
 	p.updatedAt = time.Now().UTC()
 	return nil
 }
@@ -320,11 +375,10 @@ func (p *Policy) SetWarningThreshold(percent int) error {
 	return nil
 }
 
-func (p *Policy) EnableEscalation(config map[string]any) {
+// EnableEscalation turns on approaching/breached deadline notifications for
+// findings governed by this policy.
+func (p *Policy) EnableEscalation() {
 	p.escalationEnabled = true
-	if config != nil {
-		p.escalationConfig = config
-	}
 	p.updatedAt = time.Now().UTC()
 }
 

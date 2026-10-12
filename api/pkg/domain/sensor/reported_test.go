@@ -10,7 +10,7 @@ import (
 func TestEffectiveValues(t *testing.T) {
 	cases := []struct {
 		name                   string
-		declTools, declCaps    []string
+		declCaps               []string
 		declMax                int
 		reported               CapabilityReport
 		wantTools, wantCaps    []string
@@ -18,10 +18,10 @@ func TestEffectiveValues(t *testing.T) {
 		wantHasNuclei, wantCap bool
 	}{
 		{
-			name:      "old sensor reports nothing: declared values",
-			declTools: []string{"nuclei", "semgrep"}, declCaps: []string{"nuclei"}, declMax: 5,
-			wantTools: []string{"nuclei", "semgrep"}, wantCaps: []string{"nuclei"}, wantMax: 5,
-			wantHasNuclei: true, wantCap: true,
+			name:     "old sensor reports nothing: no tools, declared capabilities",
+			declCaps: []string{"nuclei"}, declMax: 5,
+			wantTools: []string{}, wantCaps: []string{"nuclei"}, wantMax: 5,
+			wantHasNuclei: false, wantCap: true,
 		},
 		{
 			name:      "no admin limit: everything reported (installed only)",
@@ -31,14 +31,15 @@ func TestEffectiveValues(t *testing.T) {
 			wantHasNuclei: true, wantCap: true,
 		},
 		{
-			name:      "admin narrows: intersection",
-			declTools: []string{"semgrep", "trivy"}, declCaps: []string{"semgrep"}, declMax: 2,
+			name:     "admin narrows capabilities; tools are every reported installed tool",
+			declCaps: []string{"semgrep"}, declMax: 2,
 			reported:  CapabilityReport{Tools: []ReportedTool{{Name: "nuclei", Installed: true}, {Name: "semgrep", Installed: true}}, Capabilities: []string{"nuclei", "semgrep"}, MaxConcurrentJobs: 10},
-			wantTools: []string{"semgrep"}, wantCaps: []string{"semgrep"}, wantMax: 2,
+			wantTools: []string{"nuclei", "semgrep"}, wantCaps: []string{"semgrep"}, wantMax: 2,
+			wantHasNuclei: true,
 		},
 		{
-			name:      "declared but not installed is never dispatched",
-			declTools: []string{"nuclei"}, declCaps: []string{"nuclei"}, declMax: 5,
+			name:     "reported but not installed is never dispatched",
+			declCaps: []string{"nuclei"}, declMax: 5,
 			reported:  CapabilityReport{Tools: []ReportedTool{{Name: "nuclei", Installed: false}}, Capabilities: []string{}},
 			wantTools: []string{}, wantCaps: []string{}, wantMax: 5,
 		},
@@ -51,7 +52,7 @@ func TestEffectiveValues(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			a := &Sensor{Tools: tc.declTools, Capabilities: tc.declCaps, MaxConcurrentJobs: tc.declMax, Reported: tc.reported}
+			a := &Sensor{Capabilities: tc.declCaps, MaxConcurrentJobs: tc.declMax, Reported: tc.reported}
 			if got := a.EffectiveTools(); !reflect.DeepEqual(got, nonNil(tc.wantTools)) {
 				t.Errorf("tools = %#v, want %#v", got, tc.wantTools)
 			}
@@ -87,7 +88,7 @@ func TestCapacityUsesEffectiveMax(t *testing.T) {
 }
 
 func TestCapabilityMismatch(t *testing.T) {
-	a := &Sensor{Tools: []string{"nuclei", "semgrep"}, Capabilities: []string{"nuclei", "validate"}, MaxConcurrentJobs: 8}
+	a := &Sensor{Capabilities: []string{"nuclei", "validate"}, MaxConcurrentJobs: 8}
 	if !a.CapabilityMismatch().IsEmpty() {
 		t.Fatal("no report, no mismatch")
 	}
@@ -97,8 +98,7 @@ func TestCapabilityMismatch(t *testing.T) {
 		MaxConcurrentJobs: 4,
 	}
 	m := a.CapabilityMismatch()
-	if !reflect.DeepEqual(m.ToolsNotInstalled, []string{"nuclei"}) ||
-		!reflect.DeepEqual(m.CapabilitiesNotReported, []string{"validate"}) {
+	if !reflect.DeepEqual(m.CapabilitiesNotReported, []string{"validate"}) {
 		t.Fatalf("mismatch = %+v", m)
 	}
 }
@@ -190,16 +190,15 @@ func TestCatalogCandidates(t *testing.T) {
 func TestAssessHealth_NoToolsUsesEffectiveTools(t *testing.T) {
 	p := testPolicy()
 	reportsNuclei := daemon(ago(5 * time.Second))
-	reportsNuclei.Tools = nil
 	reportsNuclei.Reported = CapabilityReport{Tools: []ReportedTool{{Name: "nuclei", Installed: true}}}
 	if a := reportsNuclei.AssessHealth(testNow, p); hasCode(a.Reasons, ReasonNoTools) {
 		t.Errorf("a sensor reporting nuclei has no_tools: %v", codes(a.Reasons))
 	}
-	missing := daemon(ago(5 * time.Second)) // declared nuclei
+	missing := daemon(ago(5 * time.Second)) // reports nuclei installed
 	missing.Reported = CapabilityReport{Tools: []ReportedTool{{Name: "nuclei", Installed: false}}}
 	a := missing.AssessHealth(testNow, p)
 	if !hasCode(a.Reasons, ReasonNoTools) {
-		t.Fatalf("declared-but-missing tool not flagged: %v", codes(a.Reasons))
+		t.Fatalf("reported-but-missing tool not flagged: %v", codes(a.Reasons))
 	}
 	for _, r := range a.Reasons {
 		if r.Code == ReasonNoTools && !strings.Contains(r.Message, "installed") {
@@ -271,5 +270,27 @@ func TestEffectiveMaxJobsBoundedBySlots(t *testing.T) {
 				t.Fatalf("effective = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// The tools dispatch uses are exactly the installed tools the sensor
+// reported, in its order: there is no declared list to narrow or widen them
+// (the sensor grant narrows them, grant.go), and a sensor that never
+// reported has none, whatever it was created with.
+func TestEffectiveToolsAreTheReportedInstalledTools(t *testing.T) {
+	a := &Sensor{}
+	if got := a.EffectiveTools(); got == nil || len(got) != 0 || a.HasTool("nuclei") {
+		t.Fatalf("never reported: %#v", got)
+	}
+	a.Reported = CapabilityReport{Tools: []ReportedTool{
+		{Name: "trivy", Installed: true}, {Name: "nuclei", Installed: false}, {Name: "semgrep", Installed: true},
+	}}
+	if got := a.EffectiveTools(); !reflect.DeepEqual(got, []string{"trivy", "semgrep"}) {
+		t.Fatalf("effective = %#v, want the installed reported tools", got)
+	}
+	got := a.EffectiveTools()
+	got[0] = "x"
+	if a.EffectiveTools()[0] != "trivy" {
+		t.Fatal("EffectiveTools must return a copy")
 	}
 }

@@ -1,0 +1,6 @@
+{
+  "validation.controls.capHint": "Phát hiện trên các tài sản được liên kết được giữ ở P2 thay vì P1. Tỷ lệ phần trăm chỉ hiển thị làm lý do.",
+  "validation.cyclePolicy.saved": "Đã lưu chính sách chu kỳ",
+  "validation.cyclePolicy.enforceLabel": "Yêu cầu đạt SLO độ phủ kiểm chứng mới được đóng chu kỳ",
+  "validation.cyclePolicy.enforceHelp": "Bật: chu kỳ có các phát hiện đã xử lý thiếu bằng chứng kiểm chứng, dưới mục tiêu độ phủ, sẽ không thể đóng. Tắt: chu kỳ vẫn đóng và phần thiếu hụt vẫn được hiển thị."
+}

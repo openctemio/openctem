@@ -1,15 +1,19 @@
 # RFC-029 — Sensor protocol v2 for the whole sensor surface, and a stable SDK
 
-> Status: **Accepted** (product owner, 2026-10-02: "move sensors fully to v2
-> now, so we can start phasing out agent"; one release, one announcement).
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`).
+> Status: **Implemented** (accepted 2026-10-02: move sensors fully to v2 in
+> one release, with one announcement).
+> **Protocol v1 retired 2026-10-05** (young product, minimal back-compat): no
+> `/api/v1/agent/*` traffic was observed, so the v1 routes, the `/api/v1/agents`
+> redirect and `pkg/sensorproto/legacyv1` were removed ahead of the 2027-04-01
+> sunset. Sensors older than v0.9.0 must be upgraded.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`).
 > Builds on: [RFC-023](RFC-023-scan-zones-and-scanners.md) (sensors, §9.2
 > C1–C8 compatibility contract, §9.2a doorbell, §9.2b suppressions, D20/D24),
 > [RFC-023 rename contract](RFC-023-sensor-rename-contract.md) and
 > [RFC-026](RFC-026-sensor-results-ingest.md) (v2 results, which this RFC
 > does not change). Operator view: [architecture/sensors.md](../architecture/sensors.md).
 >
-> Owner's questions:
+> Questions this RFC answers:
 > - **A.** "Why does sdk-go still use `/api/v1/agent/ingest` and the
 >   `X-Agent-ID` header? I thought it moved to sensor."
 > - **B.** "When the SDK updates later, sensors that already implemented it
@@ -261,7 +265,7 @@ Representation (v2 `Command`; `sensor_id` replaces v1's `agent_id`):
 | `GET /commands?limit=n` | Commands this sensor may claim now (same predicate as v1 poll: pinned or unpinned, pending, not expired, zone claim predicate, capability gate). `limit` 1–100, default 10. | `200 {"commands": [Command…]}` |
 | `POST /commands/{command_id}/claim` | pending → acknowledged (atomic claim; v1 `acknowledge`). Empty body. | `200 Command` |
 | `POST /commands/{command_id}/start` | acknowledged → running. Empty body. | `200 Command` |
-| `POST /commands/{command_id}/complete` | running → completed. Body `{"result": <any JSON>}` (optional). | `200 Command` |
+| `POST /commands/{command_id}/complete` | running → completed. Body `{"result": <any JSON>}` (optional). A result whose `metadata` carries `refused_targets` (`[{target, reason, rule, detail}]`, at most 100) and `refused_targets_total` completed on some targets only: its sensor's local policy skipped the others (`reason`: `unresolvable`, `wildcard_pattern`, `denied_by_policy`, `invalid_target`). The step and the run end `partial`; the task lists the skipped targets (at most 20, cleaned). | `200 Command` |
 | `POST /commands/{command_id}/fail` | acknowledged/running (or pending and pinned to this sensor) → failed. Body `{"error_message": "…"}` (≤ 4 KiB stored, UTF-8-safe truncation as v1). | `200 Command` |
 
 Transition table (rows: current state; "mine" = the command's `sensor_id` is
@@ -290,6 +294,41 @@ sensor learns nothing about other sensors' work):
   transition names its precondition (the state table), which is what
   `If-Match` would give a single writer; per-command versions arrive with
   leases (§4.11).
+
+#### 4.4.1 Task logs: `POST /commands/{command_id}/logs` (amendment, 2026-10-05)
+
+Feature `logs` (listed on hello only when the platform serves it; a sensor
+sends no logs otherwise). A sensor sends what a task's tool logged, through
+its outbox, in numbered batches:
+
+```json
+{ "seq": 0, "lines": [ { "ts": "2026-10-05T10:00:00Z", "level": "warn",
+  "msg": "…", "source": "nuclei", "fields": { "target": "https://a.example" } } ] }
+```
+
+- **Who may write.** The tenant and the sensor come from the key. The command
+  must be the tenant's and held (or last held) by this sensor
+  (`commands.sensor_id`); anything else answers `404 command-not-found`, the
+  same answer for another tenant's, another sensor's or an unknown id.
+  Logs are accepted while the command runs and up to 24 hours after it
+  finished (an outbox replaying after an outage); later is `409
+  invalid-transition` with `"state": "closed"`.
+- **Bounds.** A body is at most 256 KiB and 500 lines, `seq` is 0–9999. A
+  command keeps at most 200 batches and 2 MiB of lines; a batch past that
+  answers `200 {"stored": 0, "dropped": n, "truncated": true}` and is not
+  resent. Every 4xx is final for the batch.
+- **Idempotent.** `(command_id, seq)` is the key; a replayed seq answers what
+  was stored and stores nothing.
+- **Hostile input.** The platform does not trust the sensor's redaction: it
+  caps every line (message 8 KiB, 32 fields of 1 KiB), removes control and
+  bidi-override characters and runs its secret redactor (cloud and API keys,
+  bearer tokens, private-key headers, password/token assignments, platform
+  `oct_`/`octs_` keys) before storing. The web shows the lines as plain text.
+- **Storage and reads.** `command_logs` (migration 001130), kept 14 days by
+  the command-log retention controller and deleted with the command. The run
+  page reads them with `GET /api/v1/pipeline-runs/{id}/tasks/{task_id}/logs`
+  (`pipelines:read`, tenant from the token; a task that is not in that run of
+  that tenant is 404), at most 5000 lines.
 
 ### 4.5 `GET /suppressions`
 
@@ -374,6 +413,7 @@ templates; they never quote sensor bytes.
 | command transitions | same-state replay is `200` without side effects (D5) |
 | `PUT …/results/{report_id}` | sensor-chosen id + `Content-Digest` (RFC-026) |
 | `POST /keys` | overlap keeps the presented key valid (§4.7); not retried without a TTL |
+| `POST /commands/{id}/logs` | `(command_id, seq)` is stored once; a replay answers what was stored (§4.4.1) |
 
 ### 4.11 Evolution rules (how v2 changes without v3)
 
@@ -467,6 +507,17 @@ release that ships after 2027-04-01 **and** after the deployment's telemetry
 shows no v1 heartbeat for 30 days, or after the operator raises the minimum
 sensor protocol (RFC-023 C7/D24; collectors below it keep pushing until
 removal). Self-hosted operators decide with their own telemetry.
+
+**Amended 2026-10-05:** protocol v1 was removed ahead of the
+sunset date. No `/api/v1/agent/*` traffic was observed, and every sensor from v0.9.0 on
+speaks v2 for the whole surface. Removed: every route under `/api/v1/agent`
+(including the ones without a v2 successor: `ingest/sarif`, `ingest/recon`,
+`ingest/scan`, `ingest/scanners`, `scans`, `telemetry-events`,
+`credentials/ingest`), the `/api/v1/agents` redirects, the v1 heartbeat's
+`X-OpenCTEM-Protocol` advert, `pkg/sensorproto/legacyv1` (except the
+renamed-environment-variable table), the v1 golden test and the
+`compat-v1` CI job. The paths answer 404; a sensor older than v0.9.0 must be
+upgraded before the API is.
 
 ## 6. SDK behaviour (sdk-go v0.9.0)
 
@@ -661,16 +712,6 @@ rule 3), never by version sniffing of `User-Agent`. The `compat-v1` job runs
 the last released SDK against every API build; `compat-v2` will do the same
 for v2 once v0.9.0 is the last released SDK.
 
-### 8.9 What others do (only what informed the choices)
-
-| Project | Practice we take |
-|---|---|
-| OpenTelemetry Go | Separate stable API from SDK; API interfaces embed `embedded.*` types so methods can be added without breaking implementers (§8.4 rule 3); documented stability guarantees per module. |
-| Tailscale | The client sends an integer capability version and the control server tailors responses to it: behaviour is gated on what the client declares (§4.11, §8.8). |
-| GitHub Actions runner | The service publishes the minimum runner version and stops sending jobs to older runners after a window; self-hosted runners auto-update (RFC-023 C7/D24, §5.4). |
-| Elastic Agent / Fleet | Fleet Server must be at least the agent's version; policies are versioned documents fetched on change (our `config_version` + future `GET /config`). |
-| Datadog integrations | Integrations depend on a versioned base package with minimum pins and the base package owns the runtime (§8.3 facade). |
-
 ## 9. Implementation plan
 
 Each step is its own PR, green before the next depends on it.
@@ -732,12 +773,12 @@ PR (5) → tag api v0.9.0 and sensor v0.5.0 → publish the notice.
 
 ## 12. Decisions taken and open points
 
-Taken by the owner (2026-10-02): one release moves the whole surface; v1
+Decided (2026-10-02): one release moves the whole surface; v1
 stays served and deprecated with headers and per-sensor telemetry until old
 sensors upgrade; the SDK negotiates and never sends `X-Agent-ID` on v2; a
 new sensor release; an implementation-ready spec.
 
-Taken in this RFC (owner may revisit): path names of §4 (`claim` for v1
+Taken in this RFC (open to revision): path names of §4 (`claim` for v1
 `acknowledge`, `fingerprints/*`, `keys`); the 2026-10-01 / 2027-04-01 dates
 shared with the management-path deprecation; no command `ETag`s and no
 leases in this release; the facade in v0.10.0, v1.0.0 after the criteria of

@@ -86,13 +86,6 @@ func (r *ScanProfileRepository) Create(ctx context.Context, p *scanprofile.ScanP
 	return nil
 }
 
-// GetByID retrieves a scan profile by its ID.
-func (r *ScanProfileRepository) GetByID(ctx context.Context, id shared.ID) (*scanprofile.ScanProfile, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanProfile(row)
-}
-
 // GetByTenantAndID retrieves a scan profile by tenant and ID.
 func (r *ScanProfileRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*scanprofile.ScanProfile, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -101,9 +94,12 @@ func (r *ScanProfileRepository) GetByTenantAndID(ctx context.Context, tenantID, 
 }
 
 // GetAccessibleByID retrieves a scan profile by ID if it belongs to the tenant
-// or is a system profile (tenant_id IS NULL). Enforces tenant scoping at SQL layer.
+// or is a system profile. Enforces tenant scoping at SQL layer. System profiles
+// are seeded under the system tenant with is_system = true (never tenant_id
+// NULL; the column is NOT NULL), so the old "tenant_id IS NULL" arm never
+// matched and a system profile could not be attached to a scan.
 func (r *ScanProfileRepository) GetAccessibleByID(ctx context.Context, tenantID, id shared.ID) (*scanprofile.ScanProfile, error) {
-	query := r.selectQuery() + " WHERE id = $2 AND (tenant_id = $1 OR tenant_id IS NULL)"
+	query := r.selectQuery() + " WHERE id = $2 AND (tenant_id = $1 OR is_system = true)"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 	return r.scanProfile(row)
 }
@@ -190,7 +186,7 @@ func (r *ScanProfileRepository) Update(ctx context.Context, p *scanprofile.ScanP
 		    is_default = $4, tools_config = $5,
 		    intensity = $6, max_concurrent_scans = $7, timeout_seconds = $8,
 		    tags = $9, metadata = $10, quality_gate = $11, updated_at = $12
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $13
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -206,6 +202,7 @@ func (r *ScanProfileRepository) Update(ctx context.Context, p *scanprofile.ScanP
 		metadata,
 		qualityGate,
 		p.UpdatedAt,
+		p.TenantID.String(),
 	)
 
 	if err != nil {
@@ -223,10 +220,11 @@ func (r *ScanProfileRepository) Update(ctx context.Context, p *scanprofile.ScanP
 	return nil
 }
 
-// Delete deletes a scan profile.
-func (r *ScanProfileRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scan_profiles WHERE id = $1 AND is_system = false"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a (non-system) scan profile of tenantID. A profile of
+// another tenant is not found.
+func (r *ScanProfileRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scan_profiles WHERE tenant_id = $1 AND id = $2 AND is_system = false"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scan profile: %w", err)
 	}

@@ -50,6 +50,21 @@ func (p acsSPProvider) GetServiceProvider(*http.Request, string) (*saml.EntityDe
 // stops at the password-account takeover guard, which proves it was parsed and
 // verified).
 func TestSAMLACS_ParsesPostedSignedResponse(t *testing.T) {
+	_, err := runSAMLACS(t, false, time.Now())
+	if errors.Is(err, ErrSAMLResponseInvalid) {
+		t.Fatalf("a valid signed response was rejected (form not parsed?): %v", err)
+	}
+	if !errors.Is(err, ErrSSOFederatedTakeover) {
+		t.Fatalf("expected the takeover guard after successful validation, got %v", err)
+	}
+}
+
+// runSAMLACS runs an SP-initiated login (with ForceAuthn when forceAuthn)
+// and posts back a signed assertion whose AuthnInstant is authnAt. The
+// account is password-backed, so a response that passes validation stops at
+// the takeover guard.
+func runSAMLACS(t *testing.T, forceAuthn bool, authnAt time.Time) (*saml.IdpAuthnRequest, error) {
+	t.Helper()
 	const base = "https://app.example.com"
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -73,7 +88,7 @@ func TestSAMLACS_ParsesPostedSignedResponse(t *testing.T) {
 	sso := &SSOService{userRepo: &fakeUserRepo{byEmail: pwUser}, logger: logger.NewNop()}
 	svc := NewSAMLService(repo, acsTenantRepo{t: tn}, sso, logger.NewNop())
 
-	redirect, requestID, err := svc.Login(context.Background(), "acme", base)
+	redirect, requestID, err := svc.Login(context.Background(), "acme", base, forceAuthn)
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
@@ -93,7 +108,7 @@ func TestSAMLACS_ParsesPostedSignedResponse(t *testing.T) {
 	}
 	now := time.Now()
 	if err := (saml.DefaultAssertionMaker{}).MakeAssertion(authn, &saml.Session{
-		ID: "s", CreateTime: now, ExpireTime: now.Add(time.Hour), Index: "1",
+		ID: "s", CreateTime: authnAt, ExpireTime: now.Add(time.Hour), Index: "1",
 		NameID: "owner@acme.com", NameIDFormat: string(saml.EmailAddressNameIDFormat), UserEmail: "owner@acme.com",
 	}); err != nil {
 		t.Fatal(err)
@@ -107,11 +122,39 @@ func TestSAMLACS_ParsesPostedSignedResponse(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acme/acs", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	_, err = svc.ACS(context.Background(), "acme", base, r, []string{requestID})
-	if errors.Is(err, ErrSAMLResponseInvalid) {
-		t.Fatalf("a valid signed response was rejected (form not parsed?): %v", err)
+	_, err = svc.ACS(context.Background(), "acme", base, r, []string{requestID}, forceAuthn)
+	return authn, err
+}
+
+// Step-up for a SAML account: the re-sign-in sends ForceAuthn and the ACS
+// refuses an assertion whose AuthnInstant is not fresh.
+func TestSAMLForceAuthn(t *testing.T) {
+	authn, err := runSAMLACS(t, true, time.Now())
+	if authn.Request.ForceAuthn == nil || !*authn.Request.ForceAuthn {
+		t.Fatal("the re-authentication AuthnRequest must carry ForceAuthn")
 	}
 	if !errors.Is(err, ErrSSOFederatedTakeover) {
-		t.Fatalf("expected the takeover guard after successful validation, got %v", err)
+		t.Fatalf("a fresh forced authentication must pass validation, got %v", err)
+	}
+	if _, err := runSAMLACS(t, true, time.Now().Add(-time.Hour)); !errors.Is(err, ErrSAMLResponseInvalid) {
+		t.Fatalf("an hour-old AuthnInstant answered a ForceAuthn request, got %v", err)
+	}
+	plain, err := runSAMLACS(t, false, time.Now().Add(-time.Hour))
+	if plain.Request.ForceAuthn != nil && *plain.Request.ForceAuthn {
+		t.Fatal("an ordinary sign-in must not force re-authentication")
+	}
+	if !errors.Is(err, ErrSSOFederatedTakeover) {
+		t.Fatalf("an ordinary sign-in with an old AuthnInstant must pass validation, got %v", err)
+	}
+}
+
+func TestAssertionAuthnInstant(t *testing.T) {
+	early, late := time.Now().Add(-time.Hour), time.Now()
+	a := &saml.Assertion{AuthnStatements: []saml.AuthnStatement{{AuthnInstant: early}, {AuthnInstant: late}}}
+	if got := assertionAuthnInstant(a); !got.Equal(late) {
+		t.Fatalf("got %v, want the latest instant", got)
+	}
+	if got := assertionAuthnInstant(&saml.Assertion{}); !got.IsZero() {
+		t.Fatalf("no statement: %v", got)
 	}
 }

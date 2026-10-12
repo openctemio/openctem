@@ -9,9 +9,12 @@ import (
 
 // Filter defines filter options for listing categories.
 type Filter struct {
-	TenantID  *shared.ID // Include tenant custom categories
-	IsBuiltin *bool      // Filter by builtin status
-	Search    string     // Search by name or display name
+	// TenantID adds that tenant's custom categories to the platform ones
+	// (tenant_id IS NULL); nil lists the platform categories only.
+	TenantID *shared.ID
+	// OnlyCustom lists TenantID's custom categories only.
+	OnlyCustom bool
+	Search     string // Search by name or display name
 }
 
 // Repository defines the interface for tool category persistence.

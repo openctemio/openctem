@@ -134,6 +134,10 @@ func (s *ComplianceService) UpdateAssessment(ctx context.Context, input UpdateAs
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", shared.ErrValidation, err)
 	}
+	dueDate, err := parseOptionalDate("due_date", input.DueDate)
+	if err != nil {
+		return nil, err
+	}
 
 	// Security: Verify tenant owns/can access the framework
 	if _, err := s.frameworkRepo.GetByID(ctx, tenantID, frameworkID); err != nil {
@@ -171,7 +175,7 @@ func (s *ComplianceService) UpdateAssessment(ctx context.Context, input UpdateAs
 		assessment.SetOwner(input.Owner)
 	}
 	if input.DueDate != nil {
-		assessment.SetDueDate(parseOptionalDate(input.DueDate))
+		assessment.SetDueDate(dueDate)
 	}
 
 	if err := s.assessmentRepo.Upsert(ctx, assessment); err != nil {

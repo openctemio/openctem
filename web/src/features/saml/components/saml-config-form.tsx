@@ -26,8 +26,14 @@ import {
   useSamlConfig,
   useSaveSamlConfig,
   useDeleteSamlConfig,
+  usePendingSSOChanges,
 } from '@/features/saml/api/use-saml-config'
+import {
+  isPendingSSOChange,
+  PENDING_SSO_MESSAGE,
+} from '@/features/sso-approvals/api/use-sso-changes'
 import { emptySamlConfig, type SamlConfig } from '@/features/saml/types/saml.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 function CopyableUrl({ label, url }: { label: string; url: string }) {
   const [copied, setCopied] = useState(false)
@@ -74,9 +80,11 @@ export function SamlConfigForm({
   canManage,
   onChanged,
 }: SamlConfigFormProps) {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSamlConfig(tenantId)
   const { trigger: save, isMutating: isSaving } = useSaveSamlConfig(tenantId)
   const { trigger: remove, isMutating: isDeleting } = useDeleteSamlConfig(tenantId)
+  const { mutate: mutatePending } = usePendingSSOChanges(tenantId)
 
   const [form, setForm] = useState<SamlConfig>(emptySamlConfig)
   const [domainsText, setDomainsText] = useState('')
@@ -123,9 +131,16 @@ export function SamlConfigForm({
         .filter(Boolean),
     }
     try {
-      await save(payload)
-      toast.success('SAML configuration saved')
-      void mutate()
+      const res = await save(payload)
+      if (isPendingSSOChange(res)) {
+        // Stored for an owner's approval; the live config is unchanged.
+        toast.info(PENDING_SSO_MESSAGE)
+        resetToSaved()
+        void mutatePending()
+      } else {
+        toast.success('SAML configuration saved')
+        void mutate()
+      }
       onChanged?.()
     } catch (e) {
       toast.error(getErrorMessage(e, 'Failed to save SAML configuration'))
@@ -259,7 +274,6 @@ export function SamlConfigForm({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="member">Member</SelectItem>
-                        <SelectItem value="admin">Admin</SelectItem>
                         <SelectItem value="viewer">Viewer</SelectItem>
                       </SelectContent>
                     </Select>
@@ -327,9 +341,12 @@ export function SamlConfigForm({
       <ConfirmDialog
         open={removeOpen}
         onOpenChange={setRemoveOpen}
-        title="Remove SAML configuration?"
-        desc="Users will no longer be able to log in through your identity provider."
-        confirmText="Remove"
+        title={t('confirm.saml.removeTitle', 'Remove the SAML configuration?')}
+        desc={t(
+          'confirm.saml.removeDesc',
+          'People can no longer sign in through your identity provider. Make sure they have another way to sign in first. This cannot be undone.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         destructive
         isLoading={isDeleting}
         handleConfirm={() => void handleDelete()}

@@ -63,8 +63,8 @@ func (r *recordingCommandRepo) ClaimForSensor(context.Context, shared.ID, shared
 func (r *recordingCommandRepo) List(context.Context, command.Filter, pagination.Pagination) (pagination.Result[*command.Command], error) {
 	return pagination.Result[*command.Command]{}, nil
 }
-func (r *recordingCommandRepo) Update(context.Context, *command.Command) error { return nil }
-func (r *recordingCommandRepo) Delete(context.Context, shared.ID) error        { return nil }
+func (r *recordingCommandRepo) Update(context.Context, *command.Command) error     { return nil }
+func (r *recordingCommandRepo) Delete(context.Context, shared.ID, shared.ID) error { return nil }
 func (r *recordingCommandRepo) FindExpired(context.Context) ([]*command.Command, error) {
 	return nil, nil
 }
@@ -109,7 +109,7 @@ func (r *recordingCommandRepo) GetStatsByTenant(context.Context, shared.ID) (com
 	return command.CommandStats{}, nil
 }
 
-func (r *recordingCommandRepo) CancelByPipelineRunID(context.Context, shared.ID, shared.ID) (int64, error) {
+func (r *recordingCommandRepo) CancelByScanRunID(context.Context, shared.ID, shared.ID) (int64, error) {
 	return 0, nil
 }
 
@@ -119,27 +119,27 @@ var _ command.Repository = (*recordingCommandRepo)(nil)
 // CommandRepository.ExpireOldCommands — a raw `UPDATE commands SET
 // status='expired' WHERE status='pending' AND expires_at < NOW()` that ran on
 // the same 60s tick over a strict subset of the rows FindExpired matches, with
-// no pipeline notification. Whenever it won that race, FindExpired no longer
+// no scan workflow notification. Whenever it won that race, FindExpired no longer
 // matched the row and the owning run was never told its step died.
 //
 // ExpireOldCommands has since been deleted from command.Repository, its postgres
 // implementation and the command service, so the guarantee is now enforced by
 // the compiler rather than by a test. app/command.ExpirationChecker is the only
-// expiry path and it calls pipeline.OnStepFailed(..., "COMMAND_EXPIRED").
+// expiry path and it calls scanrun.OnStepFailed(..., "COMMAND_EXPIRED").
 
 // TestJobRecoveryController_DoesNotExpirePlatformJobs pins the same removal one
 // step over, for the platform-job queue.
 //
 // This controller used to run a raw `UPDATE commands SET status='expired' ...
 // WHERE is_platform_job AND status='pending' AND queued_at < ...`. Platform jobs
-// are created by scan/pipeline dispatch carrying pipeline_run_id + step_key and
+// are created by scan/scan workflow dispatch carrying scan_run_id + step_key and
 // with expires_at NULL, so FindExpired never covered them: that raw UPDATE was
 // the only thing that ever reaped them, and it notified nobody. The step stayed
 // 'queued' until ScanTimeoutController eventually reported a generic timeout
 // instead of "expired in queue".
 //
 // Expiry now belongs to app/command.ExpirationChecker, which calls
-// pipeline.OnStepFailed(..., "PLATFORM_JOB_EXPIRED_IN_QUEUE"). Reconcile must
+// scanrun.OnStepFailed(..., "PLATFORM_JOB_EXPIRED_IN_QUEUE"). Reconcile must
 // not expire platform jobs itself — not even by reading the candidates.
 func TestJobRecoveryController_DoesNotExpirePlatformJobs(t *testing.T) {
 	repo := &recordingCommandRepo{}
@@ -177,5 +177,49 @@ func TestJobRecoveryController_ReportsOnlyItsOwnWork(t *testing.T) {
 	}
 	if want := 15; got != want {
 		t.Fatalf("processed count = %d, want %d (an inflated count means a foreign expiry path is still counted here)", got, want)
+	}
+}
+
+// exhaustingCommandRepo also implements command.ExhaustedFailer.
+type exhaustingCommandRepo struct {
+	recordingCommandRepo
+	exhausted []*command.Command
+}
+
+func (r *exhaustingCommandRepo) FailExhaustedCommandsReturning(context.Context, int) ([]*command.Command, error) {
+	return r.exhausted, nil
+}
+
+type stepFailure struct{ runID, stepKey, msg, code string }
+
+type recordingSteps struct{ got []stepFailure }
+
+func (s *recordingSteps) OnStepFailed(_ context.Context, runID, stepKey, msg, code string) error {
+	s.got = append(s.got, stepFailure{runID, stepKey, msg, code})
+	return nil
+}
+
+// A poison command (dispatch attempts exhausted) used to be failed by a raw
+// UPDATE that told nobody: its run hung until the run timeout and then said
+// "no result reported before timeout". Now its step fails with the reason.
+func TestJobRecovery_ExhaustedCommandFailsItsPipelineStep(t *testing.T) {
+	runID := shared.NewID().String()
+	repo := &exhaustingCommandRepo{exhausted: []*command.Command{
+		{ID: shared.NewID(), DispatchAttempts: 3,
+			Payload: []byte(`{"scan_run_id":"` + runID + `","step_key":"quick_scan"}`)},
+		{ID: shared.NewID(), DispatchAttempts: 3, Payload: []byte(`{"kind":"not a pipeline command"}`)},
+	}}
+	steps := &recordingSteps{}
+	c := NewJobRecoveryController(repo, &JobRecoveryControllerConfig{Logger: logger.NewNop()})
+	c.SetStepFailureNotifier(steps)
+
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(steps.got) != 1 {
+		t.Fatalf("pipeline notified %d times, want 1 (the pipeline command only)", len(steps.got))
+	}
+	if got := steps.got[0]; got.runID != runID || got.stepKey != "quick_scan" || got.code != "COMMAND_EXHAUSTED" {
+		t.Fatalf("notified %+v, want run %s step quick_scan code COMMAND_EXHAUSTED", got, runID)
 	}
 }

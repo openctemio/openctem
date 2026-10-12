@@ -1,0 +1,42 @@
+{
+  "tool": "nessus",
+  "asset": {"type": "host", "value": "db01.example.com"},
+  "cases": [
+    {
+      "name": "Nessus multi-CVE plugin and Qualys single CVE on the same port (D3)",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "HTTP/2 Rapid Reset", "severity": "high", "rule_id": "182837",
+        "network": {"port": 443, "protocol": "tcp"},
+        "vulnerability": {"cve_id": "CVE-2023-39325", "cve_ids": ["CVE-2023-39325", "CVE-2023-44487"]}},
+      "after_tool": "qualys",
+      "after": {"type": "vulnerability", "title": "HTTP/2 Rapid Reset Attack", "severity": "high", "rule_id": "QID-38919",
+        "network": {"port": 443, "protocol": "TCP"},
+        "vulnerability": {"cve_id": "CVE-2023-44487"}}
+    },
+    {
+      "name": "port vs host-level",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "OpenSSH", "severity": "high", "rule_id": "201194",
+        "network": {"port": 22, "protocol": "tcp"},
+        "vulnerability": {"cve_id": "CVE-2024-6387"}},
+      "after": {"type": "vulnerability", "title": "OpenSSH", "severity": "high", "rule_id": "201194",
+        "vulnerability": {"cve_id": "CVE-2024-6387"}}
+    },
+    {
+      "name": "a plugin without a CVE on two ports (B19, #920)",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "SSL Certificate Cannot Be Trusted", "severity": "medium", "rule_id": "51192",
+        "network": {"port": 443, "protocol": "tcp"}},
+      "after": {"type": "vulnerability", "title": "SSL Certificate Cannot Be Trusted", "severity": "medium", "rule_id": "51192",
+        "network": {"port": 8443, "protocol": "tcp"}}
+    },
+    {
+      "name": "a plugin without a CVE re-seen with a new title",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "SSL Certificate Cannot Be Trusted", "severity": "medium", "rule_id": "51192",
+        "network": {"port": 443, "protocol": "tcp"}},
+      "after": {"type": "vulnerability", "title": "SSL certificate is not trusted", "severity": "medium", "rule_id": "51192",
+        "network": {"port": 443, "protocol": "tcp"}}
+    }
+  ]
+}

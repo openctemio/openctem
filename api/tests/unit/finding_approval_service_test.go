@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -62,16 +62,20 @@ func (m *mockApprovalRepository) ListByFinding(_ context.Context, tenantID, find
 	return result, nil
 }
 
-func (m *mockApprovalRepository) ListPending(_ context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[*vulnerability.Approval], error) {
+func (m *mockApprovalRepository) List(_ context.Context, tenantID shared.ID, filter vulnerability.ApprovalFilter, page pagination.Pagination, scope *shared.DataScope) (vulnerability.ApprovalPage, error) {
+	counts := map[vulnerability.ApprovalStatus]int64{}
 	result := make([]*vulnerability.Approval, 0)
 	for _, a := range m.approvals {
-		if a.TenantID == tenantID && a.Status == vulnerability.ApprovalStatusPending {
+		if a.TenantID != tenantID {
+			continue
+		}
+		counts[a.Status]++
+		if filter.Status == "" || a.Status == filter.Status {
 			result = append(result, a)
 		}
 	}
 	total := int64(len(result))
 
-	// Apply basic pagination
 	start := (page.Page - 1) * page.PerPage
 	if start > int(total) {
 		start = int(total)
@@ -81,17 +85,9 @@ func (m *mockApprovalRepository) ListPending(_ context.Context, tenantID shared.
 		end = int(total)
 	}
 
-	totalPages := 1
-	if total > 0 {
-		totalPages = int((total + int64(page.PerPage) - 1) / int64(page.PerPage))
-	}
-
-	return pagination.Result[*vulnerability.Approval]{
-		Data:       result[start:end],
-		Total:      total,
-		Page:       page.Page,
-		PerPage:    page.PerPage,
-		TotalPages: totalPages,
+	return vulnerability.ApprovalPage{
+		Result:       pagination.NewResult(result[start:end], total, page),
+		StatusCounts: counts,
 	}, nil
 }
 
@@ -166,8 +162,14 @@ func (m *mockFindingRepository) GetByID(_ context.Context, tenantID, id shared.I
 	}
 	return f, nil
 }
-func (m *mockFindingRepository) GetByIDs(_ context.Context, _ shared.ID, _ []shared.ID) ([]*vulnerability.Finding, error) {
-	return nil, nil
+func (m *mockFindingRepository) GetByIDs(_ context.Context, tenantID shared.ID, ids []shared.ID) ([]*vulnerability.Finding, error) {
+	var out []*vulnerability.Finding
+	for _, id := range ids {
+		if f, ok := m.findings[id]; ok && f.TenantID() == tenantID {
+			out = append(out, f)
+		}
+	}
+	return out, nil
 }
 func (m *mockFindingRepository) Update(_ context.Context, _ *vulnerability.Finding) error {
 	return nil
@@ -193,7 +195,7 @@ func (m *mockFindingRepository) ListAffectedAssetsByVulnerabilityID(_ context.Co
 func (m *mockFindingRepository) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (m *mockFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (m *mockFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (m *mockFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
@@ -214,7 +216,7 @@ func (m *mockFindingRepository) ExistsByFingerprint(_ context.Context, _ shared.
 func (m *mockFindingRepository) CheckFingerprintsExist(_ context.Context, _ shared.ID, _ []string) (map[string]bool, error) {
 	return nil, nil
 }
-func (m *mockFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _ string) (int64, error) {
+func (m *mockFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _, _ string) (int64, error) {
 	return 0, nil
 }
 func (m *mockFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Context, _ shared.ID, _ map[string]string) (int64, error) {
@@ -223,7 +225,7 @@ func (m *mockFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Conte
 func (m *mockFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
 	return nil, nil
 }
-func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
 	if m.statusBatchErr != nil {
 		return m.statusBatchErr
 	}
@@ -258,7 +260,7 @@ func (m *mockFindingRepository) AutoResolveStaleByAssets(_ context.Context, _ sh
 func (m *mockFindingRepository) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
 	return nil, nil
 }
-func (m *mockFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]shared.ID, error) {
+func (m *mockFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
 }
 func (m *mockFindingRepository) ExpireFeatureBranchFindings(_ context.Context, _ shared.ID, _ int) (int64, error) {
@@ -320,10 +322,10 @@ func (m *mockVulnerabilityRepository) ExistsByCVE(_ context.Context, _ string) (
 func newApprovalTestService(
 	findingRepo *mockFindingRepository,
 	approvalRepo *mockApprovalRepository,
-) *app.VulnerabilityService {
+) *finding.VulnerabilityService {
 	vulnRepo := &mockVulnerabilityRepository{}
 	log := logger.NewNop()
-	svc := app.NewVulnerabilityService(vulnRepo, findingRepo, log)
+	svc := finding.NewVulnerabilityService(vulnRepo, findingRepo, log)
 	svc.SetApprovalRepository(approvalRepo)
 	return svc
 }
@@ -344,12 +346,12 @@ func TestFindingApprovalService_RequestApproval_Success(t *testing.T) {
 	// We need to add a real Finding to the map. Let's use a different approach:
 	// just ensure the finding exists by having GetByID not return an error.
 	// Since Finding has unexported fields, we'll use a pointer that the service won't dereference.
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	input := app.RequestApprovalInput{
+	input := finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -382,11 +384,11 @@ func TestFindingApprovalService_RequestApproval_RejectsNonApprovalStatus(t *test
 			tenantID := shared.NewID()
 			findingID := shared.NewID()
 			findingRepo := newMockFindingRepository()
-			findingRepo.findings[findingID] = &vulnerability.Finding{}
+			findingRepo.findings[findingID] = newApprovalTestFinding(t)
 			approvalRepo := newMockApprovalRepository()
 			svc := newApprovalTestService(findingRepo, approvalRepo)
 
-			_, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+			_, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 				TenantID:        tenantID.String(),
 				FindingID:       findingID.String(),
 				RequestedStatus: status,
@@ -410,7 +412,7 @@ func TestFindingApprovalService_RequestApproval_FindingNotFound(t *testing.T) {
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	input := app.RequestApprovalInput{
+	input := finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -432,11 +434,11 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		input app.RequestApprovalInput
+		input finding.RequestApprovalInput
 	}{
 		{
 			name: "invalid tenant ID",
-			input: app.RequestApprovalInput{
+			input: finding.RequestApprovalInput{
 				TenantID:        "not-a-uuid",
 				FindingID:       shared.NewID().String(),
 				RequestedStatus: "false_positive",
@@ -446,7 +448,7 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 		},
 		{
 			name: "invalid finding ID",
-			input: app.RequestApprovalInput{
+			input: finding.RequestApprovalInput{
 				TenantID:        shared.NewID().String(),
 				FindingID:       "not-a-uuid",
 				RequestedStatus: "false_positive",
@@ -456,7 +458,7 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 		},
 		{
 			name: "invalid requested_by ID",
-			input: app.RequestApprovalInput{
+			input: finding.RequestApprovalInput{
 				TenantID:        shared.NewID().String(),
 				FindingID:       shared.NewID().String(),
 				RequestedStatus: "false_positive",
@@ -488,12 +490,12 @@ func TestFindingApprovalService_ApproveStatus_Success(t *testing.T) {
 	approverID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// First, create an approval
-	requestInput := app.RequestApprovalInput{
+	requestInput := finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -504,7 +506,7 @@ func TestFindingApprovalService_ApproveStatus_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now approve it
-	approveInput := app.ApproveStatusInput{
+	approveInput := finding.ApproveStatusInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		ApprovedBy: approverID.String(),
@@ -534,7 +536,7 @@ func TestFindingApprovalService_ApproveStatus_NotFound(t *testing.T) {
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	input := app.ApproveStatusInput{
+	input := finding.ApproveStatusInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: fakeApprovalID.String(),
 		ApprovedBy: approverID.String(),
@@ -554,12 +556,12 @@ func TestFindingApprovalService_ApproveStatus_AlreadyApproved(t *testing.T) {
 	approverID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create and approve
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -568,7 +570,7 @@ func TestFindingApprovalService_ApproveStatus_AlreadyApproved(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		ApprovedBy: approverID.String(),
@@ -576,7 +578,7 @@ func TestFindingApprovalService_ApproveStatus_AlreadyApproved(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to approve again
-	approval, err := svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+	approval, err := svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		ApprovedBy: approverID.String(),
@@ -594,13 +596,13 @@ func TestFindingApprovalService_ApproveStatus_Expired(t *testing.T) {
 	approverID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create approval with an already-expired time
 	past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -611,7 +613,7 @@ func TestFindingApprovalService_ApproveStatus_Expired(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to approve the expired approval
-	approval, err := svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+	approval, err := svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		ApprovedBy: approverID.String(),
@@ -628,11 +630,11 @@ func TestFindingApprovalService_ApproveStatus_SelfApproval(t *testing.T) {
 	requestedBy := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -642,7 +644,7 @@ func TestFindingApprovalService_ApproveStatus_SelfApproval(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to approve own request
-	approval, err := svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+	approval, err := svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		ApprovedBy: requestedBy.String(), // same as requester
@@ -664,13 +666,13 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 	rejecterID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create approval with an already-expired time
 	past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -681,7 +683,7 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to reject the expired approval
-	approval, err := svc.RejectApproval(context.Background(), app.RejectApprovalInput{
+	approval, err := svc.RejectApproval(context.Background(), finding.RejectApprovalInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		RejectedBy: rejecterID.String(),
@@ -700,12 +702,12 @@ func TestFindingApprovalService_RejectApproval_Success(t *testing.T) {
 	rejecterID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create approval
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -715,7 +717,7 @@ func TestFindingApprovalService_RejectApproval_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Reject it
-	rejectInput := app.RejectApprovalInput{
+	rejectInput := finding.RejectApprovalInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		RejectedBy: rejecterID.String(),
@@ -744,7 +746,7 @@ func TestFindingApprovalService_RejectApproval_NotFound(t *testing.T) {
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	input := app.RejectApprovalInput{
+	input := finding.RejectApprovalInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: fakeApprovalID.String(),
 		RejectedBy: rejecterID.String(),
@@ -765,11 +767,11 @@ func TestFindingApprovalService_RejectApproval_InvalidIDs(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		input app.RejectApprovalInput
+		input finding.RejectApprovalInput
 	}{
 		{
 			name: "invalid tenant ID",
-			input: app.RejectApprovalInput{
+			input: finding.RejectApprovalInput{
 				TenantID:   "bad",
 				ApprovalID: shared.NewID().String(),
 				RejectedBy: shared.NewID().String(),
@@ -778,7 +780,7 @@ func TestFindingApprovalService_RejectApproval_InvalidIDs(t *testing.T) {
 		},
 		{
 			name: "invalid approval ID",
-			input: app.RejectApprovalInput{
+			input: finding.RejectApprovalInput{
 				TenantID:   shared.NewID().String(),
 				ApprovalID: "bad",
 				RejectedBy: shared.NewID().String(),
@@ -787,7 +789,7 @@ func TestFindingApprovalService_RejectApproval_InvalidIDs(t *testing.T) {
 		},
 		{
 			name: "invalid rejected_by ID",
-			input: app.RejectApprovalInput{
+			input: finding.RejectApprovalInput{
 				TenantID:   shared.NewID().String(),
 				ApprovalID: shared.NewID().String(),
 				RejectedBy: "bad",
@@ -808,22 +810,22 @@ func TestFindingApprovalService_RejectApproval_InvalidIDs(t *testing.T) {
 }
 
 // =============================================================================
-// Tests: ListPendingApprovals
+// Tests: ListApprovals
 // =============================================================================
 
-func TestFindingApprovalService_ListPendingApprovals_Success(t *testing.T) {
+func TestFindingApprovalService_ListApprovals_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	findingID := shared.NewID()
 	requestedBy := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create 3 pending approvals
 	for i := 0; i < 3; i++ {
-		_, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+		_, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID:        tenantID.String(),
 			FindingID:       findingID.String(),
 			RequestedStatus: "false_positive",
@@ -836,8 +838,8 @@ func TestFindingApprovalService_ListPendingApprovals_Success(t *testing.T) {
 	// Also create one in a different tenant (should not appear)
 	otherTenantID := shared.NewID()
 	otherFindingID := shared.NewID()
-	findingRepo.findings[otherFindingID] = &vulnerability.Finding{}
-	_, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	findingRepo.findings[otherFindingID] = newApprovalTestFinding(t)
+	_, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        otherTenantID.String(),
 		FindingID:       otherFindingID.String(),
 		RequestedStatus: "accepted",
@@ -846,7 +848,7 @@ func TestFindingApprovalService_ListPendingApprovals_Success(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	result, err := svc.ListPendingApprovals(context.Background(), tenantID.String(), 1, 10)
+	result, err := svc.ListApprovals(context.Background(), tenantID.String(), "pending", 1, 10)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), result.Total, "should only see approvals for the target tenant")
@@ -855,86 +857,71 @@ func TestFindingApprovalService_ListPendingApprovals_Success(t *testing.T) {
 	assert.Equal(t, 10, result.PerPage)
 }
 
-func TestFindingApprovalService_ListPendingApprovals_EmptyResult(t *testing.T) {
+func TestFindingApprovalService_ListApprovals_EmptyResult(t *testing.T) {
 	tenantID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	result, err := svc.ListPendingApprovals(context.Background(), tenantID.String(), 1, 10)
+	result, err := svc.ListApprovals(context.Background(), tenantID.String(), "pending", 1, 10)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), result.Total)
 	assert.Empty(t, result.Data)
 }
 
-func TestFindingApprovalService_ListPendingApprovals_InvalidTenantID(t *testing.T) {
+func TestFindingApprovalService_ListApprovals_InvalidTenantID(t *testing.T) {
 	findingRepo := newMockFindingRepository()
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	_, err := svc.ListPendingApprovals(context.Background(), "not-a-uuid", 1, 10)
+	_, err := svc.ListApprovals(context.Background(), "not-a-uuid", "", 1, 10)
 
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, shared.ErrValidation))
 }
 
-// =============================================================================
-// Tests: BulkUpdateFindingStatus
-// =============================================================================
-
-func TestFindingApprovalService_BulkUpdateFindingStatus_Success(t *testing.T) {
+func TestFindingApprovalService_ListApprovals_StatusFilterAndCounts(t *testing.T) {
 	tenantID := shared.NewID()
-	findingIDs := []shared.ID{shared.NewID(), shared.NewID(), shared.NewID()}
-	resolvedBy := shared.NewID()
+	findingID := shared.NewID()
+	requester := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	err := svc.BulkUpdateFindingStatus(
-		context.Background(),
-		tenantID,
-		findingIDs,
-		vulnerability.FindingStatusResolved,
-		"fixed_in_code",
-		&resolvedBy,
-	)
+	ids := make([]shared.ID, 0, 3)
+	for i := 0; i < 3; i++ {
+		a, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+			TenantID: tenantID.String(), FindingID: findingID.String(),
+			RequestedStatus: "false_positive", Justification: "j", RequestedBy: requester.String(),
+		})
+		require.NoError(t, err)
+		ids = append(ids, a.ID)
+	}
+	// One request was rejected (the reject path itself is tested elsewhere).
+	approvalRepo.approvals[ids[0]].Status = vulnerability.ApprovalStatusRejected
 
+	rejected, err := svc.ListApprovals(context.Background(), tenantID.String(), "rejected", 1, 10)
 	require.NoError(t, err)
+	assert.Equal(t, int64(1), rejected.Total)
+	require.Len(t, rejected.Data, 1)
+	assert.Equal(t, vulnerability.ApprovalStatusRejected, rejected.Data[0].Status)
+	assert.Equal(t, int64(2), rejected.StatusCounts[vulnerability.ApprovalStatusPending])
+	assert.Equal(t, int64(1), rejected.StatusCounts[vulnerability.ApprovalStatusRejected])
 
-	// Verify the batch update was called
-	require.Len(t, findingRepo.statusUpdates, 1)
-	call := findingRepo.statusUpdates[0]
-	assert.Equal(t, tenantID, call.TenantID)
-	assert.Equal(t, findingIDs, call.IDs)
-	assert.Equal(t, vulnerability.FindingStatusResolved, call.Status)
-	assert.Equal(t, "fixed_in_code", call.Resolution)
-	require.NotNil(t, call.ResolvedBy)
-	assert.Equal(t, resolvedBy, *call.ResolvedBy)
+	all, err := svc.ListApprovals(context.Background(), tenantID.String(), "", 1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), all.Total, "no status filter lists every status")
 }
 
-func TestFindingApprovalService_BulkUpdateFindingStatus_RepoError(t *testing.T) {
-	tenantID := shared.NewID()
-	findingIDs := []shared.ID{shared.NewID()}
-	resolvedBy := shared.NewID()
-
-	findingRepo := newMockFindingRepository()
-	findingRepo.statusBatchErr = errors.New("database error")
-	approvalRepo := newMockApprovalRepository()
-	svc := newApprovalTestService(findingRepo, approvalRepo)
-
-	err := svc.BulkUpdateFindingStatus(
-		context.Background(),
-		tenantID,
-		findingIDs,
-		vulnerability.FindingStatusResolved,
-		"",
-		&resolvedBy,
-	)
-
-	assert.Error(t, err, "should propagate repository errors")
+func TestFindingApprovalService_ListApprovals_InvalidStatus(t *testing.T) {
+	svc := newApprovalTestService(newMockFindingRepository(), newMockApprovalRepository())
+	_, err := svc.ListApprovals(context.Background(), shared.NewID().String(), "done';--", 1, 10)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, shared.ErrValidation))
 }
 
 // =============================================================================
@@ -945,11 +932,11 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 	vulnRepo := &mockVulnerabilityRepository{}
 	findingRepo := newMockFindingRepository()
 	log := logger.NewNop()
-	svc := app.NewVulnerabilityService(vulnRepo, findingRepo, log)
+	svc := finding.NewVulnerabilityService(vulnRepo, findingRepo, log)
 	// Deliberately NOT calling svc.SetApprovalRepository()
 
 	t.Run("RequestApproval", func(t *testing.T) {
-		_, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+		_, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID:        shared.NewID().String(),
 			FindingID:       shared.NewID().String(),
 			RequestedStatus: "false_positive",
@@ -961,7 +948,7 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 	})
 
 	t.Run("ApproveStatus", func(t *testing.T) {
-		_, err := svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+		_, err := svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
 			TenantID:   shared.NewID().String(),
 			ApprovalID: shared.NewID().String(),
 			ApprovedBy: shared.NewID().String(),
@@ -971,7 +958,7 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 	})
 
 	t.Run("RejectApproval", func(t *testing.T) {
-		_, err := svc.RejectApproval(context.Background(), app.RejectApprovalInput{
+		_, err := svc.RejectApproval(context.Background(), finding.RejectApprovalInput{
 			TenantID:   shared.NewID().String(),
 			ApprovalID: shared.NewID().String(),
 			RejectedBy: shared.NewID().String(),
@@ -981,14 +968,14 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 		assert.Contains(t, err.Error(), "approval workflow not configured")
 	})
 
-	t.Run("ListPendingApprovals", func(t *testing.T) {
-		_, err := svc.ListPendingApprovals(context.Background(), shared.NewID().String(), 1, 10)
+	t.Run("ListApprovals", func(t *testing.T) {
+		_, err := svc.ListApprovals(context.Background(), shared.NewID().String(), "", 1, 10)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "approval workflow not configured")
 	})
 
 	t.Run("CancelApproval", func(t *testing.T) {
-		_, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
+		_, err := svc.CancelApproval(context.Background(), finding.CancelApprovalInput{
 			TenantID:   shared.NewID().String(),
 			ApprovalID: shared.NewID().String(),
 			CanceledBy: shared.NewID().String(),
@@ -1008,12 +995,12 @@ func TestFindingApprovalService_CancelApproval_Success(t *testing.T) {
 	requestedBy := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create approval
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -1023,7 +1010,7 @@ func TestFindingApprovalService_CancelApproval_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Cancel it (as the requester)
-	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
+	approval, err := svc.CancelApproval(context.Background(), finding.CancelApprovalInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		CanceledBy: requestedBy.String(),
@@ -1044,12 +1031,12 @@ func TestFindingApprovalService_CancelApproval_NotRequester(t *testing.T) {
 	otherUser := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create approval
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -1059,7 +1046,7 @@ func TestFindingApprovalService_CancelApproval_NotRequester(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to cancel as a different user
-	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
+	approval, err := svc.CancelApproval(context.Background(), finding.CancelApprovalInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		CanceledBy: otherUser.String(),
@@ -1077,12 +1064,12 @@ func TestFindingApprovalService_CancelApproval_NotPending(t *testing.T) {
 	approverID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create and approve
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -1091,7 +1078,7 @@ func TestFindingApprovalService_CancelApproval_NotPending(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		ApprovedBy: approverID.String(),
@@ -1099,7 +1086,7 @@ func TestFindingApprovalService_CancelApproval_NotPending(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to cancel the already-approved approval
-	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
+	approval, err := svc.CancelApproval(context.Background(), finding.CancelApprovalInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		CanceledBy: requestedBy.String(),
@@ -1120,11 +1107,11 @@ func TestFindingApprovalService_RequestApproval_InvalidStatus(t *testing.T) {
 	requestedBy := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	input := app.RequestApprovalInput{
+	input := finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "invalid_garbage_status",
@@ -1151,12 +1138,12 @@ func TestFindingApprovalService_ApproveStatus_ConcurrentModification(t *testing.
 	approverID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	// Create approval
-	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
@@ -1169,7 +1156,7 @@ func TestFindingApprovalService_ApproveStatus_ConcurrentModification(t *testing.
 	approvalRepo.updateErr = vulnerability.ErrConcurrentModification
 
 	// Try to approve - should fail with concurrent modification
-	approval, err := svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+	approval, err := svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
 		ApprovedBy: approverID.String(),
@@ -1185,7 +1172,7 @@ func (m *mockFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 
@@ -1221,4 +1208,49 @@ func (m *mockFindingRepository) AutoResolveStaleBranchOccurrences(_ context.Cont
 
 func (m *mockFindingRepository) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
 	return nil, nil
+}
+
+// An approver reads what a request is about: the list carries each
+// finding title, read only within the caller tenant.
+func TestFindingApprovalService_ApprovalFindingTitles_TenantScoped(t *testing.T) {
+	tenantID, otherTenant := shared.NewID(), shared.NewID()
+	newFinding := func(tenant shared.ID, title string) *vulnerability.Finding {
+		f, err := vulnerability.NewFinding(tenant, shared.NewID(), vulnerability.FindingSourceManual, "manual", vulnerability.SeverityHigh, "msg")
+		require.NoError(t, err)
+		f.SetTitle(title)
+		return f
+	}
+	mine := newFinding(tenantID, "SQL injection in /login")
+	theirs := newFinding(otherTenant, "Other tenant finding")
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[mine.ID()] = mine
+	findingRepo.findings[theirs.ID()] = theirs
+	svc := newApprovalTestService(findingRepo, newMockApprovalRepository())
+
+	gone := shared.NewID()
+	approvals := []*vulnerability.Approval{
+		{FindingID: mine.ID()}, {FindingID: mine.ID()}, {FindingID: theirs.ID()}, {FindingID: gone},
+	}
+	titles, err := svc.ApprovalFindingTitles(context.Background(), tenantID.String(), approvals)
+	require.NoError(t, err)
+	assert.Equal(t, map[shared.ID]string{mine.ID(): "SQL injection in /login"}, titles,
+		"another tenant finding or a deleted finding has no title")
+
+	empty, err := svc.ApprovalFindingTitles(context.Background(), tenantID.String(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+
+	_, err = svc.ApprovalFindingTitles(context.Background(), "not-a-uuid", approvals)
+	assert.True(t, errors.Is(err, shared.ErrValidation))
+}
+
+// newApprovalTestFinding is a confirmed finding: both approval-gated
+// dispositions (false_positive, accepted) are lifecycle moves from it.
+func newApprovalTestFinding(t *testing.T) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSAST, "test-tool", vulnerability.SeverityHigh, "Test finding")
+	require.NoError(t, err)
+	require.NoError(t, f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil))
+	return f
 }

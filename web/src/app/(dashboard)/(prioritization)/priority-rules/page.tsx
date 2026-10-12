@@ -1,11 +1,11 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Scale } from 'lucide-react'
 import { useHasPermission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import useSWR from 'swr'
 import { Main } from '@/components/layout'
@@ -31,6 +31,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
@@ -48,6 +49,9 @@ import { Can, Permission } from '@/lib/permissions'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
 import { DryRunDialog, type DryRunRule } from './dry-run-dialog'
+import { SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
+import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
+import { useTranslation } from '@/context/i18n-provider'
 
 type FieldKey =
   | 'is_in_kev'
@@ -83,7 +87,10 @@ interface ListResponse {
   data?: PriorityRule[]
 }
 
-const FIELD_CONFIG: Record<FieldKey, { label: string; type: FieldType; options?: string[] }> = {
+const FIELD_CONFIG: Record<
+  FieldKey,
+  { label: string; type: FieldType; options?: string[]; optionLabels?: Record<string, string> }
+> = {
   is_in_kev: { label: 'Is in KEV catalog', type: 'bool' },
   is_reachable: { label: 'Is reachable', type: 'bool' },
   asset_is_crown_jewel: { label: 'Asset is crown jewel', type: 'bool' },
@@ -91,12 +98,14 @@ const FIELD_CONFIG: Record<FieldKey, { label: string; type: FieldType; options?:
   severity: {
     label: 'Severity',
     type: 'string',
-    options: ['critical', 'high', 'medium', 'low', 'info'],
+    options: [...SEVERITY_LEVELS],
+    optionLabels: SEVERITY_LABELS,
   },
   asset_criticality: {
     label: 'Asset criticality',
     type: 'string',
-    options: ['critical', 'high', 'medium', 'low'],
+    options: [...ASSET_CRITICALITY_LEVELS],
+    optionLabels: CRITICALITY_LABELS,
   },
 }
 
@@ -157,6 +166,7 @@ const emptyForm: FormState = {
 }
 
 export default function PriorityRulesPage() {
+  const { t } = useTranslation()
   const mayRiskScoring = useHasPermission(Permission.TeamUpdate)
   const riskScoringOn = useModuleEnabled('risk_scoring')
   const canSeeRiskScoring = mayRiskScoring && riskScoringOn
@@ -241,22 +251,26 @@ export default function PriorityRulesPage() {
     }))
   }
 
-  async function toggleActive(rule: PriorityRule, nextActive: boolean) {
-    try {
-      await put(`/api/v1/priority-rules/${rule.id}`, {
-        name: rule.name,
-        description: rule.description ?? '',
-        priority_class: rule.priority_class,
-        conditions: rule.conditions,
-        evaluation_order: rule.evaluation_order,
-        is_active: nextActive,
-      })
-      await mutate()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update rule'
-      toast.error(message)
-    }
-  }
+  // useCallback so the columns memo can depend on it; mutate is stable (SWR).
+  const toggleActive = useCallback(
+    async (rule: PriorityRule, nextActive: boolean) => {
+      try {
+        await put(`/api/v1/priority-rules/${rule.id}`, {
+          name: rule.name,
+          description: rule.description ?? '',
+          priority_class: rule.priority_class,
+          conditions: rule.conditions,
+          evaluation_order: rule.evaluation_order,
+          is_active: nextActive,
+        })
+        await mutate()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to update rule'
+        toast.error(message)
+      }
+    },
+    [mutate]
+  )
 
   async function handleSave() {
     if (!form.name.trim()) {
@@ -267,6 +281,13 @@ export default function PriorityRulesPage() {
     const orderNum = Number(form.evaluation_order)
     if (!Number.isFinite(orderNum)) {
       toast.error('Evaluation order must be a number')
+      return
+    }
+
+    // The API refuses a rule without conditions: it would re-class every
+    // finding in the organization.
+    if (form.conditions.length === 0) {
+      toast.error('Add at least one condition')
       return
     }
 
@@ -372,7 +393,9 @@ export default function PriorityRulesPage() {
           return (
             <div className="flex flex-wrap gap-1">
               {conditions.length === 0 ? (
-                <span className="text-xs text-muted-foreground">No conditions</span>
+                <span className="text-xs text-destructive">
+                  No conditions: add one before enabling
+                </span>
               ) : (
                 conditions.map((c, i) => (
                   <Badge
@@ -442,8 +465,7 @@ export default function PriorityRulesPage() {
         },
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [toggleActive]
   )
 
   function renderValueInput(c: Condition, idx: number) {
@@ -505,7 +527,7 @@ export default function PriorityRulesPage() {
           <SelectContent>
             {cfg.options.map((opt) => (
               <SelectItem key={opt} value={opt}>
-                {opt}
+                {cfg.optionLabels?.[opt] ?? opt}
               </SelectItem>
             ))}
           </SelectContent>
@@ -584,7 +606,7 @@ export default function PriorityRulesPage() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>{editingRule ? 'Edit priority rule' : 'Create priority rule'}</DialogTitle>
             <DialogDescription>
@@ -592,170 +614,173 @@ export default function PriorityRulesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. KEV on crown jewel → P0"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Explain when and why this rule applies"
-                rows={2}
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
+          <DialogBody>
+            <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="priority_class">Target priority class</Label>
-                <Select
-                  value={form.priority_class}
-                  onValueChange={(value) =>
-                    setForm({ ...form, priority_class: value as PriorityClass })
-                  }
-                >
-                  <SelectTrigger id="priority_class">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITY_CLASSES.map((pc) => (
-                      <SelectItem key={pc} value={pc}>
-                        {pc}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="evaluation_order">Evaluation order</Label>
+                <Label htmlFor="name">Name *</Label>
                 <Input
-                  id="evaluation_order"
-                  type="number"
-                  value={form.evaluation_order}
-                  onChange={(e) => setForm({ ...form, evaluation_order: e.target.value })}
-                  placeholder="50"
+                  id="name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="e.g. KEV on crown jewel → P0"
                 />
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="is_active">Active</Label>
-                <div className="flex h-9 items-center">
-                  <Switch
-                    id="is_active"
-                    checked={form.is_active}
-                    onCheckedChange={(checked) => setForm({ ...form, is_active: checked })}
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Explain when and why this rule applies"
+                  rows={2}
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="priority_class">Target priority class</Label>
+                  <Select
+                    value={form.priority_class}
+                    onValueChange={(value) =>
+                      setForm({ ...form, priority_class: value as PriorityClass })
+                    }
+                  >
+                    <SelectTrigger id="priority_class">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORITY_CLASSES.map((pc) => (
+                        <SelectItem key={pc} value={pc}>
+                          {pc}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="evaluation_order">Evaluation order</Label>
+                  <Input
+                    id="evaluation_order"
+                    type="number"
+                    value={form.evaluation_order}
+                    onChange={(e) => setForm({ ...form, evaluation_order: e.target.value })}
+                    placeholder="50"
                   />
                 </div>
-              </div>
-            </div>
 
-            <div className="grid gap-2 rounded-md border p-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">Conditions</Label>
-                <Button type="button" variant="outline" size="sm" onClick={addCondition}>
-                  <Plus className="me-1 h-3 w-3" />
-                  Add condition
-                </Button>
+                <div className="grid gap-2">
+                  <Label htmlFor="is_active">Active</Label>
+                  <div className="flex h-9 items-center">
+                    <Switch
+                      id="is_active"
+                      checked={form.is_active}
+                      onCheckedChange={(checked) => setForm({ ...form, is_active: checked })}
+                    />
+                  </div>
+                </div>
               </div>
-              {form.conditions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No conditions. Rule will match all findings.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {form.conditions.map((c, idx) => {
-                    const cfg = FIELD_CONFIG[c.field]
-                    // A rule persisted with a field this UI build doesn't know
-                    // (backend version drift / renamed field) would otherwise
-                    // crash the whole dialog on `.type`. Render a removable
-                    // placeholder so the rest of the rule stays editable.
-                    if (!cfg) {
+
+              <div className="grid gap-2 rounded-md border p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold">Conditions</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addCondition}>
+                    <Plus className="me-1 h-3 w-3" />
+                    Add condition
+                  </Button>
+                </div>
+                {form.conditions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Add at least one condition. A rule applies only to findings that match all of
+                    its conditions.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {form.conditions.map((c, idx) => {
+                      const cfg = FIELD_CONFIG[c.field]
+                      // A rule persisted with a field this UI build doesn't know
+                      // (backend version drift / renamed field) would otherwise
+                      // crash the whole dialog on `.type`. Render a removable
+                      // placeholder so the rest of the rule stays editable.
+                      if (!cfg) {
+                        return (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between gap-2 rounded-md border border-dashed p-2"
+                          >
+                            <span className="text-muted-foreground text-xs">
+                              Unknown condition field <code className="font-mono">{c.field}</code> —
+                              remove to edit this rule.
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9"
+                              aria-label="Remove unknown condition"
+                              onClick={() => removeCondition(idx)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )
+                      }
+                      const type = cfg.type
+                      const ops = operatorsFor(type)
                       return (
                         <div
                           key={idx}
-                          className="flex items-center justify-between gap-2 rounded-md border border-dashed p-2"
+                          className="grid grid-cols-[1fr_120px_1fr_auto] gap-2 items-start"
                         >
-                          <span className="text-muted-foreground text-xs">
-                            Unknown condition field <code className="font-mono">{c.field}</code> —
-                            remove to edit this rule.
-                          </span>
+                          <Select
+                            value={c.field}
+                            onValueChange={(v) => changeConditionField(idx, v as FieldKey)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(Object.keys(FIELD_CONFIG) as FieldKey[]).map((k) => (
+                                <SelectItem key={k} value={k}>
+                                  {FIELD_CONFIG[k].label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={c.operator}
+                            onValueChange={(v) => changeConditionOperator(idx, v as Operator)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ops.map((op) => (
+                                <SelectItem key={op} value={op}>
+                                  {OPERATOR_LABEL[op]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {renderValueInput(c, idx)}
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
                             className="h-9 w-9"
-                            aria-label="Remove unknown condition"
                             onClick={() => removeCondition(idx)}
                           >
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
                       )
-                    }
-                    const type = cfg.type
-                    const ops = operatorsFor(type)
-                    return (
-                      <div
-                        key={idx}
-                        className="grid grid-cols-[1fr_120px_1fr_auto] gap-2 items-start"
-                      >
-                        <Select
-                          value={c.field}
-                          onValueChange={(v) => changeConditionField(idx, v as FieldKey)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(Object.keys(FIELD_CONFIG) as FieldKey[]).map((k) => (
-                              <SelectItem key={k} value={k}>
-                                {FIELD_CONFIG[k].label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select
-                          value={c.operator}
-                          onValueChange={(v) => changeConditionOperator(idx, v as Operator)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ops.map((op) => (
-                              <SelectItem key={op} value={op}>
-                                {OPERATOR_LABEL[op]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {renderValueInput(c, idx)}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9"
-                          onClick={() => removeCondition(idx)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -775,7 +800,7 @@ export default function PriorityRulesPage() {
               <FlaskConical className="me-1 h-4 w-4" />
               Dry run
             </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button onClick={handleSave} disabled={isSaving || form.conditions.length === 0}>
               {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editingRule ? 'Update' : 'Create'}
             </Button>
@@ -792,14 +817,14 @@ export default function PriorityRulesPage() {
       <ConfirmDialog
         open={!!deletingRule}
         onOpenChange={(open) => !open && setDeletingRule(null)}
-        title="Delete priority rule?"
-        desc={
-          <>
-            This will permanently delete &quot;{deletingRule?.name}&quot;. This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.priorityRule.deleteTitle', 'Delete the priority rule "{name}"?', {
+          name: deletingRule?.name ?? '',
+        })}
+        desc={t(
+          'confirm.priorityRule.deleteDesc',
+          'Findings it matched are no longer prioritized by it; the other rules still apply. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={() => void handleDelete()}
       />

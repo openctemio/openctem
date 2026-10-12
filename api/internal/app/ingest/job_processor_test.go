@@ -18,6 +18,7 @@ type stubIngester struct {
 	gotReport *ctis.Report
 	out       *Output
 	err       error
+	called    bool
 }
 
 func (s *stubIngester) Ingest(_ context.Context, agt *sensor.Sensor, input Input) (*Output, error) {
@@ -25,7 +26,15 @@ func (s *stubIngester) Ingest(_ context.Context, agt *sensor.Sensor, input Input
 		s.gotTenant = *agt.TenantID
 	}
 	s.gotReport = input.Report
+	s.called = true
 	return s.out, s.err
+}
+
+// activeSensors answers every lookup with an active sensor of the tenant.
+type activeSensors struct{}
+
+func (activeSensors) QueuedWorkSensor(_ context.Context, tenantID shared.ID, sensorID *shared.ID, _ string) (*sensor.Sensor, *DroppedJob, error) {
+	return &sensor.Sensor{ID: *sensorID, TenantID: &tenantID, Status: sensor.SensorStatusActive}, nil, nil
 }
 
 func TestParseReport_FlatAndWrapped(t *testing.T) {
@@ -51,7 +60,7 @@ func TestJobProcessor_Process_IngestsAndReturnsCounts(t *testing.T) {
 		FindingsCreated: 7,
 		FindingsUpdated: 3,
 	}}
-	p := &JobProcessor{service: ing}
+	p := &JobProcessor{service: ing, sensors: activeSensors{}}
 
 	job := ingestjob.NewJob(tenantID, &sensorID, "scan-9", "trivy", []byte(`{"version":"1.0"}`))
 	out, err := p.Process(context.Background(), job)
@@ -76,7 +85,7 @@ func TestJobProcessor_Process_IngestsAndReturnsCounts(t *testing.T) {
 }
 
 func TestJobProcessor_Process_ParseError(t *testing.T) {
-	p := &JobProcessor{service: &stubIngester{}}
+	p := &JobProcessor{service: &stubIngester{}, sensors: activeSensors{}}
 	job := ingestjob.NewJob(shared.NewID(), nil, "scan-1", "trivy", []byte(`garbage`))
 	if _, err := p.Process(context.Background(), job); err == nil {
 		t.Fatal("expected parse error to propagate")
@@ -84,8 +93,9 @@ func TestJobProcessor_Process_ParseError(t *testing.T) {
 }
 
 func TestJobProcessor_Process_IngestError(t *testing.T) {
-	p := &JobProcessor{service: &stubIngester{err: errors.New("db down")}}
-	job := ingestjob.NewJob(shared.NewID(), nil, "scan-1", "trivy", []byte(`{"version":"1.0"}`))
+	sensorID := shared.NewID()
+	p := &JobProcessor{service: &stubIngester{err: errors.New("db down")}, sensors: activeSensors{}}
+	job := ingestjob.NewJob(shared.NewID(), &sensorID, "scan-1", "trivy", []byte(`{"version":"1.0"}`))
 	if _, err := p.Process(context.Background(), job); err == nil {
 		t.Fatal("expected ingest error to propagate")
 	}

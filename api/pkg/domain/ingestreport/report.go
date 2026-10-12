@@ -215,3 +215,14 @@ type Repository interface {
 	// ExpireStale marks uncommitted reports past their expiry expired.
 	ExpireStale(ctx context.Context, now time.Time) (int, error)
 }
+
+// StagingPurge is what one staging purge removed.
+type StagingPurge struct {
+	// PayloadsCleared are segment payloads of expired reports emptied.
+	PayloadsCleared int
+	// ReportsDeleted are failed and expired reports deleted (with their
+	// jobs).
+	ReportsDeleted int
+	// JobsDeleted are finished jobs without a report deleted.
+	JobsDeleted int
+}

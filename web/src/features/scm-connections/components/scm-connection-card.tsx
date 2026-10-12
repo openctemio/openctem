@@ -41,6 +41,7 @@ import {
   useTestIntegrationApi,
   invalidateSCMIntegrationsCache,
 } from '@/features/integrations'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface SCMConnectionCardProps {
   connection: Integration
@@ -55,6 +56,7 @@ export function SCMConnectionCard({
   onSelect,
   selected = false,
 }: SCMConnectionCardProps) {
+  const { t } = useTranslation()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [syncDialogOpen, setSyncDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -256,16 +258,26 @@ export function SCMConnectionCard({
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Connection"
+        title={t('confirm.scm.deleteTitle', 'Delete the SCM connection "{name}"?', {
+          name: connection.name,
+        })}
         desc={
           <>
-            Are you sure you want to delete <strong>{connection.name}</strong>?
+            {t(
+              'confirm.scm.deleteDesc',
+              'Imported repositories stay, but they can no longer be synced through this connection. This cannot be undone.'
+            )}
             {repositoryCount > 0 && (
-              <> This will affect {repositoryCount} repositories that use this connection.</>
+              <>
+                {' '}
+                {t('confirm.scm.deleteRepoCount', '{count} repositories use this connection.', {
+                  count: repositoryCount,
+                })}
+              </>
             )}
           </>
         }
-        confirmText="Delete"
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDelete}

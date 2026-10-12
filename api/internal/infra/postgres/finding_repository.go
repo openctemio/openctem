@@ -12,8 +12,10 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -22,6 +24,7 @@ const maxJSONSize = 64 * 1024 * 1024 // 64MB upper bound for marshaled JSON fiel
 // FindingRepository implements vulnerability.FindingRepository using PostgreSQL.
 type FindingRepository struct {
 	db *DB
+	planLimits
 }
 
 // NewFindingRepository creates a new FindingRepository.
@@ -117,13 +120,54 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
-
-	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(finding)
-	if err != nil {
+	if err := r.checkLimit(ctx, finding.TenantID(), plan.Findings, 1); err != nil {
 		return err
 	}
 
-	query := `
+	args, err := findingCreateArgs(finding, metadata)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, findingCreateSQL, args...)
+
+	if err != nil {
+		if isUniqueViolation(err) {
+			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
+		}
+		return fmt.Errorf("failed to create finding: %w", err)
+	}
+
+	return nil
+}
+
+// CreateInTx persists a new finding within an existing transaction.
+func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding *vulnerability.Finding) error {
+	if err := r.checkLimit(ctx, finding.TenantID(), plan.Findings, 1); err != nil {
+		return err
+	}
+	metadata, err := json.Marshal(finding.Metadata())
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	args, err := findingCreateArgs(finding, metadata)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, findingCreateSQL, args...)
+
+	if err != nil {
+		if isUniqueViolation(err) {
+			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
+		}
+		return fmt.Errorf("failed to create finding in tx: %w", err)
+	}
+
+	return nil
+}
+
+// findingCreateSQL is the single-row INSERT of Create and CreateInTx.
+var findingCreateSQL = `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
 			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
@@ -145,19 +189,32 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			remediation, pentest_campaign_id, created_by,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status
+			sla_deadline, sla_status, tags, rule_name,
+			fingerprint_version, identity_key,
+			` + findingTypeColumnsSQL + `,
+			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90)
+			$89, $90, $91, $92, $93, $94` + findingTypePlaceholders(95) +
+	findingNetworkPlaceholders(95+findingTypeColumnCount) +
+	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) + `)
 	`
 
+// findingCreateArgs is the argument list for findingCreateSQL. metadata is
+// passed in because Create merges the source metadata into it.
+func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, error) {
+	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(finding)
+	if err != nil {
+		return nil, err
+	}
 	remediationJSON := marshalRemediation(finding.Remediation())
 
-	_, err = r.db.ExecContext(ctx, query,
+	args := []any{
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
@@ -261,176 +318,19 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		// so a manually-created finding with a deadline keeps it.
 		nullTime(finding.SLADeadline()), // $89
 		finding.SLAStatus().String(),    // $90
-	)
-
-	if err != nil {
-		if isUniqueViolation(err) {
-			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
-		}
-		return fmt.Errorf("failed to create finding: %w", err)
+		// Tags. The INSERT used to leave them out, so a new finding's tags
+		// (from the manual or pentest form) were lost until an edit.
+		pq.Array(finding.Tags()), // $91
+		// Rule name. Also left out of the INSERT, so the scanner's rule name
+		// (a nuclei template's, a semgrep rule's) arrived only on a re-sighting.
+		nullString(finding.RuleName()),  // $92
+		finding.FingerprintVersion(),    // $93
+		nullJSON(finding.IdentityKey()), // $94
 	}
-
-	return nil
-}
-
-// CreateInTx persists a new finding within an existing transaction.
-func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding *vulnerability.Finding) error {
-	metadata, err := json.Marshal(finding.Metadata())
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(finding)
-	if err != nil {
-		return err
-	}
-
-	query := `
-		INSERT INTO findings (
-			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
-			start_column, end_column, snippet, context_snippet, context_start_line,
-			title, description, message, severity, status,
-			resolution, resolved_at, resolved_by, scan_id, fingerprint,
-			sensor_id, metadata, created_at, updated_at,
-			first_detected_branch, first_detected_commit, last_seen_branch, last_seen_commit,
-			confidence, impact, likelihood, vulnerability_class, subcategory,
-			baseline_state, kind, rank, occurrence_count, correlation_id,
-			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
-			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
-			epss_score, epss_percentile, is_in_kev, kev_due_date,
-			priority_class, priority_class_reason, priority_class_override, priority_class_overridden_by, priority_class_overridden_at,
-			is_reachable, reachable_from_count,
-			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
-			data_exposure_risk, reputational_impact, compliance_impact,
-			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id, created_by,
-			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
-			ingest_channel,
-			sla_deadline, sla_status
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
-			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
-			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
-			$83, $84, $85, $86, $87, $88,
-			$89, $90)
-	`
-
-	remediationJSON := marshalRemediation(finding.Remediation())
-
-	_, err = tx.ExecContext(ctx, query,
-		finding.ID().String(),
-		finding.TenantID().String(),
-		nullID(finding.VulnerabilityID()),
-		nullIDValue(finding.AssetID()), // pentest findings may have no asset
-		nullID(finding.BranchID()),
-		nullID(finding.ComponentID()),
-		finding.Source().String(),
-		finding.ToolName(),
-		nullID(finding.ToolID()),
-		nullString(finding.ToolVersion()),
-		nullString(finding.RuleID()),
-		nullString(finding.FilePath()),
-		finding.StartLine(),
-		finding.EndLine(),
-		finding.StartColumn(),
-		finding.EndColumn(),
-		nullString(finding.Snippet()),
-		nullString(finding.ContextSnippet()),
-		nullInt(finding.ContextStartLine()),
-		nullString(finding.Title()),
-		nullString(finding.Description()),
-		finding.Message(),
-		finding.Severity().String(),
-		finding.Status().String(),
-		nullString(finding.Resolution()),
-		nullTime(finding.ResolvedAt()),
-		nullID(finding.ResolvedBy()),
-		nullString(finding.ScanID()),
-		finding.Fingerprint(),
-		nullID(finding.SensorID()),
-		metadata,
-		finding.CreatedAt(),
-		finding.UpdatedAt(),
-		nullString(finding.FirstDetectedBranch()),
-		nullString(finding.FirstDetectedCommit()),
-		nullString(finding.LastSeenBranch()),
-		nullString(finding.LastSeenCommit()),
-		// SARIF fields
-		nullIntPtr(finding.Confidence()),
-		nullString(finding.Impact()),
-		nullString(finding.Likelihood()),
-		pq.Array(finding.VulnerabilityClass()),
-		pq.Array(finding.Subcategory()),
-		nullString(finding.BaselineState()),
-		nullString(finding.Kind()),
-		nullFloat64(finding.Rank()),
-		finding.OccurrenceCount(),
-		nullString(finding.CorrelationID()),
-		partialFingerprints,
-		relatedLocations,
-		stacks,
-		attachments,
-		pq.Array(finding.WorkItemURIs()),
-		nullString(finding.HostedViewerURI()),
-		// CTEM fields
-		nullString(finding.ExposureVector().String()),
-		finding.IsNetworkAccessible(),
-		finding.IsInternetAccessible(),
-		nullString(finding.AttackPrerequisites()),
-		// Priority classification fields (RFC-004)
-		nullFloat64(finding.EPSSScore()),
-		nullFloat64(finding.EPSSPercentile()),
-		finding.IsInKEV(),
-		nullTime(finding.KEVDueDate()),
-		nullPriorityClass(finding.PriorityClass()),
-		nullString(finding.PriorityClassReason()),
-		finding.PriorityClassOverride(),
-		nullID(finding.PriorityClassOverriddenBy()),
-		nullTime(finding.PriorityClassOverriddenAt()),
-		finding.IsReachable(),
-		finding.ReachableFromCount(),
-		nullString(finding.RemediationType().String()),
-		nullIntPtr(finding.EstimatedFixTime()),
-		nullString(finding.FixComplexity().String()),
-		finding.RemedyAvailable(),
-		nullString(finding.DataExposureRisk().String()),
-		finding.ReputationalImpact(),
-		pq.Array(finding.ComplianceImpact()),
-		// ASVS fields
-		nullString(finding.ASVSSection()),
-		nullString(finding.ASVSControlID()),
-		nullString(finding.ASVSControlURL()),
-		nullIntPtr(finding.ASVSLevel()),
-		// Remediation JSONB
-		remediationJSON,
-		// Pentest campaign FK
-		nullID(finding.PentestCampaignID()),
-		// Creator user ID
-		nullID(finding.CreatedBy()),
-		// Classification columns — mirror Create(); persist CVSS + CVE/CWE/OWASP on
-		// insert so a manually-created finding keeps its scoring without an edit.
-		nullFloat64(finding.CVSSScore()),           // $83
-		nullString(finding.CVSSVector()),           // $84
-		nullString(finding.CVEID()),                // $85
-		pq.Array(finding.CWEIDs()),                 // $86
-		pq.Array(finding.OWASPIDs()),               // $87
-		nullIngestChannel(finding.IngestChannel()), // $88
-		// SLA — persisted on single-row insert too, mirroring the batch path,
-		// so a manually-created finding with a deadline keeps it.
-		nullTime(finding.SLADeadline()), // $89
-		finding.SLAStatus().String(),    // $90
-	)
-
-	if err != nil {
-		if isUniqueViolation(err) {
-			return vulnerability.FindingAlreadyExistsError(finding.Fingerprint())
-		}
-		return fmt.Errorf("failed to create finding in tx: %w", err)
-	}
-
-	return nil
+	args = append(args, findingTypeArgs(finding)...) // $95…
+	args = append(args, findingNetworkArgs(finding)...)
+	args = append(args, findingScannerArgs(finding)...)
+	return args, nil
 }
 
 // CreateBatch persists multiple findings.
@@ -438,6 +338,13 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 func (r *FindingRepository) CreateBatch(ctx context.Context, findings []*vulnerability.Finding) error {
 	if len(findings) == 0 {
 		return nil
+	}
+	refused, err := r.refuseOverFindingsLimit(ctx, findings)
+	if err != nil {
+		return err
+	}
+	if len(refused) > 0 {
+		return fmt.Errorf("%w: %d new findings over the findings plan limit", shared.ErrForbidden, len(refused))
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -475,13 +382,61 @@ const DefaultBatchChunkSize = 100
 // CreateBatchWithResult persists multiple findings with partial success support.
 // Uses chunked transactions to isolate failures - if one chunk fails,
 // only that chunk is retried individually to identify the bad finding.
+//
+// Each row is an upsert on (tenant_id, fingerprint). The result says, per
+// input index, whether the row was inserted (Inserted) or an existing finding
+// was updated, and the persisted id (IDs). Created counts inserted rows only;
+// a row that hit an existing finding (a concurrent ingest won the race) counts
+// as Updated, and its in-memory finding is re-pointed at the persisted id so
+// no caller acts on an id that does not exist (RFC-043 B2).
 func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
 	result := &vulnerability.BatchCreateResult{
-		Errors: make(map[int]string),
+		Errors:   make(map[int]string),
+		Inserted: make(map[int]bool),
+		IDs:      make(map[int]shared.ID),
 	}
 
 	if len(findings) == 0 {
 		return result, nil
+	}
+
+	// New findings over the organization's findings limit are refused one
+	// by one (per-item errors); re-sightings of existing findings and the
+	// new findings within the limit are stored.
+	refused, err := r.refuseOverFindingsLimit(ctx, findings)
+	if err != nil {
+		return nil, err
+	}
+	positions := make([]int, 0, len(findings))
+	if len(refused) > 0 {
+		kept := make([]*vulnerability.Finding, 0, len(findings)-len(refused))
+		for i, f := range findings {
+			if msg, ok := refused[i]; ok {
+				result.Skipped++
+				result.Errors[i] = msg
+				continue
+			}
+			kept = append(kept, f)
+			positions = append(positions, i)
+		}
+		findings = kept
+	} else {
+		for i := range findings {
+			positions = append(positions, i)
+		}
+	}
+
+	record := func(index int, finding *vulnerability.Finding, row upsertedRow) {
+		result.IDs[index] = row.id
+		result.Inserted[index] = row.inserted
+		if row.inserted {
+			result.Created++
+		} else {
+			result.Updated++
+		}
+		if row.id != finding.ID() {
+			finding.AdoptPersistedID(row.id)
+		}
 	}
 
 	// Process in chunks for better error isolation
@@ -494,85 +449,205 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		chunk := findings[chunkStart:chunkEnd]
 
 		// Try to insert the entire chunk
-		err := r.insertChunk(ctx, chunk)
+		rows, err := r.insertChunk(ctx, chunk)
 		if err == nil {
-			// Chunk succeeded
-			result.Created += len(chunk)
+			for i, finding := range chunk {
+				record(positions[chunkStart+i], finding, rows[i])
+			}
 			continue
 		}
 
 		// Chunk failed - retry individually to identify bad findings
 		for i, finding := range chunk {
-			globalIndex := chunkStart + i
-			if err := r.insertSingleFinding(ctx, finding); err != nil {
+			globalIndex := positions[chunkStart+i]
+			row, err := r.insertSingleFinding(ctx, finding)
+			if err != nil {
 				result.Skipped++
 				result.Errors[globalIndex] = err.Error()
-			} else {
-				result.Created++
+				continue
 			}
+			record(globalIndex, finding, row)
 		}
 	}
 
 	return result, nil
 }
 
-// insertChunk inserts a chunk of findings in a SINGLE multi-row INSERT.
+// refuseOverFindingsLimit returns, by input index, the findings refused by
+// their organization's findings limit, with the refusal as the message. Only
+// NEW findings count (a fingerprint the organization does not have yet); the
+// first ones in input order are admitted up to the remaining headroom and
+// every later one is refused. While the limit is unlimited it costs one
+// limit read and no count. When the limit cannot be read every new finding
+// is refused (fail-closed).
+func (r *FindingRepository) refuseOverFindingsLimit(ctx context.Context, findings []*vulnerability.Finding) (map[int]string, error) {
+	if r.limits == nil {
+		return nil, nil
+	}
+	byTenant := map[shared.ID][]int{}
+	for i, f := range findings {
+		byTenant[f.TenantID()] = append(byTenant[f.TenantID()], i)
+	}
+	refused := map[int]string{}
+	for tenantID, idx := range byTenant {
+		room, herr := r.headroom(ctx, tenantID, plan.Findings)
+		if herr == nil && room == plan.Unlimited {
+			continue
+		}
+		var lim *plan.ErrLimitReached
+		if herr != nil && !errors.As(herr, &lim) {
+			return nil, herr // an invalid key: a programming error
+		}
+		fps := make([]string, 0, len(idx))
+		for _, i := range idx {
+			fps = append(fps, findings[i].Fingerprint())
+		}
+		fresh, err := r.newFingerprints(ctx, tenantID, fps)
+		if err != nil {
+			return nil, err
+		}
+		// The refusal each new finding over the limit gets.
+		msg := "plan limit reached: findings; this new finding was not stored"
+		if herr != nil {
+			room, msg = 0, herr.Error()+"; this new finding was not stored"
+		}
+		admitted := map[string]bool{}
+		n := 0
+		for _, i := range idx {
+			fp := findings[i].Fingerprint()
+			if !fresh[fp] || admitted[fp] {
+				continue
+			}
+			if len(admitted) < room {
+				admitted[fp] = true
+				continue
+			}
+			refused[i] = msg
+			n++
+		}
+		if herr == nil {
+			r.recordRefusals(plan.Findings, n)
+		}
+	}
+	return refused, nil
+}
+
+// newFingerprints returns the fingerprints the organization has no finding for.
+func (r *FindingRepository) newFingerprints(ctx context.Context, tenantID shared.ID, fps []string) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT b.fp
+		  FROM unnest($2::text[]) AS b(fp)
+		 WHERE NOT EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = $1 AND f.fingerprint = b.fp)`,
+		tenantID.String(), pq.Array(fps))
+	if err != nil {
+		return nil, fmt.Errorf("count new findings: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, fmt.Errorf("scan new finding: %w", err)
+		}
+		out[fp] = true
+	}
+	return out, rows.Err()
+}
+
+// upsertedRow is what the finding upsert returns for one row.
+type upsertedRow struct {
+	id       shared.ID
+	inserted bool
+}
+
+// findingUpsertReturningSQL makes the upsert report the persisted id and
+// whether the row was inserted: xmax is 0 for a freshly inserted tuple and the
+// updating transaction's id for one that ON CONFLICT DO UPDATE touched.
+const findingUpsertReturningSQL = "\nRETURNING id, fingerprint, (xmax = 0) AS inserted"
+
+// insertChunk inserts a chunk of findings in a SINGLE multi-row INSERT and
+// returns, in input order, the persisted row for each finding.
 //
 // Previously this looped a prepared statement once per finding (N round-trips
 // per chunk). A single multi-row INSERT collapses that to one round-trip,
 // which dominates ingest latency for large scan reports. The statement is
 // atomic on its own, so no explicit transaction is needed.
 //
-// On failure (including the rare case where the same chunk contains two
-// findings with an identical (tenant_id, fingerprint) — which ON CONFLICT
-// cannot update twice in one statement), CreateBatchWithResult falls back to
-// per-row inserts, preserving partial-success error isolation.
-func (r *FindingRepository) insertChunk(ctx context.Context, findings []*vulnerability.Finding) error {
+// On failure (including the case where the same chunk contains two findings
+// with an identical (tenant_id, fingerprint) — which ON CONFLICT cannot update
+// twice in one statement), CreateBatchWithResult falls back to per-row
+// inserts, preserving partial-success error isolation.
+func (r *FindingRepository) insertChunk(ctx context.Context, findings []*vulnerability.Finding) ([]upsertedRow, error) {
 	if len(findings) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	args := make([]any, 0, len(findings)*findingInsertColumnCount)
 	for _, finding := range findings {
 		rowArgs, err := findingInsertArgs(finding)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		args = append(args, rowArgs...)
 	}
 
-	query := findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(len(findings)) + "\n" + findingUpsertConflictSQL()
+	query := findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(len(findings)) + "\n" + findingUpsertConflictSQL() + findingUpsertReturningSQL
 
-	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to batch insert findings: %w", err)
+	dbRows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch insert findings: %w", err)
+	}
+	defer dbRows.Close()
+
+	// RETURNING order is not guaranteed to follow VALUES order; match rows
+	// back by fingerprint, which is unique within a successful statement.
+	byFingerprint := make(map[string]upsertedRow, len(findings))
+	for dbRows.Next() {
+		var idStr, fp string
+		var row upsertedRow
+		if err := dbRows.Scan(&idStr, &fp, &row.inserted); err != nil {
+			return nil, fmt.Errorf("failed to scan inserted finding: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse inserted finding id: %w", err)
+		}
+		row.id = id
+		byFingerprint[fp] = row
+	}
+	if err := dbRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to batch insert findings: %w", err)
 	}
 
-	return nil
+	out := make([]upsertedRow, len(findings))
+	for i, finding := range findings {
+		row, ok := byFingerprint[finding.Fingerprint()]
+		if !ok {
+			return nil, fmt.Errorf("batch insert returned no row for fingerprint %s", finding.Fingerprint())
+		}
+		out[i] = row
+	}
+	return out, nil
 }
 
-// insertSingleFinding inserts a single finding with its own transaction.
-func (r *FindingRepository) insertSingleFinding(ctx context.Context, finding *vulnerability.Finding) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+// insertSingleFinding upserts a single finding and returns the persisted row.
+func (r *FindingRepository) insertSingleFinding(ctx context.Context, finding *vulnerability.Finding) (upsertedRow, error) {
+	args, err := findingInsertArgs(finding)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return upsertedRow{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	stmt, err := tx.PrepareContext(ctx, r.upsertQuery())
-	if err != nil {
-		return fmt.Errorf("failed to prepare statement: %w", err)
+	var (
+		row   upsertedRow
+		idStr string
+		fp    string
+	)
+	if err := r.db.QueryRowContext(ctx, r.upsertQuery()+findingUpsertReturningSQL, args...).Scan(&idStr, &fp, &row.inserted); err != nil {
+		return upsertedRow{}, fmt.Errorf("failed to insert finding: %w", err)
 	}
-	defer stmt.Close()
-
-	if err := r.execFindingInsert(ctx, stmt, finding); err != nil {
-		return err
+	if row.id, err = shared.IDFromString(idStr); err != nil {
+		return upsertedRow{}, fmt.Errorf("failed to parse inserted finding id: %w", err)
 	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
+	return row, nil
 }
 
 // upsertQuery returns the single-row INSERT ... ON CONFLICT query for findings
@@ -630,7 +705,12 @@ func findingInsertColumnsSQL() string {
 			remediation, pentest_campaign_id,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
-			sla_deadline, sla_status
+			sla_deadline, sla_status, tags, rule_name,
+			last_seen_tool,
+			fingerprint_version, identity_key,
+			` + findingTypeColumnsSQL + `,
+			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `
 		)`
 }
 
@@ -662,8 +742,16 @@ func findingUpsertConflictSQL() string {
 			message = EXCLUDED.message,
 			severity = EXCLUDED.severity,
 			scan_id = EXCLUDED.scan_id,
+			-- The tool of the sighting moves with scan_id (RFC-043 interim
+			-- auto-resolve guard); tool_name stays the first reporter.
+			last_seen_tool = COALESCE(EXCLUDED.last_seen_tool, findings.last_seen_tool),
 			sensor_id = EXCLUDED.sensor_id,
-			metadata = EXCLUDED.metadata,
+			-- Existing keys win, new keys are added. This path is only reached
+			-- when two ingests race on a new fingerprint or one batch repeats
+			-- it (a normal re-sighting goes through EnrichBatchByFingerprints,
+			-- which merges metadata in Go). Overwriting dropped whatever the
+			-- first writer, or a user in the meantime, had stored (RFC-043 B2).
+			metadata = EXCLUDED.metadata || COALESCE(findings.metadata, '{}'::jsonb),
 			updated_at = EXCLUDED.updated_at,
 			last_seen_branch = EXCLUDED.last_seen_branch,
 			last_seen_commit = EXCLUDED.last_seen_commit,
@@ -684,7 +772,9 @@ func findingUpsertConflictSQL() string {
 			related_locations = EXCLUDED.related_locations,
 			stacks = EXCLUDED.stacks,
 			attachments = EXCLUDED.attachments,
-			work_item_uris = EXCLUDED.work_item_uris,
+			-- work_item_uris (ticket links) is never taken from the incoming
+			-- row: a scanner never knows the tickets, and EXCLUDED is always
+			-- empty, so assigning it erased the links (RFC-043 B2).
 			hosted_viewer_uri = EXCLUDED.hosted_viewer_uri,
 			exposure_vector = EXCLUDED.exposure_vector,
 			is_network_accessible = EXCLUDED.is_network_accessible,
@@ -728,8 +818,31 @@ func findingUpsertConflictSQL() string {
 			-- was absent (applier failure → NULL). Move sla_status in lockstep
 			-- with the deadline so the two never disagree.
 			sla_deadline = COALESCE(EXCLUDED.sla_deadline, findings.sla_deadline),
-			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END
-	`
+			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END,
+			-- Tags merge on a re-sighting, the rule EnrichFrom applies on the
+			-- enrich path: the stored tags (a user may have set them) stay
+			-- first, new non-empty ones not already there are appended, and
+			-- the list stops at vulnerability.MaxFindingTags.
+			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
+			-- Rule name: first non-empty one wins, as in EnrichFrom.
+			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + "\n\t"
+}
+
+// findingTagsMergeSQL is the SQL expression merging a stored and an incoming
+// tag array: stored tags first, in order, then incoming tags not already
+// present; empty strings dropped; at most vulnerability.MaxFindingTags.
+// It mirrors Finding.EnrichFrom so both re-ingest paths store the same list.
+func findingTagsMergeSQL(stored, incoming string) string {
+	return `COALESCE((SELECT array_agg(m.t ORDER BY m.ord) FROM (
+				SELECT u.t, min(u.ord) AS ord
+				FROM unnest(COALESCE(` + stored + `, '{}'::text[]) || COALESCE(` + incoming + `, '{}'::text[]))
+					WITH ORDINALITY AS u(t, ord)
+				WHERE u.t <> ''
+				GROUP BY u.t
+				ORDER BY min(u.ord)
+				LIMIT ` + strconv.Itoa(vulnerability.MaxFindingTags) + `
+			) m), '{}'::text[])`
 }
 
 // execFindingInsert executes the insert for a single finding using prepared statement.
@@ -746,7 +859,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 89
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -764,7 +877,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 
 	remediationJSON := marshalRemediation(finding.Remediation())
 
-	return []any{
+	return append([]any{
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
@@ -870,19 +983,34 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// work; previously they were computed in memory and never written.
 		nullTime(finding.SLADeadline()),
 		finding.SLAStatus().String(),
-	}, nil
+		// Tags. Left out of the INSERT until now, so every ingested finding
+		// was stored with tags = '{}' whatever the report sent.
+		pq.Array(finding.Tags()),
+		// Rule name, left out with the tags: a nuclei template's or semgrep
+		// rule's name arrived only on a re-sighting.
+		nullString(finding.RuleName()),
+		// Tool of this sighting (RFC-043 interim auto-resolve guard).
+		nullString(finding.LastSeenTool()),
+		// Identity recipe version and tuple (RFC-043 §6).
+		finding.FingerprintVersion(),
+		nullJSON(finding.IdentityKey()),
+	}, append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...)...), nil
 }
 
-// IsPentestCampaignMember reports whether the user belongs to the given
-// pentest campaign in this tenant. Used by the generic findings surface to
+// CanSeePentestFinding reports whether the user belongs to the given
+// pentest campaign in this tenant and may see a finding in that status. Used by the generic findings surface to
 // gate single-finding reads of pentest findings by campaign membership.
-func (r *FindingRepository) IsPentestCampaignMember(ctx context.Context, tenantID, campaignID, userID string) (bool, error) {
+//
+// A client member sees only published findings: a finding in draft or
+// in_review is not visible to them.
+func (r *FindingRepository) CanSeePentestFinding(ctx context.Context, tenantID, campaignID, userID, findingStatus string) (bool, error) {
 	const q = `SELECT EXISTS (
 		SELECT 1 FROM pentest_campaign_members
 		WHERE tenant_id = $1 AND campaign_id = $2 AND user_id = $3
+		  AND (role <> 'client' OR $4 NOT IN ('draft', 'in_review'))
 	)`
 	var ok bool
-	if err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID).Scan(&ok); err != nil {
+	if err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID, findingStatus).Scan(&ok); err != nil {
 		return false, err
 	}
 	return ok, nil
@@ -966,11 +1094,12 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 			priority_class = $34, priority_class_reason = $35,
 			priority_class_override = $36, priority_class_overridden_by = $37, priority_class_overridden_at = $38,
 			is_reachable = $39, reachable_from_count = $40,
-			sla_deadline = $41, sla_status = $42
+			sla_deadline = $41, sla_status = $42,
+			` + findingTypeUpdateSQL(43) + `
 		WHERE id = $1 AND tenant_id = $20
 	`
 
-	result, err := r.db.ExecContext(ctx, query,
+	args := []any{
 		finding.ID().String(),                  // $1
 		nullID(finding.VulnerabilityID()),      // $2
 		nullID(finding.ComponentID()),          // $3
@@ -1016,7 +1145,9 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		// persisted here so the tightened deadline actually takes effect.
 		nullTime(finding.SLADeadline()), // $41
 		finding.SLAStatus().String(),    // $42
-	)
+	}
+	args = append(args, findingTypeArgs(finding)...) // $43…
+	result, err := r.db.ExecContext(ctx, query, args...)
 
 	if err != nil {
 		return fmt.Errorf("failed to update finding: %w", err)
@@ -1214,9 +1345,10 @@ func (r *FindingRepository) ListByComponentID(ctx context.Context, tenantID, com
 //   - KEV is the finding's feed-derived is_in_kev or the catalog's KEV
 //     columns, which only the KEV feed writes;
 //   - exploit availability is the catalog flag (KEV feed) or this tenant's
-//     own scanner verdict kept on its findings.
-const (
-	tenantCVEAggColumns = `
+//     own scanner verdict (findings.exploit_available), through the same
+//     predicate as the list filter (vulnerability.FindingExploitAvailableSQL),
+//     which is why tenantCVEAggColumns is a var.
+var tenantCVEAggColumns = `
 				MIN(CASE f.severity
 					WHEN 'critical' THEN 1
 					WHEN 'high'     THEN 2
@@ -1227,7 +1359,9 @@ const (
 				MAX(f.cvss_score)                      AS t_cvss,
 				MAX(f.epss_score)                      AS t_epss,
 				BOOL_OR(COALESCE(f.is_in_kev, false))  AS t_kev,
-				BOOL_OR(f.metadata->>'` + vulnerability.FindingMetaScannerExploitAvailable + `' = 'true') AS t_exploit`
+				BOOL_OR(` + vulnerability.FindingExploitAvailableSQL("f") + `) AS t_exploit`
+
+const (
 	tenantCVESeverity = `(ARRAY['critical','high','medium','low','info','unknown']::text[])[agg.sev_rank]`
 	tenantCVECVSS     = `COALESCE(agg.t_cvss, v.cvss_score)`
 	tenantCVEEPSS     = `COALESCE(agg.t_epss, v.epss_score)`
@@ -1250,12 +1384,19 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 	// Build dynamic WHERE for outer filters
 	var whereClauses []string
 	args := []any{tenantID.String()}
-	argN := 2
 
 	statusFilter := ""
 	if !filter.IncludeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
 	}
+	// Layer 2: a restricted caller's CVEs, counts and dates come only from
+	// findings on assets in their scope ($2, $3).
+	if filter.DataScope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", filter.DataScope, args)
+		statusFilter += " AND " + cond
+	}
+	argN := len(args) + 1
 
 	if len(filter.SeverityIn) > 0 {
 		placeholders := make([]string, 0, len(filter.SeverityIn))
@@ -1411,10 +1552,17 @@ func (r *FindingRepository) GetActiveCVEStats(
 	ctx context.Context,
 	tenantID shared.ID,
 	includeResolved bool,
+	scope *shared.DataScope,
 ) (*vulnerability.ActiveCVEStats, error) {
 	statusFilter := ""
 	if !includeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+	args := []any{tenantID.String()}
+	if scope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", scope, args)
+		statusFilter += " AND " + cond
 	}
 
 	query := `
@@ -1439,7 +1587,7 @@ func (r *FindingRepository) GetActiveCVEStats(
 
 	var stats vulnerability.ActiveCVEStats
 	var crit, high, med, low, info int
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Total, &crit, &high, &med, &low, &info,
 		&stats.KEVCount, &stats.ExploitAvailableCount,
 	); err != nil {
@@ -1604,6 +1752,38 @@ func (r *FindingRepository) ExistsByFingerprint(ctx context.Context, tenantID sh
 	return exists, nil
 }
 
+// ListOpenFindingAssetIDs returns the distinct assets that have at least one
+// open (not closed) finding in the tenant, in one query. The whole-tenant
+// reclassification sweep uses it instead of paging every open finding.
+func (r *FindingRepository) ListOpenFindingAssetIDs(ctx context.Context, tenantID shared.ID) ([]shared.ID, error) {
+	closed := vulnerability.ClosedFindingStatuses()
+	statuses := make([]string, len(closed))
+	for i, st := range closed {
+		statuses[i] = string(st)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT asset_id FROM findings
+		WHERE tenant_id = $1 AND asset_id IS NOT NULL AND status <> ALL($2::text[])`,
+		tenantID.String(), pq.Array(statuses))
+	if err != nil {
+		return nil, fmt.Errorf("list open finding assets: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan asset id: %w", err)
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse asset id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // CheckFingerprintsExist checks which fingerprints already exist in the database.
 // Returns a map of fingerprint -> exists boolean.
 func (r *FindingRepository) CheckFingerprintsExist(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error) {
@@ -1617,20 +1797,14 @@ func (r *FindingRepository) CheckFingerprintsExist(ctx context.Context, tenantID
 		result[fp] = false
 	}
 
-	// Build query with placeholders
-	placeholders := make([]string, len(fingerprints))
-	args := make([]any, len(fingerprints)+1)
-	args[0] = tenantID.String()
-	for i, fp := range fingerprints {
-		placeholders[i] = fmt.Sprintf("$%d", i+2)
-		args[i+1] = fp
-	}
-
-	query := fmt.Sprintf(`
+	// One array parameter, not one placeholder per key: a report may carry
+	// up to 100k findings, past PostgreSQL's 65535 bind-parameter limit.
+	query := `
 		SELECT fingerprint
 		FROM findings
-		WHERE tenant_id = $1 AND fingerprint IN (%s)
-	`, strings.Join(placeholders, ", "))
+		WHERE tenant_id = $1 AND fingerprint = ANY($2::text[])
+	`
+	args := []any{tenantID.String(), pq.Array(fingerprints)}
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -1663,6 +1837,10 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	if len(items) == 0 {
 		return nil
 	}
+	// A report can carry one finding twice; the statement cannot update one
+	// (finding, branch) row twice, and the duplicate used to drop every
+	// occurrence of the report. The last sighting wins (latest commit).
+	items = dedupeLastWins(items, branchOccurrenceKey)
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
@@ -1707,6 +1885,12 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	return nil
 }
 
+// branchOccurrenceKey is the conflict key of finding_branch_occurrences as the
+// batch knows it: one finding (by fingerprint) on one branch.
+func branchOccurrenceKey(it vulnerability.BranchOccurrenceUpsert) string {
+	return it.Fingerprint + "\x1f" + it.BranchID.String()
+}
+
 // BackfillFindingBranches gives existing findings the branch a scan saw them
 // on. Findings are matched by (tenant_id, fingerprint) and the branch must
 // belong to the finding's own repository asset. Two cases are updated:
@@ -1725,6 +1909,7 @@ func (r *FindingRepository) BackfillFindingBranches(ctx context.Context, tenantI
 	if len(items) == 0 {
 		return 0, nil
 	}
+	items = dedupeLastWins(items, branchOccurrenceKey)
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
@@ -1767,6 +1952,11 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 	if scanID == "" {
 		return 0, nil
 	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
+		return 0, nil
+	}
 	const query = `
 		UPDATE finding_branch_occurrences o
 		SET status = 'auto_fixed', resolved_at = NOW(), resolved_reason = 'not_seen_in_scan', updated_at = NOW()
@@ -1775,7 +1965,7 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 		  AND o.tenant_id = $1
 		  AND o.branch_id = $2
 		  AND o.status = 'open'
-		  AND f.tool_name = $3
+		  AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 		  AND o.last_seen_scan_id IS DISTINCT FROM $4
 	`
 	res, err := r.db.ExecContext(ctx, query, tenantID.String(), branchID.String(), toolName, scanID)
@@ -1784,6 +1974,22 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 	}
 	n, _ := res.RowsAffected()
 	return n, nil
+}
+
+// BranchCountsAsExposure reports whether a branch of the tenant is a release
+// line in its own right: default, protected, or of type main or release. Unlike
+// branch_counts_as_exposure it does not count every branch of a repository
+// whose default branch is unknown, so a job's base-branch hint can never make
+// a feature branch the baseline.
+func (r *FindingRepository) BranchCountsAsExposure(ctx context.Context, tenantID, branchID shared.ID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `SELECT b.is_default OR b.is_protected OR b.branch_type IN ('main', 'release')
+		FROM repository_branches b JOIN assets a ON a.id = b.repository_id
+		WHERE b.id = $2 AND a.tenant_id = $1`, tenantID.String(), branchID.String()).Scan(&ok)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return ok, err
 }
 
 // FingerprintsOpenOnBranch returns the subset of fingerprints that currently
@@ -1824,17 +2030,29 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
-func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+//
+// A move to resolved must name how the finding was resolved (method), so every
+// closure carries its evidence class; any other status clears
+// resolution_method, so a reopened or dispositioned finding never keeps a
+// stale "fixed" claim.
+func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
 	if len(ids) == 0 {
 		return nil
 	}
+	methodArg, err := resolutionMethodArg(status, method)
+	if err != nil {
+		return err
+	}
 
-	// Security: tenant_id is first parameter for isolation
+	// Security: tenant_id is first parameter for isolation. $6 holds the
+	// statuses a person may move a finding from to status (the lifecycle), so
+	// a finding that changed since the caller checked it is left alone.
 	placeholders := make([]string, len(ids))
-	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}
+	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
+		pq.Array(statusStrings(vulnerability.UserFromStatuses(status)))}
 
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+5)
+		placeholders[i] = fmt.Sprintf("$%d", i+7)
 		args = append(args, id.String())
 	}
 
@@ -1849,16 +2067,27 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 	// Security: Exclude pentest findings — they must be managed via the pentest module
 	query := fmt.Sprintf(`
 		UPDATE findings
-		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
-		WHERE tenant_id = $1 AND source != 'pentest' AND id IN (%s)
+		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5%s, updated_at = NOW()
+		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($6) AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
-	_, err := r.db.ExecContext(ctx, query, args...)
-	if err != nil {
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to update findings status: %w", err)
 	}
 
 	return nil
+}
+
+// resolutionMethodArg is the resolution_method value a status write stores:
+// the (required, valid) method for resolved, NULL for everything else.
+func resolutionMethodArg(status vulnerability.FindingStatus, method vulnerability.ResolutionMethod) (any, error) {
+	if status != vulnerability.FindingStatusResolved {
+		return nil, nil
+	}
+	if !method.IsValid() {
+		return nil, fmt.Errorf("%w: resolving a finding needs a valid resolution method, got %q", shared.ErrValidation, method)
+	}
+	return method.String(), nil
 }
 
 // DeleteByScanID removes all findings for a scan.
@@ -1876,7 +2105,7 @@ func (r *FindingRepository) DeleteByScanID(ctx context.Context, tenantID shared.
 // UpdateScanIDBatchByFingerprints updates scan metadata for existing findings by their fingerprints.
 // This preserves user-set status (false_positive, accepted, etc.) while updating scan tracking.
 // Returns the count of updated findings.
-func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID string) (int64, error) {
+func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, toolName string) (int64, error) {
 	if len(fingerprints) == 0 {
 		return 0, nil
 	}
@@ -1885,11 +2114,12 @@ func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context,
 	// Note: Status is intentionally NOT updated to preserve user-set values (false_positive, accepted, etc.)
 	query := `
 		UPDATE findings
-		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW()
+		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(),
+			last_seen_tool = COALESCE(NULLIF($4, ''), last_seen_tool)
 		WHERE tenant_id = $2 AND fingerprint = ANY($3)
 	`
 
-	result, err := r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints))
+	result, err := r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints), toolName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to update findings scan_id: %w", err)
 	}
@@ -2053,6 +2283,10 @@ func (r *FindingRepository) selectQuery() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			remediation, created_by, ingest_channel,
+			` + findingTypeColumnsSQL + `,
+			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `,
+			branch_only,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2183,11 +2417,16 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		createdBy sql.NullString
 		// Provenance channel — nullable; NULL means unrecorded.
 		ingestChannel sql.NullString
+		// Branch-only mark (migration 001138)
+		branchOnly bool
 		// Data flow flag
 		hasDataFlow bool
 	)
 
-	err := scan(
+	var typeCols findingTypeScan
+	var netCols findingNetworkScan
+	var scanCols findingScannerScan
+	dests := []any{
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
 		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
 		&startColumn, &endColumn, &snippet, &contextSnippet, &contextStartLine,
@@ -2212,13 +2451,16 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&remediationType, &estimatedFixTime, &fixComplexity, &remedyAvailable,
 		&dataExposureRisk, &reputationalImpact, pq.Array(&complianceImpact),
 		&remediation, &createdBy, &ingestChannel,
-		&hasDataFlow,
-	)
-	if err != nil {
+	}
+	dests = append(dests, typeCols.dests()...)
+	dests = append(dests, netCols.dests()...)
+	dests = append(dests, scanCols.dests()...)
+	dests = append(dests, &branchOnly, &hasDataFlow)
+	if err := scan(dests...); err != nil {
 		return nil, err
 	}
 
-	return r.reconstruct(findingRow{
+	f, err := r.reconstruct(findingRow{
 		idStr, tenantIDStr, vulnerabilityID, assetIDStr, branchID, componentID, source,
 		toolName, toolID, toolVersion, ruleID, ruleName, filePath,
 		int(startLine.Int64), int(endLine.Int64), int(startColumn.Int64), int(endColumn.Int64),
@@ -2254,6 +2496,14 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		// Data flow flag
 		hasDataFlow,
 	})
+	if err != nil {
+		return nil, err
+	}
+	f.RestoreTypeDetails(typeCols.details())
+	f.RestoreNetwork(netCols.location())
+	f.RestoreScannerDetails(scanCols.details())
+	f.RestoreBranchOnly(branchOnly)
+	return f, nil
 }
 
 // findingRow contains scanned row data for a finding.
@@ -2658,18 +2908,21 @@ func (r *FindingRepository) ListByAssetID(ctx context.Context, tenantID, assetID
 // CountWindow returns, for the trailing `days` window, how many findings were
 // newly detected (created_at) and how many were resolved (resolved_at, status
 // resolved/verified) — the new-vs-resolved trend a digest reports. Tenant-scoped.
-func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error) {
+func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (newCount, resolvedCount int64, err error) {
 	if days <= 0 {
 		days = 7
 	}
+	// A non-nil scope counts only findings on in-scope assets ($3, $4).
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 	query := `
 		SELECT
 			COALESCE(SUM(CASE WHEN created_at >= NOW() - ($2::int || ' days')::interval THEN 1 ELSE 0 END), 0) AS new_count,
 			COALESCE(SUM(CASE WHEN resolved_at >= NOW() - ($2::int || ' days')::interval
-				AND status IN ('resolved','verified') THEN 1 ELSE 0 END), 0) AS resolved_count
+				AND status = 'resolved' THEN 1 ELSE 0 END), 0) AS resolved_count
 		FROM findings
-		WHERE tenant_id = $1`
-	if err = r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(&newCount, &resolvedCount); err != nil {
+		WHERE tenant_id = $1 AND ` + inScope
+	if err = r.db.QueryRowContext(ctx, query, args...).Scan(&newCount, &resolvedCount); err != nil {
 		return 0, 0, fmt.Errorf("failed to count finding window: %w", err)
 	}
 	return newCount, resolvedCount, nil
@@ -2703,6 +2956,10 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 			-- which is "fix marked, NOT yet verified" — such a KEV/critical finding
 			-- is still a live exposure and must stay on the attack path.
 			AND status IN ('new','confirmed','in_progress','fix_applied')
+			-- A version-based match below the likely threshold is a
+			-- potential vulnerability, not an attack-path hop (RFC-066 §4).
+			AND NOT (tool_name = 'version-match' AND COALESCE(last_seen_tool, tool_name) = 'version-match'
+				AND COALESCE(confidence, 0) < 80)
 		GROUP BY asset_id
 		HAVING COUNT(*) FILTER (WHERE is_in_kev) > 0
 			OR COUNT(*) FILTER (WHERE severity = 'critical') > 0`
@@ -2732,96 +2989,6 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 		return nil, nil, fmt.Errorf("failed iterating kev/critical counts: %w", err)
 	}
 	return kev, critical, nil
-}
-
-// RecomputeFingerprintsForAsset recomputes and persists the fingerprint of every
-// finding currently pointing at assetID, using the CORRECT scheme per finding.
-//
-// Motivation: an asset merge repoints findings to the surviving asset with a raw
-// UPDATE (AssetDedupRepository.ApproveAndMerge) that does not recompute the
-// fingerprint. Every fingerprint scheme embeds the asset_id, so a repointed
-// finding keeps a stale fingerprint that never dedupes against future scans of
-// the surviving asset — accumulating duplicates.
-//
-// Two schemes coexist and must be recomputed differently (getting this wrong is
-// how a previous attempt corrupted data):
-//   - Ingested findings use the 64-char COMPOSITE sha256(asset_id + ":" + base).
-//     The base is persisted at ingest (FingerprintBaseKey) so we recompute
-//     CompositeFingerprint(keepID, base). Findings ingested before the base was
-//     persisted have no base to recompute from and are left untouched (skipped).
-//   - Manually-created findings use the 32-char Finding.GenerateFingerprint,
-//     which re-derives from the finding's fields + its (now updated) asset_id, so
-//     calling it again yields the correct value.
-//
-// On a UNIQUE(tenant_id, fingerprint) collision the repointed finding is the
-// duplicate and is deleted, keeping the pre-existing one. Idempotent.
-func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, tenantID, assetID shared.ID) (updated, deduped int, err error) {
-	// Read all findings for the asset up front so the mutations below do not
-	// shift pagination offsets mid-iteration.
-	var all []*vulnerability.Finding
-	page := pagination.Pagination{Page: 1, PerPage: 500}
-	for {
-		res, lerr := r.ListByAssetID(ctx, tenantID, assetID, vulnerability.FindingListOptions{}, page)
-		if lerr != nil {
-			return updated, deduped, fmt.Errorf("failed to list findings for fingerprint recompute: %w", lerr)
-		}
-		all = append(all, res.Data...)
-		if len(res.Data) == 0 || page.Page >= res.TotalPages {
-			break
-		}
-		page.Page++
-	}
-
-	for _, f := range all {
-		oldFP := f.Fingerprint()
-		newFP, composite := recomputeFindingFingerprint(f, assetID.String())
-		if newFP == "" || newFP == oldFP {
-			continue
-		}
-		_, uerr := r.db.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.ID().String(), tenantID.String())
-		if uerr == nil {
-			updated++
-			continue
-		}
-		if !isUniqueViolation(uerr) {
-			return updated, deduped, fmt.Errorf("failed to update finding fingerprint: %w", uerr)
-		}
-		// Collision on (tenant_id, newFP). For the COMPOSITE scheme this is
-		// unambiguous: a native finding recomputes to its unchanged value and was
-		// skipped above (newFP == oldFP), so only a moved duplicate can reach here
-		// — delete it, keep the existing. For the MANUAL scheme a native finding
-		// whose fields drifted after creation (GenerateFingerprint runs only at
-		// create) can also collide, so deleting could destroy a legitimate
-		// finding — skip it instead (the moved duplicate simply keeps its stale
-		// fingerprint, no worse than before the merge).
-		if !composite {
-			continue
-		}
-		if _, derr := r.db.ExecContext(ctx,
-			`DELETE FROM findings WHERE id = $1 AND tenant_id = $2`,
-			f.ID().String(), tenantID.String()); derr != nil {
-			return updated, deduped, fmt.Errorf("failed to delete duplicate finding after fingerprint collision: %w", derr)
-		}
-		deduped++
-	}
-	return updated, deduped, nil
-}
-
-// recomputeFindingFingerprint returns the correct fingerprint for f now that it
-// lives on keepAssetID and whether it is the composite scheme. Returns "" when
-// it cannot be safely recomputed (a composite finding whose base was not
-// persisted). `composite` is true only for the base-derived composite scheme.
-func recomputeFindingFingerprint(f *vulnerability.Finding, keepAssetID string) (newFP string, composite bool) {
-	if base, ok := f.PartialFingerprints()[vulnerability.FingerprintBaseKey]; ok && base != "" {
-		return vulnerability.CompositeFingerprint(keepAssetID, base), true
-	}
-	if len(f.Fingerprint()) == 32 {
-		// Manual scheme: re-derives from f.assetID (already updated to keepID) + fields.
-		return f.GenerateFingerprint(), false
-	}
-	return "", false
 }
 
 // CountOpenByAssetID returns the count of open findings for an asset.
@@ -2861,11 +3028,61 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 // dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
 // filter: optional asset / source narrowing, applied to every number returned.
 func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
-	stats := vulnerability.NewFindingStats()
-
 	// Query for total and counts by severity, status, source in one go
 	// Statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate
-	query := `
+	query := findingStatsSelect + `
+		WHERE tenant_id = $1
+	`
+
+	args := []any{tenantID.String()}
+
+	// Layer 2: Data Scope - count only the user's in-scope findings. Fail
+	// closed: a user with no scope row counts nothing.
+	if dataScopeUserID != nil {
+		query += ` AND asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1) AND ` +
+			filterspec.NotHiddenSQL("asset_id", 2, 1)
+		args = append(args, dataScopeUserID.String())
+	}
+
+	// Asset filter — used when the page is `/findings?assetId=…` so
+	// the severity cards reflect the same filtered table the user is
+	// looking at, not the global tenant counts.
+	if filter.AssetID != nil {
+		args = append(args, filter.AssetID.String())
+		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
+	}
+	// Private program findings hidden from an unrestricted caller who is
+	// neither an owner nor a member (RFC-065 §15.3).
+	if dataScopeUserID == nil && filter.HiddenFor != nil {
+		args = append(args, filter.HiddenFor.String())
+		query += " AND " + filterspec.NotHiddenSQL("asset_id", len(args), 1)
+	}
+
+	// Source filter — used by the Exposures type pages (vulnerabilities,
+	// secrets, code, misconfigurations) so their counts come from one
+	// aggregate instead of walking the whole findings list. Same `source IN`
+	// shape as the list endpoint's filter; values are bound, never inlined.
+	if len(filter.Sources) > 0 {
+		placeholders := make([]string, len(filter.Sources))
+		for i, src := range filter.Sources {
+			args = append(args, src.String())
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
+	}
+
+	return r.queryFindingStats(ctx, query, args)
+}
+
+// findingStatsSelect is the one aggregate behind every findings stats read:
+// totals by severity, status and source, the state lens counts and the open
+// risk posture. Callers append the WHERE clause. A var because the lens
+// predicates come from vulnerability.FindingLensSQL, the same ones the
+// "state" filter compiles to.
+// openLens is the Open state lens predicate over findings.status.
+var openLens = vulnerability.FindingLensSQL(vulnerability.FindingLensOpen)
+
+var findingStatsSelect = `
 		SELECT
 			COUNT(*) as total,
 			COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) as critical,
@@ -2882,10 +3099,9 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
 			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
 			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
-			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
-			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
-			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
-			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
+			COALESCE(SUM(CASE WHEN status = 'fix_applied' THEN 1 ELSE 0 END), 0) as status_fix_applied,
+			COALESCE(SUM(CASE WHEN status = 'validated_fixed' THEN 1 ELSE 0 END), 0) as status_validated_fixed,
+			COALESCE(SUM(CASE WHEN status = 'not_observed' THEN 1 ELSE 0 END), 0) as status_not_observed,
 			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
 			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
 			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
@@ -2895,60 +3111,41 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
 			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
 			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
-			-- Risk posture, open findings only (status not in a closed category).
-			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
-			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
-			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
+			-- Risk posture over the Open lens: the same predicate as the
+			-- "Open" state tab, so a card and the tab never disagree.
+			COUNT(*) FILTER (WHERE is_in_kev AND ` + openLens + `) as kev_open,
+			COUNT(*) FILTER (WHERE epss_score >= 0.1 AND ` + openLens + `) as epss_high_open,
+			COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND ` + openLens + `) as sla_breached,
+			COUNT(*) FILTER (WHERE severity = 'critical' AND ` + openLens + `) as open_critical,
+			COUNT(*) FILTER (WHERE severity = 'high' AND ` + openLens + `) as open_high,
+			COUNT(*) FILTER (WHERE severity = 'medium' AND ` + openLens + `) as open_medium,
+			COUNT(*) FILTER (WHERE severity = 'low' AND ` + openLens + `) as open_low,
+			COUNT(*) FILTER (WHERE severity IN ('info', 'none') AND ` + openLens + `) as open_info,
+			-- Fixes claimed by an owner, waiting for a verifier.
+			COUNT(*) FILTER (WHERE status = 'fix_applied') as awaiting_verification,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensOpen) + `) as state_open,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensFixed) + `) as state_fixed,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensDispositioned) + `) as state_dispositioned
 		FROM findings
-		WHERE tenant_id = $1
-	`
+`
 
-	args := []any{tenantID.String()}
-
-	// Layer 2: Data Scope - filter stats by user's group membership. Fail-OPEN:
-	// no assignment ⇒ NOT EXISTS bypasses ⇒ all (backward compat). Fail-CLOSED is
-	// handled one level up in the service (it returns empty stats when the tenant
-	// enforces RestrictedDataScope and the user has no assignment), so this query
-	// stays unchanged and its interface signature stable.
-	if dataScopeUserID != nil {
-		query += ` AND (
-			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
-			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
-		)`
-		args = append(args, dataScopeUserID.String())
-	}
-
-	// Asset filter — used when the page is `/findings?assetId=…` so
-	// the severity cards reflect the same filtered table the user is
-	// looking at, not the global tenant counts.
-	if filter.AssetID != nil {
-		args = append(args, filter.AssetID.String())
-		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
-	}
-
-	// Source filter — used by the Exposures type pages (vulnerabilities,
-	// secrets, code, misconfigurations) so their counts come from one
-	// aggregate instead of walking the whole findings list. Same `source IN`
-	// shape as the list endpoint's filter; values are bound, never inlined.
-	if len(filter.Sources) > 0 {
-		placeholders := make([]string, len(filter.Sources))
-		for i, src := range filter.Sources {
-			args = append(args, src.String())
-			placeholders[i] = fmt.Sprintf("$%d", len(args))
-		}
-		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
-	}
+// queryFindingStats runs a findingStatsSelect query and maps its row.
+func (r *FindingRepository) queryFindingStats(ctx context.Context, query string, args []any) (*vulnerability.FindingStats, error) {
+	stats := vulnerability.NewFindingStats()
 
 	var (
 		total, critical, high, medium, low, info                     int64
 		statusNew, statusConfirmed, statusInProgress, statusResolved int64
+		statusDraft, statusInReview, statusFixApplied                int64
+		statusValidatedFixed, statusNotObserved                      int64
 		statusFalsePositive, statusAccepted, statusDuplicate         int64
-		statusDraft, statusInReview, statusRemediation               int64
-		statusRetest, statusVerified, statusAcceptedRisk             int64
 		sourceSast, sourceDast, sourceSca, sourceSecret              int64
 		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
 		sourceExternal                                               int64
 		kevOpen, epssHighOpen, slaBreached                           int64
+		openCritical, openHigh, openMedium, openLow, openInfo        int64
+		awaitingVerification                                         int64
+		stateOpen, stateFixed, stateDispositioned                    int64
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -2956,12 +3153,15 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
 		&statusFalsePositive, &statusAccepted, &statusDuplicate,
-		&statusDraft, &statusInReview, &statusRemediation,
-		&statusRetest, &statusVerified, &statusAcceptedRisk,
+		&statusDraft, &statusInReview,
+		&statusFixApplied, &statusValidatedFixed, &statusNotObserved,
 		&sourceSast, &sourceDast, &sourceSca, &sourceSecret,
 		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
 		&sourceExternal,
 		&kevOpen, &epssHighOpen, &slaBreached,
+		&openCritical, &openHigh, &openMedium, &openLow, &openInfo,
+		&awaitingVerification,
+		&stateOpen, &stateFixed, &stateDispositioned,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finding stats: %w", err)
@@ -2974,9 +3174,9 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.BySeverity[vulnerability.SeverityHigh] = high
 	stats.BySeverity[vulnerability.SeverityMedium] = medium
 	stats.BySeverity[vulnerability.SeverityLow] = low
-	stats.BySeverity[vulnerability.SeverityNone] = info // Map 'info' to SeverityNone
+	stats.BySeverity[vulnerability.SeverityInfo] = info // info + none (CVSS 0.0)
 
-	// By status (7 statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate)
+	// By status: every status of the lifecycle
 	stats.ByStatus[vulnerability.FindingStatusNew] = statusNew
 	stats.ByStatus[vulnerability.FindingStatusConfirmed] = statusConfirmed
 	stats.ByStatus[vulnerability.FindingStatusInProgress] = statusInProgress
@@ -2986,10 +3186,9 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.ByStatus[vulnerability.FindingStatusDuplicate] = statusDuplicate
 	stats.ByStatus[vulnerability.FindingStatusDraft] = statusDraft
 	stats.ByStatus[vulnerability.FindingStatusInReview] = statusInReview
-	stats.ByStatus[vulnerability.FindingStatusRemediation] = statusRemediation
-	stats.ByStatus[vulnerability.FindingStatusRetest] = statusRetest
-	stats.ByStatus[vulnerability.FindingStatusVerified] = statusVerified
-	stats.ByStatus[vulnerability.FindingStatusAcceptedRisk] = statusAcceptedRisk
+	stats.ByStatus[vulnerability.FindingStatusFixApplied] = statusFixApplied
+	stats.ByStatus[vulnerability.FindingStatusValidatedFixed] = statusValidatedFixed
+	stats.ByStatus[vulnerability.FindingStatusNotObserved] = statusNotObserved
 
 	// By source
 	stats.BySource[vulnerability.FindingSourceSAST] = sourceSast
@@ -3003,13 +3202,24 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.BySource[vulnerability.FindingSourceExternal] = sourceExternal
 
 	// Calculate open and resolved counts
-	// Open = new + confirmed + in_progress + pentest active (draft, in_review, remediation, retest)
-	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview + statusRemediation + statusRetest
-	stats.ResolvedCount = statusResolved + statusVerified
+	// Open = new + confirmed + in_progress + pentest pre-publication (draft, in_review)
+	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview
+	stats.ResolvedCount = statusResolved
 
 	stats.KevOpen = kevOpen
 	stats.EpssHighOpen = epssHighOpen
 	stats.SLABreached = slaBreached
+	stats.OpenBySeverity[vulnerability.SeverityCritical] = openCritical
+	stats.OpenBySeverity[vulnerability.SeverityHigh] = openHigh
+	stats.OpenBySeverity[vulnerability.SeverityMedium] = openMedium
+	stats.OpenBySeverity[vulnerability.SeverityLow] = openLow
+	stats.OpenBySeverity[vulnerability.SeverityInfo] = openInfo
+	stats.AwaitingVerification = awaitingVerification
+
+	stats.ByState[vulnerability.FindingLensOpen] = stateOpen
+	stats.ByState[vulnerability.FindingLensFixed] = stateFixed
+	stats.ByState[vulnerability.FindingLensDispositioned] = stateDispositioned
+	stats.ByState[vulnerability.FindingLensAll] = total
 
 	return stats, nil
 }
@@ -3250,6 +3460,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			`pentest_campaign_id IN (
 				SELECT campaign_id FROM pentest_campaign_members
 				WHERE user_id = $%d AND tenant_id = $%d
+				  AND (role <> 'client' OR findings.status NOT IN ('draft', 'in_review'))
 			)`, userIdx, tenantIdx))
 	}
 
@@ -3266,11 +3477,13 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			`(source != 'pentest' OR pentest_campaign_id IN (
 				SELECT campaign_id FROM pentest_campaign_members
 				WHERE user_id = $%d AND tenant_id = $%d
+				  AND (role <> 'client' OR findings.status NOT IN ('draft', 'in_review'))
 			))`, userIdx, tenantIdx))
 	}
 
 	// RelatedToUserID: "assigned to / owned by me" — a finding is the user's when
-	// they are the direct assignee, OR they own its asset (assets.owner_id), OR
+	// they are the direct assignee, OR they are a primary or secondary owner of
+	// its asset (asset_owners, the one owner model), OR
 	// they are a member of a group the finding is assigned to. Same relatedness
 	// predicate the finding-groups endpoint uses (finding_group_repository), now
 	// available on the flat list so a scoped user can pull up "my work". Tenant
@@ -3283,7 +3496,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		argIndex += 2
 		conditions = append(conditions, fmt.Sprintf(`(
 			assigned_to = $%[1]d
-			OR asset_id IN (SELECT id FROM assets WHERE tenant_id = $%[2]d AND owner_id = $%[1]d)
+			OR asset_id IN `+assetsOwnedByUserSQL("$%[1]d", "$%[2]d")+`
 			OR id IN (
 				SELECT fga.finding_id
 				FROM finding_group_assignments fga
@@ -3294,25 +3507,28 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		)`, uIdx, tIdx))
 	}
 
-	// Layer 2: Data Scope - filter findings by user's group membership on assets.
-	// Default (fail-OPEN): if the user has no rows in user_accessible_assets the
-	// NOT EXISTS bypasses and they see all — backward compatible. When the tenant
-	// enables RestrictedDataScope (filter.DataScopeStrict), the bypass is dropped:
-	// no assignment ⇒ no findings (fail-CLOSED, Tenable "No Access" default).
-	if filter.DataScopeUserID != nil && filter.TenantID != nil {
-		userIDIdx := argIndex
-		tenantIDIdx := argIndex + 1
-		args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
-		// argIndex not incremented — this is the last block that consumes it.
-		if filter.DataScopeStrict {
-			conditions = append(conditions, fmt.Sprintf(
-				`asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-				userIDIdx, tenantIDIdx))
+	// A solution family: the findings sharing one remediation key, pentest
+	// findings excluded (the same set FindingRemediationKeyRepository counts).
+	if filter.RemediationKey != nil {
+		conditions = append(conditions, fmt.Sprintf(
+			`source <> 'pentest' AND EXISTS (SELECT 1 FROM finding_remediation_keys frk WHERE frk.finding_id = findings.id AND frk.tenant_id = findings.tenant_id AND frk.remediation_key = $%d)`,
+			argIndex))
+		args = append(args, *filter.RemediationKey)
+		argIndex++
+	}
+
+	// Layer 2: Data Scope - only findings on the user's in-scope assets. Fail
+	// closed: a user with no scope row sees no finding, and a user scope
+	// without a tenant matches nothing.
+	if filter.DataScopeUserID != nil {
+		if filter.TenantID == nil {
+			conditions = append(conditions, "FALSE")
 		} else {
-			conditions = append(conditions, fmt.Sprintf(`(
-				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-				OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+			// argIndex not incremented — this is the last block that consumes it.
+			cond, scopeArgs := dataScopeCondAt("asset_id", &shared.DataScope{TenantID: *filter.TenantID,
+				UserID: *filter.DataScopeUserID, Unrestricted: filter.DataScopeUnrestricted}, argIndex)
+			args = append(args, scopeArgs...)
+			conditions = append(conditions, cond)
 		}
 	}
 
@@ -3332,6 +3548,11 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 	// silently resolve the tenant's entire finding set. Without a scan identity
 	// staleness is undeterminable, so resolve nothing.
 	if currentScanID == "" {
+		return nil, nil
+	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
 		return nil, nil
 	}
 	// Auto-resolve findings that:
@@ -3355,12 +3576,15 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 			FROM repository_branches rb
 			WHERE f.tenant_id = $1
 				AND f.asset_id = $2
-				AND f.tool_name = $3
+				-- Only the tool that saw the finding last may close it (RFC-043
+				-- interim guard): tool_name is the first reporter, scan_id the
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
+				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = $5
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.status IN ` + autoResolveFromSQL + `
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -3377,11 +3601,14 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 			FROM repository_branches rb
 			WHERE f.tenant_id = $1
 				AND f.asset_id = $2
-				AND f.tool_name = $3
+				-- Only the tool that saw the finding last may close it (RFC-043
+				-- interim guard): tool_name is the first reporter, scan_id the
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
+				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.status IN ` + autoResolveFromSQL + `
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -3423,6 +3650,11 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 	if currentScanID == "" || len(assetIDs) == 0 {
 		return nil, nil
 	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
+		return nil, nil
+	}
 
 	assetIDStrs := make([]string, len(assetIDs))
 	for i, a := range assetIDs {
@@ -3443,12 +3675,15 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 			FROM repository_branches rb
 			WHERE f.tenant_id = $1
 				AND f.asset_id = ANY($2)
-				AND f.tool_name = $3
+				-- Only the tool that saw the finding last may close it (RFC-043
+				-- interim guard): tool_name is the first reporter, scan_id the
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
+				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = $5
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.status IN ` + autoResolveFromSQL + `
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -3464,11 +3699,14 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 			FROM repository_branches rb
 			WHERE f.tenant_id = $1
 				AND f.asset_id = ANY($2)
-				AND f.tool_name = $3
+				-- Only the tool that saw the finding last may close it (RFC-043
+				-- interim guard): tool_name is the first reporter, scan_id the
+				-- last sighting. NULL last_seen_tool = rows from before 000323.
+				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.status IN ` + autoResolveFromSQL + `
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -3522,7 +3760,7 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 			updated_at = NOW()
 		WHERE tenant_id = $1
 			AND fingerprint = $2
-			AND status IN ('resolved', 'verified')
+			AND status IN ` + fixedReopenFromSQL + `
 			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
 		RETURNING id
 	`
@@ -3545,38 +3783,52 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 	return &id, nil
 }
 
-// AutoReopenByFingerprintsBatch reopens multiple previously CLOSED-AS-FIXED findings in a single query.
-// This is the batch version of AutoReopenByFingerprint for better performance.
-// Reopens any re-detected finding closed as fixed (status resolved or verified),
-// whether auto-confirmed (resolution = 'auto_fixed') or resolved by a person.
+// AutoReopenByFingerprintsBatch reopens, in one statement, every finding a scan
+// re-detected that had been closed as fixed — status resolved or verified,
+// whether auto-resolved (resolution = 'auto_fixed') or resolved by a person —
+// and every validated_fixed finding (the scan refutes the validation downgrade).
 // Deliberate dispositions (false_positive, accepted_risk, duplicate, suppressed)
 // are NEVER reopened.
-// Returns a map of fingerprint -> reopened finding ID.
-func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]shared.ID, error) {
-	result := make(map[string]shared.ID)
+//
+// The reopen clears resolution, resolution_method and resolved_by on the row, so
+// it returns what they were (read under the row lock, in the same statement):
+// the regression's activity entry keeps who resolved the finding and how
+// (RFC-039 §6.5). Returns fingerprint -> reopened finding.
+func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]vulnerability.ReopenedFinding, error) {
+	result := make(map[string]vulnerability.ReopenedFinding)
 
 	if len(fingerprints) == 0 {
 		return result, nil
 	}
 
-	// Reopen findings closed as fixed (resolved/verified) regardless of who fixed
-	// them — a human-resolved finding a later scan re-detects was previously stuck
-	// resolved and invisible. Deliberate dispositions stay closed. resolution is a
-	// free-text note and may be NULL, so NULL must survive NOT IN.
-	// Use ANY($2) for batch lookup efficiency.
+	// resolution is a free-text note and may be NULL, so NULL must survive NOT IN.
 	query := `
-		UPDATE findings
+		WITH prev AS (
+			SELECT id, status, resolution, resolution_method, resolved_by, resolved_at
+			FROM findings
+			WHERE tenant_id = $1
+				AND fingerprint = ANY($2)
+				AND status IN ` + regressionReopenFromSQL + `
+				-- A finding closed as fixed reopens; a deliberate disposition
+				-- recorded in the resolution note does not.
+				AND (status NOT IN ` + fixedReopenFromSQL + `
+					OR resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
+				-- A finding the organization's VEX statement marks fixed stays
+				-- resolved while the statement stands (it is withdrawn on edit,
+				-- delete or expiry, which reopens it).
+				AND NOT (status = 'resolved' AND resolution_method = 'vex_fixed' AND vex_statement_id IS NOT NULL)
+			FOR UPDATE
+		)
+		UPDATE findings f
 		SET status = 'confirmed',
 			resolution = NULL,
 			resolution_method = NULL,
 			resolved_at = NULL,
 			resolved_by = NULL,
 			updated_at = NOW()
-		WHERE tenant_id = $1
-			AND fingerprint = ANY($2)
-			AND status IN ('resolved', 'verified')
-			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
-		RETURNING id, fingerprint
+		FROM prev
+		WHERE f.id = prev.id
+		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.resolution_method, prev.resolved_by, prev.resolved_at
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
@@ -3586,15 +3838,35 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	defer rows.Close()
 
 	for rows.Next() {
-		var idStr, fp string
-		if err := rows.Scan(&idStr, &fp); err != nil {
+		var (
+			idStr, fp, prevStatus             string
+			resolution, method, resolvedByStr sql.NullString
+			resolvedAt                        sql.NullTime
+		)
+		if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &method, &resolvedByStr, &resolvedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan reopened finding: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
 			continue
 		}
-		result[fp] = id
+		rf := vulnerability.ReopenedFinding{
+			ID:                       id,
+			Fingerprint:              fp,
+			PreviousStatus:           vulnerability.FindingStatus(prevStatus),
+			PreviousResolution:       resolution.String,
+			PreviousResolutionMethod: method.String,
+		}
+		if resolvedByStr.Valid {
+			if by, err := shared.IDFromString(resolvedByStr.String); err == nil {
+				rf.PreviousResolvedBy = &by
+			}
+		}
+		if resolvedAt.Valid {
+			at := resolvedAt.Time
+			rf.PreviousResolvedAt = &at
+		}
+		result[fp] = rf
 	}
 
 	if err := rows.Err(); err != nil {
@@ -3604,9 +3876,10 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	return result, nil
 }
 
-// ExpireFeatureBranchFindings marks stale feature branch findings as resolved.
-// This is called by a background job to clean up findings on non-default branches
-// that have not been seen for a configurable period.
+// ExpireFeatureBranchFindings marks stale feature branch findings as
+// not_observed: not seen for a configurable period on a non-default branch is
+// stale, not fixed (research 18 F7, owner decision O2), so the finding is never
+// counted as fixed and its SLA keeps running. A sighting reopens it.
 // Uses JOIN with repository_branches to determine default branch status.
 func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, tenantID shared.ID, defaultExpiryDays int) (int64, error) {
 	// Expire findings that:
@@ -3614,19 +3887,21 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 	// 2. The branch allows expiry (keep_when_inactive = false)
 	// 3. Have active status (new, open)
 	// 4. Have not been seen for the configured expiry period (per-branch or default)
-	// Resolution is set to 'branch_expired' to distinguish from other auto-resolve types
+	// Resolution 'branch_expired' records why the finding is not observed.
 	query := `
 		UPDATE findings f
-		SET status = 'resolved',
+		SET status = 'not_observed',
 			resolution = 'branch_expired',
-			resolved_at = NOW(),
+			resolution_method = NULL,
+			resolved_at = NULL,
+			resolved_by = NULL,
 			updated_at = NOW()
 		FROM repository_branches rb
 		WHERE f.tenant_id = $1
 			AND f.branch_id = rb.id
 			AND rb.is_default = false
 			AND rb.keep_when_inactive = false
-			AND f.status IN ('new', 'open')
+			AND f.status IN ` + branchExpiryFromSQL + `
 			AND f.last_seen_at < NOW() - make_interval(days => COALESCE(rb.retention_days, $2))
 	`
 
@@ -3640,7 +3915,14 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 		return 0, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	return affected, nil
+	// Branch-only findings no live branch still shows
+	// (docs/architecture/branch-only-findings.md).
+	gone, err := r.expireBranchOnlyFindings(ctx, tenantID, defaultExpiryDays)
+	if err != nil {
+		return affected, err
+	}
+
+	return affected + gone, nil
 }
 
 // CountBySeverityForScan returns the count of findings grouped by severity for a scan.
@@ -3789,13 +4071,17 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			remediation, created_by, ingest_channel,
+			` + findingTypeColumnsSQL + `,
+			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `,
+			branch_only,
 			FALSE AS has_data_flow
 		FROM findings
 	`
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 63
+const enrichColumnsPerRow = 73
 
 // enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
 // 1000 rows × 50 columns = 50,000 params (safely under limit).
@@ -3875,6 +4161,16 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"end_column", "int"},
 	{"sla_deadline", "timestamptz"},
 	{"sla_status", "text"},
+	{"last_seen_tool", "text"},
+	{"network_port", "int"},
+	{"network_transport", "text"},
+	{"network_service", "text"},
+	{"family", "text"},
+	{"exploit_available", "boolean"},
+	{"vpr_score", "numeric"},
+	{"cvss_version", "text"},
+	{"cve_ids", "text[]"},
+	{"patch_published_at", "timestamptz"},
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
@@ -3988,7 +4284,7 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 
 	remediationJSON := marshalRemediation(f.Remediation())
 
-	return []interface{}{
+	return append([]interface{}{
 		// WHERE columns
 		f.ID().String(),
 		f.TenantID().String(),
@@ -4058,7 +4354,9 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		// means the enrich path is the single write surface for all findings).
 		nullTime(f.SLADeadline()),
 		f.SLAStatus().String(),
-	}, nil
+		nullString(f.LastSeenTool()),
+		// Network location — EnrichFrom fills it first-wins (enrichNetwork).
+	}, append(findingNetworkArgs(f), findingScannerArgs(f)...)...), nil
 }
 
 // buildBatchEnrichQuery builds a VALUES-based UPDATE query for the given number of rows.
@@ -4086,6 +4384,14 @@ func buildBatchEnrichQuery(rowCount int) string {
 		}
 		col := enrichColumnDefs[i].name
 		sb.WriteString(col)
+		if col == "occurrence_count" {
+			// A re-sighting counts one, computed from the row being updated.
+			// Writing back the value loaded before the merge (d.occurrence_count)
+			// never moved the counter, and two concurrent ingests would each
+			// write the same stale value (RFC-043 B10).
+			sb.WriteString(" = f.occurrence_count + 1")
+			continue
+		}
 		sb.WriteString(" = d.")
 		sb.WriteString(col)
 	}
@@ -4150,11 +4456,39 @@ func (r *FindingRepository) CountAutoResolveCandidates(ctx context.Context, tena
 			AND f.asset_id = ANY($2)
 			AND f.tool_name = $3
 			AND rb.is_default = true
-			AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+			AND f.status IN `+autoResolveFromSQL+`
 			AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')`,
 		tenantID.String(), pq.Array(ids), toolName, currentScanID).Scan(&stale, &open)
 	if err != nil {
 		return 0, 0, fmt.Errorf("count auto-resolve candidates: %w", err)
 	}
 	return stale, open, nil
+}
+
+// AdoptLegacyFingerprint re-keys the finding stored under legacy to current
+// (and records base as its pre-composite base), unless a finding with current
+// already exists. Used when a fingerprint recipe gains an input (RFC-043 P0:
+// the port of a network finding without a CVE), so the existing row and its
+// triage carry over instead of a duplicate appearing. Race-safe: the NOT EXISTS
+// guard and the unique index decide; losing a race is not an error.
+func (r *FindingRepository) AdoptLegacyFingerprint(ctx context.Context, tenantID shared.ID, legacy, current, base string) (bool, error) {
+	if legacy == "" || current == "" || legacy == current {
+		return false, nil
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE findings
+		SET fingerprint = $3,
+			partial_fingerprints = jsonb_set(COALESCE(partial_fingerprints, '{}'::jsonb), '{`+vulnerability.FingerprintBaseKey+`}', to_jsonb($4::text)),
+			updated_at = NOW()
+		WHERE tenant_id = $1 AND fingerprint = $2
+		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`,
+		tenantID.String(), legacy, current, base)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("adopt legacy fingerprint: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }

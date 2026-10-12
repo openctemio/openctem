@@ -65,6 +65,11 @@ describe('getAsset mapping', () => {
     expect(a.metadata).toEqual({ source: 'parse_options' })
   })
 
+  it('maps the crown-jewel column', async () => {
+    ;(get as Mock).mockResolvedValueOnce({ ...liveGitleaksPayload, is_crown_jewel: true })
+    expect((await getAsset(liveGitleaksPayload.id)).isCrownJewel).toBe(true)
+  })
+
   it('treats omitted optional fields as absent, not empty', async () => {
     ;(get as Mock).mockResolvedValueOnce({
       ...liveGitleaksPayload,

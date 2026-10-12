@@ -14,27 +14,65 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // SensorResultsV2Handler serves /api/v2/sensor.
 type SensorResultsV2Handler struct {
 	receiver *ingest.V2Receiver
-	sensors  *app.SensorService
+	sensors  *sensorapp.SensorService
 	logger   *logger.Logger
 	// features are the RFC-029 control-plane features mounted next to the
 	// results routes, listed on hello.
 	features []string
+	// ciKeys refuses a CI sensor's key when the organization requires OIDC
+	// for CI (nil: no such policy).
+	ciKeys CIRunnerKeyPolicy
+	// transportV3 is listed on hello when protocol v3 is served (RFC-059);
+	// called per hello because the gRPC endpoint is advertised only while
+	// its self-probe passes.
+	transportV3 func() *protov2.TransportV3
+	// signedJobs lists the job signer keys on hello; nil when jobs are
+	// not signed.
+	signedJobs func(ctx context.Context) *protov2.SignedJobs
 }
+
+// SetTransportV3 lists protocol v3 on hello (nil: not served).
+func (h *SensorResultsV2Handler) SetTransportV3(t *protov2.TransportV3) {
+	if t == nil {
+		h.transportV3 = nil
+		return
+	}
+	h.SetTransportV3Func(func() *protov2.TransportV3 { c := *t; return &c })
+}
+
+// SetTransportV3Func lists what f returns on every hello (nil: not served).
+func (h *SensorResultsV2Handler) SetTransportV3Func(f func() *protov2.TransportV3) { h.transportV3 = f }
+
+// SetSignedJobs lists the job signer's keys on hello (nil: jobs are not
+// signed). keys is called per hello and should answer from a cache.
+func (h *SensorResultsV2Handler) SetSignedJobs(keys func(ctx context.Context) *protov2.SignedJobs) {
+	h.signedJobs = keys
+}
+
+// CIRunnerKeyPolicy refuses the key of a CI (one-shot) sensor when its
+// organization requires OIDC for CI (cirun.RunnerKeyPolicy).
+type CIRunnerKeyPolicy interface {
+	Refused(ctx context.Context, s *sensor.Sensor, clientIP, userAgent string) bool
+}
+
+// SetCIRunnerKeyPolicy wires the "OIDC required for CI" policy.
+func (h *SensorResultsV2Handler) SetCIRunnerKeyPolicy(p CIRunnerKeyPolicy) { h.ciKeys = p }
 
 // SetControlFeatures lists the RFC-029 features served beside the results
 // routes on hello (RFC-029 §4.2).
@@ -43,7 +81,7 @@ func (h *SensorResultsV2Handler) SetControlFeatures(features []string) {
 }
 
 // NewSensorResultsV2Handler builds the handler.
-func NewSensorResultsV2Handler(receiver *ingest.V2Receiver, sensors *app.SensorService, log *logger.Logger) *SensorResultsV2Handler {
+func NewSensorResultsV2Handler(receiver *ingest.V2Receiver, sensors *sensorapp.SensorService, log *logger.Logger) *SensorResultsV2Handler {
 	return &SensorResultsV2Handler{receiver: receiver, sensors: sensors, logger: log.With("handler", "sensor-results-v2")}
 }
 
@@ -60,18 +98,30 @@ func (h *SensorResultsV2Handler) Limits() protov2.Limits { return h.receiver.Lim
 // is the generic problem; the reason is logged.
 func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := extractAPIKey(r)
-		if key == "" {
-			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
-			return
+		// A signed request (key-bound sensor, RFC-052) is decided by its
+		// signature alone; only an unsigned one may present a bearer key.
+		id, signed, err := authenticateSigned(r, h.sensors, getClientIP(r), time.Now())
+		switch {
+		case err == nil:
+			r = signed
+		case errors.Is(err, errNotSigned):
+			key := extractAPIKey(r)
+			if key == "" {
+				protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
+				return
+			}
+			id, err = h.sensors.AuthenticateIdentityFrom(r.Context(), key, getClientIP(r))
 		}
-		id, err := h.sensors.AuthenticateIdentityFrom(r.Context(), key, getClientIP(r))
 		if err == nil && id.Paused && !isV2HeartbeatRequest(r) && !isV2HelloRequest(r) {
 			err = errSensorPaused
 		}
 		if err != nil || id.Sensor == nil {
 			h.logger.Debug("v2 authentication failed", "error", err)
 			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
+			return
+		}
+		if h.ciKeys != nil && h.ciKeys.Refused(r.Context(), id.Sensor, getClientIP(r), r.UserAgent()) {
+			protov2.NewProblem(protov2.ProblemCIOIDCRequired).Write(w)
 			return
 		}
 		ctx := context.WithValue(r.Context(), sensorContextKey, id.Sensor)
@@ -214,12 +264,13 @@ func (h *SensorResultsV2Handler) Abandon(w http.ResponseWriter, r *http.Request)
 }
 
 // Hello handles GET /hello: protocol level, features and limits (RFC-023 C3).
-func (h *SensorResultsV2Handler) Hello(w http.ResponseWriter, _ *http.Request) {
+func (h *SensorResultsV2Handler) Hello(w http.ResponseWriter, r *http.Request) {
 	hello := protov2.NewHello(h.receiver.Limits(), h.features...)
-	if len(h.features) > 0 {
-		hello = hello.WithDeprecation(protov2.DeprecationProtocolV1, protov2.Deprecation{
-			DeprecatedAt: legacyv1.ProtocolDeprecatedAt, SunsetAt: legacyv1.ProtocolSunsetAt,
-		})
+	if h.transportV3 != nil {
+		hello.TransportV3 = h.transportV3()
+	}
+	if h.signedJobs != nil {
+		hello.SignedJobs = h.signedJobs(r.Context())
 	}
 	h.writeJSON(w, http.StatusOK, hello)
 }

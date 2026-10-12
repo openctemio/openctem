@@ -17,7 +17,7 @@
  * notice to ask the administrator for access, with sign-out (TeamOnboarding).
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'

@@ -20,13 +20,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { Main } from '@/components/layout'
 import {
   DataTable,
@@ -35,9 +28,16 @@ import {
   MetricStrip,
   PageHeader,
   SeverityBadge,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
 } from '@/features/shared'
 import type { MetricStripItem } from '@/features/shared'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { useDebounce } from '@/hooks/use-debounce'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
@@ -59,13 +59,15 @@ import {
   Database,
   Key,
   Globe,
-  User,
+  ArrowRightLeft,
   Server,
   ChevronDown,
   BarChart3,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format-date'
+import { EntityActivity } from '@/features/activity/components/entity-activity'
+import type { ActivityItem } from '@/features/activity/types'
 import { useTenant } from '@/context/tenant-provider'
 import { exportToCsv, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { fetchAllPages } from '@/lib/api/fetch-all-pages'
@@ -98,6 +100,9 @@ import type {
   ExposureSeverity,
   ExposureState,
 } from '@/lib/api/exposure-types'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { SEVERITY_LEVELS } from '@/lib/severity'
+import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 
 type ActionType = 'resolve' | 'accept' | 'false_positive' | 'reactivate'
 
@@ -110,14 +115,8 @@ const STATE_VIEWS: { value: StateTab; label: string }[] = [
   { value: 'all', label: 'All states' },
 ]
 
-const SEVERITIES: ExposureSeverity[] = ['critical', 'high', 'medium', 'low', 'info']
-const SEVERITY_LABELS: Record<ExposureSeverity, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
+const SEVERITIES: ExposureSeverity[] = [...SEVERITY_LEVELS]
+const SEVERITY_LABELS: Record<ExposureSeverity, string> = SHARED_SEVERITY_LABELS
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 
@@ -185,23 +184,9 @@ export default function ExposuresPage() {
       ),
     [severityParam]
   )
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
-  const pagination = useMemo(
-    () => ({
-      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 20,
-    }),
-    [pageParam, perPageParam]
-  )
-  const setPagination = useCallback(
-    (next: { pageIndex: number; pageSize: number }) => {
-      setPageParam(String(next.pageIndex + 1))
-      setPerPageParam(String(next.pageSize))
-    },
-    [setPageParam, setPerPageParam]
-  )
-  const resetPage = useCallback(() => setPageParam('1'), [setPageParam])
+  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
+  const resetPage = useCallback(() => setPage(1), [setPage])
 
   // Selection is owned by the DataTable; we mirror it for the bulk-action bar
   // and bump the epoch to clear the table's own checkboxes.
@@ -400,7 +385,7 @@ export default function ExposuresPage() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
+      <div className="relative min-w-40 flex-1 sm:max-w-sm">
         <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={searchQuery}
@@ -496,8 +481,8 @@ export default function ExposuresPage() {
         onClick={handleExport}
         disabled={isExporting || exposuresLoading || total === 0}
       >
-        <Download className="h-4 w-4 md:me-2" />
-        <span className="hidden md:inline">{isExporting ? 'Exporting…' : 'Export'}</span>
+        <Download className="h-4 w-4 xl:me-2" />
+        <span className="sr-only xl:not-sr-only">{isExporting ? 'Exporting…' : 'Export'}</span>
       </Button>
     </>
   )
@@ -881,15 +866,13 @@ function ExposureDetailsView({
                     <span className="text-muted-foreground">{label}</span>
                     <div className="flex items-center gap-2">
                       {showAsUrl ? (
-                        <a
+                        <SafeExternalLink
                           href={stringValue}
-                          target="_blank"
-                          rel="noopener noreferrer"
                           className="text-primary hover:underline flex items-center gap-1 max-w-[200px] truncate"
                         >
                           {displayValue}
                           <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                        </a>
+                        </SafeExternalLink>
                       ) : (
                         <span
                           className={cn(
@@ -949,15 +932,13 @@ function ExposureDetailsView({
                   <span className="text-muted-foreground">{label}</span>
                   <div className="flex items-center gap-2">
                     {showAsUrl ? (
-                      <a
+                      <SafeExternalLink
                         href={stringValue}
-                        target="_blank"
-                        rel="noopener noreferrer"
                         className="text-primary hover:underline flex items-center gap-1 max-w-[200px] truncate"
                       >
                         {displayValue}
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                      </a>
+                      </SafeExternalLink>
                     ) : (
                       <span
                         className={cn(
@@ -1000,238 +981,150 @@ function ExposureDetailSheet({ exposure, open, onOpenChange, onAction }: Exposur
   const canApprove = useCanApproveExposures()
   const { currentTenant } = useTenant()
   const [secretsRevealed, setSecretsRevealed] = useState(false)
-  const { history, isLoading: historyLoading } = useExposureHistory(
-    currentTenant?.id || null,
-    exposure?.id || null
-  )
+  const {
+    history,
+    isLoading: historyLoading,
+    error: historyError,
+    mutate: retryHistory,
+  } = useExposureHistory(currentTenant?.id || null, exposure?.id || null)
 
   if (!exposure) return null
 
   const state = EXPOSURE_STATE_BADGE[exposure.state]
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-xl overflow-y-auto p-0">
-        {/* Header with severity indicator */}
-        <div className="border-b px-6 pb-4 pt-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-2">
-                <SeverityBadge severity={exposure.severity} />
-                {state && <Badge variant={state.variant}>{state.label}</Badge>}
-              </div>
-              <SheetHeader className="p-0 space-y-1">
-                <SheetTitle className="text-start text-lg leading-tight">
-                  {exposure.title}
-                </SheetTitle>
-                <SheetDescription className="text-start">
-                  {exposure.event_type.replace(/_/g, ' ')} from {exposure.source}
-                </SheetDescription>
-              </SheetHeader>
-            </div>
-          </div>
-
-          {/* Quick Actions - prominent at top */}
-          {exposure.state === 'active' && (
-            <div className="flex flex-wrap gap-2 mt-4">
-              <Button size="sm" onClick={() => onAction('resolve')}>
-                <ShieldCheck className="me-1.5 h-4 w-4" />
-                Resolve
-              </Button>
-              <GatedButton
-                size="sm"
-                variant="outline"
-                allowed={canApprove}
-                reason={APPROVE_REQUIRED_REASON}
-                onClick={() => onAction('accept')}
-              >
-                <Shield className="me-1.5 h-4 w-4" />
-                Accept risk
-              </GatedButton>
-              <GatedButton
-                size="sm"
-                variant="outline"
-                allowed={canApprove}
-                reason={APPROVE_REQUIRED_REASON}
-                onClick={() => onAction('false_positive')}
-              >
-                <ShieldX className="me-1.5 h-4 w-4" />
-                False positive
-              </GatedButton>
-            </div>
-          )}
-          {exposure.state !== 'active' && (
-            <div className="mt-4">
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      header={
+        <DetailHeader
+          title={exposure.title}
+          badges={
+            <>
+              <SeverityBadge severity={exposure.severity} />
+              {state && <Badge variant={state.variant}>{state.label}</Badge>}
+            </>
+          }
+          meta={[`${exposure.event_type.replace(/_/g, ' ')} from ${exposure.source}`]}
+          actions={
+            exposure.state === 'active' ? (
+              <>
+                <Button size="sm" onClick={() => onAction('resolve')}>
+                  <ShieldCheck className="h-4 w-4" />
+                  Resolve
+                </Button>
+                <GatedButton
+                  size="sm"
+                  variant="outline"
+                  allowed={canApprove}
+                  reason={APPROVE_REQUIRED_REASON}
+                  onClick={() => onAction('accept')}
+                >
+                  <Shield className="h-4 w-4" />
+                  Accept risk
+                </GatedButton>
+              </>
+            ) : (
               <Button size="sm" variant="outline" onClick={() => onAction('reactivate')}>
-                <Activity className="me-1.5 h-4 w-4" />
+                <Activity className="h-4 w-4" />
                 Reactivate
               </Button>
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-6 space-y-6">
-          {/* Description */}
-          {exposure.description && (
-            <div className="rounded-lg border p-4 bg-muted/30">
-              <p className="text-sm">{exposure.description}</p>
-            </div>
-          )}
-
-          {/* Security context — read-time CTEM enrichment (api #483): effective
-              criticality, KEV, EPSS and attack-path reachability. Renders only
-              when the API returns at least one signal. */}
-          <ExposureSecurityContext exposure={exposure} />
-
-          {/* Timeline Card */}
-          <div className="rounded-lg border">
-            <div className="px-4 py-3 border-b bg-muted/30">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Timeline</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 divide-x">
-              <div className="p-4">
-                <span className="text-xs text-muted-foreground">First seen</span>
-                <p className="text-sm font-medium mt-1">{formatRelative(exposure.first_seen_at)}</p>
-              </div>
-              <div className="p-4">
-                <span className="text-xs text-muted-foreground">Last seen</span>
-                <p className="text-sm font-medium mt-1">{formatRelative(exposure.last_seen_at)}</p>
-              </div>
-            </div>
-            {exposure.resolved_at && (
-              <div className="border-t p-4">
-                <span className="text-xs text-muted-foreground">Resolved</span>
-                <p className="mt-1 text-sm font-medium">{formatRelative(exposure.resolved_at)}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Details */}
-          {exposure.details && Object.keys(exposure.details).length > 0 && (
-            <ExposureDetailsView
-              details={exposure.details}
-              secretsRevealed={secretsRevealed}
-              onToggleSecrets={() => setSecretsRevealed(!secretsRevealed)}
-              leakedCredentialId={
-                exposure.event_type === 'credential_leaked' ? exposure.id : undefined
-              }
-            />
-          )}
-
-          {/* State History */}
-          <StateHistorySection history={history} isLoading={historyLoading} />
-        </div>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
-// ============================================
-// STATE HISTORY SECTION COMPONENT
-// ============================================
-
-const INITIAL_HISTORY_COUNT = 3
-
-interface StateHistorySectionProps {
-  history: import('@/lib/api/exposure-types').ExposureStateHistory[]
-  isLoading: boolean
-}
-
-function StateHistorySection({ history, isLoading }: StateHistorySectionProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
-
-  const hasMore = history.length > INITIAL_HISTORY_COUNT
-  const displayedHistory = isExpanded ? history : history.slice(0, INITIAL_HISTORY_COUNT)
-
-  return (
-    <div className="rounded-lg border">
-      <div className="px-4 py-3 border-b bg-muted/30">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">State history</span>
-            {history.length > 0 && (
-              <Badge variant="secondary" className="text-xs">
-                {history.length}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className={cn('p-4', isExpanded && history.length > 5 && 'max-h-80 overflow-y-auto')}>
-        {isLoading ? (
-          <div className="space-y-3" aria-label="Loading state history">
-            {[1, 2].map((i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : history.length > 0 ? (
-          <div className="space-y-3">
-            {displayedHistory.map((entry, index) => (
-              <div
-                key={entry.id}
-                className={cn(
-                  'flex items-start gap-3 text-sm',
-                  index !== displayedHistory.length - 1 && 'pb-3 border-b'
-                )}
-              >
-                <div className="mt-0.5 p-1 rounded-full bg-muted">
-                  <Clock className="h-3 w-3 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-muted-foreground capitalize">
-                      {entry.previous_state.replace(/_/g, ' ')}
-                    </span>
-                    <span className="text-muted-foreground">→</span>
-                    <span className="font-medium capitalize">
-                      {entry.new_state.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                  {entry.reason && (
-                    <div className="mt-1.5 ps-3 border-l-2 border-muted-foreground/30">
-                      <p className="text-xs text-foreground/80 italic">
-                        &ldquo;{entry.reason}&rdquo;
-                      </p>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
-                    {entry.changed_by_user ? (
-                      <div className="flex items-center gap-1.5">
-                        <User className="h-3 w-3" />
-                        <span className="font-medium text-foreground">
-                          {entry.changed_by_user.name || entry.changed_by_user.email}
-                        </span>
-                        <span>•</span>
-                      </div>
-                    ) : null}
-                    <span>{formatRelative(entry.created_at)}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {/* Show more/less button */}
-            {hasMore && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-muted-foreground hover:text-foreground"
-                onClick={() => setIsExpanded(!isExpanded)}
-              >
-                {isExpanded ? <>Show less</> : <>Show all {history.length} changes</>}
-              </Button>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-2">
-            No state changes recorded
-          </p>
+            )
+          }
+          // False positive needs the same approve permission as Accept risk;
+          // without it the outline Accept risk button explains why.
+          menu={
+            exposure.state === 'active' && canApprove
+              ? [
+                  {
+                    label: 'Mark false positive',
+                    icon: ShieldX,
+                    onSelect: () => onAction('false_positive'),
+                  },
+                ]
+              : undefined
+          }
+          onClose={() => onOpenChange(false)}
+        />
+      }
+    >
+      <DetailSections>
+        {exposure.description && (
+          <DetailSection title="Description">
+            <p className="text-sm text-muted-foreground">{exposure.description}</p>
+          </DetailSection>
         )}
-      </div>
-    </div>
+
+        {/* Security context: read-time CTEM enrichment (api #483): effective
+            criticality, KEV, EPSS and attack-path reachability. Renders only
+            when the API returns at least one signal. */}
+        <ExposureSecurityContext exposure={exposure} />
+
+        <DetailSection title="Timeline" icon={Clock}>
+          <DetailFieldGrid>
+            <DetailField label="First seen">{formatRelative(exposure.first_seen_at)}</DetailField>
+            <DetailField label="Last seen">{formatRelative(exposure.last_seen_at)}</DetailField>
+            {exposure.resolved_at && (
+              <DetailField label="Resolved">{formatRelative(exposure.resolved_at)}</DetailField>
+            )}
+          </DetailFieldGrid>
+        </DetailSection>
+
+        {exposure.details && Object.keys(exposure.details).length > 0 && (
+          <ExposureDetailsView
+            details={exposure.details}
+            secretsRevealed={secretsRevealed}
+            onToggleSecrets={() => setSecretsRevealed(!secretsRevealed)}
+            leakedCredentialId={
+              exposure.event_type === 'credential_leaked' ? exposure.id : undefined
+            }
+          />
+        )}
+
+        {/* State changes: the shared trigger + panel (read only). */}
+        <DetailSection title="Activity" icon={Activity}>
+          <EntityActivity
+            entityKey={`exposure:${exposure.id}`}
+            subject={exposure.title}
+            items={exposureHistoryItems(history)}
+            loading={historyLoading}
+            error={historyError}
+            onRetry={() => void retryHistory()}
+            urlParam={false}
+            emptyTitle="No state changes recorded"
+          />
+        </DetailSection>
+      </DetailSections>
+    </DetailSheet>
   )
+}
+
+// ============================================
+// STATE HISTORY -> ACTIVITY ITEMS
+// ============================================
+
+function stateWords(state: string) {
+  const s = state.replace(/_/g, ' ')
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** State history rows as the shared ActivityPanel's events (text only). */
+function exposureHistoryItems(
+  history: import('@/lib/api/exposure-types').ExposureStateHistory[]
+): ActivityItem[] {
+  return history.map((h) => ({
+    kind: 'event',
+    id: h.id,
+    at: h.created_at,
+    actor: h.changed_by_user
+      ? {
+          id: h.changed_by_user.id,
+          name: h.changed_by_user.name || h.changed_by_user.email || 'Someone',
+          kind: 'user',
+        }
+      : { name: 'System', kind: 'system' },
+    icon: ArrowRightLeft,
+    summary: `changed state ${stateWords(h.previous_state)} → ${stateWords(h.new_state)}`,
+    detail: h.reason ? `“${h.reason}”` : undefined,
+  }))
 }

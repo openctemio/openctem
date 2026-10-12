@@ -4,9 +4,20 @@
 
 ## Project Overview
 
-Next.js 16 dashboard with locale/RTL **direction** support (en/vi/ar locales are
-detected and drive `dir`; a translation layer is NOT yet wired — UI strings are
-currently English), Zustand auth, and shadcn/ui.
+This is `web/` in the `openctemio/openctem` monorepo (imported 2026-10-02 from
+`openctemio/ui`, now archived; its tags are kept as `ui/v*`, history only). The
+Go API is `../api/` (see `../api/CLAUDE.md`); rules that span both are in
+`../CLAUDE.md`. API wire types are generated, not hand-written, and not
+committed: `src/lib/api/generated/api.types.ts` (from
+`../api/api/openapi/swagger.yaml`) and `src/config/api-route-permissions.json`
+(from the API route table) are written by `make generate` at the repository
+root (needs Go and Node; `make generate-docker` needs only Docker). `npm run
+dev/build/type-check/lint/test` stop with that hint when they are missing.
+API and web release together on one `vX.Y.Z` tag.
+
+Next.js 16 dashboard with English and Vietnamese catalogs (`useTranslation()`;
+strings without a key render in English), RTL-ready direction handling, Zustand
+auth, and shadcn/ui.
 
 **Status**: Production-ready | TypeScript strict | Turbopack
 (React Compiler is NOT currently enabled — see Tech Stack)
@@ -45,7 +56,7 @@ src/
 ├── hooks/                  # Global hooks
 ├── types/                  # Global types
 └── assets/                 # Static assets
-proxy.ts                    # Next.js 16 Proxy (locale detection, routing)
+src/proxy.ts                # Next.js 16 Proxy (auth redirect, locale, CSP nonce)
 ```
 
 See [architecture.md](.claude/architecture.md) for details.
@@ -68,7 +79,12 @@ npm run validate    # type-check + lint (run before every commit)
 npm run build       # Full build to catch remaining issues
 ```
 
-Pre-commit hooks (Husky + lint-staged) run automatically on staged files.
+Git hooks live in the repository root's `.githooks/` (there is no Husky). They are
+enabled by `make hooks` / `make setup` at the root, and also by `npm ci` here
+(the `prepare` script sets `core.hooksPath`). When `web/` files are staged,
+`.githooks/pre-commit` runs `npm run type-check` and `lint-staged` (ESLint
+`--fix` + Prettier on staged files); `.githooks/commit-msg` rejects AI
+attribution lines.
 
 ---
 
@@ -98,6 +114,14 @@ Types: user.types.ts         Hooks: use-user.ts
 
 Create a `src/features/[name]/` folder when: 2+ related components, distinct business domain, could be independent module.
 
+### Shared components first
+
+Fix a UI defect everywhere it occurs: `git grep` the pattern, fix the shared
+component or extract one and migrate every caller in the same PR. Dialogs use
+the frame in `components/ui/dialog.tsx` (`size` + `DialogHeader` /
+`DialogBody` / `DialogFooter`, no ad-hoc `max-h`/`overflow`/`max-w`). Full
+checklist: the `web-change` skill in the repository root `.claude/skills/`.
+
 ### Styling
 
 - `cn()` for conditional classes, shadcn/ui variants, Tailwind utilities
@@ -111,7 +135,9 @@ Create a `src/features/[name]/` folder when: 2+ related components, distinct bus
 
 ### i18n
 
-- Locales: `en`, `vi`, `ar` | RTL: `ar`, `he`, `fa`, `ur`
+- Locales: `en`, `vi` (`supportedLocales`) | RTL (direction only, none shipped): `ar`, `he`, `fa`, `ur`
+- Client: `const { t } = useTranslation()` from `@/context/i18n-provider`
+- Every new key goes into both `src/lib/i18n/dictionaries/en/<namespace>.json` and `vi/<namespace>.json` in the same PR (namespace = the key's first segment; a new namespace is imported in `dictionaries/index.ts`)
 - Server: `(await headers()).get('x-locale') || 'en'`
 - See [i18n.md](.claude/i18n.md) for complete guide
 
@@ -119,7 +145,7 @@ Create a `src/features/[name]/` folder when: 2+ related components, distinct bus
 
 - Server Components for reads (default), Server Actions for mutations
 - SWR for client-side fetching, `mutate()` to invalidate after mutations
-- Always use pagination params (`page`, `limit`) on list endpoints
+- Always paginate list endpoints (`page` + `per_page` on most lists; check the endpoint)
 
 ### Validation
 
@@ -147,26 +173,29 @@ See [auth.md](.claude/auth.md) for details.
 
 ### CSRF (double-submit cookie)
 
-All state-changing requests from the browser must carry an `X-CSRF-Token` header matching the `csrf_token` cookie. `src/lib/api/client.ts` does this automatically (reads cookie, attaches header on POST/PUT/PATCH/DELETE). The Next.js proxy route `src/app/api/v1/[...path]/route.ts` forwards both `refresh_token` and `csrf_token` cookies to the backend. If you bypass the shared client (raw `fetch`) on a mutating endpoint, you MUST add the header yourself — otherwise the backend returns `403 csrf_token_missing_header`.
+Every state-changing request (POST/PUT/PATCH/DELETE) to the web server, signed in or not, must be same-origin and carry an `X-CSRF-Token` header equal to the `csrf_token` cookie, or it gets `403 CSRF_INVALID` (`csrfRejection` in `src/lib/server-auth-cookies.ts`). `src/proxy.ts` sets the cookie on every page (so the sign-in, registration, password-reset, invitation and second-factor forms have one before a session exists) and checks Server Actions; every route handler under `src/app/api` calls `csrfRejection` itself (`csrf-route-guard.test.ts` fails on one that does not). In the browser, `src/instrumentation-client.ts` wraps `fetch` (`src/lib/csrf-client.ts`) so every same-origin write, Next's Server Action requests and raw `fetch` included, carries the header. `navigator.sendBeacon` and `XMLHttpRequest` do not go through that wrapper: never use a beacon for a write, and set the header on an XHR yourself. The `/api/v1` proxy forwards the pair to the API, which checks it again.
 
 ### Markdown sanitisation
 
 Rendered markdown (notes, finding descriptions, etc.) goes through `src/lib/sanitize-markdown.ts`. Every preview spreads `markdownPreviewSecurityProps` onto `MDEditor.Markdown` (and the editor's `previewOptions`): a `rehypeRewrite` pass plus a `rehypeSanitiseTree` plugin that runs after `rehype-attr`, because `rehype-attr` (enabled by @uiw/react-markdown-preview) adds attributes from `<!--rehype:...-->` comments after the rewrite hook. It neutralises `<script>/<iframe>/<object>/<embed>/<style>/<link>/<meta>/<base>/<form>`, svg/math and form controls, keeps only allowlisted attributes (no `style`, `on*`, `name`, `target`), keeps only the pipeline's own classes (`language-*`, `anchor`, ...), prefixes ids with `user-content-`, and rewrites non-http(s)/mailto/relative URLs to `#`. Do not disable it or render markdown without those props. If you need a new tag, attribute or class, extend the allowlist in that file and add a test in `sanitize-markdown.test.ts` / `src/components/ui/markdown-preview-xss.test.tsx`.
+
+### Data-driven links, images and CSP (RFC-040)
+
+Any `href`/`src` whose value comes from data (finding references, evidence URIs, asset or repository URLs, notification targets, avatars, tool logos) goes through `src/lib/safe-href.ts`: `<SafeExternalLink>` for external links, `safeHref()` for Next `<Link>`/`asChild` cases, `safeImageSrc()` for images. Never write a raw `href={finding.x}`. `src/lib/__tests__/raw-href-guard.test.ts` fails on one; only navigation config and constants may be added to its `REVIEWED` list. The CSP is set per request with a script nonce in `src/proxy.ts` (`src/lib/middleware/csp.ts`), with no `'unsafe-inline'` for scripts: do not add inline `<script>` without the nonce from the `x-nonce` request header. `proxy.ts` must stay in `src/` (next to `app/`), or Next.js does not load it.
 
 ## Sensors (formerly "agents") — RFC-023
 
 The customer-side runtimes are **sensors**: route `/sensors` (Discovery → Sensors,
 tabs by role), `src/features/sensors`, `src/lib/api/sensor-*`, API
 `/api/v1/sensors`, permissions `sensors:*`, module `sensors`. Contract:
-openctemio/api `docs/rfcs/RFC-023-sensor-rename-contract.md`.
+[`api/docs/rfcs/RFC-023-sensor-rename-contract.md`](../api/docs/rfcs/RFC-023-sensor-rename-contract.md).
 
 - Never name a sensor concept "agent". `src/config/__tests__/sensor-vocabulary.test.ts`
   fails on the word outside `src/config/sensor-vocabulary-allowlist.json`
   (HTTP User-Agent, the AI-triage agent mode, the endpoint-agent role,
-  historical audit rows, the `/agents` redirects, the storage migration).
+  historical audit rows, the `/agents` redirects).
 - The UI never calls protocol v1 (`/api/v1/agent/*`); that is the sensors' wire.
-- Old `/agents` URLs redirect (`src/config/legacy-sensor-routes.ts`); browser
-  state from before the rename is migrated on load (`src/lib/sensor-storage-migration.ts`).
+- Old `/agents` URLs redirect (`src/config/legacy-sensor-routes.ts`).
 - Audit rows written before the rename keep `agent.*`; label through
   `canonicalAuditAction` / `canonicalAuditResourceType` / `canonicalAuditMetadataKey`.
 - A branch written before the rename catches up with `node scripts/rename/sensor-rename.mjs`.
@@ -188,12 +217,16 @@ Moved pages get a 308 in `src/config/legacy-routes.ts`.
 ## Access Control (RBAC)
 
 ```
-User → Membership (owner | member) → Roles → Permissions (DO) → Groups → Data Scope (SEE)
+User → Membership (owner | member) → Roles → Permissions (DO)
+User → Groups + explicit asset access grants → Data Scope (SEE)
 ```
 
+Being an asset owner is not a data-scope grant; the backend
+is the only authority (`api/docs/architecture/authorization-matrix.md`, "Data scope").
+
 ```tsx
-const { hasPermission } = useMyPermissions()
-<PermissionGate permission="assets:write"><EditButton /></PermissionGate>
+const { can } = usePermissions()             // from '@/lib/permissions'
+<Can permission={Permission.AssetsWrite}><EditButton /></Can>
 ```
 
 Permissions sync in real-time via `X-Permission-Stale` header. See [access-control.md](.claude/access-control.md).
@@ -229,6 +262,7 @@ npm run validate     # type-check + lint
 - [auth.md](.claude/auth.md) — Authentication & multi-tenant flow
 - [access-control.md](.claude/access-control.md) — RBAC & permissions
 - [account.md](.claude/account.md) — Account settings
+- [style-guide.md](.claude/style-guide.md) — Coding style
 - [patterns.md](.claude/patterns.md) — Code patterns & examples
 - [i18n.md](.claude/i18n.md) — Internationalization
 - [troubleshooting.md](.claude/troubleshooting.md) — Common issues

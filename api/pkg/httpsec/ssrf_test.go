@@ -3,15 +3,19 @@ package httpsec
 import (
 	"context"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Most tests assert the production posture. TestMain pins
-// allowPrivate=false so the OPENCTEM_HTTPSEC_ALLOW_PRIVATE env var
-// inherited from the harness cannot drift a test result.
+// allowPrivate=false and no named private range, so the
+// OPENCTEM_HTTPSEC_ALLOW_PRIVATE* env vars inherited from the harness cannot
+// drift a test result.
 func TestMain(m *testing.M) {
 	allowPrivate = false
+	allowedPrivateCIDRs = nil
 	m.Run()
 }
 
@@ -60,6 +64,10 @@ func TestIsIPBlocked_Ranges(t *testing.T) {
 		"100.64.0.1",
 		"0.0.0.1",
 		"224.1.2.3",
+		// IPv4 embedded in translated IPv6 (NAT64, 6to4, Teredo): reaches
+		// the metadata service on a NAT64/DNS64 network.
+		"64:ff9b::a9fe:a9fe", "64:ff9b:1::1", "2002:a9fe:a9fe::1", "2001:0:a9fe:a9fe::1",
+		"192.0.0.170", "198.18.0.1",
 	}
 	for _, ip := range blocked {
 		if !IsIPBlocked(net.ParseIP(ip)) {
@@ -98,6 +106,7 @@ func TestIsIPBlocked_AllowPrivateMode(t *testing.T) {
 		"172.16.0.1",
 		"172.31.255.255",
 		"192.168.1.1",
+		"fd00:ec2::253", // ULA next to the AWS IPv6 IMDS
 	}
 	for _, ip := range rfc1918 {
 		if IsIPBlocked(net.ParseIP(ip)) {
@@ -119,6 +128,8 @@ func TestIsIPBlocked_AllowPrivateMode(t *testing.T) {
 		"::",              // IPv6 unspecified: reaches the local host, like 0.0.0.0
 		"ff02::1",         // IPv6 multicast (all nodes)
 		"ff05::2",         // IPv6 multicast (site-local routers)
+		"fd00:ec2::254",   // AWS IMDS over IPv6 (inside the ULA range fc00::/7)
+		"fd20:ce::254",    // GCP metadata server over IPv6 (inside fc00::/7)
 	}
 	for _, ip := range hardBlocked {
 		if !IsIPBlocked(net.ParseIP(ip)) {
@@ -218,5 +229,22 @@ func TestValidateHost(t *testing.T) {
 		}
 	} else if err == nil {
 		t.Errorf("without allow-private, ValidateHost(%q) = nil, want blocked", rfc1918)
+	}
+}
+
+// The slow-upstream variant keeps the SSRF guard and only changes the
+// response-header wait.
+func TestSafeHTTPClientWithHeaderTimeout(t *testing.T) {
+	c := SafeHTTPClientWithHeaderTimeout(60*time.Second, 50*time.Second)
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok || tr.ResponseHeaderTimeout != 50*time.Second || c.Timeout != 60*time.Second {
+		t.Fatalf("client = %+v", c)
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://localhost:9/", nil)
+	if _, err := c.Do(req); err == nil || !strings.Contains(err.Error(), "ssrf guard") {
+		t.Fatalf("localhost not refused: %v", err)
+	}
+	if d := SafeHTTPClientWithHeaderTimeout(time.Second, 0).Transport.(*http.Transport).ResponseHeaderTimeout; d != 15*time.Second {
+		t.Fatalf("default header timeout lost: %s", d)
 	}
 }

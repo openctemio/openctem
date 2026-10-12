@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -22,6 +23,14 @@ type AssetStateHistoryHandler struct {
 	assetRepo asset.Repository
 	validator *validator.Validator
 	logger    *logger.Logger
+	dataScope DataScopeEnforcer
+}
+
+// SetDataScope wires the Layer 2 data scope: a scoped member sees only the
+// history of assets in their scope. Returns h for chaining.
+func (h *AssetStateHistoryHandler) SetDataScope(e DataScopeEnforcer) *AssetStateHistoryHandler {
+	h.dataScope = e
+	return h
 }
 
 // NewAssetStateHistoryHandler creates a new asset state history handler.
@@ -64,23 +73,6 @@ type StateChangeResponse struct {
 	AssetInternetAccessible *bool  `json:"asset_internet_accessible,omitempty"`
 }
 
-// DailyActivityResponse represents daily activity counts.
-type DailyActivityResponse struct {
-	Date           string `json:"date"`
-	Appeared       int    `json:"appeared"`
-	Disappeared    int    `json:"disappeared"`
-	Recovered      int    `json:"recovered"`
-	ExposureChange int    `json:"exposure_change"`
-	OtherChanges   int    `json:"other_changes"`
-	Total          int    `json:"total"`
-}
-
-// StateHistoryStatsResponse represents state history statistics.
-type StateHistoryStatsResponse struct {
-	TypeCounts   map[string]int `json:"type_counts"`
-	SourceCounts map[string]int `json:"source_counts"`
-}
-
 // =============================================================================
 // Handlers
 // =============================================================================
@@ -97,9 +89,9 @@ type StateHistoryStatsResponse struct {
 // @Param        source query string false "Filter by source"
 // @Param        from query string false "Start time (RFC3339)"
 // @Param        to query string false "End time (RFC3339)"
-// @Param        limit query int false "Maximum results (max 1000)" default(50)
-// @Param        offset query int false "Pagination offset" default(0)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
+// @Param        page query int false "Page (1-based)" default(1)
+// @Param        per_page query int false "Page size (max 100)" default(50)
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,page=int,per_page=int,total_pages=int}
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
@@ -133,7 +125,10 @@ func (h *AssetStateHistoryHandler) ListByAsset(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	opts := h.parseListOptions(r)
+	opts, paging, ok := h.parseListOptions(w, r)
+	if !ok {
+		return
+	}
 
 	changes, total, err := h.repo.GetByAssetID(ctx, tenantID, assetID, opts)
 	if err != nil {
@@ -142,7 +137,7 @@ func (h *AssetStateHistoryHandler) ListByAsset(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	h.writeChangePage(w, r, tenantID, changes, total, opts.Limit, opts.Offset)
+	h.writeChangePage(w, r, tenantID, changes, total, paging)
 }
 
 // writeChangePage enriches a page of changes with the current state of their
@@ -152,7 +147,8 @@ func (h *AssetStateHistoryHandler) writeChangePage(
 	r *http.Request,
 	tenantID shared.ID,
 	changes []*asset.AssetStateChange,
-	total, limit, offset int,
+	total int,
+	paging pagination.Pagination,
 ) {
 	response := make([]StateChangeResponse, len(changes))
 	ids := make([]shared.ID, 0, len(changes))
@@ -184,104 +180,12 @@ func (h *AssetStateHistoryHandler) writeChangePage(
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":   response,
-		"total":  total,
-		"limit":  limit,
-		"offset": offset,
-	})
-}
-
-// List handles GET /api/v1/state-history
-// @Summary      List all state history
-// @Description  Retrieves a paginated list of all state changes for the tenant with optional filtering.
-// @Description  Use ?event_type= with comma-separated values to filter by one or more change types
-// @Description  (e.g. ?event_type=appeared,disappeared replaces the old /appearances and /disappearances endpoints).
-// @Tags         Asset State History
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        event_type query string false "Comma-separated change types (appeared,disappeared,shadow_it,exposure_changed,...)"
-// @Param        change_type query string false "Filter by single change type (deprecated: use event_type)"
-// @Param        source query string false "Filter by source"
-// @Param        from query string false "Start time (RFC3339)"
-// @Param        to query string false "End time (RFC3339)"
-// @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
-// @Param        limit query int false "Maximum results (max 1000)" default(50)
-// @Param        offset query int false "Pagination offset" default(0)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Router       /state-history [get]
-func (h *AssetStateHistoryHandler) List(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	opts := h.parseListOptions(r)
-
-	changes, total, err := h.repo.List(ctx, tenantID, opts)
-	if err != nil {
-		h.logger.Error("failed to list state history", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	h.writeChangePage(w, r, tenantID, changes, total, opts.Limit, opts.Offset)
-}
-
-// Get handles GET /api/v1/state-history/{id}
-// @Summary      Get state change by ID
-// @Description  Retrieves a specific state change entry by its unique identifier
-// @Tags         Asset State History
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id path string true "State change ID (UUID)"
-// @Success      200  {object}  StateChangeResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Router       /state-history/{id} [get]
-func (h *AssetStateHistoryHandler) Get(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	changeIDStr := r.PathValue("id")
-	changeID, err := shared.IDFromString(changeIDStr)
-	if err != nil {
-		apierror.BadRequest("Invalid change ID").WriteJSON(w)
-		return
-	}
-
-	change, err := h.repo.GetByID(ctx, tenantID, changeID)
-	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
-			apierror.NotFound("State change").WriteJSON(w)
-			return
-		}
-		h.logger.Error("failed to get state change", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toStateChangeResponse(change))
+	_ = json.NewEncoder(w).Encode(pagination.NewResult(response, int64(total), paging))
 }
 
 // The change-list endpoints below share one parameter set:
 //   - since (legacy, default 7 days ago) is used only when from is absent;
-//   - from / to bound changed_at; limit / offset paginate; total is the full
+//   - from / to bound changed_at; page / per_page paginate; total is the full
 //     count, so they can back a server-paginated table;
 //   - internet_facing=true|false keeps changes of assets that are (not)
 //     currently internet-facing (is_internet_accessible or exposure=public).
@@ -298,9 +202,9 @@ func (h *AssetStateHistoryHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Param        from query string false "Start time (RFC3339)"
 // @Param        to query string false "End time (RFC3339)"
 // @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
-// @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Param        offset query int false "Pagination offset" default(0)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
+// @Param        page query int false "Page (1-based)" default(1)
+// @Param        per_page query int false "Page size (max 100)" default(50)
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,page=int,per_page=int,total_pages=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/appearances [get]
@@ -320,9 +224,9 @@ func (h *AssetStateHistoryHandler) RecentAppearances(w http.ResponseWriter, r *h
 // @Param        from query string false "Start time (RFC3339)"
 // @Param        to query string false "End time (RFC3339)"
 // @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
-// @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Param        offset query int false "Pagination offset" default(0)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
+// @Param        page query int false "Page (1-based)" default(1)
+// @Param        per_page query int false "Page size (max 100)" default(50)
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,page=int,per_page=int,total_pages=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/disappearances [get]
@@ -341,15 +245,15 @@ func (h *AssetStateHistoryHandler) RecentDisappearances(w http.ResponseWriter, r
 // @Param        from query string false "Start time (RFC3339)"
 // @Param        to query string false "End time (RFC3339)"
 // @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
-// @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Param        offset query int false "Pagination offset" default(0)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
+// @Param        page query int false "Page (1-based)" default(1)
+// @Param        per_page query int false "Page size (max 100)" default(50)
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,page=int,per_page=int,total_pages=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/shadow-it [get]
 func (h *AssetStateHistoryHandler) ShadowITCandidates(w http.ResponseWriter, r *http.Request) {
 	// Goes through the paginated List (tenant-scoped EXISTS on assets) so
-	// `total` is the real count — it used to be len(page) — and offset/from/to
+	// `total` is the real count — it used to be len(page) — and page/from/to
 	// work like the other change lists.
 	shadow := asset.ScopeShadow
 	h.listWithPresetEventTypes(w, r, listPreset{
@@ -371,9 +275,9 @@ func (h *AssetStateHistoryHandler) ShadowITCandidates(w http.ResponseWriter, r *
 // @Param        from query string false "Start time (RFC3339)"
 // @Param        to query string false "End time (RFC3339)"
 // @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
-// @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Param        offset query int false "Pagination offset" default(0)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
+// @Param        page query int false "Page (1-based)" default(1)
+// @Param        per_page query int false "Page size (max 100)" default(50)
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,page=int,per_page=int,total_pages=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/exposure-changes [get]
@@ -394,9 +298,9 @@ func (h *AssetStateHistoryHandler) ExposureChanges(w http.ResponseWriter, r *htt
 // @Param        since query string false "Start time (RFC3339, default: 7 days ago; ignored when from is set)"
 // @Param        from query string false "Start time (RFC3339)"
 // @Param        to query string false "End time (RFC3339)"
-// @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Param        offset query int false "Pagination offset" default(0)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
+// @Param        page query int false "Page (1-based)" default(1)
+// @Param        per_page query int false "Page size (max 100)" default(50)
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,page=int,per_page=int,total_pages=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/newly-exposed [get]
@@ -410,30 +314,6 @@ func (h *AssetStateHistoryHandler) NewlyExposed(w http.ResponseWriter, r *http.R
 		newValues: []string{string(asset.ExposurePublic), "true"},
 		forced:    true,
 	})
-}
-
-// ComplianceChanges handles GET /api/v1/state-history/compliance
-// @Summary      Get compliance-related changes (deprecated)
-// @Description  Deprecated: use GET /state-history?event_type=compliance_changed,classification_changed,owner_changed instead.
-// @Description  Retrieves state changes that may affect compliance status.
-// @Tags         Asset State History
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
-// @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Router       /state-history/compliance [get]
-func (h *AssetStateHistoryHandler) ComplianceChanges(w http.ResponseWriter, r *http.Request) {
-	// Deprecated: delegates to List with compliance event types pre-set.
-	// Use GET /state-history?event_type=compliance_changed,classification_changed,owner_changed instead.
-	h.listWithPresetEventTypes(w, r, listPreset{types: []asset.StateChangeType{
-		asset.StateChangeComplianceChanged,
-		asset.StateChangeClassificationChanged,
-		asset.StateChangeOwnerChanged,
-	}})
 }
 
 // listPreset is what a specialised change-list endpoint fixes on top of the
@@ -459,7 +339,10 @@ func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWrite
 		return
 	}
 
-	opts := h.parseListOptions(r)
+	opts, paging, ok := h.parseListOptions(w, r)
+	if !ok {
+		return
+	}
 
 	if preset.forced || (opts.ChangeType == nil && len(opts.ChangeTypes) == 0) {
 		opts.ChangeType = nil
@@ -474,11 +357,15 @@ func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWrite
 
 	// Apply ?since= as a From bound when no explicit ?from= was given (backward compat).
 	if opts.From == nil {
-		since, limit := h.parseSinceAndLimit(r)
+		since := h.parseSince(r)
 		opts.From = &since
-		if opts.Limit == asset.DefaultListStateHistoryOptions().Limit {
-			opts.Limit = limit
-		}
+	}
+
+	opts.Scope, err = resolveDataScope(ctx, h.dataScope, tenantID)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
 	}
 
 	changes, total, err := h.repo.List(ctx, tenantID, opts)
@@ -488,140 +375,20 @@ func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWrite
 		return
 	}
 
-	h.writeChangePage(w, r, tenantID, changes, total, opts.Limit, opts.Offset)
-}
-
-// Timeline handles GET /api/v1/state-history/timeline
-// @Summary      Get activity timeline
-// @Description  Retrieves daily activity counts for visualization (appearances, disappearances, exposure changes)
-// @Tags         Asset State History
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        from query string false "Start time (RFC3339, default: 30 days ago)"
-// @Param        to query string false "End time (RFC3339, default: now)"
-// @Success      200  {object}  object{data=[]DailyActivityResponse,from=string,to=string}
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Router       /state-history/timeline [get]
-func (h *AssetStateHistoryHandler) Timeline(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	// Default: last 30 days
-	to := time.Now().UTC()
-	from := to.AddDate(0, 0, -30)
-
-	if v := r.URL.Query().Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
-	}
-
-	timeline, err := h.repo.GetActivityTimeline(ctx, tenantID, from, to)
-	if err != nil {
-		h.logger.Error("failed to get activity timeline", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	response := make([]DailyActivityResponse, len(timeline))
-	for i, day := range timeline {
-		response[i] = DailyActivityResponse{
-			Date:           day.Date.Format("2006-01-02"),
-			Appeared:       day.Appeared,
-			Disappeared:    day.Disappeared,
-			Recovered:      day.Recovered,
-			ExposureChange: day.ExposureChange,
-			OtherChanges:   day.OtherChanges,
-			Total:          day.Total,
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data": response,
-		"from": from.Format(time.RFC3339),
-		"to":   to.Format(time.RFC3339),
-	})
-}
-
-// Stats handles GET /api/v1/state-history/stats
-// @Summary      Get state history statistics
-// @Description  Retrieves aggregate statistics about state changes by type and source
-// @Tags         Asset State History
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        since query string false "Start time (RFC3339, default: 30 days ago)"
-// @Success      200  {object}  StateHistoryStatsResponse
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Router       /state-history/stats [get]
-func (h *AssetStateHistoryHandler) Stats(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	// Default: last 30 days
-	since := time.Now().UTC().AddDate(0, 0, -30)
-	if v := r.URL.Query().Get("since"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			since = t
-		}
-	}
-
-	typeCounts, err := h.repo.CountByType(ctx, tenantID, since)
-	if err != nil {
-		h.logger.Error("failed to count by type", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	sourceCounts, err := h.repo.CountBySource(ctx, tenantID, since)
-	if err != nil {
-		h.logger.Error("failed to count by source", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	// Convert to string keys
-	typeCountsStr := make(map[string]int)
-	for k, v := range typeCounts {
-		typeCountsStr[string(k)] = v
-	}
-	sourceCountsStr := make(map[string]int)
-	for k, v := range sourceCounts {
-		sourceCountsStr[string(k)] = v
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(StateHistoryStatsResponse{
-		TypeCounts:   typeCountsStr,
-		SourceCounts: sourceCountsStr,
-	})
+	h.writeChangePage(w, r, tenantID, changes, total, paging)
 }
 
 // =============================================================================
 // Helper Methods
 // =============================================================================
 
-func (h *AssetStateHistoryHandler) parseListOptions(r *http.Request) asset.ListStateHistoryOptions {
+func (h *AssetStateHistoryHandler) parseListOptions(w http.ResponseWriter, r *http.Request) (asset.ListStateHistoryOptions, pagination.Pagination, bool) {
 	opts := asset.DefaultListStateHistoryOptions()
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return opts, paging, false
+	}
+	opts.Limit, opts.Offset = paging.Limit(), paging.Offset()
 
 	// event_type supports comma-separated list of change types, e.g. ?event_type=appeared,disappeared
 	// This is the preferred param going forward; change_type is kept for backward compatibility.
@@ -662,49 +429,19 @@ func (h *AssetStateHistoryHandler) parseListOptions(r *http.Request) asset.ListS
 			opts.To = &t
 		}
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
-			opts.Limit = limit
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if offset, err := strconv.Atoi(v); err == nil && offset >= 0 {
-			opts.Offset = offset
-		}
-	}
-
-	// Security: Enforce max limit to prevent DoS via large queries
-	const maxLimit = 1000
-	if opts.Limit > maxLimit {
-		opts.Limit = maxLimit
-	}
-
-	return opts
+	return opts, paging, true
 }
 
-func (h *AssetStateHistoryHandler) parseSinceAndLimit(r *http.Request) (time.Time, int) {
+func (h *AssetStateHistoryHandler) parseSince(r *http.Request) time.Time {
 	// Default: last 7 days
 	since := time.Now().UTC().AddDate(0, 0, -7)
-	limit := 100
 
 	if v := r.URL.Query().Get("since"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			since = t
 		}
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if l, err := strconv.Atoi(v); err == nil && l > 0 {
-			limit = l
-		}
-	}
-
-	// Security: Enforce max limit to prevent DoS via large queries
-	const maxLimit = 1000
-	if limit > maxLimit {
-		limit = maxLimit
-	}
-
-	return since, limit
+	return since
 }
 
 func toStateChangeResponse(change *asset.AssetStateChange) StateChangeResponse {

@@ -4,7 +4,7 @@ import (
 	"html/template"
 	"io"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/module"
 )
 
 // Print-ready HTML export of the executive summary.
@@ -182,11 +182,11 @@ var executiveSummaryTemplate = template.Must(
 // renderExecutiveSummaryHTML writes the print-ready HTML report.
 // The writer is flushed by the caller (ResponseWriter) — this function
 // does not buffer.
-func renderExecutiveSummaryHTML(w io.Writer, summary *app.ExecutiveSummary, generatedAt string) error {
+func renderExecutiveSummaryHTML(w io.Writer, summary *module.ExecutiveSummary, generatedAt string) error {
 	data := struct {
 		Period      string
 		GeneratedAt string
-		Summary     *app.ExecutiveSummary
+		Summary     *module.ExecutiveSummary
 	}{
 		Period:      summary.Period,
 		GeneratedAt: generatedAt,

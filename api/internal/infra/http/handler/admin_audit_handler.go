@@ -5,7 +5,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -94,14 +93,11 @@ func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Parse pagination
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
-	if perPage < 1 || perPage > 100 {
-		perPage = 20
-	}
+	page, perPage := paging.Page, paging.PerPage
 
 	// Parse filters
 	filter := admin.AuditLogFilter{

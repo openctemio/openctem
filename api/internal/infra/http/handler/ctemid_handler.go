@@ -48,15 +48,23 @@ func toCTEMIDResponse(e *ctemiddom.CTEMID) CTEMIDResponse {
 
 // CTEMIDListResponse is the paginated catalog list envelope.
 type CTEMIDListResponse struct {
-	Items  []CTEMIDResponse `json:"items"`
-	Total  int              `json:"total"`
-	Limit  int              `json:"limit"`
-	Offset int              `json:"offset"`
+	Items   []CTEMIDResponse `json:"items"`
+	Total   int              `json:"total"`
+	Page    int              `json:"page"`
+	PerPage int              `json:"per_page"`
 }
 
 // List handles GET /api/v1/ctem-ids — lists standardized CTEM-ID exposure
-// catalog entries (optionally filtered by ?category=), with limit/offset.
-// Baselined in api/openapi/undocumented-routes.txt.
+// catalog entries (optionally filtered by ?category=), paged with page/per_page.
+// @Summary      List the CTEM-ID catalog
+// @Tags         CTEM IDs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        category  query  string  false  "Category"
+// @Param        page      query  int     false  "Page number"  default(1)
+// @Param        per_page  query  int     false  "Items per page"  default(20)
+// @Success      200  {object}  CTEMIDListResponse
+// @Router       /ctem-ids [get]
 func (h *CTEMIDHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -64,8 +72,11 @@ func (h *CTEMIDHandler) List(w http.ResponseWriter, r *http.Request) {
 	if c := q.Get("category"); c != "" {
 		category = &c
 	}
-	limit := parseQueryIntBounded(q.Get("limit"), 100, 1, MaxPerPage)
-	offset := parseQueryIntBounded(q.Get("offset"), 0, 0, 1_000_000)
+	paging, ok := listPage(w, r, 100)
+	if !ok {
+		return
+	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	entries, total, err := h.service.List(r.Context(), category, limit, offset)
 	if err != nil {
@@ -82,9 +93,9 @@ func (h *CTEMIDHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(CTEMIDListResponse{
-		Items:  items,
-		Total:  total,
-		Limit:  limit,
-		Offset: offset,
+		Items:   items,
+		Total:   total,
+		Page:    paging.Page,
+		PerPage: paging.PerPage,
 	})
 }

@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, post, patch, del } from '@/lib/api/client'
+import type { ApiFinding } from '@/features/findings/api/finding-api.types'
 
 export interface RemediationCampaign {
   id: string
@@ -62,6 +63,19 @@ export function useRemediationCampaigns(filters?: {
 
 export function useRemediationCampaign(id: string) {
   return useSWR<RemediationCampaign>(id ? `/api/v1/remediation/campaigns/${id}` : null, get)
+}
+
+/**
+ * The findings a campaign tracks: the same set its finding_count counts (its
+ * finding filter or remediation key, any status), on the caller's in-scope
+ * assets. Needs findings:read; pass enabled=false without it.
+ */
+export function useRemediationCampaignFindings(id: string, enabled = true) {
+  return useSWR<PaginatedResponse<ApiFinding>>(
+    id && enabled ? `/api/v1/remediation/campaigns/${id}/findings?per_page=100` : null,
+    get,
+    { revalidateOnFocus: false }
+  )
 }
 
 export function useCreateRemediationCampaign() {

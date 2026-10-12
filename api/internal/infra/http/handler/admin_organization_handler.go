@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -27,23 +27,31 @@ import (
 // setup reuse the tenant SSO handlers under AdminTenantScope.
 type AdminOrganizationHandler struct {
 	orgs      admin.OrganizationReader
-	tenants   *app.TenantService
+	tenants   *tenantapp.TenantService
 	users     user.Repository
 	validator *validator.Validator
 	logger    *logger.Logger
 	// provisioning creates accounts (organization users, and the owner of a
 	// new organization) — the same service organization admins use.
-	provisioning *app.UserProvisioningService
+	provisioning *tenantapp.UserProvisioningService
+	// stepUp checks a fresh console authenticator code for owner recovery.
+	stepUp StepUpVerifier
+}
+
+// WithStepUp wires the console step-up check (owner recovery needs it).
+func (h *AdminOrganizationHandler) WithStepUp(v StepUpVerifier) *AdminOrganizationHandler {
+	h.stepUp = v
+	return h
 }
 
 // WithUserProvisioning wires administrator-created accounts.
-func (h *AdminOrganizationHandler) WithUserProvisioning(svc *app.UserProvisioningService) *AdminOrganizationHandler {
+func (h *AdminOrganizationHandler) WithUserProvisioning(svc *tenantapp.UserProvisioningService) *AdminOrganizationHandler {
 	h.provisioning = svc
 	return h
 }
 
 // NewAdminOrganizationHandler creates the handler.
-func NewAdminOrganizationHandler(orgs admin.OrganizationReader, tenants *app.TenantService, users user.Repository, v *validator.Validator, log *logger.Logger) *AdminOrganizationHandler {
+func NewAdminOrganizationHandler(orgs admin.OrganizationReader, tenants *tenantapp.TenantService, users user.Repository, v *validator.Validator, log *logger.Logger) *AdminOrganizationHandler {
 	return &AdminOrganizationHandler{orgs: orgs, tenants: tenants, users: users, validator: v, logger: log.With("handler", "admin_organization")}
 }
 
@@ -66,6 +74,8 @@ type AdminOrganizationResponse struct {
 	ActiveIdentityProviders int       `json:"active_identity_providers"`
 	VerifiedDomains         int       `json:"verified_domains"`
 	SSOEnforced             bool      `json:"sso_enforced"`
+	// Plan is free, pro or enterprise.
+	Plan string `json:"plan"`
 }
 
 // AdminOrganizationListResponse is a page of organizations.
@@ -114,7 +124,25 @@ type AdminCreateOrgUserRequest struct {
 	Email string `json:"email" validate:"required,email,max=254"`
 	Name  string `json:"name" validate:"max=255"`
 	Role  string `json:"role" validate:"omitempty,oneof=owner"`
+	// Recovery creates a new owner for an organization whose owners are all
+	// suspended. Super admin only; the set-password link is emailed and
+	// never returned; refused while any owner is active.
+	Recovery bool `json:"recovery,omitempty"`
+	// Reason (recovery only, required) is why the administrator takes this
+	// step; it is kept in the admin audit row.
+	Reason string `json:"reason,omitempty" validate:"max=500"`
+	// TOTPCode (recovery only, required) is a fresh code from the console
+	// authenticator (step-up).
+	TOTPCode string `json:"totp_code,omitempty" validate:"max=16"`
 }
+
+// Owner recovery reason length bounds.
+const (
+	ownerRecoveryReasonMin = 10
+	ownerRecoveryReasonMax = 500
+)
+
+const stepUpPurposeOwnerRecovery = "owner recovery"
 
 // AdminOrgUserResponse is one member of an organization in the console.
 type AdminOrgUserResponse struct {
@@ -152,15 +180,15 @@ func toAdminOrganizationResponse(o *admin.Organization) AdminOrganizationRespons
 		ID: o.ID.String(), Name: o.Name, Slug: o.Slug, Description: o.Description,
 		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners,
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
-		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced,
+		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, Plan: o.Plan,
 	}
 }
 
 // adminAuditContext attributes a tenant-audit event to the platform admin. The
 // admin is not a users row, so actor_id stays empty (it references users) and
 // the email is prefixed so the organization's own audit log shows who did it.
-func adminAuditContext(r *http.Request, tenantID string) app.AuditContext {
-	actx := app.AuditContext{
+func adminAuditContext(r *http.Request, tenantID string) audit.AuditContext {
+	actx := audit.AuditContext{
 		TenantID: tenantID,
 		// The resolved client IP (forwarding headers only from a trusted
 		// proxy), not the proxy's socket address.
@@ -185,23 +213,48 @@ func orgIDParam(r *http.Request) (shared.ID, bool) {
 // @Tags Admin Organizations
 // @Produce json
 // @Param search query string false "Match name or slug"
+// @Param owner query string false "none: no active owner; present: has one" Enums(none, present)
+// @Param plan query string false "Plan" Enums(free, pro, enterprise)
+// @Param include_system query bool false "Also list the internal platform system organization (left out by default)"
 // @Param page query int false "Page (default 1)"
-// @Param per_page query int false "Page size (default 50, max 200)"
+// @Param per_page query int false "Page size (default 50, max 100)"
 // @Success 200 {object} AdminOrganizationListResponse
 // @Failure 401 {object} apierror.Error "Unauthorized"
 // @Security BearerAuth
 // @Router /admin/tenants [get]
 func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	page, _ := strconv.Atoi(q.Get("page"))
-	page = max(page, 1)
-	perPage, _ := strconv.Atoi(q.Get("per_page"))
-	if perPage <= 0 || perPage > 200 {
-		perPage = 50
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	orgs, total, err := h.orgs.ListOrganizations(r.Context(), admin.OrganizationFilter{
+	page, perPage := paging.Page, paging.PerPage
+	f := admin.OrganizationFilter{
 		Search: q.Get("search"), Limit: perPage, Offset: (page - 1) * perPage,
-	})
+	}
+	switch owner := q.Get("owner"); owner {
+	case "", admin.OrganizationOwnerNone, admin.OrganizationOwnerPresent:
+		f.Owner = owner
+	default:
+		apierror.BadRequest("owner must be none or present").WriteJSON(w)
+		return
+	}
+	switch q.Get("include_system") {
+	case "", queryParamFalse:
+	case queryParamTrue:
+		f.IncludeSystem = true
+	default:
+		apierror.BadRequest("include_system must be true or false").WriteJSON(w)
+		return
+	}
+	if p := q.Get("plan"); p != "" {
+		if !plan.Plan(p).IsValid() {
+			apierror.BadRequest("plan must be free, pro or enterprise").WriteJSON(w)
+			return
+		}
+		f.Plan = p
+	}
+	orgs, total, err := h.orgs.ListOrganizations(r.Context(), f)
 	if err != nil {
 		h.logger.Error("list organizations", "error", sanitizeLogField(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
@@ -277,7 +330,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		switch {
 		case errors.Is(err, tenant.ErrPlatformAdminMembership):
 			apierror.Conflict("Platform administrators cannot belong to an organization. Use another owner email.").WriteJSON(w)
-		case errors.Is(err, app.ErrAccountExists):
+		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email was just created. Try again.").WriteJSON(w)
 		case shared.IsValidation(err):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
@@ -341,7 +394,7 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 
 // CreateUser handles POST /api/v1/admin/tenants/{tenantId}/users.
 // @Summary Create the first owner of an organization (platform admin)
-// @Description Bootstrap only: creates the owner of an organization that has no active owner, and nothing else (409 when it has one: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log.
+// @Description Bootstrap only: creates the owner of an organization that has no owner, and nothing else (409 when it has one, active or suspended: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log. With "recovery": true (super admin only, 403 otherwise) it creates a new owner of an organization whose owners are all suspended (409 while any owner is active); the link is then emailed only and never returned (400 when the organization cannot send email), and the action is audited as organization.owner_recovery in the admin audit log and at critical severity in the organization's audit log.
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
@@ -349,6 +402,7 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 // @Param request body AdminCreateOrgUserRequest true "First owner"
 // @Success 201 {object} ProvisionedUserResponse
 // @Failure 400 {object} apierror.Error "Bad Request"
+// @Failure 403 {object} apierror.Error "Owner recovery by an administrator who is not a super admin"
 // @Failure 409 {object} apierror.Error "Organization already has an owner, or the account exists"
 // @Security BearerAuth
 // @Router /admin/tenants/{tenantId}/users [post]
@@ -371,14 +425,34 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
-	result, err := h.provisioning.CreateFirstOwner(r.Context(), id.String(), req.Email, req.Name, adminAuditContext(r, id.String()))
+	create := h.provisioning.CreateFirstOwner
+	if req.Recovery {
+		// Owner recovery overrides a suspended owner's hold on the
+		// organization: super admin only, and audited under its own action.
+		middleware.SetAuditAction(r.Context(), "organization.owner_recovery", true)
+		if middleware.GetAdminRole(r.Context()) != string(admin.AdminRoleSuperAdmin) {
+			apierror.Forbidden("Owner recovery requires the super admin role.").WriteJSON(w)
+			return
+		}
+		if n := len([]rune(strings.TrimSpace(req.Reason))); n < ownerRecoveryReasonMin || n > ownerRecoveryReasonMax {
+			apierror.BadRequest("Give a reason for the owner recovery (10 to 500 characters); it is kept in the audit log.").WriteJSON(w)
+			return
+		}
+		if !confirmAdminStepUp(w, r, h.stepUp, req.TOTPCode, stepUpPurposeOwnerRecovery, h.logger) {
+			return
+		}
+		create = h.provisioning.RecoverOwner
+	}
+	result, err := create(r.Context(), id.String(), req.Email, req.Name, adminAuditContext(r, id.String()))
 	if err != nil {
 		switch {
+		case errors.Is(err, tenant.ErrOrganizationHasOwner) && req.Recovery:
+			apierror.Conflict("This organization has an active owner. Owner recovery is only for an organization whose owners are all suspended.").WriteJSON(w)
 		case errors.Is(err, tenant.ErrOrganizationHasOwner):
-			apierror.Conflict("This organization already has an owner. Its owner and administrators invite or create users themselves.").WriteJSON(w)
+			apierror.Conflict("This organization already has an owner (active or suspended). Its owner and administrators invite or create users themselves; if every owner is suspended, a super admin can use owner recovery.").WriteJSON(w)
 		case errors.Is(err, tenant.ErrPlatformAdminMembership):
 			apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
-		case errors.Is(err, app.ErrAccountExists):
+		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email already exists. The first owner must be a new account.").WriteJSON(w)
 		case errors.Is(err, shared.ErrNotFound):
 			apierror.NotFound("organization").WriteJSON(w)
@@ -450,7 +524,7 @@ func (h *AdminOrganizationHandler) SetSSOEnforcement(w http.ResponseWriter, r *h
 		return
 	}
 	settings, err := h.tenants.UpdateSecuritySettings(r.Context(), id.String(),
-		app.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced}, adminAuditContext(r, id.String()))
+		tenantapp.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced}, adminAuditContext(r, id.String()))
 	if err != nil {
 		switch {
 		case errors.Is(err, shared.ErrNotFound):

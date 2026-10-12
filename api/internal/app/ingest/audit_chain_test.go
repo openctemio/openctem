@@ -68,12 +68,12 @@ func (r *chainAuditRepo) AppendChainEntry(_ context.Context, entry audit.ChainEn
 	return nil
 }
 
-func (r *chainAuditRepo) ListChainEntries(_ context.Context, tenantID shared.ID, limit int) ([]audit.ChainEntry, error) {
+func (r *chainAuditRepo) ListChainEntries(_ context.Context, tenantID shared.ID, afterPosition int64, limit int) ([]audit.ChainEntry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]audit.ChainEntry, 0, len(r.chain))
 	for _, e := range r.chain {
-		if e.TenantID == tenantID {
+		if e.TenantID == tenantID && e.ChainPosition > afterPosition {
 			out = append(out, e)
 		}
 		if limit > 0 && len(out) == limit {
@@ -196,7 +196,7 @@ func waitForChainEntries(t *testing.T, repo *chainAuditRepo, tenantID shared.ID,
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		entries, err := repo.ListChainEntries(context.Background(), tenantID, 0)
+		entries, err := repo.ListChainEntries(context.Background(), tenantID, 0, 0)
 		if err != nil {
 			t.Fatalf("ListChainEntries: %v", err)
 		}

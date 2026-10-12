@@ -24,3 +24,26 @@ func TestFindingStatsResponseRiskCountNames(t *testing.T) {
 		}
 	}
 }
+
+// The overview strip and the state tabs read one response (research/81):
+// lock the wire names of the open-scoped aggregates.
+func TestFindingStatsResponseOverviewNames(t *testing.T) {
+	b, err := json.Marshal(FindingStatsResponse{
+		OpenBySeverity:       map[string]int64{"critical": 4},
+		AwaitingVerification: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["awaiting_verification"] != float64(2) {
+		t.Errorf("awaiting_verification = %v (json: %s)", got["awaiting_verification"], b)
+	}
+	sev, ok := got["open_by_severity"].(map[string]any)
+	if !ok || sev["critical"] != float64(4) {
+		t.Errorf("open_by_severity = %v (json: %s)", got["open_by_severity"], b)
+	}
+}

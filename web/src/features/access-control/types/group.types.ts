@@ -47,6 +47,9 @@ export interface GroupMember {
   joined_at: string
   added_by?: string
   added_by_name?: string
+  /** When the membership ends (RFC-050 W22); absent means it does not. */
+  expires_at?: string
+  expiry_reason?: string
   // Backend standard response fields
   name: string
   email: string
@@ -64,35 +67,11 @@ export interface GroupMember {
 }
 
 /**
- * Group with full details including members and permission sets
+ * Group with full details including members
  */
 export interface GroupWithDetails extends Group {
   members: GroupMember[]
-  permission_sets: GroupPermissionSet[]
   assets?: GroupAsset[]
-}
-
-/**
- * Permission set assigned to a group
- */
-export interface GroupPermissionSet {
-  id: string
-  group_id: string
-  permission_set_id: string
-  assigned_at: string
-  assigned_by: string
-  // Flattened permission set fields from API join
-  name: string
-  description?: string
-  is_system: boolean
-  permission_count: number
-  // Or nested permission set object (alternative response format)
-  permission_set?: {
-    id: string
-    name: string
-    description: string
-    is_system: boolean
-  }
 }
 
 /**
@@ -140,6 +119,28 @@ export interface UpdateGroupInput {
 export interface AddGroupMemberInput {
   user_id: string
   role: GroupMemberRole
+  /** RFC 3339; required on an external team, at most 365 days ahead. */
+  expires_at?: string
+  expiry_reason?: string
+}
+
+/** Sets, moves or clears (null) when a team membership ends. */
+export interface SetGroupMemberExpiryInput {
+  expires_at: string | null
+  reason?: string
+}
+
+/**
+ * A custom role bound to a team: every member holds it while in the team
+ * (api research/58). `privileged` roles carry an administrator-level
+ * permission; only an owner changes such a team.
+ */
+export interface GroupRoleBinding {
+  role_id: string
+  name: string
+  privileged: boolean
+  created_by?: string
+  created_at: string
 }
 
 export interface UpdateGroupMemberInput {
@@ -149,10 +150,6 @@ export interface UpdateGroupMemberInput {
 export interface AssignAssetInput {
   asset_id: string
   ownership_type: AssetOwnershipType
-}
-
-export interface AssignPermissionSetInput {
-  permission_set_id: string
 }
 
 /**

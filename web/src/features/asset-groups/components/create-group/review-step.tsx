@@ -21,6 +21,12 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
+import {
+  CRITICALITY_LABELS,
+  RATED_CRITICALITY_LEVELS,
+  type RatedCriticality,
+} from '@/lib/criticality'
 import type { Asset, AssetType } from '@/features/assets/types'
 import { ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/features/assets/types'
 import type { CreateGroupFormData } from './types'
@@ -37,12 +43,12 @@ const ENVIRONMENT_LABELS = {
   testing: 'Testing',
 }
 
-const CRITICALITY_CONFIG = {
-  critical: { label: 'Critical', color: 'bg-red-500' },
-  high: { label: 'High', color: 'bg-orange-500' },
-  medium: { label: 'Medium', color: 'bg-yellow-500' },
-  low: { label: 'Low', color: 'bg-blue-500' },
-}
+const CRITICALITY_CONFIG = Object.fromEntries(
+  RATED_CRITICALITY_LEVELS.map((c) => [
+    c,
+    { label: CRITICALITY_LABELS[c], color: CRITICALITY_DOT_COLORS[c] },
+  ])
+) as Record<RatedCriticality, { label: string; color: string }>
 
 export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
   // Get selected assets details

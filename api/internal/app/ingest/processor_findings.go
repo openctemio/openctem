@@ -14,11 +14,12 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
-	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -28,11 +29,18 @@ type FindingCreatedCallback func(ctx context.Context, tenantID shared.ID, findin
 
 // FindingProcessor handles batch finding processing.
 type FindingProcessor struct {
+	// sourceResolveMode is the source-asserted resolve mode
+	// (source_resolve.go); "" is dry_run.
+	sourceResolveMode SourceResolveMode
+	// vexMode is how a VEX not_affected statement acts (interop.go); "" is
+	// dry_run.
+	vexMode VEXMode
+
 	repo         vulnerability.FindingRepository
 	dataFlowRepo vulnerability.DataFlowRepository
 	branchRepo   branch.Repository
 	assetRepo    asset.Repository
-	compRepo     component.Repository
+	compRepo     software.PackageWriter
 	logger       *logger.Logger
 
 	// findingCreatedCallback is called after findings are successfully created
@@ -52,13 +60,23 @@ type FindingProcessor struct {
 	// findings are not auto-routed (prior behavior).
 	assignmentApplier AssignmentApplier
 
+	// evidence stores each sighting's typed proof (finding-evidence.md).
+	// Nil-safe: when unwired, no evidence is kept.
+	evidence EvidenceStore
+
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
+	// regressions follows up on reopened findings (fresh SLA, announcement).
+	regressions RegressionHandler
 
 	// remediationKeyApplier derives + records each created finding's remediation
 	// group key (RFC-015). Runs POST-insert (needs persisted finding IDs).
 	// Nil-safe: when unwired, findings simply aren't grouped.
 	remediationKeyApplier RemediationKeyApplier
+
+	// vexStatements applies the organization's VEX statements to the
+	// findings of the batch (sticky statements). Nil: not applied.
+	vexStatements VEXStatementApplier
 
 	// exposureBridge promotes secret-scan findings into the exposure/credential
 	// store (labeled discovery_source=secret_scan). Runs POST-insert (needs the
@@ -73,6 +91,14 @@ type FindingProcessor struct {
 	// (tenant-scoped). Nil-safe: when unwired, findings are never suppressed at
 	// ingest (prior behavior).
 	suppressionChecker SuppressionChecker
+
+	// suppressionModules, when wired, turns ingest suppression off for a
+	// tenant whose suppressions module is disabled.
+	suppressionModules ModuleGuard
+
+	// secretFingerprinter keys the fingerprint of a reported secret with a
+	// server-held secret. Nil-safe: when unwired, no fingerprint is stored.
+	secretFingerprinter *vulnerability.SecretFingerprinter
 }
 
 // PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
@@ -95,14 +121,28 @@ type AssignmentApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (int, error)
 }
 
+// RegressionHandler follows up on findings a scan reopened as regressions: a
+// fresh SLA deadline and an announcement (RFC-039). Implemented by
+// *retest.ScanRegressions.
+type RegressionHandler interface {
+	HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string)
+}
+
 // activityRecorder is the subset of FindingActivityService needed by the processor.
 type activityRecorder interface {
-	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) error
+	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner, scanID string) error
 }
 
 // RemediationKeyApplier derives and persists each finding's remediation group
 // key. Runs POST-insert (needs persisted finding IDs). Implemented by
 // *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
+// VEXStatementApplier applies the organization's VEX statements to the
+// findings with these fingerprints (internal/app/vex). Returns how many
+// findings changed status.
+type VEXStatementApplier interface {
+	ApplyToFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (int, error)
+}
+
 type RemediationKeyApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
@@ -127,7 +167,7 @@ func NewFindingProcessor(repo vulnerability.FindingRepository, branchRepo branch
 }
 
 // SetComponentRepository sets the component repository for linking findings to components.
-func (p *FindingProcessor) SetComponentRepository(repo component.Repository) {
+func (p *FindingProcessor) SetComponentRepository(repo software.PackageWriter) {
 	p.compRepo = repo
 }
 
@@ -139,6 +179,11 @@ func (p *FindingProcessor) SetDataFlowRepository(repo vulnerability.DataFlowRepo
 // SetActivityService sets the activity service for recording auto-reopen audit trail.
 func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
 	p.activityService = svc
+}
+
+// SetRegressionHandler wires the follow-up on scan regressions (RFC-039 D2).
+func (p *FindingProcessor) SetRegressionHandler(h RegressionHandler) {
+	p.regressions = h
 }
 
 // SetFindingCreatedCallback sets the callback for when findings are created.
@@ -153,7 +198,7 @@ func (p *FindingProcessor) SetPriorityClassifier(classifier PriorityClassifier) 
 
 // SetSLAApplier wires the SLA-deadline calculator. F3: the
 // applier is invoked AFTER priority classification so priority class
-// drives the deadline; when the applier is nil the pipeline behaves
+// drives the deadline; when the applier is nil the scan workflow behaves
 // as before (sla_deadline left NULL).
 func (p *FindingProcessor) SetSLAApplier(applier SLAApplier) {
 	p.slaApplier = applier
@@ -165,9 +210,19 @@ func (p *FindingProcessor) SetAssignmentApplier(applier AssignmentApplier) {
 	p.assignmentApplier = applier
 }
 
+// SetVEXStatementApplier wires the organization's VEX statements.
+func (p *FindingProcessor) SetVEXStatementApplier(a VEXStatementApplier) {
+	p.vexStatements = a
+}
+
 // SetRemediationKeyApplier wires remediation-group key derivation (RFC-015).
 func (p *FindingProcessor) SetRemediationKeyApplier(applier RemediationKeyApplier) {
 	p.remediationKeyApplier = applier
+}
+
+// SetSecretFingerprinter wires the keyed secret fingerprint (RFC-043).
+func (p *FindingProcessor) SetSecretFingerprinter(fp *vulnerability.SecretFingerprinter) {
+	p.secretFingerprinter = fp
 }
 
 // SetExposureBridge wires the secret-scan → exposure-store bridge. Nil-safe:
@@ -188,7 +243,7 @@ func (p *FindingProcessor) ProcessBatch(
 	output *Output,
 	cveMap map[string]shared.ID,
 ) error {
-	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false)
+	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false, fullScope())
 }
 
 // processBatch is ProcessBatch; strictAssets (protocol v2,
@@ -206,6 +261,7 @@ func (p *FindingProcessor) processBatch(
 	output *Output,
 	cveMap map[string]shared.ID,
 	strictAssets bool,
+	scope *alterScope,
 ) error {
 	if len(report.Findings) == 0 {
 		return nil
@@ -223,6 +279,12 @@ func (p *FindingProcessor) processBatch(
 		branchID    *shared.ID // FK to asset_branches
 		fingerprint string
 		base        string // pre-composite base, persisted for post-merge recompute
+		// v1 is the version-1 key (composite of asset and base). A finding
+		// stored under it is re-keyed to identity on its next sighting.
+		v1 string
+		// identity is the version-2 identity (RFC-043 §4.2), nil when no
+		// recipe applies and the finding keeps its version-1 key.
+		identity *vulnerability.IdentityKey
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -240,12 +302,17 @@ func (p *FindingProcessor) processBatch(
 		return ff
 	}
 
+	candidates := make([]findingMeta, 0, len(report.Findings))
 	validFindings := make([]findingMeta, 0, len(report.Findings))
 	fingerprints := make([]string, 0, len(report.Findings))
+	seenFingerprints := make(map[string]struct{}, len(report.Findings))
+	duplicatesInReport := 0
 
 	// Get default asset if available (single asset report)
 	var defaultAssetID shared.ID
-	if len(assetMap) == 1 && !strictAssets {
+	// Not when an asset of the report was skipped by a scope exclusion: its
+	// findings would land on the one asset that was kept.
+	if len(assetMap) == 1 && !strictAssets && len(output.ExcludedAssetRefs) == 0 && len(output.OutOfScopeAssetRefs) == 0 {
 		for _, id := range assetMap {
 			defaultAssetID = id
 			break
@@ -263,58 +330,139 @@ func (p *FindingProcessor) processBatch(
 		p.logger.Warn("asset map is empty - all findings will be skipped")
 	}
 
-	for i, ctisFinding := range report.Findings {
-		// Determine target asset
-		var targetAssetID shared.ID
-		if ctisFinding.AssetRef != "" {
-			// Try to find by asset reference
-			if id, ok := assetMap[ctisFinding.AssetRef]; ok {
-				targetAssetID = id
-			} else {
-				p.logger.Debug("finding AssetRef not found in assetMap",
-					"finding_index", i,
-					"asset_ref", ctisFinding.AssetRef,
-				)
+	for i, reported := range report.Findings {
+		// A network finding that names several CVEs is one finding per CVE
+		// (RFC-043 decision D3).
+		for _, ctisFinding := range splitMultiCVENetworkFinding(reported) {
+			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
+				// Its asset matches a scope exclusion and was not added.
+				output.FindingsSkipped++
+				continue
 			}
+			if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {
+				// The upload's actor may not change its asset.
+				output.FindingsSkipped++
+				continue
+			}
+			// Determine target asset
+			var targetAssetID shared.ID
+			if ctisFinding.AssetRef != "" {
+				// Try to find by asset reference
+				if id, ok := assetMap[ctisFinding.AssetRef]; ok {
+					targetAssetID = id
+				} else {
+					p.logger.Debug("finding AssetRef not found in assetMap",
+						"finding_index", i,
+						"asset_ref", logValue(ctisFinding.AssetRef),
+					)
+				}
+			}
+
+			if targetAssetID.IsZero() && !defaultAssetID.IsZero() {
+				targetAssetID = defaultAssetID
+			}
+
+			if targetAssetID.IsZero() {
+				p.logger.Warn("finding skipped: no target asset",
+					"finding_index", i,
+					"asset_ref", logValue(ctisFinding.AssetRef),
+					"default_asset_available", !defaultAssetID.IsZero(),
+					"asset_map_size", len(assetMap),
+				)
+				addError(output, fmt.Sprintf("finding %d: no target asset", i))
+				output.FindingsSkipped++
+				continue
+			}
+
+			// Generate fingerprint (+ the base, persisted so the composite can be
+			// recomputed for a new asset_id after an asset merge).
+			fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
+
+			// Get branch ID for this asset (if available)
+			var branchID *shared.ID
+			if bid, ok := branchMap[targetAssetID]; ok {
+				branchID = &bid
+			}
+
+			candidates = append(candidates, findingMeta{
+				index:       i,
+				finding:     ctisFinding,
+				assetID:     targetAssetID,
+				branchID:    branchID,
+				fingerprint: fp,
+				base:        base,
+				v1:          fp,
+			})
 		}
-
-		if targetAssetID.IsZero() && !defaultAssetID.IsZero() {
-			targetAssetID = defaultAssetID
-		}
-
-		if targetAssetID.IsZero() {
-			p.logger.Warn("finding skipped: no target asset",
-				"finding_index", i,
-				"asset_ref", ctisFinding.AssetRef,
-				"default_asset_available", !defaultAssetID.IsZero(),
-				"asset_map_size", len(assetMap),
-			)
-			addError(output, fmt.Sprintf("finding %d: no target asset", i))
-			output.FindingsSkipped++
-			continue
-		}
-
-		// Generate fingerprint (+ the base, persisted so the composite can be
-		// recomputed for a new asset_id after an asset merge).
-		fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
-
-		// Get branch ID for this asset (if available)
-		var branchID *shared.ID
-		if bid, ok := branchMap[targetAssetID]; ok {
-			branchID = &bid
-		}
-
-		validFindings = append(validFindings, findingMeta{
-			index:       i,
-			finding:     ctisFinding,
-			assetID:     targetAssetID,
-			branchID:    branchID,
-			fingerprint: fp,
-			base:        base,
-		})
-		fingerprints = append(fingerprints, fp)
 	}
 
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
+	applyIdentityV2Of(p, tenantID, report.Tool, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
+		func(fm *findingMeta, k vulnerability.IdentityKey) {
+			fm.identity = &k
+			fm.fingerprint = k.Fingerprint()
+			fm.base = ""
+		})
+
+	// Step 1b: a network finding without a CVE used to be keyed without its
+	// port (RFC-043 P0). Hand a row stored under that old key to the first port
+	// in this batch that reports it, so its triage carries over before the
+	// existence check below sees the new key.
+	p.adoptLegacyPortlessFingerprints(ctx, tenantID, validFindingsLegacy(candidates, func(fm findingMeta) (string, string, string) {
+		legacy := legacyPortlessFingerprint(fm.assetID, &fm.finding)
+		_, base := generateFindingFingerprint(fm.assetID, &fm.finding, report.Tool)
+		return legacy, fm.v1, base
+	}))
+
+	// Step 1b': a finding still keyed by its version-1 key takes its
+	// version-2 key on this sighting; the old key stays its alias (RFC-043 §6).
+	adoptV1KeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.v1, fm.identity })
+
+	// Step 1c: a key a finding gave up (an asset merge, a duplicate folded
+	// into another finding, an older recipe) is an alias of the finding that
+	// carries it now (RFC-043 §6). Look the keys up so the re-sighting lands
+	// on that finding instead of creating a new one.
+	aliases := resolveFingerprintAliasesOf(ctx, p, tenantID, candidates, func(fm findingMeta) string { return fm.fingerprint })
+
+	var mitigations []vulnerability.SourceMitigation
+	mitigatedNow := time.Now()
+	for _, fm := range candidates {
+		if current, ok := aliases[fm.fingerprint]; ok {
+			fm.fingerprint = current
+		}
+		// The source says it is mitigated (RFC-047 §7.6): not a sighting.
+		if isSourceMitigated(report, &fm.finding) {
+			mitigations = append(mitigations, vulnerability.SourceMitigation{
+				Fingerprint: fm.fingerprint,
+				AssetID:     fm.assetID,
+				MitigatedAt: mitigatedAt(&fm.finding, mitigatedNow),
+			})
+			continue
+		}
+		// One report naming the same finding twice (the same package in two
+		// lockfiles, a template matching twice, two keys of one finding) is
+		// one observation. Keep the first; the rest would otherwise reach the
+		// multi-row upsert twice, fail it, and be counted as two created
+		// findings (RFC-043 B2).
+		if _, dup := seenFingerprints[fm.fingerprint]; dup {
+			duplicatesInReport++
+			continue
+		}
+		seenFingerprints[fm.fingerprint] = struct{}{}
+		validFindings = append(validFindings, fm)
+		fingerprints = append(fingerprints, fm.fingerprint)
+	}
+
+	if duplicatesInReport > 0 {
+		p.logger.Debug("folded repeated findings within one report", "count", duplicatesInReport)
+	}
+
+	p.applySourceMitigations(ctx, tenantID, report, mitigations, scope, output)
+	output.SightedFingerprints = append(output.SightedFingerprints, fingerprints...)
 	if len(validFindings) == 0 {
 		return nil
 	}
@@ -338,9 +486,15 @@ func (p *FindingProcessor) processBatch(
 	unenrichedFingerprints := make([]string, 0)          // Fingerprints where buildFinding failed
 	existingSnippets := make(map[string]string)          // Track snippets for existing findings
 
+	// Fingerprints on assets the report may not change (RFC-040 §5.3): a
+	// finding a person resolved there stays resolved.
+	var guardedFingerprints []string
 	for _, fm := range validFindings {
 		if existsMap[fm.fingerprint] {
 			existingFingerprints = append(existingFingerprints, fm.fingerprint)
+			if !scope.allowedAsset(fm.assetID) {
+				guardedFingerprints = append(guardedFingerprints, fm.fingerprint)
+			}
 			// Track snippet for potential update (if current DB value is invalid)
 			if fm.finding.Location != nil && fm.finding.Location.Snippet != "" && fm.finding.Location.Snippet != "requires login" {
 				existingSnippets[fm.fingerprint] = fm.finding.Location.Snippet
@@ -348,6 +502,7 @@ func (p *FindingProcessor) processBatch(
 			// Build Finding from scan data for enrichment
 			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
+				applyIdentityToFinding(newData, fm.identity, &fm.finding)
 				existingNewData = append(existingNewData, newData)
 			} else {
 				// buildFinding failed — fall back to scan-id-only update for this fingerprint
@@ -355,6 +510,9 @@ func (p *FindingProcessor) processBatch(
 			}
 		} else {
 			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
+			if err == nil {
+				applyIdentityToFinding(f, fm.identity, &fm.finding)
+			}
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
 				output.FindingsSkipped++
@@ -367,8 +525,10 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 
-	// Step 3b: Batch auto-reopen previously auto-resolved findings
+	// Step 3b: Batch-reopen re-detected findings that were closed as fixed or
+	// downgraded by validation (regressions).
 	// PERFORMANCE: Single query instead of N queries per existing finding
+	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
 	if len(existingFingerprints) > 0 {
 		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(ctx, tenantID, existingFingerprints)
 		if err != nil {
@@ -378,14 +538,25 @@ func (p *FindingProcessor) processBatch(
 			p.logger.Info("batch auto-reopened findings",
 				"count", len(reopenedMap),
 			)
-			// Record audit trail for auto-reopened findings
+			reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
+			for _, rf := range reopenedMap {
+				reopened = append(reopened, rf)
+			}
+			scanner := ""
+			if report.Tool != nil {
+				scanner = report.Tool.Name
+			}
+			// Record the regression on each finding, with who had resolved it.
 			if p.activityService != nil {
-				reopenedIDs := make([]shared.ID, 0, len(reopenedMap))
-				for _, fid := range reopenedMap {
-					reopenedIDs = append(reopenedIDs, fid)
-				}
-				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopenedIDs); err != nil {
+				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopened, scanner, report.Metadata.ID); err != nil {
 					p.logger.Warn("failed to record auto-reopen activities", "error", err)
+				}
+			}
+			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5),
+			// for findings that count as exposure.
+			if p.regressions != nil {
+				if counting := p.reopenedWithoutBranchOnly(ctx, tenantID, reopened); len(counting) > 0 {
+					p.regressions.HandleRegressions(ctx, tenantID, counting, scanner)
 				}
 			}
 		}
@@ -420,7 +591,23 @@ func (p *FindingProcessor) processBatch(
 			}
 		} else {
 			output.FindingsCreated = result.Created
+			// A row that met an existing finding (a concurrent ingest created it
+			// between the fingerprint check and this insert) is a re-sighting,
+			// not a new finding.
+			output.FindingsUpdated += result.Updated
 			output.FindingsSkipped += result.Skipped
+
+			// Only rows this insert created get the new-finding treatment.
+			// The others already exist under another id (re-pointed by the
+			// repository) and their side effects ran when they were created.
+			createdFindings := make([]*vulnerability.Finding, 0, result.Created)
+			createdIndex := make(map[int]struct{}, result.Created)
+			for i, f := range newFindings {
+				if result.WasInserted(i) {
+					createdFindings = append(createdFindings, f)
+					createdIndex[i] = struct{}{}
+				}
+			}
 
 			// Log individual errors for debugging
 			if result.HasErrors() {
@@ -452,86 +639,8 @@ func (p *FindingProcessor) processBatch(
 				}
 			}
 
-			// Step 4b: Persist data flows for newly created findings
-			if p.dataFlowRepo != nil && result.Created > 0 {
-				p.persistDataFlows(ctx, newFindings)
-			}
-
-			// Step 4b1: Record which approved rule suppressed each newly-created
-			// finding (finding_suppressions) so the ingest suppression is
-			// traceable and can be un-suppressed if the rule is later removed.
-			// The disposition (resolved+suppressed) was already applied pre-insert
-			// above; this only records the audit link. Best-effort.
-			if len(suppressionDecisions) > 0 && result.Created > 0 {
-				if n := p.recordSuppressions(ctx, newFindings, suppressionDecisions, result.Errors); n > 0 {
-					output.FindingsSuppressed += n
-					p.logger.Info("suppressed findings at ingest via approved rules", "count", n)
-				}
-			}
-
-			// Step 4b2: Derive remediation-group keys (RFC-015). Best-effort;
-			// grouping is a convenience layer, never blocks ingest.
-			if p.remediationKeyApplier != nil && result.Created > 0 {
-				if err := p.remediationKeyApplier.ApplyBatch(ctx, tenantID, newFindings); err != nil {
-					p.logger.Warn("failed to derive remediation keys", "error", err)
-				}
-			}
-
-			// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert
-			// above, so the created rows already carry those fields — no
-			// post-insert UPDATE pass is needed here.
-
-			// Step 4d: Trigger workflow events for newly created findings
-			if p.findingCreatedCallback != nil && result.Created > 0 {
-				// Only include successfully created findings (exclude failed ones)
-				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
-				for i, f := range newFindings {
-					// Check if this finding was created (not in error list)
-					if result.Errors == nil || result.Errors[i] == "" {
-						createdFindings = append(createdFindings, f)
-					}
-				}
-				if len(createdFindings) > 0 {
-					p.findingCreatedCallback(ctx, tenantID, createdFindings)
-				}
-			}
-
-			// Step 4e: Route newly-created findings to groups via assignment
-			// rules (post-insert — FGA records need persisted finding IDs).
-			// Best-effort: a failure is logged and never aborts ingestion.
-			if p.assignmentApplier != nil && result.Created > 0 {
-				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
-				for i, f := range newFindings {
-					if result.Errors == nil || result.Errors[i] == "" {
-						createdFindings = append(createdFindings, f)
-					}
-				}
-				if len(createdFindings) > 0 {
-					if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, createdFindings); err != nil {
-						p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(createdFindings))
-					} else if assigned > 0 {
-						p.logger.Info("auto-routed findings to groups", "assignments", assigned)
-					}
-				}
-			}
-
-			// Step 4f: Promote secret-scan findings into the exposure/credential
-			// store so hardcoded secrets show up in the Credentials/Exposures
-			// view continuously (labeled discovery_source=secret_scan, distinct
-			// from an external breach import). Best-effort: a failure is logged
-			// and never aborts ingestion.
-			if p.exposureBridge != nil && result.Created > 0 {
-				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
-				for i, f := range newFindings {
-					if result.Errors == nil || result.Errors[i] == "" {
-						createdFindings = append(createdFindings, f)
-					}
-				}
-				if len(createdFindings) > 0 {
-					if err := p.exposureBridge.ApplyBatch(ctx, tenantID, createdFindings); err != nil {
-						p.logger.Warn("failed to bridge secret findings into exposure store", "error", err, "count", len(createdFindings))
-					}
-				}
+			if len(createdFindings) > 0 {
+				p.afterCreate(ctx, tenantID, output, newFindings, createdFindings, createdIndex, suppressionDecisions)
 			}
 		}
 	}
@@ -567,7 +676,11 @@ func (p *FindingProcessor) processBatch(
 
 		// Step 5b: Fallback scan-id-only update for findings where buildFinding or enrichment failed
 		if len(unenrichedFingerprints) > 0 {
-			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID)
+			sightingTool := ""
+			if report.Tool != nil {
+				sightingTool = report.Tool.Name
+			}
+			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID, sightingTool)
 			if err != nil {
 				p.logger.Warn("failed to update existing findings (fallback)", "error", err)
 			} else {
@@ -632,10 +745,86 @@ func (p *FindingProcessor) processBatch(
 		}
 		if err := p.repo.UpsertBranchOccurrences(ctx, tenantID, occurrences); err != nil {
 			p.logger.Warn("failed to record branch occurrences", "error", err, "count", len(occurrences))
+		} else {
+			p.promoteBranchOnly(ctx, tenantID, occurrences)
 		}
 	}
 
+	// Step 7: Scanner output and CVSS vectors (research 24 P0-2), matched by
+	// fingerprint like step 6, so new and re-sighted findings both get the
+	// latest output. Best-effort: a failure here must not fail the ingest.
+	evidence := make([]vulnerability.ScannerEvidenceUpdate, 0, len(validFindings))
+	for i := range validFindings {
+		if u := scannerEvidenceUpdate(validFindings[i].fingerprint, &validFindings[i].finding); !u.IsEmpty() {
+			evidence = append(evidence, u)
+		}
+	}
+	p.storeScannerEvidence(ctx, tenantID, evidence)
+
+	// Step 7b: source interoperability data (CTIS 1.4: native identity,
+	// scores, vulnerability ids, source lifecycle, solution, VEX, source
+	// extras, location key), matched by fingerprint like step 7, then the
+	// VEX not_affected statements. Best-effort.
+	interop := make([]vulnerability.InteropUpdate, 0, len(validFindings))
+	vexSightings := make([]vexSighting, 0)
+	for i := range validFindings {
+		fm := &validFindings[i]
+		if u := interopUpdate(fm.fingerprint, &fm.finding); !u.Data.IsEmpty() {
+			interop = append(interop, u)
+		}
+		if fm.finding.VEX != nil {
+			vexSightings = append(vexSightings, vexSighting{fingerprint: fm.fingerprint, assetID: fm.assetID, finding: &fm.finding})
+		}
+	}
+	p.storeInterop(ctx, tenantID, interop)
+	p.applyVEX(ctx, tenantID, vexNotAffectedItems(vexSightings), scope, output)
+
+	// Step 7c: the organization's VEX statements cover findings reported
+	// after the statement was made. Best-effort, like 7b.
+	if p.vexStatements != nil {
+		fps := make([]string, 0, len(validFindings))
+		for i := range validFindings {
+			fps = append(fps, validFindings[i].fingerprint)
+		}
+		p.applyVEXStatements(ctx, tenantID, fps)
+	}
+
+	// Step 8: the template content each finding was matched with
+	// (research/18 O6): its new baseline for retests and later scans. A
+	// record of the sighting, like the enrichment above; it never changes a
+	// finding's status, and a baseline only narrows what later proves a fix.
+	sightings := make([]vulnerability.TemplateSighting, 0, len(validFindings))
+	for _, fm := range validFindings {
+		if prov := findingTemplateProvenance(&fm.finding, report.Tool); !prov.Empty() {
+			sightings = append(sightings, vulnerability.TemplateSighting{Fingerprint: fm.fingerprint, Provenance: prov})
+		}
+	}
+	p.recordTemplateSightings(ctx, tenantID, sightings)
+
+	// Step 9: the typed proof of each sighting (request, response, match,
+	// reproduction), masked, its secret values encrypted apart. Best-effort.
+	if p.evidence != nil {
+		dets := make([]evidenceapp.Detection, 0)
+		for i := range validFindings {
+			if d, ok := findingEvidence(validFindings[i].fingerprint, &validFindings[i].finding, report.Tool); ok {
+				dets = append(dets, d)
+			}
+		}
+		p.evidence.StoreDetections(ctx, tenantID, dets)
+	}
+
 	return nil
+}
+
+// storeScannerEvidence writes each sighting's scanner output and vectors.
+func (p *FindingProcessor) storeScannerEvidence(ctx context.Context, tenantID shared.ID, updates []vulnerability.ScannerEvidenceUpdate) {
+	w, ok := p.repo.(scannerEvidenceWriter)
+	if !ok || len(updates) == 0 {
+		return
+	}
+	if _, err := w.UpdateScannerEvidenceBatch(ctx, tenantID, updates); err != nil {
+		p.logger.Warn("failed to store scanner output", "error", err, "count", len(updates))
+	}
 }
 
 // CheckFingerprints checks which fingerprints already exist in the database.
@@ -644,13 +833,30 @@ func (p *FindingProcessor) CheckFingerprints(
 	tenantID shared.ID,
 	fingerprints []string,
 ) (existing, missing []string, err error) {
-	if len(fingerprints) == 0 {
-		return []string{}, []string{}, nil
+	known, err := p.knownFingerprints(ctx, tenantID, fingerprints)
+	if err != nil {
+		return nil, nil, err
 	}
-
 	existing = make([]string, 0, len(fingerprints))
 	missing = make([]string, 0, len(fingerprints))
+	for _, fp := range fingerprints {
+		if _, ok := known[fp]; ok {
+			existing = append(existing, fp)
+		} else {
+			missing = append(missing, fp)
+		}
+	}
+	return existing, missing, nil
+}
 
+// knownFingerprints maps each given fingerprint that is a finding's key,
+// current or former (RFC-043 §6), to that finding's current key.
+func (p *FindingProcessor) knownFingerprints(
+	ctx context.Context,
+	tenantID shared.ID,
+	fingerprints []string,
+) (map[string]string, error) {
+	known := make(map[string]string, len(fingerprints))
 	// Check in batches so a single query stays bounded, but check ALL
 	// fingerprints — the previous code truncated to the first 100, so a caller
 	// that sent >100 and used `missing` to decide what to upload silently lost
@@ -658,26 +864,27 @@ func (p *FindingProcessor) CheckFingerprints(
 	// upstream, so the batch count is bounded.
 	const batchSize = 100
 	for start := 0; start < len(fingerprints); start += batchSize {
-		end := start + batchSize
-		if end > len(fingerprints) {
-			end = len(fingerprints)
-		}
+		end := min(start+batchSize, len(fingerprints))
 		batch := fingerprints[start:end]
 
 		existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, batch)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to check fingerprints: %w", err)
+			return nil, fmt.Errorf("failed to check fingerprints: %w", err)
 		}
+		// A former key of a finding (RFC-043 §6) is known too.
+		var unknown []string
 		for _, fp := range batch {
 			if existsMap[fp] {
-				existing = append(existing, fp)
+				known[fp] = fp
 			} else {
-				missing = append(missing, fp)
+				unknown = append(unknown, fp)
 			}
 		}
+		for alias, current := range resolveFingerprintAliasesOf(ctx, p, tenantID, unknown, func(fp string) string { return fp }) {
+			known[alias] = current
+		}
 	}
-
-	return existing, missing, nil
+	return known, nil
 }
 
 // generateFindingFingerprint generates a fingerprint for a CTIS finding.
@@ -750,6 +957,13 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 		// applies the matching type-aware algorithm (plain Generate would key
 		// everything by the generic location-based scheme).
 		baseFingerprint = fingerprint.GenerateAuto(input)
+
+		// The generic recipe has no port: one scanner plugin without a CVE on
+		// ports 443 and 8443 of a host was a single finding (RFC-043 P0). Key a
+		// port-specific generic finding on its port and transport as well.
+		if pp := genericNetworkPort(ctisFinding, input); pp != "" {
+			baseFingerprint = fingerprint.Hash("netport:" + pp + ":" + baseFingerprint)
+		}
 	}
 
 	// Create composite fingerprint including assetID
@@ -830,8 +1044,10 @@ func (p *FindingProcessor) buildFinding(
 	source := vulnerability.FindingSourceExternal
 	toolName := UnknownValue
 	toolVersion := ""
+	if report.Tool != nil || report.Metadata.Capability != "" {
+		source = reportFindingSource(report)
+	}
 	if report.Tool != nil {
-		source = detectFindingSource(report.Tool.Name, report.Tool.Capabilities)
 		toolName = report.Tool.Name
 		toolVersion = report.Tool.Version
 	}
@@ -885,6 +1101,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set classification (CVE/CWE/OWASP/CVSS)
 	p.setFindingClassification(f, ctisFinding)
+	setFindingScannerDetails(f, ctisFinding)
 
 	// Set tags
 	if len(ctisFinding.Tags) > 0 {
@@ -915,7 +1132,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Stamp VulnerabilityID from cveMap if the finding references a known CVE
 	if ctisFinding.Vulnerability != nil {
-		if id, ok := cveMap[ctisFinding.Vulnerability.CVEID]; ok && !id.IsZero() {
+		if id, ok := cveMap[vulnerability.NormalizeCVEID(ctisFinding.Vulnerability.CVEID)]; ok && !id.IsZero() {
 			f.SetVulnerabilityID(id)
 		}
 	}
@@ -997,6 +1214,13 @@ func (p *FindingProcessor) setFindingLocationFields(f *vulnerability.Finding, ct
 			f.SetContextSnippet(ctisFinding.Location.ContextSnippet)
 			f.SetContextStartLine(ctisFinding.Location.ContextStartLine)
 		}
+	}
+
+	// Network location (port, transport, service). Stored for display and
+	// service-level queries only; generateFindingFingerprint reads the port from the
+	// CTIS finding itself, so storing it changes no fingerprint.
+	if n := ctisFinding.Network; n != nil {
+		f.SetNetwork(vulnerability.NetworkLocation{Port: n.Port, Transport: n.Protocol, Service: n.Service})
 	}
 
 	// Set branch info from report metadata or finding location
@@ -1112,6 +1336,17 @@ func (p *FindingProcessor) redactSecretSnippet(f *vulnerability.Finding) {
 
 // inferFindingType determines the FindingType based on source and CTIS finding data.
 func (p *FindingProcessor) inferFindingType(source vulnerability.FindingSource, ctisFinding *ctis.Finding) vulnerability.FindingType {
+	// A finding of the secret technique is a secret. The source comes from the
+	// tool (betterleaks, gitleaks, trufflehog), and a secret scanner reports
+	// nothing else. Its CTIS type cannot override that with "vulnerability":
+	// converters write that generic value when they do not recognize the tool
+	// (ctis FromSARIF does so for betterleaks), and the finding would then skip
+	// the secret handling below, snippet redaction included.
+	if source == vulnerability.FindingSourceSecret &&
+		(ctisFinding.Type == "" || ctisFinding.Type == ctis.FindingTypeVulnerability) {
+		return vulnerability.FindingTypeSecret
+	}
+
 	// First, check if CTIS finding has explicit type
 	if ctisFinding.Type != "" {
 		switch ctisFinding.Type {
@@ -1194,6 +1429,7 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	}
 	if ctisFinding.Secret.MaskedValue != "" {
 		f.SetSecretMaskedValue(ctisFinding.Secret.MaskedValue)
+		f.SetSecretFingerprint(p.secretFingerprinter.Fingerprint(f.TenantID(), ctisFinding.Secret.MaskedValue))
 	}
 	if ctisFinding.Secret.InHistoryOnly {
 		f.SetSecretInHistoryOnly(true)
@@ -1231,8 +1467,8 @@ func (p *FindingProcessor) setComplianceFields(f *vulnerability.Finding, ctisFin
 	if ctisFinding.Compliance.ControlDescription != "" {
 		f.SetComplianceControlDescription(ctisFinding.Compliance.ControlDescription)
 	}
-	if ctisFinding.Compliance.Result != "" {
-		f.SetComplianceResult(ctisFinding.Compliance.Result)
+	if v := normalizeEnumToken(ctisFinding.Compliance.Result); v != "" && vulnerability.ComplianceResult(v).IsValid() {
+		f.SetComplianceResult(v)
 	}
 }
 
@@ -1348,13 +1584,15 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 		confidence := ctisFinding.Confidence
 		_ = f.SetConfidence(&confidence)
 	}
-	if ctisFinding.Impact != "" {
-		// Normalize to lowercase (DB constraint requires lowercase: critical, high, medium, low)
-		f.SetImpact(strings.ToLower(ctisFinding.Impact))
+	// impact, likelihood, baseline_state, kind and compliance_result are
+	// CHECK-constrained columns. A value outside the vocabulary fails the INSERT
+	// and drops the whole finding, so each is normalized (case, SARIF camelCase)
+	// and anything still unrecognized is left unset rather than stored.
+	if v := normalizeEnumToken(ctisFinding.Impact); v != "" && vulnerability.ImpactLevel(v).IsValid() {
+		f.SetImpact(v)
 	}
-	if ctisFinding.Likelihood != "" {
-		// Normalize to lowercase (DB constraint requires lowercase: high, medium, low)
-		f.SetLikelihood(strings.ToLower(ctisFinding.Likelihood))
+	if v := normalizeEnumToken(ctisFinding.Likelihood); v != "" && vulnerability.LikelihoodLevel(v).IsValid() {
+		f.SetLikelihood(v)
 	}
 	if len(ctisFinding.VulnerabilityClass) > 0 {
 		f.SetVulnerabilityClass(ctisFinding.VulnerabilityClass)
@@ -1364,11 +1602,12 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 	}
 
 	// SARIF core fields
-	if ctisFinding.BaselineState != "" {
-		f.SetBaselineState(ctisFinding.BaselineState)
+	if v := normalizeEnumToken(ctisFinding.BaselineState); v != "" && vulnerability.BaselineState(v).IsValid() {
+		f.SetBaselineState(v)
 	}
-	if ctisFinding.Kind != "" {
-		f.SetKind(ctisFinding.Kind)
+	// SARIF spells this "notApplicable"; the column holds "not_applicable".
+	if v := normalizeEnumToken(ctisFinding.Kind); v != "" && vulnerability.FindingKind(v).IsValid() {
+		f.SetKind(v)
 	}
 	if ctisFinding.Rank > 0 {
 		rank := ctisFinding.Rank
@@ -1924,40 +2163,304 @@ func isValidFingerprint(fp string) bool {
 	return true
 }
 
-// linkFindingToComponent looks up a component by PURL and links it to the finding.
-// This is used for SCA findings where the vulnerability is in a specific package.
+// linkFindingToComponent sets the finding's package version from the package
+// URL of an SCA finding (the tenant's version, created tenant-private when the
+// package is new).
 func (p *FindingProcessor) linkFindingToComponent(ctx context.Context, f *vulnerability.Finding, ctisFinding *ctis.Finding) {
-	// Skip if no component repository configured
-	if p.compRepo == nil {
+	if p.compRepo == nil || ctisFinding.Vulnerability == nil || ctisFinding.Vulnerability.PURL == "" {
 		return
 	}
-
-	// Get PURL from vulnerability details
-	var purl string
-	if ctisFinding.Vulnerability != nil && ctisFinding.Vulnerability.PURL != "" {
-		purl = ctisFinding.Vulnerability.PURL
-	}
-
-	if purl == "" {
-		return
-	}
-
-	// Lookup component by PURL
-	comp, err := p.compRepo.GetByPURL(ctx, purl)
+	purl, err := software.ParsePURL(ctisFinding.Vulnerability.PURL)
 	if err != nil {
-		p.logger.Debug("component not found for PURL",
-			"purl", purl,
-			"error", err,
-		)
+		p.logger.Debug("finding package URL does not parse", "error", err)
 		return
 	}
+	versionID, err := p.compRepo.EnsurePackageVersion(ctx, f.TenantID(), purl)
+	if err != nil {
+		p.logger.Debug("finding package version not resolved", "purl", sanitizeIngestLogField(purl.String()), "error", sanitizeIngestLogField(err.Error()))
+		return
+	}
+	f.SetComponentID(versionID)
+}
 
-	if comp != nil {
-		f.SetComponentID(comp.ID())
-		p.logger.Debug("linked finding to component",
-			"finding_id", f.ID().String(),
-			"component_id", comp.ID().String(),
-			"purl", purl,
-		)
+// normalizeEnumToken maps a producer-supplied enum label onto the stored
+// vocabulary's spelling: trimmed, lower snake_case. SARIF uses camelCase
+// ("notApplicable"), CTIS producers vary in case ("High"), and the database
+// stores lower snake_case ("not_applicable", "high"). The caller still
+// validates the result; this only fixes spelling.
+func normalizeEnumToken(s string) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 && s[i-1] >= 'a' && s[i-1] <= 'z' {
+				b.WriteByte('_')
+			}
+			r += 'a' - 'A'
+		}
+		if r == '-' || r == ' ' {
+			r = '_'
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// humanResolvedLookup finds which fingerprints belong to findings a person
+// closed (resolved or verified by any method but scan_verified).
+// Implemented by *postgres.FindingRepository.
+type humanResolvedLookup interface {
+	HumanResolvedFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error)
+}
+
+// withoutHumanResolved drops from fingerprints the guarded ones whose finding
+// a person resolved: the report may not reopen them (RFC-040 §5.3). Findings
+// the scanner itself auto-resolved still reopen when they are seen again.
+// Fails closed: when the lookup is unavailable or fails, no guarded
+// fingerprint is reopened.
+func (p *FindingProcessor) withoutHumanResolved(ctx context.Context, tenantID shared.ID, fingerprints, guarded []string, output *Output) []string {
+	if len(guarded) == 0 {
+		return fingerprints
+	}
+	var human map[string]bool
+	if lookup, ok := p.repo.(humanResolvedLookup); ok {
+		h, err := lookup.HumanResolvedFingerprints(ctx, tenantID, guarded)
+		if err != nil {
+			p.logger.Warn("could not tell human-resolved findings apart; none of the guarded findings is reopened", "error", err)
+		} else {
+			human = h
+		}
+	}
+	if human == nil {
+		human = make(map[string]bool, len(guarded))
+		for _, fp := range guarded {
+			human[fp] = true
+		}
+	}
+	kept := make([]string, 0, len(fingerprints))
+	for _, fp := range fingerprints {
+		if human[fp] {
+			output.ReopensWithheld++
+			continue
+		}
+		kept = append(kept, fp)
+	}
+	return kept
+}
+
+// genericNetworkPort returns "port/transport" when a finding is keyed by the
+// generic fingerprint recipe (no CVE, package, secret, resource, contract or
+// file location) and names a port; "" otherwise. Only those findings take the
+// port into their key: every other recipe already decides what identifies it.
+func genericNetworkPort(f *ctis.Finding, input fingerprint.Input) string {
+	if f.Network == nil || f.Network.Port <= 0 {
+		return ""
+	}
+	if fingerprint.DetectType(input) != fingerprint.TypeGeneric {
+		return ""
+	}
+	proto := strings.ToLower(strings.TrimSpace(f.Network.Protocol))
+	if proto == "" {
+		proto = "tcp"
+	}
+	return strconv.Itoa(f.Network.Port) + "/" + proto
+}
+
+// legacyPortlessFingerprint returns the composite fingerprint a port-specific
+// generic network finding had before the port joined its key, or "" when the
+// finding's key did not change.
+func legacyPortlessFingerprint(assetID shared.ID, f *ctis.Finding) string {
+	if f.Network == nil || f.Network.Port <= 0 {
+		return ""
+	}
+	// Only the generic recipe changed. A sensor-supplied fingerprint and the
+	// network-VA (CVE) key were port-aware already; removing the port there
+	// would point at a different, legitimate finding.
+	if f.Fingerprint != "" && isValidFingerprint(f.Fingerprint) {
+		return ""
+	}
+	if _, _, ok := networkVACVEKey(f); ok {
+		return ""
+	}
+	portless := *f
+	portless.Network = nil
+	composite, _ := generateFindingFingerprint(assetID, &portless, nil)
+	current, _ := generateFindingFingerprint(assetID, f, nil)
+	if composite == current {
+		return ""
+	}
+	return composite
+}
+
+// fingerprintAliasResolver is implemented by the postgres finding repository.
+// Optional: a repository without it (tests, mocks) resolves nothing.
+type fingerprintAliasResolver interface {
+	ResolveFingerprintAliases(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]string, error)
+}
+
+// resolveFingerprintAliases maps the keys of items that are former keys of a
+// finding of the tenant to that finding's current key. A failed lookup is
+// logged and resolves nothing: the report is still ingested, and a former key
+// at worst creates a finding the next merge folds back.
+func resolveFingerprintAliasesOf[T any](ctx context.Context, p *FindingProcessor, tenantID shared.ID, items []T, key func(T) string) map[string]string {
+	resolver, ok := p.repo.(fingerprintAliasResolver)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(items))
+	for _, it := range items {
+		if k := key(it); k != "" {
+			keys = append(keys, k)
+		}
+	}
+	aliases, err := resolver.ResolveFingerprintAliases(ctx, tenantID, keys)
+	if err != nil {
+		p.logger.Warn("failed to resolve finding fingerprint aliases", "error", err)
+		return nil
+	}
+	if len(aliases) > 0 {
+		p.logger.Debug("resolved former finding keys", "count", len(aliases))
+	}
+	return aliases
+}
+
+// legacyKey pairs an old fingerprint with the one that replaces it.
+type legacyKey struct {
+	legacy, current, base string
+}
+
+// validFindingsLegacy returns, for each legacy fingerprint, the FIRST finding
+// of the batch that maps to it: only one port may take over an old row.
+func validFindingsLegacy[T any](items []T, keys func(T) (legacy, current, base string)) []legacyKey {
+	seen := map[string]bool{}
+	out := make([]legacyKey, 0, len(items))
+	for _, it := range items {
+		legacy, current, base := keys(it)
+		if legacy == "" || seen[legacy] {
+			continue
+		}
+		seen[legacy] = true
+		out = append(out, legacyKey{legacy: legacy, current: current, base: base})
+	}
+	return out
+}
+
+// legacyFingerprintAdopter is implemented by the postgres finding repository.
+// Optional: a repository without it (tests, mocks) skips the re-key.
+type legacyFingerprintAdopter interface {
+	AdoptLegacyFingerprint(ctx context.Context, tenantID shared.ID, legacy, current, base string) (bool, error)
+}
+
+func (p *FindingProcessor) adoptLegacyPortlessFingerprints(ctx context.Context, tenantID shared.ID, keys []legacyKey) {
+	if len(keys) == 0 {
+		return
+	}
+	adopter, ok := p.repo.(legacyFingerprintAdopter)
+	if !ok {
+		return
+	}
+	adopted := 0
+	for _, k := range keys {
+		moved, err := adopter.AdoptLegacyFingerprint(ctx, tenantID, k.legacy, k.current, k.base)
+		if err != nil {
+			p.logger.Warn("failed to re-key a port-less network finding", "error", err)
+			continue
+		}
+		if moved {
+			adopted++
+		}
+	}
+	if adopted > 0 {
+		p.logger.Info("re-keyed port-less network findings onto their port", "count", adopted)
+	}
+}
+
+// afterCreate runs the post-insert steps for the findings this batch newly
+// inserted: data flows, the ingest suppression audit link, remediation keys,
+// the created callback (workflows, notifications), assignment rules and the
+// secret-to-exposure bridge. created holds only inserted findings with their
+// persisted ids; createdIndex maps the same set back to newFindings indexes
+// for the index-keyed suppression decisions. A row that met an existing
+// finding never gets here, so its side effects do not run twice and never run
+// with an id that does not exist (RFC-043 B2).
+func (p *FindingProcessor) afterCreate(
+	ctx context.Context,
+	tenantID shared.ID,
+	output *Output,
+	newFindings, created []*vulnerability.Finding,
+	createdIndex map[int]struct{},
+	suppressionDecisions map[int]shared.ID,
+) {
+	// Persist data flows for newly created findings.
+	if p.dataFlowRepo != nil {
+		p.persistDataFlows(ctx, created)
+	}
+
+	// Record which approved rule suppressed each newly-created finding
+	// (finding_suppressions) so the ingest suppression is traceable and can be
+	// un-suppressed if the rule is later removed. The disposition
+	// (resolved+suppressed) was already applied pre-insert; this only records
+	// the audit link. Best-effort.
+	if len(suppressionDecisions) > 0 {
+		decisions := make(map[int]shared.ID, len(suppressionDecisions))
+		for idx, ruleID := range suppressionDecisions {
+			if _, ok := createdIndex[idx]; ok {
+				decisions[idx] = ruleID
+			}
+		}
+		if n := p.recordSuppressions(ctx, newFindings, decisions, nil); n > 0 {
+			output.FindingsSuppressed += n
+			p.logger.Info("suppressed findings at ingest via approved rules", "count", n)
+		}
+	}
+
+	// Derive remediation-group keys (RFC-015). Best-effort; grouping is a
+	// convenience layer, never blocks ingest.
+	if p.remediationKeyApplier != nil {
+		if err := p.remediationKeyApplier.ApplyBatch(ctx, tenantID, created); err != nil {
+			p.logger.Warn("failed to derive remediation keys", "error", err)
+		}
+	}
+
+	// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert, so the
+	// created rows already carry those fields.
+
+	// Trigger workflow events (notifications, ticket rules) for newly
+	// created findings. A branch-only finding is not exposure yet: its
+	// workflows run when a counting branch sees it (promoteBranchOnly).
+	if p.findingCreatedCallback != nil {
+		if counting := p.withoutBranchOnly(ctx, tenantID, created); len(counting) > 0 {
+			p.findingCreatedCallback(ctx, tenantID, counting)
+		}
+	}
+
+	// Route newly-created findings to groups via assignment rules
+	// (post-insert: FGA records need persisted finding IDs). Best-effort.
+	if p.assignmentApplier != nil {
+		if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, created); err != nil {
+			p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(created))
+		} else if assigned > 0 {
+			p.logger.Info("auto-routed findings to groups", "assignments", assigned)
+		}
+	}
+
+	// Promote secret-scan findings into the exposure/credential store so
+	// hardcoded secrets show up in the Credentials/Exposures view
+	// (discovery_source=secret_scan). Best-effort.
+	if p.exposureBridge != nil {
+		if err := p.exposureBridge.ApplyBatch(ctx, tenantID, created); err != nil {
+			p.logger.Warn("failed to bridge secret findings into exposure store", "error", err, "count", len(created))
+		}
+	}
+}
+
+// applyVEXStatements applies the organization's VEX statements to the
+// package findings of the batch.
+func (p *FindingProcessor) applyVEXStatements(ctx context.Context, tenantID shared.ID, fps []string) {
+	if p.vexStatements == nil || len(fps) == 0 {
+		return
+	}
+	if _, err := p.vexStatements.ApplyToFingerprints(ctx, tenantID, fps); err != nil {
+		p.logger.Warn("applying vex statements failed", "tenant_id", tenantID.String(), "error", err)
 	}
 }

@@ -3,18 +3,19 @@
 /**
  * WebSocket Provider
  *
- * Provides global WebSocket connection for real-time updates.
+ * Provides the global WebSocket connection for real-time updates.
  *
- * Authentication (F-8 ticket flow):
- *   1. Before each connect/reconnect, call GET /api/v1/auth/ws-token
- *      (same-origin, auth_token cookie flows automatically).
- *   2. Backend returns an opaque 64-hex ticket stored single-use in Redis.
- *   3. Client opens the WebSocket with `?ticket=<value>`; server atomically
- *      redeems (GETDEL) and promotes the claim to a user/tenant context.
+ * Authentication (RFC-045): the socket is opened on the UI's own origin and
+ * the browser sends the httpOnly access-token cookie with the upgrade. The API
+ * authenticates it through the same tenant gates as every tenant route (SSO
+ * enforcement, IP allowlist, active membership) and checks the Origin. No
+ * credential is ever put in the URL, and there is no ticket round trip.
  *
- * Why tickets instead of cookies? Browsers silently strip cookie-based auth
- * on cross-port WS upgrades in some configurations, and putting JWTs in the
- * URL leaks into access logs. Tickets are useless after redemption.
+ * The server binds the socket to the session: it closes it with 4401 when the
+ * access token expires, the session is signed out or revoked, or the user's
+ * membership or role changes. The client then reconnects with jitter and, if
+ * the reconnect is refused, refreshes the session once (refreshSession) and
+ * tries again.
  */
 
 import { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react'
@@ -25,6 +26,8 @@ import {
   type ConnectionState,
 } from '@/lib/websocket'
 import { useBootstrapContextSafe } from '@/context/bootstrap-provider'
+import { useCurrentTenantId } from '@/context/tenant-provider'
+import { refreshSession } from '@/lib/api/client'
 import { devLog } from '@/lib/logger'
 import { env } from '@/lib/env'
 
@@ -50,10 +53,10 @@ const WebSocketContext = createContext<WebSocketContextValue | null>(null)
 export function buildWsUrl(): string {
   if (typeof window === 'undefined') return ''
 
-  // An explicit WS URL wins (a deployment that serves WebSocket from its own
-  // host). Otherwise use the UI's own origin: the UI server proxies the
-  // /api/v1/ws upgrade to the API (next.config.ts rewrites), so the browser
-  // never needs the API port and HTTPS deployments get wss on 443.
+  // An explicit WS URL wins. It must be served for the UI's site with the
+  // session cookie (same site and cookie Domain), or better, on the UI's own
+  // origin: the socket authenticates with the cookie, so a cross-site host
+  // never gets a session.
   const explicitUrl = process.env.NEXT_PUBLIC_WS_BASE_URL || env.api.wsBaseUrl
   if (explicitUrl) {
     const wsProtocol = explicitUrl.startsWith('https') ? 'wss' : 'ws'
@@ -61,33 +64,11 @@ export function buildWsUrl(): string {
     return `${wsProtocol}://${wsHost}/api/v1/ws`
   }
 
-  // Auth is a single-use ticket (see fetchWsTicket below), not a cookie.
+  // The UI's own origin: the gateway routes /api/v1/ws to the API, and the
+  // UI server (server-with-ws.mjs, or the next dev rewrite) forwards the
+  // upgrade with the browser's Cookie and Origin headers.
   const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   return `${wsProtocol}://${window.location.host}/api/v1/ws`
-}
-
-/**
- * Fetches a fresh single-use WebSocket ticket from the API proxy.
- * The proxy (app/api/v1/[...path]) forwards the access-token cookie as a
- * Bearer Authorization header so the handler can authenticate the issue.
- *
- * Called lazily inside the WS client on every (re)connect — tickets are
- * consumed on first redemption and have a short TTL (~30s) by design.
- */
-async function fetchWsTicket(): Promise<string> {
-  const resp = await fetch('/api/v1/auth/ws-token', {
-    method: 'GET',
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  })
-  if (!resp.ok) {
-    throw new Error(`ws-token fetch failed: ${resp.status}`)
-  }
-  const body = (await resp.json()) as { token?: string }
-  if (!body.token) {
-    throw new Error('ws-token response missing token')
-  }
-  return body.token
 }
 
 // ============================================
@@ -101,50 +82,36 @@ interface WebSocketProviderProps {
 export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const [state, setState] = useState<ConnectionState>('disconnected')
   const clientRef = useRef<WebSocketClient | null>(null)
-  const connectingRef = useRef(false)
   const { isBootstrapped } = useBootstrapContextSafe()
+  const tenantId = useCurrentTenantId()
+  const connectedTenantRef = useRef<string | null>(null)
 
-  const connect = useCallback(async () => {
-    if (connectingRef.current) {
-      return
-    }
-
+  const connect = useCallback(() => {
     const wsUrl = buildWsUrl()
-
     if (!wsUrl) {
       devLog.log('[WebSocket] No WebSocket URL available')
       return
     }
 
-    if (clientRef.current?.isConnected()) {
+    if (clientRef.current) {
+      // Manual reconnect: keep the client and its subscriptions.
+      if (!clientRef.current.isConnected()) clientRef.current.reconnect()
       return
     }
 
-    connectingRef.current = true
-
-    try {
-      devLog.log('[WebSocket] Connecting to', wsUrl)
-
-      clientRef.current = initWebSocketClient({
-        url: wsUrl,
-        // F-8: mint a fresh ticket per (re)connect. The client awaits this
-        // before opening the socket.
-        fetchTicket: fetchWsTicket,
-        onStateChange: (newState) => {
-          devLog.log('[WebSocket] State changed:', newState)
-          setState(newState)
-        },
-        // Connection errors are transient (auto-retried with backoff); warn so
-        // they don't surface as blocking issues in the dev error overlay.
-        onError: (error) => devLog.warn('[WebSocket] Connection error:', error),
-      })
-
-      clientRef.current.connect()
-    } catch (error) {
-      devLog.error('[WebSocket] Connect failed:', error)
-    } finally {
-      connectingRef.current = false
-    }
+    devLog.log('[WebSocket] Connecting to', wsUrl)
+    clientRef.current = initWebSocketClient({
+      url: wsUrl,
+      onAuthExpired: refreshSession,
+      onStateChange: (newState) => {
+        devLog.log('[WebSocket] State changed:', newState)
+        setState(newState)
+      },
+      // Connection errors are transient (auto-retried with backoff); warn so
+      // they don't surface as blocking issues in the dev error overlay.
+      onError: (error) => devLog.warn('[WebSocket] Connection error:', error),
+    })
+    clientRef.current.connect()
   }, [])
 
   // Connect only after bootstrap is complete (permissions/tenant context ready)
@@ -157,8 +124,22 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     return () => {
       destroyWebSocketClient()
       clientRef.current = null
+      connectedTenantRef.current = null
     }
   }, [isBootstrapped, connect])
+
+  // The socket is bound to the organization of the token it was opened with.
+  // After a switch (no page reload) open a new one for the new organization;
+  // the subscriptions are re-sent and re-authorized on it.
+  useEffect(() => {
+    if (!tenantId) return
+    const previous = connectedTenantRef.current
+    connectedTenantRef.current = tenantId
+    if (previous && previous !== tenantId && clientRef.current) {
+      devLog.log('[WebSocket] Organization changed, reconnecting')
+      clientRef.current.reconnect()
+    }
+  }, [tenantId])
 
   // Memoized so the context value identity is stable across renders — this
   // provider wraps the whole dashboard, so a fresh object each render would

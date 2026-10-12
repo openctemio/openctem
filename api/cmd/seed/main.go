@@ -86,9 +86,7 @@ func cleanDatabase(ctx context.Context, db *sql.DB) error {
 	tables := []string{
 		"findings",
 		"exposures",
-		"attack_path_nodes",
-		"attack_paths",
-		"components",
+		"software_versions",
 		"assets",
 		"tenant_invitations",
 		"tenant_members",
@@ -103,8 +101,8 @@ func cleanDatabase(ctx context.Context, db *sql.DB) error {
 		`DELETE FROM findings WHERE id::text LIKE 'f%000000-0000-0000-0000-00000000%'`,
 		// Delete exposures with seed IDs
 		`DELETE FROM exposures WHERE id::text LIKE 'e%000000-0000-0000-0000-00000000%'`,
-		// Delete components with seed IDs
-		`DELETE FROM components WHERE id::text LIKE 'c%000000-0000-0000-0000-00000000%'`,
+		// Delete package versions with seed IDs
+		`DELETE FROM software_versions WHERE id::text LIKE 'c%000000-0000-0000-0000-00000000%'`,
 		// Delete assets with seed IDs
 		`DELETE FROM assets WHERE id::text LIKE 'a%000000-0000-0000-0000-00000000%'`,
 		// Delete tenant_members for seed tenants
@@ -157,7 +155,7 @@ func printSummary(ctx context.Context, db *sql.DB) {
 		{"Tenant Members", "SELECT COUNT(*) FROM tenant_members"},
 		{"Assets", "SELECT COUNT(*) FROM assets"},
 		{"Repositories", "SELECT COUNT(*) FROM assets WHERE asset_type = 'repository'"},
-		{"Components", "SELECT COUNT(*) FROM components"},
+		{"Package versions", "SELECT COUNT(*) FROM software_versions WHERE purl IS NOT NULL"},
 		{"Vulnerabilities", "SELECT COUNT(*) FROM vulnerabilities"},
 		{"Findings", "SELECT COUNT(*) FROM findings"},
 		{"Exposures", "SELECT COUNT(*) FROM exposures"},

@@ -32,9 +32,11 @@ func TestNew_DisablesJITForSessions(t *testing.T) {
 		cfg.SSLMode = "disable"
 	}
 
+	// DATABASE_URL is set and reachable here (testdb guarded it), so a
+	// failure is New's: skipping hid an empty password breaking the DSN.
 	db, err := New(cfg)
 	if err != nil {
-		t.Skipf("cannot connect: %v", err)
+		t.Fatalf("cannot connect through New: %v", err)
 	}
 	defer db.Close()
 

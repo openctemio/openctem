@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -16,17 +14,41 @@ import (
 
 // AdminDedupHandler handles asset dedup review endpoints.
 type AdminDedupHandler struct {
-	repo     *postgres.AssetDedupRepository
-	findings *postgres.FindingRepository
-	logger   *logger.Logger
+	repo      *postgres.AssetDedupRepository
+	logger    *logger.Logger
+	dataScope DataScopeEnforcer
+}
+
+// SetDataScope wires the Layer 2 data scope: a scoped member sees and acts
+// only on reviews whose assets are all in their scope (a merge deletes
+// assets, so a review that touches one they cannot see is not theirs to
+// approve). Returns h for chaining.
+func (h *AdminDedupHandler) SetDataScope(e DataScopeEnforcer) *AdminDedupHandler {
+	h.dataScope = e
+	return h
+}
+
+// scope resolves the caller's data scope, writing the error response itself.
+func (h *AdminDedupHandler) scope(w http.ResponseWriter, r *http.Request, tenantID string) (*shared.DataScope, bool) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
+		return nil, false
+	}
+	scope, err := resolveDataScope(r.Context(), h.dataScope, tid)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalServerError("failed to resolve data scope").WriteJSON(w)
+		return nil, false
+	}
+	return scope, true
 }
 
 // NewAdminDedupHandler creates a new AdminDedupHandler.
-func NewAdminDedupHandler(repo *postgres.AssetDedupRepository, findings *postgres.FindingRepository, log *logger.Logger) *AdminDedupHandler {
+func NewAdminDedupHandler(repo *postgres.AssetDedupRepository, log *logger.Logger) *AdminDedupHandler {
 	return &AdminDedupHandler{
-		repo:     repo,
-		findings: findings,
-		logger:   log.With("handler", "admin-dedup"),
+		repo:   repo,
+		logger: log.With("handler", "admin-dedup"),
 	}
 }
 
@@ -34,7 +56,11 @@ func NewAdminDedupHandler(repo *postgres.AssetDedupRepository, findings *postgre
 func (h *AdminDedupHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	reviews, err := h.repo.ListPendingReviews(r.Context(), tenantID)
+	scope, ok := h.scope(w, r, tenantID)
+	if !ok {
+		return
+	}
+	reviews, err := h.repo.ListPendingReviews(r.Context(), tenantID, scope)
 	if err != nil {
 		h.logger.Error("failed to list dedup reviews", "error", err)
 		apierror.InternalServerError("failed to list reviews").WriteJSON(w)
@@ -54,18 +80,11 @@ func (h *AdminDedupHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	reviewID := r.PathValue("id")
 	userID := middleware.GetUserID(r.Context())
 
-	// Capture the surviving asset before the merge (its ID doesn't change) so we
-	// can recompute finding fingerprints on it afterwards.
-	keepID, keepErr := h.repo.ReviewKeepAssetID(r.Context(), tenantID, reviewID)
-	if errors.Is(keepErr, sql.ErrNoRows) {
-		apierror.NotFound("Dedup review").WriteJSON(w)
+	scope, ok := h.scope(w, r, tenantID)
+	if !ok {
 		return
 	}
-	if keepErr != nil {
-		h.logger.Warn("could not resolve keep asset id before merge", "review_id", reviewID, "error", keepErr)
-	}
-
-	if err := h.repo.ApproveAndMerge(r.Context(), tenantID, reviewID, userID); err != nil {
+	if err := h.repo.ApproveAndMerge(r.Context(), tenantID, reviewID, userID, scope); err != nil {
 		if writeDedupReviewError(w, err) {
 			return
 		}
@@ -76,38 +95,11 @@ func (h *AdminDedupHandler) Approve(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("dedup merge approved", "review_id", reviewID, "user_id", userID)
 
-	// The merge repoints findings to the keep asset with a raw UPDATE that leaves
-	// a stale fingerprint (fingerprints embed the asset_id). Recompute them — per
-	// scheme — so future scans dedupe correctly and moved-in duplicates collapse.
-	// Best-effort and idempotent: a failure here does not undo the committed merge.
-	h.recomputeFingerprintsAfterMerge(r.Context(), tenantID, keepID, reviewID)
-
+	// Findings moved by the merge were re-keyed for the kept asset inside the
+	// merge transaction; duplicates became tombstones of one survivor
+	// (postgres/asset_merge_findings.go). Nothing is left to do after commit.
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "merged"})
-}
-
-// recomputeFingerprintsAfterMerge recomputes finding fingerprints on the keep
-// asset following a merge. Best-effort: logs on failure, never fails the request.
-func (h *AdminDedupHandler) recomputeFingerprintsAfterMerge(ctx context.Context, tenantID, keepID, reviewID string) {
-	if h.findings == nil || keepID == "" {
-		return
-	}
-	tID, e1 := shared.IDFromString(tenantID)
-	kID, e2 := shared.IDFromString(keepID)
-	if e1 != nil || e2 != nil {
-		h.logger.Warn("skipping fingerprint recompute: invalid id", "review_id", reviewID)
-		return
-	}
-	updated, deduped, err := h.findings.RecomputeFingerprintsForAsset(ctx, tID, kID)
-	if err != nil {
-		h.logger.Error("merge committed but finding fingerprint recompute failed (safe to re-run)",
-			"review_id", reviewID, "keep_asset_id", keepID, "error", err)
-		return
-	}
-	if updated > 0 || deduped > 0 {
-		h.logger.Info("recomputed finding fingerprints after merge",
-			"keep_asset_id", keepID, "updated", updated, "deduped", deduped)
-	}
 }
 
 // Reject handles POST /api/v1/admin/assets/dedup-review/{id}/reject
@@ -116,7 +108,11 @@ func (h *AdminDedupHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	reviewID := r.PathValue("id")
 	userID := middleware.GetUserID(r.Context())
 
-	if err := h.repo.RejectReview(r.Context(), tenantID, reviewID, userID); err != nil {
+	scope, ok := h.scope(w, r, tenantID)
+	if !ok {
+		return
+	}
+	if err := h.repo.RejectReview(r.Context(), tenantID, reviewID, userID, scope); err != nil {
 		if writeDedupReviewError(w, err) {
 			return
 		}
@@ -147,9 +143,16 @@ func writeDedupReviewError(w http.ResponseWriter, err error) bool {
 // MergeLog handles GET /api/v1/admin/assets/merge-log
 func (h *AdminDedupHandler) MergeLog(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	limit := parseQueryInt(r.URL.Query().Get("limit"), 50)
+	limit, ok := listLimit(w, r, 50, 100)
+	if !ok {
+		return
+	}
 
-	log, err := h.repo.GetMergeLog(r.Context(), tenantID, limit)
+	scope, ok := h.scope(w, r, tenantID)
+	if !ok {
+		return
+	}
+	log, err := h.repo.GetMergeLog(r.Context(), tenantID, limit, scope)
 	if err != nil {
 		h.logger.Error("failed to get merge log", "error", err)
 		apierror.InternalServerError("failed to get merge log").WriteJSON(w)

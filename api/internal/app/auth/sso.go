@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -15,16 +16,21 @@ import (
 	"strings"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // SSO errors.
@@ -48,7 +54,7 @@ var (
 	// auto-provisioning (FIX 2). The caller surfaces a generic "contact your
 	// admin" outcome.
 	ErrSSONotAMember = errors.New("not a member of this organization")
-	// ErrSSORegistrationDisabled is returned when AUTH_ALLOW_REGISTRATION is
+	// ErrSSORegistrationDisabled is returned when the sign-up policy is
 	// false and an SSO/social login would create a brand-new user (FIX 4).
 	ErrSSORegistrationDisabled = errors.New("registration is disabled")
 	// ErrAccountLinkRequiresVerification is the proof-before-link refusal: a
@@ -68,6 +74,8 @@ const ssoMaxRedirectURILength = 2000
 
 // SSOService handles per-tenant SSO authentication.
 type SSOService struct {
+	// audit records each sign-in (auth.login), as the password sign-in does.
+	audit            *auditapp.AuditService
 	ipRepo           identityproviderdom.Repository
 	tenantRepo       tenantdom.Repository
 	userRepo         userdom.Repository
@@ -78,7 +86,8 @@ type SSOService struct {
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
 	httpClient       *http.Client
-	oidcVerifier     *oidcVerifier
+	// oidcVerifier verifies id_tokens and logout tokens (pkg/oidc).
+	oidcVerifier *oidc.Client
 
 	// For tenant membership creation
 	tenantMemberRepo TenantMemberCreator
@@ -88,6 +97,43 @@ type SSOService struct {
 	// flow falls back to the P0 config-AllowedDomains gate so nothing breaks
 	// pre-wiring. Fail-closed: an unverified/unknown domain never JIT-provisions.
 	domainVerifier DomainVerifier
+
+	// domainOwner answers which organization holds an email domain verified
+	// for SSO (email-first sign-in, discovery.go). Nil: discovery always
+	// answers "password".
+	domainOwner DomainOwnerLookup
+
+	// revocations records back-channel-logged-out sessions so their access
+	// tokens (and live WebSocket connections) stop at once rather than at
+	// expiry. nil = they expire naturally.
+	revocations   SessionRevocationStore
+	revocationTTL time.Duration
+
+	// identities binds accounts to the IdP's (issuer, subject); logins find
+	// the account by it first (federated_identity.go). Required: a login that
+	// carries an identity is refused when it is not wired.
+	identities useridentity.Repository
+	// jitApprovals tells administrators about newcomers waiting for approval.
+	jitApprovals JITApprovalNotifier
+}
+
+// SetIdentityRepo wires the federated identity store.
+// SetAuditService wires the auth.login event for SSO and SAML sign-ins.
+func (s *SSOService) SetAuditService(a *auditapp.AuditService) { s.audit = a }
+
+func (s *SSOService) SetIdentityRepo(repo useridentity.Repository) {
+	s.identities = repo
+}
+
+func (s *SSOService) accounts() federatedAccounts {
+	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger}
+}
+
+// SetSessionRevocationStore wires immediate revocation for sessions ended by
+// an OIDC back-channel logout.
+func (s *SSOService) SetSessionRevocationStore(store SessionRevocationStore, ttl time.Duration) {
+	s.revocations = store
+	s.revocationTTL = ttl
 }
 
 // TenantMemberCreator creates tenant memberships for auto-provisioned users and
@@ -141,7 +187,7 @@ func NewSSOService(
 		authConfig:       authCfg,
 		logger:           log.With("service", "sso"),
 		httpClient:       httpClient,
-		oidcVerifier:     newOIDCVerifier(httpClient, log.With("service", "sso-oidc")),
+		oidcVerifier:     newOIDCClient(httpClient),
 	}
 }
 
@@ -181,10 +227,19 @@ func (s *SSOService) HasUsableSSOPath(ctx context.Context, orgSlug string) (bool
 }
 
 // GetProvidersForTenant returns active SSO providers for a tenant identified by slug.
+//
+// SECURITY (anti-enumeration): an unknown slug answers exactly like an
+// organization without SSO, an empty list and no error, so the public
+// providers endpoint does not tell whether an organization exists. The same
+// provider query runs for an unknown slug (on a random id that matches
+// nothing), so both answers cost the same.
 func (s *SSOService) GetProvidersForTenant(ctx context.Context, orgSlug string) ([]SSOProviderInfo, error) {
 	t, err := s.tenantRepo.GetBySlug(ctx, orgSlug)
 	if err != nil {
-		return nil, ErrSSOTenantNotFound
+		if _, lerr := s.ipRepo.ListActiveByTenant(ctx, shared.NewID().String()); lerr != nil {
+			return nil, fmt.Errorf("list active providers: %w", lerr)
+		}
+		return []SSOProviderInfo{}, nil
 	}
 
 	providers, err := s.ipRepo.ListActiveByTenant(ctx, t.ID().String())
@@ -227,6 +282,10 @@ type SSOAuthorizeInput struct {
 	OrgSlug     string
 	Provider    string
 	RedirectURI string // Frontend callback URL
+	// ForceReauth asks the provider to authenticate the user again (step-up
+	// re-authentication): prompt=login and max_age=0, and the callback
+	// refuses an id_token whose auth_time is not fresh.
+	ForceReauth bool
 }
 
 // SSOAuthorizeResult is the result of generating an SSO authorization URL.
@@ -353,7 +412,7 @@ func (s *SSOService) resolveProvider(ctx context.Context, tenantID, orgSlug stri
 			clientID:         ip.ClientID(),
 			clientSecret:     secret,
 			tenantIdentifier: ip.TenantIdentifier(),
-			scopes:           ip.Scopes(),
+			scopes:           withOpenIDScope(ip.Scopes()),
 			allowedDomains:   ip.AllowedDomains(),
 			autoProvision:    ip.AutoProvision(),
 			defaultRole:      ip.DefaultRole(),
@@ -372,17 +431,14 @@ func (s *SSOService) resolveProvider(ctx context.Context, tenantID, orgSlug stri
 	return nil, ErrSSOProviderNotFound
 }
 
-// isNonSpecificEntraTenant reports whether an Entra directory id is a
-// multi-tenant / non-pinned authority ("", common, organizations, consumers).
-// Such authorities let ANY Microsoft account complete the flow, so the env
-// fallback treats them as fail-closed (no auto-provision, domains required).
-func isNonSpecificEntraTenant(tid string) bool {
-	switch strings.ToLower(strings.TrimSpace(tid)) {
-	case "", "common", "organizations", "consumers":
-		return true
-	default:
-		return false
-	}
+// newOIDCClient is the token verifier for sign-in and logout tokens: the
+// shared core (pkg/oidc) over the SSRF-safe client, with every URL checked
+// by httpsec.ValidateURL before it is dialed.
+func newOIDCClient(httpClient *http.Client) *oidc.Client {
+	return oidc.NewClient(httpClient, func(raw string) error {
+		_, err := httpsec.ValidateURL(raw)
+		return err
+	})
 }
 
 // envFallbackAllowedForTenant reports whether the given tenant slug has opted
@@ -428,7 +484,7 @@ func (s *SSOService) envProvider(orgSlug string, provider identityproviderdom.Pr
 		role = string(tenantdom.RoleViewer)
 	}
 	autoProvision := cfg.AutoProvision
-	if isNonSpecificEntraTenant(cfg.TenantID) {
+	if oidc.IsMultiTenantEntraAuthority(cfg.TenantID) {
 		if len(cfg.AllowedDomains) == 0 {
 			s.logger.Warn("env Entra fallback refused: non-specific directory requires SSO_ENTRA_ALLOWED_DOMAINS",
 				"tenant_slug", logger.SanitizeValue(orgSlug), "directory", cfg.TenantID)
@@ -472,7 +528,7 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	// Generate state token with nonce (CSRF + replay) and a PKCE code_challenge
 	// (RFC 7636). The verifier is carried, encrypted, inside the signed state and
 	// recovered at callback — see generateState.
-	state, nonce, codeChallenge, err := s.generateState(input.OrgSlug, input.Provider)
+	state, nonce, codeChallenge, err := s.generateState(input.OrgSlug, input.Provider, input.ForceReauth)
 	if err != nil {
 		return nil, fmt.Errorf("generate state: %w", err)
 	}
@@ -514,6 +570,15 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 			params.Set("hd", rp.allowedDomains[0])
 		}
 	}
+	if input.ForceReauth {
+		// OIDC Core 3.1.2.1: max_age=0 makes the provider authenticate the
+		// user again and return auth_time. Google keeps its own prompt
+		// (it does not accept "login"); the others get prompt=login too.
+		params.Set("max_age", "0")
+		if rp.provider != identityproviderdom.ProviderGoogleWorkspace {
+			params.Set("prompt", "login")
+		}
+	}
 
 	return &SSOAuthorizeResult{
 		AuthorizationURL: authURL + "?" + params.Encode(),
@@ -543,10 +608,11 @@ type SSOCallbackResult struct {
 // HandleCallback handles the SSO OAuth callback.
 func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput) (*SSOCallbackResult, error) {
 	// Validate state and extract org slug + nonce + PKCE verifier
-	orgSlug, stateProvider, nonce, codeVerifier, err := s.validateState(input.State)
+	st, err := s.validateState(input.State)
 	if err != nil {
 		return nil, ErrSSOInvalidState
 	}
+	orgSlug, stateProvider, nonce, codeVerifier := st.org, st.provider, st.nonce, st.codeVerifier
 
 	if stateProvider != input.Provider {
 		return nil, ErrSSOInvalidState
@@ -582,16 +648,32 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		return nil, ErrSSOExchangeFailed
 	}
 
-	// Verify the id_token (signature + nonce + issuer/audience) when the
-	// provider returns one. The token endpoint response is server-to-server
-	// over TLS, so a missing id_token (provider configured without the
-	// "openid" scope) is not attacker-controllable — verify when present,
-	// skip otherwise to stay backward compatible with such configs.
-	claims, err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce)
+	// Every provider must return an id_token, and it is verified (signature,
+	// nonce, audience, issuer) before any identity is taken from the flow. A
+	// login without one is refused: the federated identity (issuer, subject)
+	// that binds the account to this IdP, and the session binding used by
+	// back-channel logout, come only from the verified id_token.
+	var maxAuthAge time.Duration
+	if st.reauth {
+		maxAuthAge = freshAuthMaxAge
+	}
+	claims, err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce, maxAuthAge)
 	if err != nil {
 		s.logger.Warn("SSO id_token validation failed",
 			"provider", input.Provider, "source", rp.source, "error", err)
 		return nil, ErrSSOInvalidIDToken
+	}
+
+	// SECURITY: a Google Workspace login must come from an account of the
+	// organization's Workspace. Only the verified id_token "hd" claim proves
+	// that; the "hd" authorize parameter is a UI hint, and a consumer Google
+	// account registered with a company address still passes email_verified.
+	if rp.provider == identityproviderdom.ProviderGoogleWorkspace {
+		if reason := s.googleWorkspaceDomainRefusal(ctx, t, rp, claims.HD); reason != "" {
+			s.logger.Warn("google_workspace SSO refused", "reason", reason,
+				"tenant_id", t.ID().String(), "subject", claims.Subject)
+			return nil, ErrSSODomainNotAllowed
+		}
 	}
 
 	var userInfo *SSOUserInfo
@@ -629,7 +711,7 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		// These come from the signature-verified, JWKS-pinned id_token (not the
 		// userinfo body), so they are authoritative for distinguishing IdPs.
 		if claims != nil {
-			userInfo.Issuer = claims.Issuer
+			userInfo.Issuer = canonicalIssuer(claims.Issuer)
 			userInfo.Subject = claims.Subject
 		}
 	}
@@ -664,15 +746,22 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		}
 	}
 
-	// Create session (federated OIDC/OAuth → stamped 'sso', exempt from enforcement).
+	// Create session (federated OIDC → stamped 'sso', issued by this tenant's
+	// IdP: exempt from THIS tenant's SSO enforcement and 2FA requirement only).
+	// The platform env fallback counts as the tenant's IdP: it is used only for
+	// a tenant the operator opted in (envFallbackAllowedForTenant) and in place
+	// of a provider of its own.
 	// Capture the IdP session binding from the verified id_token (when present) so
 	// an OIDC Back-Channel Logout can later revoke this exact session. issuer/sid/
 	// sub come ONLY from the signature-verified id_token, never the userinfo body.
 	var fed federatedBinding
 	if claims != nil {
-		fed = federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject}
+		fed = federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject, mfa: oidcMFAEvidence(claims)}
+		if claims.AuthTime != nil {
+			fed.authTime = claims.AuthTime.Time
+		}
 	}
-	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSSO, fed)
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSSO, t.ID(), fed)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
@@ -704,7 +793,12 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 // must have a non-nil tenantMemberRepo.
 func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, rp *resolvedProvider, email string) error {
 	// Already a member? Nothing to do (existing members are unaffected).
-	if m, err := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); err == nil && m != nil {
+	// An offboarded tombstone is not a membership: only JIT may re-admit the
+	// person (from zero), under the same rules as a newcomer.
+	if m, err := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); err == nil && m != nil && !m.IsOffboarded() {
+		if m.AwaitsApproval() {
+			return ErrSSOAwaitingApproval
+		}
 		return nil
 	}
 
@@ -715,32 +809,81 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		return ErrSSONotAMember
 	}
 
-	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), jitMembershipRole(rp.defaultRole), nil)
+	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), s.jitRoleFor(ctx, t, email, rp.defaultRole), nil)
 	if err != nil {
 		return fmt.Errorf("build membership: %w", err)
+	}
+	held, err := holdIfApprovalRequired(t, membership)
+	if err != nil {
+		return err
 	}
 	if err := s.tenantMemberRepo.CreateMembership(ctx, membership); err != nil {
 		// A concurrent login may have created the membership between our lookup
 		// and here — re-check before failing (fail-closed on genuine failure).
-		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil {
+		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && !m.IsOffboarded() {
 			return nil
+		}
+		// No free seat on the organization's plan: say so.
+		if lim := (*plan.ErrLimitReached)(nil); errors.As(err, &lim) {
+			return err
 		}
 		s.logger.Warn("SSO auto-provision membership failed",
 			"user_id", u.ID().String(), "tenant_id", t.ID().String(), "error", err)
 		return ErrSSONotAMember
 	}
 	s.logger.Info("SSO auto-provisioned tenant membership",
-		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", membership.Role().String())
+		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", membership.Role().String(), "held", held)
+	if held {
+		s.notifyAwaitingApproval(ctx, t, email)
+		return ErrSSOAwaitingApproval
+	}
 	return nil
+}
+
+// googleWorkspaceDomainRefusal decides whether a Google id_token's hosted
+// domain (the "hd" claim) may sign in to the organization. It returns "" when
+// it may, otherwise the reason it may not (for the log). Fail-closed:
+//   - no "hd" claim: a consumer Google account, never admitted;
+//   - the provider narrows domains (AllowedDomains): "hd" must be on that list;
+//   - otherwise "hd" must be DNS-verified for this organization (no verifier
+//     wired or a lookup error refuses).
+func (s *SSOService) googleWorkspaceDomainRefusal(ctx context.Context, t *tenantdom.Tenant, rp *resolvedProvider, hd string) string {
+	hd = strings.ToLower(strings.TrimSpace(hd))
+	if hd == "" {
+		return "id_token has no hd claim (not a Google Workspace account)"
+	}
+	if len(rp.allowedDomains) > 0 {
+		for _, d := range rp.allowedDomains {
+			if strings.EqualFold(strings.TrimSpace(d), hd) {
+				return ""
+			}
+		}
+		return "hd claim is not one of the provider's allowed domains"
+	}
+	if s.domainVerifier == nil {
+		return "no verified-domain checker wired (fail-closed)"
+	}
+	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, t.ID().String(), hd)
+	if err != nil {
+		return "verified-domain lookup failed (fail-closed)"
+	}
+	if !verified {
+		return "hd claim is not a verified domain of the organization"
+	}
+	return ""
 }
 
 // jitMembershipRole is the membership role of a user admitted by SSO
 // just-in-time provisioning: the organization's configured default when it is
-// admin, member or viewer, otherwise viewer (least privilege). Owner is never
+// member or viewer, otherwise viewer (least privilege). Owner is never
 // granted by SSO.
+//
+// Admin is never granted this way (owner decision B18), including for
+// providers stored before the rule or SSO_ENTRA_DEFAULT_ROLE=admin: such a
+// configuration provisions viewers.
 func jitMembershipRole(configured string) tenantdom.Role {
 	switch r := tenantdom.Role(strings.ToLower(strings.TrimSpace(configured))); r {
-	case tenantdom.RoleAdmin, tenantdom.RoleMember, tenantdom.RoleViewer:
+	case tenantdom.RoleMember, tenantdom.RoleViewer:
 		return r
 	default:
 		return tenantdom.RoleViewer
@@ -782,42 +925,86 @@ func (s *SSOService) jitProvisioningAllowed(ctx context.Context, t *tenantdom.Te
 	if !verified {
 		return false
 	}
+	// Per-domain JIT (RFC-058): a domain may admit its people without
+	// provisioning newcomers.
+	if on, _ := s.domainJIT(ctx, t, emailDomain); !on {
+		return false
+	}
 	if len(rp.allowedDomains) > 0 && !rp.isDomainAllowed(emailDomain) {
 		return false
 	}
 	return t.TypedSettings().Security.EmailDomainAllowed(email)
 }
 
+// DomainJITPolicy is the per-domain just-in-time provisioning a domain
+// verifier may offer (domainverify.Service.DomainJITPolicy).
+type DomainJITPolicy interface {
+	DomainJITPolicy(ctx context.Context, tenantID, emailDomain string) (enabled bool, role string, err error)
+}
+
+// domainJIT returns whether the domain provisions newcomers and their role
+// ("" = the provider default). A verifier without per-domain settings keeps
+// the provider default behavior; a lookup error refuses (fail closed).
+func (s *SSOService) domainJIT(ctx context.Context, t *tenantdom.Tenant, emailDomain string) (bool, string) {
+	p, ok := s.domainVerifier.(DomainJITPolicy)
+	if !ok {
+		return true, ""
+	}
+	on, role, err := p.DomainJITPolicy(ctx, t.ID().String(), emailDomain)
+	if err != nil {
+		s.logger.Warn("per-domain JIT lookup failed; refusing JIT (fail-closed)", "tenant_id", t.ID().String(), "error", err)
+		return false, ""
+	}
+	return on, role
+}
+
+// jitRoleFor is the role a newcomer admitted on email's domain gets: the
+// domain's own JIT role when set, otherwise the provider default.
+func (s *SSOService) jitRoleFor(ctx context.Context, t *tenantdom.Tenant, email, providerDefault string) tenantdom.Role {
+	if at := strings.LastIndex(email, "@"); at >= 0 {
+		if _, role := s.domainJIT(ctx, t, strings.ToLower(email[at+1:])); role != "" {
+			return jitMembershipRole(role)
+		}
+	}
+	return jitMembershipRole(providerDefault)
+}
+
 // verifyIDToken validates the provider's id_token against its JWKS, the flow
 // nonce, our client_id (audience), and a provider-specific issuer check.
 //
-// It is a no-op (returns nil, nil) when the provider publishes no JWKS or the
-// token response carried no id_token — see the call site for why a missing
-// id_token is safe to skip for non-Entra providers. When an id_token IS present,
-// every check is enforced. Returns the verified claims so the caller can bind
-// the account to the IdP identity (issuer/subject) and, for Entra, read the
-// domain-verified email. Returns nil claims when there is nothing to verify.
-func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) (*oidcClaims, error) {
+// The id_token is required for every provider: a provider without signing
+// keys, or a token response without an id_token (a provider configured
+// without the "openid" scope), is an error. Returns the verified claims so the
+// caller can bind the account to the IdP identity (issuer/subject) and, for
+// Entra, read the domain-verified email. The returned claims are never nil
+// when the error is nil.
+func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string, maxAuthAge time.Duration) (*oidc.Claims, error) {
 	jwksURL := rp.provider.JWKSURL(rp.tenantIdentifier)
 	if jwksURL == "" {
-		return nil, nil // provider has no id_token to verify
+		return nil, fmt.Errorf("%s provider has no id_token signing keys (is the organization URL configured?)", rp.provider)
 	}
 	if strings.TrimSpace(idToken) == "" {
-		s.logger.Debug("SSO provider returned no id_token; skipping id_token validation",
-			"provider", rp.provider, "source", rp.source)
-		return nil, nil
+		return nil, errors.New(`token response carried no id_token: the provider must grant the "openid" scope`)
 	}
 
-	exp := idTokenExpectations{
-		jwksURL:  jwksURL,
-		audience: rp.clientID,
-		nonce:    nonce,
+	exp := oidc.Expectations{
+		JWKSURI:    jwksURL,
+		ClientID:   rp.clientID,
+		Nonce:      nonce,
+		MaxAuthAge: maxAuthAge,
 	}
-	if rp.provider == identityproviderdom.ProviderEntraID {
-		exp.validateIssuer = entraIssuerValidator(rp.tenantIdentifier)
+	switch rp.provider {
+	case identityproviderdom.ProviderEntraID:
+		exp.IssuerRule = oidc.EntraIssuer(rp.tenantIdentifier)
+	case identityproviderdom.ProviderOkta:
+		exp.IssuerRule = oidc.OktaIssuer(rp.tenantIdentifier)
+	case identityproviderdom.ProviderGoogleWorkspace:
+		exp.IssuerRule = oidc.GoogleIssuer
+	default:
+		// No issuer rule: VerifyIDToken refuses incomplete expectations.
 	}
 
-	claims, err := s.oidcVerifier.verify(ctx, idToken, exp)
+	claims, err := s.oidcVerifier.VerifyIDToken(ctx, idToken, exp)
 	if err != nil {
 		return nil, err
 	}
@@ -828,19 +1015,21 @@ func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, id
 // enforcing the nOAuth email-verification gate (mirrors oauth.go's Path A). The
 // email is trusted ONLY when `xms_edov == true`; identity is keyed on the
 // immutable (issuer, subject). It is a pure function to keep the security-critical
-// gate unit-testable (the signature/issuer/audience checks live in oidcVerifier).
-func entraUserInfoFromClaims(claims *oidcClaims) (*SSOUserInfo, error) {
-	if claims.XMSEdov == nil || !*claims.XMSEdov {
+// gate unit-testable (the signature/issuer/audience checks live in pkg/oidc).
+func entraUserInfoFromClaims(claims *oidc.Claims) (*SSOUserInfo, error) {
+	if !bool(claims.XMSEdov) {
 		return nil, errors.New("entra id_token email not domain-owner-verified (xms_edov absent or false)")
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("entra id_token has no email claim")
 	}
+	subject, legacy := entraSubject(claims)
 	return &SSOUserInfo{
 		Email:         claims.Email,
 		Name:          claims.Name,
 		Issuer:        claims.Issuer,
-		Subject:       claims.Subject,
+		Subject:       subject,
+		LegacySubject: legacy,
 		EmailVerified: true, // gated on xms_edov==true above (domain-owner verified)
 	}, nil
 }
@@ -861,7 +1050,7 @@ func entraUserInfoFromClaims(claims *oidcClaims) (*SSOUserInfo, error) {
 // changes — the verifier rides inside the existing `state` the UI already
 // round-trips. (In dev without APP_ENCRYPTION_KEY the encryptor is a no-op, so
 // the verifier is plaintext — acceptable for dev only.)
-func (s *SSOService) generateState(orgSlug, provider string) (state, nonce, codeChallenge string, err error) {
+func (s *SSOService) generateState(orgSlug, provider string, reauth bool) (state, nonce, codeChallenge string, err error) {
 	randomBytes := make([]byte, 16)
 	if _, err := rand.Read(randomBytes); err != nil {
 		return "", "", "", err
@@ -892,6 +1081,9 @@ func (s *SSOService) generateState(orgSlug, provider string) (state, nonce, code
 		"random":   base64.URLEncoding.EncodeToString(randomBytes),
 		"exp":      time.Now().Add(10 * time.Minute).Unix(),
 	}
+	if reauth {
+		stateData["reauth"] = true
+	}
 
 	stateJSON, marshalErr := json.Marshal(stateData)
 	if marshalErr != nil {
@@ -911,13 +1103,25 @@ func (s *SSOService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates the state token and returns org slug, provider, the
-// nonce embedded at authorize time (compared against the id_token nonce), and
-// the decrypted PKCE code_verifier (RFC 7636) for the token exchange.
-func (s *SSOService) validateState(state string) (orgSlug, provider, nonce, codeVerifier string, err error) {
+// ssoState is a verified SSO state: the org slug, provider, the nonce embedded
+// at authorize time (compared against the id_token nonce), the decrypted PKCE
+// code_verifier (RFC 7636) for the token exchange, and whether the flow asked
+// the provider to authenticate the user again.
+type ssoState struct {
+	org, provider, nonce, codeVerifier string
+	reauth                             bool
+}
+
+// validateState validates the signed state token and returns its contents.
+func (s *SSOService) validateState(state string) (ssoState, error) {
+	orgSlug, provider, nonce, codeVerifier, reauth, err := s.parseState(state)
+	return ssoState{org: orgSlug, provider: provider, nonce: nonce, codeVerifier: codeVerifier, reauth: reauth}, err
+}
+
+func (s *SSOService) parseState(state string) (orgSlug, provider, nonce, codeVerifier string, reauth bool, err error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", "", "", "", errors.New("invalid state format")
+		return "", "", "", "", false, errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -925,34 +1129,34 @@ func (s *SSOService) validateState(state string) (orgSlug, provider, nonce, code
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", "", "", "", errors.New("invalid state signature")
+		return "", "", "", "", false, errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", "", "", "", errors.New("invalid state encoding")
+		return "", "", "", "", false, errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", "", "", "", errors.New("invalid state JSON")
+		return "", "", "", "", false, errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", "", "", "", errors.New("invalid state expiration")
+		return "", "", "", "", false, errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", "", "", "", errors.New("state expired")
+		return "", "", "", "", false, errors.New("state expired")
 	}
 
 	orgSlug, _ = data["org"].(string)
 	provider, _ = data["provider"].(string)
 	nonce, _ = data["nonce"].(string)
 	if orgSlug == "" || provider == "" {
-		return "", "", "", "", errors.New("missing state fields")
+		return "", "", "", "", false, errors.New("missing state fields")
 	}
 
 	// Recover the PKCE verifier: it was AES-GCM-encrypted at authorize time (see
@@ -961,12 +1165,13 @@ func (s *SSOService) validateState(state string) (orgSlug, provider, nonce, code
 	if enc, encOK := data["pkce"].(string); encOK && enc != "" {
 		v, decErr := s.encryptor.DecryptString(enc)
 		if decErr != nil {
-			return "", "", "", "", errors.New("invalid state pkce")
+			return "", "", "", "", false, errors.New("invalid state pkce")
 		}
 		codeVerifier = v
 	}
 
-	return orgSlug, provider, nonce, codeVerifier, nil
+	reauth, _ = data["reauth"].(bool)
+	return orgSlug, provider, nonce, codeVerifier, reauth, nil
 }
 
 // ssoTokens represents OAuth token response.
@@ -1006,13 +1211,13 @@ func (s *SSOService) exchangeCode(ctx context.Context, clientID, clientSecret, c
 	defer resp.Body.Close()
 
 	// SECURITY: Limit response body to 1MB
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := httpsec.ReadLimited(resp.Body, 1<<20)
 	if err != nil {
 		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("token exchange failed: %w", httpsec.NewUpstreamStatusError(ctx, "identity provider", resp.StatusCode, body))
 	}
 
 	var tokens ssoTokens
@@ -1029,11 +1234,16 @@ type SSOUserInfo struct {
 	Name      string
 	AvatarURL string
 
-	// Issuer + Subject are the verified id_token's federated identity (OIDC
-	// iss/sub), used to bind the account to the IdP that owns it. Empty when
-	// the provider returned no id_token to verify — binding is then skipped.
+	// Issuer + Subject are the verified id_token's federated identity, the
+	// key the account is found by (federated_identity.go). Empty when the
+	// provider returned no id_token to verify: the email then finds the
+	// account, under the adoption guards, and nothing is bound.
 	Issuer  string
 	Subject string
+	// LegacySubject is the subject the issuer used for this identity before
+	// (Entra: `sub`, now keyed on `oid`); an identity bound under it is
+	// re-keyed to Subject.
+	LegacySubject string
 
 	// EmailVerified records that the IdP proved ownership of Email (Entra
 	// xms_edov==true, or the OIDC email_verified claim). Producers set it true
@@ -1060,16 +1270,21 @@ func (s *SSOService) getUserInfo(ctx context.Context, provider identityproviderd
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("user info failed (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("user info failed: %w", httpsec.NewUpstreamStatusError(ctx, "identity provider", resp.StatusCode, body))
 	}
 
+	userInfo, err := httpsec.ReadLimited(resp.Body, 1<<20)
+	if err != nil {
+		return nil, fmt.Errorf("user info: %w", err)
+	}
+	body := bytes.NewReader(userInfo)
 	switch provider {
 	case identityproviderdom.ProviderEntraID:
-		return s.parseEntraIDUserInfo(resp.Body)
+		return s.parseEntraIDUserInfo(body)
 	case identityproviderdom.ProviderOkta:
-		return s.parseOktaUserInfo(resp.Body)
+		return s.parseOktaUserInfo(body)
 	case identityproviderdom.ProviderGoogleWorkspace:
-		return s.parseGoogleUserInfo(resp.Body)
+		return s.parseGoogleUserInfo(body)
 	default:
 		return nil, ErrSSOProviderUnsupported
 	}
@@ -1161,7 +1376,21 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 	}
 	provider := rp.provider
 
-	// Try to find existing user by email
+	// The IdP's (issuer, subject) finds a returning account first, whatever
+	// email the IdP now sends for it.
+	key := useridentity.Key{Issuer: userInfo.Issuer, Subject: userInfo.Subject}
+	if key.Valid() {
+		u, ident, err := s.accounts().lookup(ctx, key, userInfo.LegacySubject)
+		if err != nil {
+			return nil, fmt.Errorf("resolve federated identity: %w", err)
+		}
+		if u != nil {
+			return s.returningFederatedUser(ctx, t, u, ident, userInfo), nil
+		}
+	}
+
+	// Unknown identity: the email may name an existing account, adopted only
+	// under the proof-before-link guards.
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
 		return s.adoptExistingUser(ctx, t, existingUser, userInfo, provider)
@@ -1169,11 +1398,16 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 
 	// No account yet. The organization's SSO is what admits new people,
 	// independent of public self-registration
-	// (AUTH_ALLOW_REGISTRATION): the account is created only when this login
+	// (the sign-up policy): the account is created only when this login
 	// would be just-in-time provisioned into the organization (auto-provision
 	// on, DNS-verified email domain, allowed domains). Checking BEFORE creating
 	// the account means a refused login leaves no orphan account behind.
-	if !s.jitProvisioningAllowed(ctx, t, rp, userInfo.Email) {
+	// The one admission rule (signup.Admit): only an organization's SSO admits
+	// a new person here, in either sign-up mode.
+	if !signupdom.Admit(signupdom.Default(), signupdom.Identity{
+		Intent:      signupdom.IntentAccount,
+		JITEligible: s.jitProvisioningAllowed(ctx, t, rp, userInfo.Email),
+	}).Admitted() {
 		s.logger.Warn("SSO login refused: no account and just-in-time provisioning not permitted",
 			"provider", provider, "source", rp.source)
 		return nil, ErrSSONotAMember
@@ -1190,9 +1424,6 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 	if err != nil {
 		return nil, err
 	}
-	// Record the IdP identity on first federation (no-op if no id_token issuer).
-	newUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
-
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		// Handle race condition: another concurrent request may have created
 		// the user between our GetByEmail and Create calls.
@@ -1209,9 +1440,31 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
+	if key.Valid() {
+		if err := s.accounts().bind(ctx, newUser, key); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrSSODomainNotAllowed, err)
+		}
+	}
 
 	s.logger.Info("created SSO user", "user_id", newUser.ID().String(), "email", userInfo.Email, "provider", provider)
 	return newUser, nil
+}
+
+// returningFederatedUser completes the login of an account found by its
+// (issuer, subject). The email the IdP sends now is adopted only when this
+// organization DNS-verified its domain and no other account holds it;
+// otherwise the account keeps its email and the login still succeeds.
+func (s *SSOService) returningFederatedUser(ctx context.Context, t *tenantdom.Tenant, u *userdom.User,
+	ident *useridentity.Identity, userInfo *SSOUserInfo) *userdom.User {
+	acc := s.accounts()
+	prev, changed := acc.adoptProviderEmail(ctx, u, userInfo.Email, func(ctx context.Context, email string) error {
+		return s.requireFederatedDomainProof(ctx, t, email)
+	})
+	syncFederatedProfile(u, userInfo.Name)
+	u.UpdateLastLogin()
+	acc.saveLogin(ctx, u, prev, changed)
+	acc.markUsed(ctx, ident)
+	return u
 }
 
 // adoptExistingUser applies the proof-before-link / account-takeover guard
@@ -1221,13 +1474,13 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 // an email is NEVER, on its own, enough to bind a federated identity — the four
 // pre-existing-account cases are handled as follows (fail-closed):
 //
-//	Case 4 (same IdP identity already bound): the returning user — provider
-//	   matches and the recorded (issuer) matches, so the login proceeds.
-//	Case 3 (a DIFFERENT federated identity bound): a different auth provider, or
-//	   the same provider with a different verified issuer — rejected (cross-IdP
-//	   takeover). The provider enum is coarse (every Okta org / generic OIDC IdP
-//	   collapse to AuthProviderOIDC), so the issuer check below is what actually
-//	   distinguishes IdPs.
+//	Case 4 (same IdP identity already bound): never reaches here — the
+//	   returning user is found by (issuer, subject) in findOrCreateUser.
+//	Case 3 (a DIFFERENT federated identity bound): a different auth provider,
+//	   another issuer, or another subject at the same issuer — rejected
+//	   (cross-IdP takeover). The provider enum is coarse (every Okta org /
+//	   generic OIDC IdP collapse to AuthProviderOIDC), so the identity check
+//	   below is what actually distinguishes IdPs and people.
 //	Case 1 (a real password-backed local account, no federated identity): never
 //	   silently linked. Refused with ErrAccountLinkRequiresVerification so the
 //	   user signs in with their existing password first, then links the IdP from
@@ -1271,20 +1524,47 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant,
 		}
 	}
 
-	if userInfo.Issuer != "" {
-		if bound := existingUser.FederatedIssuer(); bound != nil && *bound != "" {
-			if *bound != userInfo.Issuer {
-				s.logger.Warn("SSO login blocked: email bound to a different identity provider",
-					"email", userInfo.Email,
-					"bound_issuer", *bound,
-					"login_issuer", userInfo.Issuer,
-				)
-				return nil, fmt.Errorf("%w: this email is registered with a different identity provider", ErrSSODomainNotAllowed)
-			}
-		} else {
-			existingUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
-			s.logger.Info("bound federated identity to existing account",
+	// The IdP's identity was not found (findOrCreateUser looks it up first),
+	// so the account holds no binding for it. An account bound to another
+	// subject at the same IdP, or to another IdP, is a different person's
+	// account: refused (Case 3). Matching the email is never enough.
+	key := useridentity.Key{Issuer: userInfo.Issuer, Subject: userInfo.Subject}
+	if key.Valid() {
+		sameIssuer, otherIssuer, err := s.accounts().boundIdentities(ctx, existingUser, key)
+		if err != nil {
+			return nil, fmt.Errorf("check federated identities: %w", err)
+		}
+		if sameIssuer {
+			s.logger.Warn("SSO login blocked: email bound to another subject at this identity provider",
 				"email", userInfo.Email, "issuer", userInfo.Issuer)
+			return nil, fmt.Errorf("%w: %w", ErrSSODomainNotAllowed, ErrFederatedIdentityConflict)
+		}
+		if otherIssuer != nil {
+			s.logger.Warn("SSO login blocked: email bound to a different identity provider",
+				"email", userInfo.Email,
+				"bound_issuer", otherIssuer.Key.Issuer,
+				"login_issuer", userInfo.Issuer,
+			)
+			return nil, fmt.Errorf("%w: this email is registered with a different identity provider", ErrSSODomainNotAllowed)
+		}
+	}
+
+	// Same provider type and no binding to match: every Okta/generic OIDC IdP
+	// collapses to the same provider type, so the type match proves nothing
+	// and any organization's IdP could assert this email. Require the
+	// organization to have DNS-proven the email domain before adopting (and,
+	// below, binding) the account.
+	if existingProvider == expectedProvider {
+		if err := s.requireFederatedDomainProof(ctx, t, userInfo.Email); err != nil {
+			s.logger.Warn("SSO login blocked: account has no matching IdP binding and the email domain is not DNS-verified for this organization",
+				"sso_provider", expectedProvider)
+			return nil, fmt.Errorf("%w: %w", ErrAccountLinkRequiresVerification, err)
+		}
+	}
+
+	if key.Valid() {
+		if err := s.accounts().bind(ctx, existingUser, key); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrSSODomainNotAllowed, err)
 		}
 	}
 
@@ -1380,9 +1660,13 @@ func (s *SSOService) mapAuthProvider(provider identityproviderdom.Provider) user
 
 // createSession creates a new session for the user. authMethod records how the
 // identity was federated (AuthMethodSSO for OIDC/OAuth, AuthMethodSAML for a
-// SAML assertion) so the session is stamped as federated and thus exempt from
-// per-tenant SSO enforcement — an SSO-enforced tenant must always admit the very
-// login method it requires.
+// SAML assertion) and idpTenant the organization whose identity provider
+// issued it. Together they make the session an SSO sign-in OF that
+// organization only: it is exempt from that organization's SSO enforcement and
+// 2FA requirement (an SSO-enforced organization must admit the very login
+// method it requires), but users are global, so for every other organization
+// the account belongs to it is treated as a password session
+// (Session.FederatedFor).
 // federatedBinding carries the IdP session identifiers captured from a verified
 // id_token so createSession can persist them for OIDC Back-Channel Logout. All
 // fields may be empty (a provider may omit sid or return no id_token).
@@ -1390,9 +1674,20 @@ type federatedBinding struct {
 	issuer string
 	sid    string
 	sub    string
+	// authTime is when the provider last authenticated the user (id_token
+	// auth_time, SAML AuthnInstant); zero when the provider did not say.
+	authTime time.Time
+	// mfa: the provider proved a second factor for this sign-in (OIDC amr
+	// "mfa", SAML multi-factor AuthnContext). Recorded on the session.
+	mfa bool
 }
 
-func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod, fed federatedBinding) (*SessionResult, error) {
+// freshAuthMaxAge is how old the provider's authentication may be when a
+// flow asked for a fresh one (prompt=login / ForceAuthn): the user signed in
+// at the provider and was sent straight back.
+const freshAuthMaxAge = 5 * time.Minute
+
+func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod, idpTenant shared.ID, fed federatedBinding) (*SessionResult, error) {
 	// Bind the token to its session: generate the session id first, embed it in
 	// the JWT, then persist the session under the SAME id — so an SSO session is
 	// revocable (mirrors the password Login flow). Previously the token was
@@ -1404,23 +1699,26 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
+	ci := clientInfoFrom(ctx)
 	newSession, err := sessiondom.NewWithID(
 		sessionID,
 		u.ID(),
 		tokenPair.AccessToken,
-		"", // IP address from request context
-		"", // User agent from request context
+		ci.IP,
+		ci.UserAgent,
 		s.authConfig.SessionDuration,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
-	// Stamp the session as federated so it is exempt from password-only SSO
-	// enforcement. Default to SSO for any unspecified/invalid federated method.
+	// Stamp the session as federated, issued by idpTenant's identity provider.
+	// Default to SSO for any unspecified/invalid federated method.
 	if !authMethod.IsFederated() {
 		authMethod = sessiondom.AuthMethodSSO
 	}
 	newSession.SetAuthMethod(authMethod)
+	newSession.SetIDPTenant(idpTenant)
+	newSession.SetMFAEvidence(fed.mfa)
 
 	// Persist the IdP session binding (issuer/sid/sub) so an OIDC Back-Channel
 	// Logout from this provider can revoke exactly this session. Only stamped
@@ -1432,6 +1730,7 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("save session: %w", err)
 	}
+	s.stampProviderAuthentication(ctx, newSession, fed.authTime)
 
 	refreshTokenEntity, err := sessiondom.NewRefreshToken(
 		u.ID(),
@@ -1446,6 +1745,11 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	if err := s.refreshTokenRepo.Create(ctx, refreshTokenEntity); err != nil {
 		return nil, fmt.Errorf("save refresh token: %w", err)
 	}
+	issuingTenant := ""
+	if !idpTenant.IsZero() {
+		issuingTenant = idpTenant.String()
+	}
+	auditFederatedLogin(ctx, s.audit, s.logger, u, issuingTenant, sessionID.String(), string(authMethod), fed.issuer)
 
 	return &SessionResult{
 		AccessToken:  tokenPair.AccessToken,
@@ -1463,45 +1767,89 @@ var ErrSSOFederatedTakeover = errors.New("email is registered with a password; f
 // malicious tenant from forging an assertion for another tenant's user.
 var ErrSSOFederatedNotMember = errors.New("federated login not permitted: user is not a member of this organization")
 
+// ErrSSOFederatedDomainUnverified is returned when a federated login matches an
+// existing account whose email domain the organization has not DNS-verified:
+// the organization's IdP cannot vouch for an identity on a domain it does not
+// own.
+var ErrSSOFederatedDomainUnverified = errors.New("federated login not permitted: email domain is not verified for this organization")
+
+// requireFederatedDomainProof reports whether the organization t has DNS-proven
+// the domain of email. Fail-closed: an unparseable email, an unwired or failing
+// verifier, or an unverified domain all refuse.
+func (s *SSOService) requireFederatedDomainProof(ctx context.Context, t *tenantdom.Tenant, email string) error {
+	at := strings.LastIndex(email, "@")
+	if t == nil || at < 0 {
+		return ErrSSOFederatedDomainUnverified
+	}
+	emailDomain := strings.ToLower(strings.TrimSpace(email[at+1:]))
+	if emailDomain == "" || s.domainVerifier == nil {
+		return ErrSSOFederatedDomainUnverified
+	}
+	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, t.ID().String(), emailDomain)
+	if err != nil || !verified {
+		return ErrSSOFederatedDomainUnverified
+	}
+	return nil
+}
+
 // CompleteFederatedLogin issues an OpenCTEM session for an externally
 // authenticated identity (e.g. a validated SAML assertion). It finds-or-creates
 // a claimable passwordless user, blocks takeover of password-backed local
 // accounts, auto-provisions tenant membership when requested, and creates the
 // session. Reused by the SAML SP flow so it shares the SSO session machinery.
 func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string, autoProvision bool) (*SSOCallbackResult, error) {
+	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, federatedBinding{}, useridentity.Key{})
+}
+
+// completeFederatedLogin is CompleteFederatedLogin with the time the
+// provider authenticated the user (SAML AuthnInstant), which opens the
+// step-up window when it is recent, and the assertion's identity (issuer +
+// persistent NameID, scoped to t; empty when the IdP sent no persistent id).
+//
+//nolint:cyclop // one decision tree: returning identity, existing email, new account
+func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string,
+	autoProvision bool, fed federatedBinding, key useridentity.Key) (*SSOCallbackResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, ErrSSONoEmail
 	}
 
+	// The identity is trusted only inside the organization whose IdP
+	// certificate signed it: never look it up, or bind it, platform-wide.
+	if key.Valid() && (key.ScopeTenantID == nil || *key.ScopeTenantID != t.ID()) {
+		return nil, ErrSSOFederatedNotMember
+	}
+
 	newUser := false
-	u, err := s.userRepo.GetByEmail(ctx, email)
-	if err == nil && u != nil {
-		// Account-takeover guard: a password-backed local account must not be
-		// accessible via an external assertion.
-		if u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil {
-			return nil, ErrSSOFederatedTakeover
+	var u *userdom.User
+	if key.Valid() {
+		found, ident, lerr := s.accounts().lookup(ctx, key, "")
+		if lerr != nil {
+			return nil, fmt.Errorf("resolve federated identity: %w", lerr)
 		}
-		// Cross-tenant takeover guard: users are global, so GetByEmail can match a
-		// user who belongs to a DIFFERENT tenant. A federated assertion (SAML in
-		// particular, where the tenant admin holds the IdP signing key) must not
-		// bind to a pre-existing user unless they are already a member of THIS
-		// tenant — otherwise a malicious tenant could forge an assertion for any
-		// global email and mint a session as that victim. Brand-new users (no
-		// match) are created + auto-provisioned below; existing users must have
-		// been invited (membership) first. Fail closed on lookup error.
-		if s.tenantMemberRepo != nil {
-			m, mErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID())
-			if mErr != nil || m == nil {
-				s.logger.Warn("federated login refused: user is not a member of the target tenant",
-					"user_id", u.ID().String(), "tenant_id", t.ID().String())
-				return nil, ErrSSOFederatedNotMember
+		if found != nil {
+			// Bound earlier in this organization; the person must still be a
+			// member of it (an offboarded member's identity row survives).
+			if err := s.requireFederatedMembership(ctx, found, t); err != nil {
+				return nil, err
 			}
+			acc := s.accounts()
+			prev, changed := acc.adoptProviderEmail(ctx, found, email, func(ctx context.Context, e string) error {
+				return s.requireFederatedDomainProof(ctx, t, e)
+			})
+			syncFederatedProfile(found, name)
+			found.UpdateLastLogin()
+			acc.saveLogin(ctx, found, prev, changed)
+			acc.markUsed(ctx, ident)
+			return s.federatedSessionResult(ctx, found, t, fed)
 		}
-		syncFederatedProfile(u, name)
-		u.UpdateLastLogin()
-		if uerr := s.userRepo.Update(ctx, u); uerr != nil {
-			s.logger.Warn("federated login: update last login", "error", uerr)
+	}
+
+	existing, err := s.userRepo.GetByEmail(ctx, email)
+	if err == nil && existing != nil {
+		u = existing
+		if err := s.admitExistingSAMLAccount(ctx, u, t, email, name, key); err != nil {
+			return nil, err
 		}
 	} else {
 		// No account yet: the organization's SSO admits new people only through
@@ -1525,12 +1873,20 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 			} else {
 				return nil, fmt.Errorf("create user: %w", cerr)
 			}
+		} else if key.Valid() {
+			if berr := s.accounts().bind(ctx, newU, key); berr != nil {
+				return nil, berr
+			}
 		}
 		u = newU
 	}
 
 	if newUser && s.tenantMemberRepo != nil {
-		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), jitMembershipRole(defaultRole), nil)
+		held := false
+		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), s.jitRoleFor(ctx, t, email, defaultRole), nil)
+		if memErr == nil {
+			held, memErr = holdIfApprovalRequired(t, membership)
+		}
 		if memErr == nil {
 			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
 		}
@@ -1539,15 +1895,113 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 			// rather than issue a session with no membership.
 			if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr != nil || m == nil {
 				s.logger.Warn("federated auto-provision membership failed", "user_id", u.ID().String(), "error", memErr)
+				if lim := (*plan.ErrLimitReached)(nil); errors.As(memErr, &lim) {
+					return nil, memErr
+				}
 				return nil, ErrSSONotAMember
 			}
+		} else if held {
+			s.notifyAwaitingApproval(ctx, t, email)
+		}
+	}
+	// A membership that waits for an administrator's approval gets no
+	// session in the organization (RFC-058).
+	if s.tenantMemberRepo != nil {
+		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && m.AwaitsApproval() {
+			return nil, ErrSSOAwaitingApproval
 		}
 	}
 
-	// Federated via a validated SAML assertion → stamped 'saml', exempt from
-	// enforcement (it IS an SSO login). No OIDC id_token binding — SAML single
+	return s.federatedSessionResult(ctx, u, t, fed)
+}
+
+// admitExistingSAMLAccount lets t's SAML IdP sign in an existing account
+// found by email: never a password account, only a member of t, only on a
+// domain t DNS-verified; the assertion's identity is then bound.
+func (s *SSOService) admitExistingSAMLAccount(ctx context.Context, u *userdom.User, t *tenantdom.Tenant,
+	email, name string, key useridentity.Key) error {
+	// Account-takeover guard: a password-backed local account must not be
+	// accessible via an external assertion.
+	if u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil {
+		return ErrSSOFederatedTakeover
+	}
+	// Cross-tenant takeover guard: users are global, so GetByEmail can match a
+	// user who belongs to a DIFFERENT tenant. A federated assertion (SAML in
+	// particular, where the tenant admin holds the IdP signing key) must not
+	// bind to a pre-existing user unless they are already a member of THIS
+	// tenant — otherwise a malicious tenant could forge an assertion for any
+	// global email and mint a session as that victim. Brand-new users (no
+	// match) are created + auto-provisioned below; existing users must have
+	// been invited (membership) first. Fail closed on lookup error.
+	if err := s.requireFederatedMembership(ctx, u, t); err != nil {
+		return err
+	}
+	// Membership alone does not let this organization's IdP speak for the
+	// account. Users are global: an organization can make someone a member
+	// (an accepted invitation, SCIM, an admin add) without owning their
+	// identity, and a session minted here is exchangeable for every other
+	// organization the account belongs to. So the organization must have
+	// DNS-proven the email domain — the same proof the OIDC path demands
+	// before it claims an existing passwordless account
+	// (requireClaimableOwnershipProof) and that JIT demands for new users.
+	if err := s.requireFederatedDomainProof(ctx, t, email); err != nil {
+		s.logger.Warn("federated login refused: email domain is not DNS-verified for this organization",
+			"user_id", u.ID().String(), "tenant_id", t.ID().String())
+		return err
+	}
+	if err := s.bindSAMLIdentity(ctx, u, t, key); err != nil {
+		return err
+	}
+	syncFederatedProfile(u, name)
+	u.UpdateLastLogin()
+	if uerr := s.userRepo.Update(ctx, u); uerr != nil {
+		s.logger.Warn("federated login: update last login", "error", uerr)
+	}
+	return nil
+}
+
+// bindSAMLIdentity binds the assertion's identity to an existing account
+// that passed the membership and domain checks. The identity was not found
+// by lookup, so an account already bound to another subject at this IdP is
+// someone else's: refused. No identity (no persistent NameID): nothing to do.
+func (s *SSOService) bindSAMLIdentity(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, key useridentity.Key) error {
+	if !key.Valid() {
+		return nil
+	}
+	sameIssuer, _, err := s.accounts().boundIdentities(ctx, u, key)
+	if err != nil {
+		return fmt.Errorf("check federated identities: %w", err)
+	}
+	if sameIssuer {
+		s.logger.Warn("federated login refused: email bound to another subject at this identity provider",
+			"user_id", u.ID().String(), "tenant_id", t.ID().String())
+		return ErrFederatedIdentityConflict
+	}
+	return s.accounts().bind(ctx, u, key)
+}
+
+// requireFederatedMembership admits an existing account through t's SAML IdP
+// only when it is a member of t (not offboarded). Fail closed on lookup error.
+func (s *SSOService) requireFederatedMembership(ctx context.Context, u *userdom.User, t *tenantdom.Tenant) error {
+	if s.tenantMemberRepo == nil {
+		return nil
+	}
+	m, mErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID())
+	if mErr != nil || m == nil || m.IsOffboarded() {
+		s.logger.Warn("federated login refused: user is not a member of the target tenant",
+			"user_id", u.ID().String(), "tenant_id", t.ID().String())
+		return ErrSSOFederatedNotMember
+	}
+	return nil
+}
+
+// federatedSessionResult issues the session of a SAML login.
+func (s *SSOService) federatedSessionResult(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, fed federatedBinding) (*SSOCallbackResult, error) {
+	// Federated via a validated SAML assertion → stamped 'saml', issued by this
+	// tenant's IdP (exempt from this tenant's enforcement only — it IS this
+	// tenant's SSO login). No OIDC id_token binding — SAML single
 	// logout is out of scope for the OIDC back-channel path.
-	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, federatedBinding{})
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, t.ID(), federatedBinding{authTime: fed.authTime, mfa: fed.mfa})
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
@@ -1581,9 +2035,9 @@ type CreateProviderInput struct {
 }
 
 // validSSODefaultRoles are the roles allowed for auto-provisioned SSO users.
-// Owner is excluded — owners must be explicitly promoted.
+// Owner and admin are excluded (owner decision B18): an IdP misconfiguration
+// must not provision administrators; admins are promoted explicitly.
 var validSSODefaultRoles = map[string]bool{
-	"admin":  true,
 	"member": true,
 	"viewer": true,
 }
@@ -1594,7 +2048,7 @@ func validateDefaultRole(role string) error {
 		return nil // Will use entity default ("member")
 	}
 	if !validSSODefaultRoles[role] {
-		return fmt.Errorf("%w: must be admin, member, or viewer", ErrSSOInvalidDefaultRole)
+		return fmt.Errorf("%w: must be member or viewer", ErrSSOInvalidDefaultRole)
 	}
 	return nil
 }
@@ -1633,7 +2087,10 @@ func validateTenantIdentifier(provider identityproviderdom.Provider, tid string)
 	return nil
 }
 
-// validateScopes validates that requested scopes are reasonable.
+// validateScopes validates that requested scopes are reasonable. A non-empty
+// scope list must include "openid": sign-in verifies the provider's id_token,
+// which the provider issues only for that scope. An empty list means the
+// defaults, which include it.
 func validateScopes(scopes []string) error {
 	if len(scopes) > 20 {
 		return fmt.Errorf("%w: too many scopes (max 20)", identityproviderdom.ErrInvalidConfig)
@@ -1643,7 +2100,29 @@ func validateScopes(scopes []string) error {
 			return fmt.Errorf("%w: scope too long (max 128 chars)", identityproviderdom.ErrInvalidConfig)
 		}
 	}
+	if len(scopes) > 0 && !hasOpenIDScope(scopes) {
+		return fmt.Errorf(`%w: scopes must include "openid" (sign-in verifies the provider's id_token)`, identityproviderdom.ErrInvalidConfig)
+	}
 	return nil
+}
+
+func hasOpenIDScope(scopes []string) bool {
+	for _, sc := range scopes {
+		if strings.TrimSpace(sc) == "openid" {
+			return true
+		}
+	}
+	return false
+}
+
+// withOpenIDScope returns scopes with "openid" first if it is missing. A
+// provider saved before "openid" was required keeps working: its authorize
+// request asks for the id_token that the callback now requires.
+func withOpenIDScope(scopes []string) []string {
+	if hasOpenIDScope(scopes) {
+		return scopes
+	}
+	return append([]string{"openid"}, scopes...)
 }
 
 // validateAllowedDomains validates allowed email domains.
@@ -1671,6 +2150,19 @@ func validateAllowedDomains(domains []string) error {
 
 // CreateProvider creates a new identity provider configuration for a tenant.
 func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInput) (*identityproviderdom.IdentityProvider, error) {
+	ip, err := s.BuildProvider(input)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ipRepo.Create(ctx, ip); err != nil {
+		return nil, err
+	}
+	return ip, nil
+}
+
+// BuildProvider validates input and returns the identity provider it
+// describes (client secret encrypted), without storing it.
+func (s *SSOService) BuildProvider(input CreateProviderInput) (*identityproviderdom.IdentityProvider, error) {
 	provider := identityproviderdom.Provider(input.Provider)
 	if !provider.IsValid() {
 		return nil, identityproviderdom.ErrInvalidProvider
@@ -1730,11 +2222,6 @@ func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInp
 	if input.CreatedBy != "" {
 		ip.SetCreatedBy(input.CreatedBy)
 	}
-
-	if err := s.ipRepo.Create(ctx, ip); err != nil {
-		return nil, err
-	}
-
 	return ip, nil
 }
 
@@ -1756,6 +2243,19 @@ type UpdateProviderInput struct {
 
 // UpdateProvider updates an identity provider configuration.
 func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInput) (*identityproviderdom.IdentityProvider, error) {
+	ip, err := s.BuildProviderUpdate(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ipRepo.Update(ctx, ip); err != nil {
+		return nil, err
+	}
+	return ip, nil
+}
+
+// BuildProviderUpdate validates input and returns the tenant's identity
+// provider with the update applied, without storing it.
+func (s *SSOService) BuildProviderUpdate(ctx context.Context, input UpdateProviderInput) (*identityproviderdom.IdentityProvider, error) {
 	ip, err := s.ipRepo.GetByID(ctx, input.TenantID, input.ID)
 	if err != nil {
 		return nil, err
@@ -1823,17 +2323,18 @@ func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInp
 	if input.IsActive != nil {
 		ip.SetActive(*input.IsActive)
 	}
-
-	if err := s.ipRepo.Update(ctx, ip); err != nil {
-		return nil, err
-	}
-
 	return ip, nil
 }
 
 // GetProvider retrieves a provider configuration by ID.
 func (s *SSOService) GetProvider(ctx context.Context, tenantID, id string) (*identityproviderdom.IdentityProvider, error) {
 	return s.ipRepo.GetByID(ctx, tenantID, id)
+}
+
+// GetProviderByType returns the tenant's identity provider of one type (a
+// tenant has at most one per type).
+func (s *SSOService) GetProviderByType(ctx context.Context, tenantID, provider string) (*identityproviderdom.IdentityProvider, error) {
+	return s.ipRepo.GetByTenantAndProvider(ctx, tenantID, identityproviderdom.Provider(provider))
 }
 
 // ListProviders lists all identity provider configurations for a tenant.

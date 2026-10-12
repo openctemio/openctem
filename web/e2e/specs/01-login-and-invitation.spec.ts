@@ -64,7 +64,7 @@ base('login flow lands on a tenant route', async ({ page }, testInfo) => {
 
 base('public invitation preview handles unknown token gracefully', async ({ page }) => {
   // Public route — no auth required. Use a clearly fake token.
-  await page.goto('/invitations/this-token-definitely-does-not-exist-0123456789/preview')
+  await page.goto('/invitations#token=this-token-definitely-does-not-exist-0123456789')
   // Either a friendly 404 or an "invalid invitation" UI must render —
   // never a hard crash. We assert the page rendered SOMETHING.
   await expect(page.locator('body')).toBeVisible()

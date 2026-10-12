@@ -77,9 +77,7 @@ type EventCategoryInfo struct {
 // added without the UI's map learning about them.
 func AllEventCategories() []EventCategoryInfo {
 	return []EventCategoryInfo{
-		{Category: EventCategorySystem, Label: "System Events"},
 		{Category: EventCategoryAsset, Label: "Asset Events"},
-		{Category: EventCategoryScan, Label: "Scan Events"},
 		{Category: EventCategoryFinding, Label: "Finding Events"},
 		{Category: EventCategoryApproval, Label: "Approval Events"},
 		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
@@ -90,27 +88,16 @@ func AllEventCategories() []EventCategoryInfo {
 
 // Known event types for notification routing.
 // Add new event types here - no database migration required (JSONB array).
+// A type goes into AllEventTypes only together with its producer:
+// tests/unit/event_type_producer_test.go fails on a type nothing emits.
 const (
-	// System events
-	EventTypeSecurityAlert EventType = "security_alert"
-	EventTypeSystemError   EventType = "system_error"
-
 	// Asset events
-	EventTypeNewAsset     EventType = "new_asset"
-	EventTypeAssetChanged EventType = "asset_changed"
-	EventTypeAssetDeleted EventType = "asset_deleted"
-
-	// Scan events
-	EventTypeScanStarted   EventType = "scan_started"
-	EventTypeScanCompleted EventType = "scan_completed"
-	EventTypeScanFailed    EventType = "scan_failed"
+	EventTypeNewAsset EventType = "new_asset"
 
 	// Finding events
-	EventTypeNewFinding       EventType = "new_finding"
-	EventTypeFindingConfirmed EventType = "finding_confirmed"
-	EventTypeFindingTriaged   EventType = "finding_triaged"
-	EventTypeFindingFixed     EventType = "finding_fixed"
-	EventTypeFindingReopened  EventType = "finding_reopened"
+	EventTypeNewFinding      EventType = "new_finding"
+	EventTypeFindingFixed    EventType = "finding_fixed"
+	EventTypeFindingReopened EventType = "finding_reopened"
 	// EventTypeFindingPriorityEscalated fires when an already-classified
 	// finding is re-classified UP (e.g. P3 -> P0 because its CVE was newly
 	// listed in KEV, or a compensating control was removed). Without it a
@@ -146,8 +133,11 @@ const (
 	EventTypeWorkflowNotification EventType = "workflow_notification"
 
 	// Exposure events
-	EventTypeNewExposure      EventType = "new_exposure"
-	EventTypeExposureResolved EventType = "exposure_resolved"
+	EventTypeNewExposure EventType = "new_exposure"
+
+	// EventTypeAttackSurfaceDigest is the weekly "what changed" digest of the
+	// external attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md).
+	EventTypeAttackSurfaceDigest EventType = "attack_surface_digest"
 
 	// EventTypeSensorOffline fires when the sensor-health controller sees a
 	// sensor stop heartbeating (online -> offline). The id keeps the dotted
@@ -155,6 +145,28 @@ const (
 	// what existing subscriptions store (migration 000230 rewrote
 	// agent.offline to it). Emitted once per offline transition, not per tick.
 	EventTypeSensorOffline EventType = "sensor.offline"
+
+	// CI pipeline signals (RFC-051 §10.6), emitted by the CI alert job once
+	// per scan workflow or repository while the condition holds, never per run.
+	EventTypeCIScheduleMissed     EventType = "ci.schedule_missed"
+	EventTypeCICoverageRegression EventType = "ci.coverage_regression"
+	EventTypeCIGateFailing        EventType = "ci.gate_failing"
+	EventTypeCIRunnerOutdated     EventType = "ci.runner_outdated"
+	// CI security signals: a break-glass created or used (every time), and
+	// a burst of refused CI token exchanges (once while it lasts).
+	EventTypeCIBreakGlass    EventType = "ci.break_glass"
+	EventTypeCITokenRefusals EventType = "ci.token_refusals"
+	// EventTypeCIUngatedMerge: a pull request merged into the default branch
+	// without a passing gate verdict (RFC-077).
+	EventTypeCIUngatedMerge EventType = "ci.ungated_merge"
+
+	// Retired types. Nothing ever emitted them, so they are not in
+	// AllEventTypes and a channel cannot subscribe to them (settings plan
+	// P0-08). They stay as constants only because the legacy aliases below
+	// map onto them, and subscriptions stored before the change may still
+	// list them; such entries simply never match.
+	EventTypeSecurityAlert EventType = "security_alert"
+	EventTypeScanCompleted EventType = "scan_completed"
 
 	// Legacy event types (for backward compatibility)
 	EventTypeFindings  EventType = "findings"  // Maps to new_finding
@@ -179,6 +191,8 @@ const (
 	ModuleScans    = "scans"
 	ModuleFindings = "findings"
 	ModuleSensors  = "sensors"
+	// ModuleAttackSurface is the EASM module.
+	ModuleAttackSurface = "attack_surface"
 )
 
 // AllEventTypes returns all event types with metadata for UI.
@@ -186,24 +200,12 @@ const (
 // Empty RequiredModule means the event type is always available (system events).
 func AllEventTypes() []EventTypeInfo {
 	return []EventTypeInfo{
-		// System events - always available (no module required)
-		{Type: EventTypeSecurityAlert, Category: EventCategorySystem, Label: "Security Alert", Description: "Security-related alerts and warnings", RequiredModule: ""},
-		{Type: EventTypeSystemError, Category: EventCategorySystem, Label: "System Error", Description: "System errors and failures", RequiredModule: ""},
 
 		// Asset events - require 'assets' module
 		{Type: EventTypeNewAsset, Category: EventCategoryAsset, Label: "New Asset", Description: "New asset discovered or added", RequiredModule: ModuleAssets},
-		{Type: EventTypeAssetChanged, Category: EventCategoryAsset, Label: "Asset Changed", Description: "Asset information changed", RequiredModule: ModuleAssets},
-		{Type: EventTypeAssetDeleted, Category: EventCategoryAsset, Label: "Asset Deleted", Description: "Asset removed from inventory", RequiredModule: ModuleAssets},
-
-		// Scan events - require 'scans' module
-		{Type: EventTypeScanStarted, Category: EventCategoryScan, Label: "Scan Started", Description: "Scan job started", RequiredModule: ModuleScans},
-		{Type: EventTypeScanCompleted, Category: EventCategoryScan, Label: "Scan Completed", Description: "Scan job completed successfully", RequiredModule: ModuleScans},
-		{Type: EventTypeScanFailed, Category: EventCategoryScan, Label: "Scan Failed", Description: "Scan job failed", RequiredModule: ModuleScans},
 
 		// Finding events - require 'findings' module
 		{Type: EventTypeNewFinding, Category: EventCategoryFinding, Label: "New Finding", Description: "New security finding detected", RequiredModule: ModuleFindings},
-		{Type: EventTypeFindingConfirmed, Category: EventCategoryFinding, Label: "Confirmed Finding", Description: "Finding confirmed as valid", RequiredModule: ModuleFindings},
-		{Type: EventTypeFindingTriaged, Category: EventCategoryFinding, Label: "Need Triage Finding", Description: "Finding needs triage/review", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingFixed, Category: EventCategoryFinding, Label: "Fixed Finding", Description: "Finding has been remediated", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingReopened, Category: EventCategoryFinding, Label: "Reopened Finding", Description: "Finding reopened after fix", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingPriorityEscalated, Category: EventCategoryFinding, Label: "Priority Escalated", Description: "Finding re-classified to a higher priority (e.g. P3 to P0)", RequiredModule: ModuleFindings},
@@ -218,7 +220,7 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Workflow events - require 'findings' module ('workflows' is a child of
 		// 'findings' per migration 000162). Deliberately NOT gated on the
-		// 'workflows' module: internal/app/workflow never checks module
+		// 'workflows' module: internal/app/automation never checks module
 		// enablement before enqueuing, so gating the notification on a module
 		// the emitter ignores would recreate the same silent drop this list
 		// exists to prevent.
@@ -226,10 +228,19 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Exposure events - require 'findings' module (part of findings feature)
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
-		{Type: EventTypeExposureResolved, Category: EventCategoryExposure, Label: "Exposure Resolved", Description: "Exposure has been resolved", RequiredModule: ModuleFindings},
+		{Type: EventTypeAttackSurfaceDigest, Category: EventCategoryExposure, Label: "Attack Surface Weekly Digest", Description: "Weekly summary of what changed on the external attack surface: new and removed hosts, ports, certificates, DNS, technologies and exposures", RequiredModule: ModuleAttackSurface},
 
 		// Sensor events - require 'sensors' module
 		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
+
+		// CI pipeline signals - require 'scans' module (CI runs live there)
+		{Type: EventTypeCIScheduleMissed, Category: EventCategorySensor, Label: "CI Scheduled Scan Missed", Description: "A CI pipeline with a schedule missed two expected runs", RequiredModule: ModuleScans},
+		{Type: EventTypeCICoverageRegression, Category: EventCategorySensor, Label: "CI Coverage Lost", Description: "A repository that had a fresh CI pipeline has none any more", RequiredModule: ModuleScans},
+		{Type: EventTypeCIGateFailing, Category: EventCategorySensor, Label: "CI Default Branch Failing", Description: "The default branch of a repository fails the CI gate (opt-in)", RequiredModule: ModuleScans},
+		{Type: EventTypeCIRunnerOutdated, Category: EventCategorySensor, Label: "CI Runner Outdated", Description: "A CI pipeline runs a sensor older than the minimum supported version", RequiredModule: ModuleScans},
+		{Type: EventTypeCIBreakGlass, Category: EventCategorySensor, Label: "CI Break-glass", Description: "A break-glass was created, or let a failing CI run pass", RequiredModule: ModuleScans},
+		{Type: EventTypeCITokenRefusals, Category: EventCategorySensor, Label: "CI Token Refusals", Description: "Many CI token exchanges were refused in a short time", RequiredModule: ModuleScans},
+		{Type: EventTypeCIUngatedMerge, Category: EventCategorySensor, Label: "CI Ungated Merge", Description: "A pull request was merged into the default branch without a passing CI gate verdict", RequiredModule: ModuleScans},
 	}
 }
 
@@ -241,9 +252,12 @@ func AllEventTypes() []EventTypeInfo {
 // surprised to learn this reached nobody".
 func DefaultEnabledEventTypes() []EventType {
 	return []EventType{
-		EventTypeSecurityAlert,
 		EventTypeNewFinding,
 		EventTypeNewExposure,
+
+		// One message a week, sent only when the organization keeps the
+		// digest on (the default) and something changed.
+		EventTypeAttackSurfaceDigest,
 
 		// A missed remediation deadline that notifies nobody defeats the point
 		// of having an SLA. Enqueued at severity "high", so it also clears the
@@ -272,6 +286,18 @@ func DefaultEnabledEventTypes() []EventType {
 		// per-integration severity filter still applies (P0 -> critical,
 		// P1 -> high, ...), so this is not a firehose.
 		EventTypeFindingPriorityEscalated,
+
+		// A scheduled CI scan that silently stopped, a repository that lost
+		// its scanning, or a runner below the supported version are the
+		// failures nobody notices otherwise. A failing default branch is
+		// opt-in: the scan workflow itself already reports it.
+		EventTypeCIScheduleMissed,
+		EventTypeCICoverageRegression,
+		EventTypeCIRunnerOutdated,
+		// Security signals about the CI gate itself.
+		EventTypeCIBreakGlass,
+		EventTypeCITokenRefusals,
+		EventTypeCIUngatedMerge,
 	}
 }
 
@@ -313,6 +339,20 @@ func SeverityFilterApplies(eventType EventType) bool {
 	// severity is a constant chosen by the sensor-health controller. The
 	// operator opts in through the event-type list.
 	case EventTypeSensorOffline:
+		return false
+	// The CI signals carry a constant severity chosen by the CI alert job,
+	// not a finding's severity.
+	case EventTypeCIScheduleMissed, EventTypeCICoverageRegression, EventTypeCIGateFailing, EventTypeCIRunnerOutdated,
+		EventTypeCIBreakGlass, EventTypeCITokenRefusals, EventTypeCIUngatedMerge:
+		return false
+	// sla_warning is stamped "medium" by the SLA warning adapter as the urgency
+	// of an approaching deadline, whatever the finding's severity. It is opt-in
+	// (not default-on), and under the default critical+high filter every one
+	// was dropped, so opting in delivered nothing.
+	case EventTypeSLAWarning:
+		return false
+	// The weekly digest is a summary with a fixed "info" severity.
+	case EventTypeAttackSurfaceDigest:
 		return false
 	default:
 		return true

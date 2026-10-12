@@ -3,8 +3,11 @@ package scope
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"regexp"
 	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 // =============================================================================
@@ -58,7 +61,7 @@ func (t TargetType) IsValid() bool {
 func ParseTargetType(s string) (TargetType, error) {
 	t := TargetType(strings.ToLower(s))
 	if !t.IsValid() {
-		return "", fmt.Errorf("invalid target type: %s", s)
+		return "", fmt.Errorf("%w: %q", ErrInvalidTargetType, s)
 	}
 	return t, nil
 }
@@ -114,7 +117,7 @@ func (t ExclusionType) IsValid() bool {
 func ParseExclusionType(s string) (ExclusionType, error) {
 	t := ExclusionType(strings.ToLower(s))
 	if !t.IsValid() {
-		return "", fmt.Errorf("invalid exclusion type: %s", s)
+		return "", fmt.Errorf("%w: %q", ErrInvalidExclusionType, s)
 	}
 	return t, nil
 }
@@ -129,7 +132,14 @@ type Status string
 const (
 	StatusActive   Status = "active"
 	StatusInactive Status = "inactive"
-	StatusExpired  Status = "expired" // Only for exclusions
+	// StatusExpired: the expiry passed (an exclusion, or an expiring scope
+	// entry, RFC-054). It is no longer in effect.
+	StatusExpired Status = "expired"
+	// StatusPending: an exclusion or a scope entry waiting for review. It does
+	// not take effect until enough approvers approve it.
+	StatusPending Status = "pending"
+	// StatusRejected: a reviewer declined it. It never takes effect.
+	StatusRejected Status = "rejected"
 )
 
 // String returns the string representation of the status.
@@ -140,98 +150,10 @@ func (s Status) String() string {
 // IsValid returns true if the status is valid.
 func (s Status) IsValid() bool {
 	switch s {
-	case StatusActive, StatusInactive, StatusExpired:
+	case StatusActive, StatusInactive, StatusExpired, StatusPending, StatusRejected:
 		return true
 	}
 	return false
-}
-
-// =============================================================================
-// Scan Type
-// =============================================================================
-
-// ScanType represents the type of scan.
-type ScanType string
-
-const (
-	ScanTypeFull          ScanType = "full"
-	ScanTypeIncremental   ScanType = "incremental"
-	ScanTypeTargeted      ScanType = "targeted"
-	ScanTypeVulnerability ScanType = "vulnerability"
-	ScanTypeCompliance    ScanType = "compliance"
-	ScanTypeSecret        ScanType = "secret"
-	ScanTypeSAST          ScanType = "sast"
-	ScanTypeDAST          ScanType = "dast"
-	ScanTypeSCA           ScanType = "sca"
-)
-
-// String returns the string representation of the scan type.
-func (t ScanType) String() string {
-	return string(t)
-}
-
-// IsValid returns true if the scan type is valid.
-func (t ScanType) IsValid() bool {
-	switch t {
-	case ScanTypeFull, ScanTypeIncremental, ScanTypeTargeted, ScanTypeVulnerability,
-		ScanTypeCompliance, ScanTypeSecret, ScanTypeSAST, ScanTypeDAST, ScanTypeSCA:
-		return true
-	}
-	return false
-}
-
-// ParseScanType parses a string into a ScanType.
-func ParseScanType(s string) (ScanType, error) {
-	t := ScanType(strings.ToLower(s))
-	if !t.IsValid() {
-		return "", fmt.Errorf("invalid scan type: %s", s)
-	}
-	return t, nil
-}
-
-// =============================================================================
-// Schedule Type
-// =============================================================================
-
-// ScheduleType represents how a scan is scheduled.
-type ScheduleType string
-
-const (
-	ScheduleTypeCron     ScheduleType = "cron"
-	ScheduleTypeInterval ScheduleType = "interval"
-	ScheduleTypeManual   ScheduleType = "manual"
-)
-
-// String returns the string representation of the schedule type.
-func (t ScheduleType) String() string {
-	return string(t)
-}
-
-// IsValid returns true if the schedule type is valid.
-func (t ScheduleType) IsValid() bool {
-	switch t {
-	case ScheduleTypeCron, ScheduleTypeInterval, ScheduleTypeManual:
-		return true
-	}
-	return false
-}
-
-// =============================================================================
-// Target Scope
-// =============================================================================
-
-// TargetScope defines what targets to include in a scan.
-type TargetScope string
-
-const (
-	TargetScopeAll      TargetScope = "all"
-	TargetScopeSelected TargetScope = "selected"
-	TargetScopeTag      TargetScope = "tag"
-)
-
-// String returns the string representation of the target scope.
-func (t TargetScope) String() string {
-	return string(t)
 }
 
 // =============================================================================
@@ -241,11 +163,11 @@ func (t TargetScope) String() string {
 // ValidatePattern validates a pattern for the given target type.
 func ValidatePattern(targetType TargetType, pattern string) error {
 	if pattern == "" {
-		return fmt.Errorf("pattern cannot be empty")
+		return fmt.Errorf("%w: pattern cannot be empty", ErrInvalidPattern)
 	}
 
 	if len(pattern) > 500 {
-		return fmt.Errorf("pattern too long (max 500 characters)")
+		return fmt.Errorf("%w (max 500 characters)", ErrPatternTooLong)
 	}
 
 	switch targetType {
@@ -274,14 +196,14 @@ func validateDomainPattern(pattern string) error {
 
 	// Basic domain validation
 	if !regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$`).MatchString(pattern) {
-		return fmt.Errorf("invalid domain pattern: %s", pattern)
+		return fmt.Errorf("%w: not a domain name or *.domain wildcard", ErrInvalidPattern)
 	}
 	return nil
 }
 
 func validateIPAddress(pattern string) error {
 	if net.ParseIP(pattern) == nil {
-		return fmt.Errorf("invalid IP address: %s", pattern)
+		return fmt.Errorf("%w: not an IP address", ErrInvalidPattern)
 	}
 	return nil
 }
@@ -298,7 +220,7 @@ func validateCIDR(pattern string) error {
 				}
 			}
 		}
-		return fmt.Errorf("invalid CIDR or IP range: %s", pattern)
+		return fmt.Errorf("%w: not a CIDR block or first-last IP range", ErrInvalidPattern)
 	}
 	return nil
 }
@@ -306,15 +228,24 @@ func validateCIDR(pattern string) error {
 func validateRepositoryPattern(pattern string) error {
 	// Allow: github.com/org/repo, github.com/org/*, gitlab.com/group/project
 	if !regexp.MustCompile(`^[a-zA-Z0-9.-]+(/[a-zA-Z0-9._*-]+)+$`).MatchString(pattern) {
-		return fmt.Errorf("invalid repository pattern: %s", pattern)
+		return fmt.Errorf("%w: not a repository path such as github.com/org/repo", ErrInvalidPattern)
 	}
 	return nil
 }
 
+var (
+	cloudAccountPattern = regexp.MustCompile(`^(AWS|GCP|Azure|aws|gcp|azure):[a-zA-Z0-9_-]+$`)
+	// awsAccountIDPattern is an AWS account id without its provider prefix.
+	awsAccountIDPattern = regexp.MustCompile(`^[0-9]{12}$`)
+)
+
 func validateCloudAccountPattern(pattern string) error {
 	// Allow: AWS:123456789012, GCP:project-id, Azure:subscription-id
-	if !regexp.MustCompile(`^(AWS|GCP|Azure|aws|gcp|azure):[a-zA-Z0-9_-]+$`).MatchString(pattern) {
-		return fmt.Errorf("invalid cloud account pattern: %s (expected format: AWS:account-id)", pattern)
+	if awsAccountIDPattern.MatchString(pattern) {
+		return fmt.Errorf("%w: a bare AWS account id is not accepted; write it as AWS:%s", ErrInvalidPattern, pattern)
+	}
+	if !cloudAccountPattern.MatchString(pattern) {
+		return fmt.Errorf("%w: a cloud account is PROVIDER:id with PROVIDER one of AWS, GCP, Azure (for example AWS:123456789012)", ErrInvalidPattern)
 	}
 	return nil
 }
@@ -322,7 +253,7 @@ func validateCloudAccountPattern(pattern string) error {
 func validateURLPattern(pattern string) error {
 	// Allow wildcards in path
 	if !strings.HasPrefix(pattern, "http://") && !strings.HasPrefix(pattern, "https://") && !strings.HasPrefix(pattern, "*") {
-		return fmt.Errorf("invalid URL pattern: %s (must start with http://, https://, or *)", pattern)
+		return fmt.Errorf("%w: a URL must start with http://, https:// or *", ErrInvalidPattern)
 	}
 	return nil
 }
@@ -349,77 +280,156 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 	}
 }
 
+// matchDomain is the domain test for scope targets and exclusions alike
+// (RFC-054 §4.1, owner decision S1):
+//
+//   - "example.com" matches only example.com;
+//   - "*.example.com" matches example.com itself and every name below it, at
+//     any depth. To cover the subdomains without the apex, add an exclusion
+//     of exactly "example.com" (the more specific rule wins);
+//   - "**.example.com" means the same as "*.example.com".
+//
+// Root-domain seeds, verified domains and the active-scan gate use the same
+// "this domain and everything under it" meaning, so one intent gets one
+// answer everywhere.
+//
+// Both sides are compared case-insensitively, without a trailing dot, and in
+// their IDNA ASCII form, so "*.bücher.example" matches
+// "shop.xn--bcher-kva.example" and the other way round. A value may itself be
+// a wildcard pattern (CheckPatternOverlaps compares patterns): "*.a.x.com" is
+// inside "*.x.com", and "*.x.com" is not inside the exact "x.com".
 func matchDomain(pattern, domain string) bool {
-	pattern = strings.ToLower(pattern)
-	domain = strings.ToLower(domain)
-
-	// Exact match
-	if pattern == domain {
-		return true
-	}
-
-	// Wildcard match: *.example.com
-	if strings.HasPrefix(pattern, "*.") {
-		suffix := pattern[2:]
-		return strings.HasSuffix(domain, "."+suffix) || domain == suffix
-	}
-
-	// Double wildcard: **.example.com (matches any subdomain depth)
-	if strings.HasPrefix(pattern, "**.") {
-		suffix := pattern[3:]
-		return strings.HasSuffix(domain, "."+suffix) || domain == suffix
-	}
-
-	return false
-}
-
-func matchCIDR(pattern, ip string) bool {
-	parsedIP := net.ParseIP(ip)
-	if parsedIP == nil {
+	pWild, p := splitDomainWildcard(pattern)
+	dWild, d := splitDomainWildcard(domain)
+	if p == "" || d == "" {
 		return false
 	}
-
-	// Try CIDR
-	_, network, err := net.ParseCIDR(pattern)
-	if err == nil {
-		return network.Contains(parsedIP)
+	if !pWild {
+		return !dWild && d == p
 	}
-
-	// Try IP range
-	if strings.Contains(pattern, "-") {
-		parts := strings.Split(pattern, "-")
-		if len(parts) == 2 {
-			startIP := net.ParseIP(strings.TrimSpace(parts[0]))
-			endIP := net.ParseIP(strings.TrimSpace(parts[1]))
-			if startIP != nil && endIP != nil {
-				return ipInRange(parsedIP, startIP, endIP)
-			}
-		}
-	}
-
-	return false
+	return d == p || strings.HasSuffix(d, "."+p)
 }
 
-func ipInRange(ip, start, end net.IP) bool {
-	ip = ip.To16()
-	start = start.To16()
-	end = end.To16()
+// domainIDNA converts a name to its ASCII (punycode) form for comparison.
+// Lenient on purpose: underscores (_dmarc.example.com) and other non-LDH
+// labels stay as they are instead of failing the conversion.
+var domainIDNA = idna.New(idna.MapForLookup(), idna.StrictDomainName(false))
 
-	if ip == nil || start == nil || end == nil {
+// splitDomainWildcard strips a leading "*." or "**." label and normalises the
+// rest: trimmed, lowercased, one trailing dot dropped, IDNA ASCII form (the
+// lowercased text when the conversion fails).
+func splitDomainWildcard(s string) (wildcard bool, name string) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch {
+	case strings.HasPrefix(s, "**."):
+		wildcard, s = true, s[3:]
+	case strings.HasPrefix(s, "*."):
+		wildcard, s = true, s[2:]
+	}
+	s = strings.TrimSuffix(s, ".")
+	if s == "" {
+		return wildcard, ""
+	}
+	if a, err := domainIDNA.ToASCII(s); err == nil && a != "" {
+		s = strings.ToLower(a)
+	}
+	return wildcard, s
+}
+
+// ipSet is a contiguous, inclusive address range of one family: a single
+// address, a CIDR (host bits ignored) or an "a-b" range.
+type ipSet struct{ lo, hi netip.Addr }
+
+// parseIPSet reads an address, a CIDR or an "a-b" range. IPv4-mapped IPv6
+// addresses are treated as IPv4, so "::ffff:10.0.0.5" and "10.0.0.5" are the
+// same address.
+func parseIPSet(s string) (ipSet, bool) {
+	s = strings.TrimSpace(s)
+	if strings.Contains(s, "/") {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return ipSet{}, false
+		}
+		p = p.Masked()
+		lo := p.Addr()
+		if lo.Is4In6() && p.Bits() >= 96 {
+			p = netip.PrefixFrom(lo.Unmap(), p.Bits()-96)
+			lo = p.Addr()
+		}
+		return ipSet{lo: lo, hi: lastAddr(p)}, true
+	}
+	if lo, hi, ok := strings.Cut(s, "-"); ok {
+		a, errA := netip.ParseAddr(strings.TrimSpace(lo))
+		b, errB := netip.ParseAddr(strings.TrimSpace(hi))
+		if errA != nil || errB != nil {
+			return ipSet{}, false
+		}
+		a, b = a.Unmap(), b.Unmap()
+		if a.Is4() != b.Is4() || b.Less(a) {
+			return ipSet{}, false
+		}
+		return ipSet{lo: a, hi: b}, true
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return ipSet{}, false
+	}
+	a = a.Unmap().WithZone("")
+	return ipSet{lo: a, hi: a}, true
+}
+
+// lastAddr returns the highest address in a masked prefix.
+func lastAddr(p netip.Prefix) netip.Addr {
+	b := p.Addr().AsSlice()
+	for i := p.Bits(); i < len(b)*8; i++ {
+		b[i/8] |= byte(0x80) >> (i % 8)
+	}
+	a, _ := netip.AddrFromSlice(b)
+	return a
+}
+
+func (r ipSet) sameFamily(o ipSet) bool { return r.lo.Is4() == o.lo.Is4() }
+
+// contains reports whether every address of o lies inside r.
+func (r ipSet) contains(o ipSet) bool {
+	return r.sameFamily(o) && !o.lo.Less(r.lo) && !r.hi.Less(o.hi)
+}
+
+// overlaps reports whether r and o share at least one address.
+func (r ipSet) overlaps(o ipSet) bool {
+	return r.sameFamily(o) && !r.hi.Less(o.lo) && !o.hi.Less(r.lo)
+}
+
+// matchCIDR is the TARGET test: value (an address, CIDR or range) is in scope
+// of pattern (a CIDR or range) only when all of it lies inside the pattern.
+func matchCIDR(pattern, value string) bool {
+	p, ok := parseIPSet(pattern)
+	if !ok {
 		return false
 	}
-
-	for i := 0; i < 16; i++ {
-		if ip[i] < start[i] || ip[i] > end[i] {
-			if ip[i] < start[i] {
-				return false
-			}
-			if ip[i] > end[i] {
-				return false
-			}
-		}
+	v, ok := parseIPSet(value)
+	if !ok {
+		return false
 	}
-	return true
+	return p.contains(v)
+}
+
+// matchIPExclusion is the EXCLUSION test: value is excluded when it shares ANY
+// address with pattern. A scan target is handed to the scanner as written, so a
+// target network that merely overlaps an excluded one would scan the excluded
+// addresses; the only safe outcome is to skip the whole target (split it to
+// scan the rest). A pattern that is not an address set falls back to an exact,
+// case-insensitive string match.
+func matchIPExclusion(pattern, value string) bool {
+	p, ok := parseIPSet(pattern)
+	if !ok {
+		return strings.EqualFold(strings.TrimSpace(pattern), strings.TrimSpace(value))
+	}
+	v, ok := parseIPSet(value)
+	if !ok {
+		return false
+	}
+	return p.overlaps(v)
 }
 
 func matchWildcard(pattern, value string) bool {
@@ -455,16 +465,17 @@ func MatchesExclusionPattern(exclusionType ExclusionType, pattern, value string)
 	switch exclusionType {
 	case ExclusionTypeDomain, ExclusionTypeSubdomain:
 		return matchDomain(pattern, value)
-	case ExclusionTypeIPAddress:
-		return pattern == value
-	case ExclusionTypeIPRange, ExclusionTypeCIDR:
-		return matchCIDR(pattern, value)
+	case ExclusionTypeIPAddress, ExclusionTypeIPRange, ExclusionTypeCIDR:
+		return matchIPExclusion(pattern, value)
 	case ExclusionTypeURL:
 		return matchWildcard(pattern, value)
 	case ExclusionTypeRepository:
 		return matchWildcard(pattern, value)
 	case ExclusionTypePath:
-		return matchWildcard(pattern, value)
+		// A path exclusion is a web rule (host, path, methods, testing
+		// mode): only Exclusion.Matches can apply it, never the pattern
+		// alone.
+		return false
 	case ExclusionTypeFindingType:
 		return matchWildcard(pattern, value)
 	case ExclusionTypeScanner:

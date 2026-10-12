@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
@@ -36,7 +36,7 @@ type fakeFindingReader struct {
 	finding *vulnerability.Finding
 }
 
-func (f *fakeFindingReader) ListFindings(_ context.Context, in app.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error) {
+func (f *fakeFindingReader) ListFindings(_ context.Context, in findingapp.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error) {
 	f.gotTenant = in.TenantID
 	return pagination.NewResult([]*vulnerability.Finding{}, 0, pagination.Pagination{Page: 1, PerPage: 25}), nil
 }
@@ -48,7 +48,7 @@ func (f *fakeFindingReader) GetFindingWithScope(_ context.Context, tenantID, _, 
 	}
 	return f.finding, nil
 }
-func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in app.GetFindingStatsInput) (*vulnerability.FindingStats, error) {
+func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in findingapp.GetFindingStatsInput) (*vulnerability.FindingStats, error) {
 	f.gotTenant = in.TenantID
 	f.gotScopeUser = in.ActingUserID
 	f.gotIsAdmin = in.IsAdmin
@@ -57,7 +57,7 @@ func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in app.G
 	}
 	return &vulnerability.FindingStats{}, nil
 }
-func (f *fakeFindingReader) ListActiveCVEs(_ context.Context, _ app.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error) {
+func (f *fakeFindingReader) ListActiveCVEs(_ context.Context, _ findingapp.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.NewResult([]vulnerability.ActiveCVE{}, 0, pagination.Pagination{Page: 1, PerPage: 25}), nil
 }
 
@@ -416,7 +416,7 @@ func (m *fakeAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string,
 func (m *fakeAuditRepo) AppendChainEntry(_ context.Context, _ auditdom.ChainEntry) error {
 	return nil
 }
-func (m *fakeAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]auditdom.ChainEntry, error) {
+func (m *fakeAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int64, _ int) ([]auditdom.ChainEntry, error) {
 	return nil, nil
 }
 func (m *fakeAuditRepo) ApplyChainRebaseline(_ context.Context, _ auditdom.ChainRebaseline) error {
@@ -507,8 +507,7 @@ func makePentestFinding(t *testing.T) *vulnerability.Finding {
 
 func newTestCampaign(t *testing.T) *pentestdom.Campaign {
 	t.Helper()
-	c, err := pentestdom.NewCampaign(shared.NewID(), "__test campaign",
-		pentestdom.CampaignType("black_box"), pentestdom.CampaignPriority("high"))
+	c, err := pentestdom.NewCampaign(shared.NewID(), "__test campaign")
 	if err != nil {
 		t.Fatalf("new campaign: %v", err)
 	}

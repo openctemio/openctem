@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -20,21 +22,35 @@ type Scan struct {
 	AssetGroupID  shared.ID   // Optional: primary asset group (legacy, for single asset group)
 	AssetGroupIDs []shared.ID // Optional: multiple asset groups (NEW)
 	Targets       []string    // Optional: direct target list (domains, IPs, URLs)
+	// TargetOptions tunes how each run resolves the selectors among Targets
+	// (wildcard domains, CIDRs) against the inventory (RFC-068).
+	TargetOptions TargetOptions
+	// SkippedTargets are the targets the user chose to leave out when the
+	// scan was saved because the scope check refused them, with the reason
+	// (RFC-054 §6.4). They are not in Targets; every run records them.
+	SkippedTargets []SkippedTarget
 
 	// Scan Type
-	ScanType      ScanType
-	PipelineID    *shared.ID     // For workflow type
-	ScannerName   string         // For single type
-	ScannerConfig map[string]any // Scanner-specific configuration
-	TargetsPerJob int            // Number of targets per job batch
+	ScanType       ScanType
+	ScanWorkflowID *shared.ID     // For workflow type
+	ScannerName    string         // For single type
+	ScannerConfig  map[string]any // Scanner-specific configuration
+	TargetsPerJob  int            // Number of targets per job batch
+	// Intensity is the probe ceiling of every run (RFC-071): passive,
+	// active or intrusive. Copied to each run.
+	Intensity Intensity
 
 	// Schedule
 	ScheduleType     ScheduleType
 	ScheduleCron     string     // Cron expression (for crontab type)
+	ScheduleRRule    string     // RFC 5545 RRULE (for rrule type), e.g. FREQ=WEEKLY;BYDAY=MO;BYHOUR=2
 	ScheduleDay      *int       // Day of week (0-6) or month (1-31)
 	ScheduleTime     *time.Time // Time of day to run
 	ScheduleTimezone string
-	NextRunAt        *time.Time // Pre-computed next run time
+	// ScheduleRunAt is the one run of a once schedule (UTC). The timezone
+	// only says how to show it.
+	ScheduleRunAt *time.Time
+	NextRunAt     *time.Time // Pre-computed next run time
 
 	// Routing
 	Tags              []string         // Route to sensors with matching tags
@@ -55,6 +71,11 @@ type Scan struct {
 	MaxRetries          int // 0 = no retry, max 10
 	RetryBackoffSeconds int // Initial backoff (default 60s), actual delay is backoff * 2^attempt
 
+	// AdHoc marks a quick scan that was run without being saved: it exists so
+	// its runs have a scan to belong to, but it is not a configuration (the
+	// list hides it) until someone saves it (SaveAsConfiguration).
+	AdHoc bool
+
 	// Status
 	Status Status
 
@@ -65,6 +86,12 @@ type Scan struct {
 	TotalRuns      int
 	SuccessfulRuns int
 	FailedRuns     int
+	// PartialRuns counts runs that kept results but lost some work
+	// (RFC-046 D5); neither a success nor a failure.
+	PartialRuns int
+	// BlockedRuns counts triggers that were refused before anything was
+	// dispatched (scanrun.RunStatusBlocked).
+	BlockedRuns int
 
 	// Audit
 	CreatedBy *shared.ID
@@ -97,6 +124,7 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScanType:            scanType,
 		ScannerConfig:       make(map[string]any),
 		TargetsPerJob:       1,
+		Intensity:           DefaultIntensity,
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
@@ -139,6 +167,7 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScanType:            scanType,
 		ScannerConfig:       make(map[string]any),
 		TargetsPerJob:       1,
+		Intensity:           DefaultIntensity,
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
@@ -177,15 +206,15 @@ func (s *Scan) SetAssetGroupIDs(ids []shared.ID) {
 	s.UpdatedAt = time.Now()
 }
 
-// SetWorkflow configures the scan to use a workflow pipeline.
-func (s *Scan) SetWorkflow(pipelineID shared.ID) error {
+// SetWorkflow configures the scan to use a workflow scan workflow.
+func (s *Scan) SetWorkflow(scanWorkflowID shared.ID) error {
 	if s.ScanType != ScanTypeWorkflow {
 		return shared.NewDomainError("VALIDATION", "cannot set workflow on single scan type", shared.ErrValidation)
 	}
-	if pipelineID.IsZero() {
-		return shared.NewDomainError("VALIDATION", "pipeline_id is required for workflow type", shared.ErrValidation)
+	if scanWorkflowID.IsZero() {
+		return shared.NewDomainError("VALIDATION", "scan_workflow_id is required for workflow type", shared.ErrValidation)
 	}
-	s.PipelineID = &pipelineID
+	s.ScanWorkflowID = &scanWorkflowID
 	s.ScannerName = ""
 	s.ScannerConfig = nil
 	s.UpdatedAt = time.Now()
@@ -206,7 +235,7 @@ func (s *Scan) SetSingleScanner(scannerName string, config map[string]any, targe
 	s.ScannerName = scannerName
 	s.ScannerConfig = config
 	s.TargetsPerJob = targetsPerJob
-	s.PipelineID = nil
+	s.ScanWorkflowID = nil
 	s.UpdatedAt = time.Now()
 	return nil
 }
@@ -242,16 +271,40 @@ func (s *Scan) SetSchedule(scheduleType ScheduleType, cron string, day *int, t *
 		if cron == "" {
 			return shared.NewDomainError("VALIDATION", "cron expression is required for crontab schedule", shared.ErrValidation)
 		}
+		// Parse with the parser the scheduler uses. An expression it cannot
+		// parse used to be stored and then quietly run every 24 hours.
+		sched, err := cronParser.Parse(cron)
+		if err != nil {
+			return shared.NewDomainError("VALIDATION", "cannot parse cron expression: "+err.Error(), shared.ErrValidation)
+		}
+		// Minimum interval (RFC-046 B8): a schedule that fires more often
+		// than every MinScheduleInterval is a scan storm, refused on save.
+		if gap := minCronGap(sched, time.Now().UTC()); gap < MinScheduleInterval {
+			return shared.NewDomainError("VALIDATION",
+				fmt.Sprintf("schedule fires every %s; the minimum interval is %s", gap, MinScheduleInterval),
+				shared.ErrValidation)
+		}
 	default:
 		return shared.NewDomainError("VALIDATION", "invalid schedule_type", shared.ErrValidation)
+	}
+	// A cron expression only drives a crontab schedule; keeping one on a
+	// daily/weekly/monthly scan stored (and showed) a schedule nothing honored.
+	if scheduleType != ScheduleCrontab {
+		cron = ""
 	}
 
 	if timezone == "" {
 		timezone = "UTC"
 	}
+	// An unknown zone used to be stored and then silently evaluated as UTC.
+	if _, err := time.LoadLocation(timezone); err != nil {
+		return shared.NewDomainError("VALIDATION", "unknown timezone: "+timezone, shared.ErrValidation)
+	}
 
 	s.ScheduleType = scheduleType
 	s.ScheduleCron = cron
+	s.ScheduleRRule = ""
+	s.ScheduleRunAt = nil
 	s.ScheduleDay = day
 	s.ScheduleTime = t
 	s.ScheduleTimezone = timezone
@@ -274,10 +327,77 @@ func (s *Scan) computeNextRunAt() {
 	s.NextRunAt = next
 }
 
+// MinScheduleInterval is the shortest gap between two scheduled runs of a
+// scan (RFC-046 B8).
+const MinScheduleInterval = 15 * time.Minute
+
+// minCronGap is the shortest gap between consecutive firings of sched over the
+// next week from now (a cron expression repeats within a week, except for
+// day-of-month rules, whose gaps are larger than any sub-hour one).
+func minCronGap(sched cron.Schedule, now time.Time) time.Duration {
+	horizon := now.Add(7 * 24 * time.Hour)
+	prev := sched.Next(now)
+	if prev.IsZero() {
+		return 0
+	}
+	gap := time.Duration(1<<63 - 1)
+	for i := 0; i < 2000 && prev.Before(horizon); i++ {
+		next := sched.Next(prev)
+		if next.IsZero() {
+			break
+		}
+		gap = min(gap, next.Sub(prev))
+		prev = next
+	}
+	return gap
+}
+
 // calculateNextRun computes the next run time based on schedule.
 // Honors ScheduleTimezone — schedule_time is interpreted in the configured timezone,
 // and cron expressions are evaluated in the same timezone.
+//
+// While the scan's current occurrence is due (the scheduler claiming it), the
+// next one is at least MinScheduleInterval after it: a crontab stored before
+// the minimum existed (every minute) runs every 15 minutes, not every minute.
 func (s *Scan) calculateNextRun() *time.Time {
+	now := time.Now()
+	base := now
+	if s.NextRunAt != nil && !s.NextRunAt.After(now) {
+		if floor := s.NextRunAt.Add(MinScheduleInterval - time.Second); floor.After(base) {
+			base = floor
+		}
+	}
+	return s.occurrenceAfter(base)
+}
+
+// OccurrenceAfter returns the schedule's first occurrence strictly after t,
+// in UTC, or nil for a manual scan or an unusable schedule.
+func (s *Scan) OccurrenceAfter(t time.Time) *time.Time {
+	return s.occurrenceAfter(t)
+}
+
+// MaxUpcomingOccurrences bounds UpcomingOccurrences (a preview, not a plan).
+const MaxUpcomingOccurrences = 10
+
+// UpcomingOccurrences returns the schedule's next n occurrences strictly after
+// t, in UTC, in order: the occurrences the scheduler fires (OccurrenceAfter
+// applied n times). n is capped at MaxUpcomingOccurrences; a manual scan or an
+// unusable schedule has none, and a rule that ends (UNTIL) returns fewer.
+func (s *Scan) UpcomingOccurrences(t time.Time, n int) []time.Time {
+	n = min(n, MaxUpcomingOccurrences)
+	out := make([]time.Time, 0, max(n, 0))
+	for len(out) < n {
+		next := s.occurrenceAfter(t)
+		if next == nil || !next.After(t) {
+			break
+		}
+		out = append(out, *next)
+		t = *next
+	}
+	return out
+}
+
+func (s *Scan) occurrenceAfter(t time.Time) *time.Time {
 	if s.ScheduleType == ScheduleManual {
 		return nil
 	}
@@ -288,26 +408,41 @@ func (s *Scan) calculateNextRun() *time.Time {
 		loc = time.UTC
 	}
 
-	now := time.Now().In(loc)
+	now := t.In(loc)
 	var next time.Time
 
 	switch s.ScheduleType {
+	case ScheduleOnce:
+		// One occurrence: the run time, while it is still ahead of t.
+		if s.ScheduleRunAt == nil || !s.ScheduleRunAt.After(t) {
+			return nil
+		}
+		next = *s.ScheduleRunAt
 	case ScheduleDaily:
 		next = nextAtTimeOfDay(now, s.ScheduleTime, 1)
 	case ScheduleWeekly:
 		next = nextAtWeekday(now, s.ScheduleDay, s.ScheduleTime)
 	case ScheduleMonthly:
 		next = nextAtDayOfMonth(now, s.ScheduleDay, s.ScheduleTime)
-	case ScheduleCrontab:
-		// Parse cron expression with timezone-aware schedule
-		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		schedule, parseErr := parser.Parse(s.ScheduleCron)
-		if parseErr != nil {
-			// Fallback to 24 hours if parsing fails
-			next = now.Add(24 * time.Hour)
-		} else {
-			next = schedule.Next(now)
+	case ScheduleRRule:
+		r, err := parseScheduleRRule(s.ScheduleRRule, loc)
+		if err != nil {
+			return nil
 		}
+		next = r.After(now, false)
+		if next.IsZero() {
+			return nil
+		}
+	case ScheduleCrontab:
+		// Parse cron expression with timezone-aware schedule. SetSchedule
+		// refuses an unparseable expression; one stored before that check gets
+		// no next run (the scheduler reports it at startup as inert) instead
+		// of the old silent "every 24 hours from now".
+		schedule, parseErr := cronParser.Parse(s.ScheduleCron)
+		if parseErr != nil {
+			return nil
+		}
+		next = schedule.Next(now)
 	default:
 		return nil
 	}
@@ -332,12 +467,30 @@ func nextAtTimeOfDay(now time.Time, t *time.Time, _ int) time.Time {
 	return candidate
 }
 
+// cronParser is the one cron dialect: 5 fields, as validated on save and
+// evaluated by the scheduler.
+var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
 // nextAtWeekday returns the next occurrence of the given weekday at the given time-of-day.
+//
+// A weekly schedule without a day (stored before SetSchedule required one)
+// keeps a 7-day period anchored on today's time slot. It used to take the
+// next slot (tomorrow once today's had passed) plus 7 days: triggered at its
+// slot, the next run was 8 days later, so the scan ran every 8 days and its
+// weekday drifted forward each week.
 func nextAtWeekday(now time.Time, dayOfWeek *int, t *time.Time) time.Time {
-	candidate := nextAtTimeOfDay(now, t, 0)
 	if dayOfWeek == nil {
-		return candidate.AddDate(0, 0, 7)
+		hour, minute := 0, 0
+		if t != nil {
+			hour, minute = t.Hour(), t.Minute()
+		}
+		today := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+		if today.After(now) {
+			return today
+		}
+		return today.AddDate(0, 0, 7)
 	}
+	candidate := nextAtTimeOfDay(now, t, 0)
 	target := time.Weekday(*dayOfWeek)
 	for candidate.Weekday() != target {
 		candidate = candidate.AddDate(0, 0, 1)
@@ -543,6 +696,8 @@ func (s *Scan) RecordRun(runID shared.ID, status string) {
 
 	if status == RunStatusCompleted || status == RunStatusSuccess {
 		s.SuccessfulRuns++
+	} else if status == RunStatusPartial {
+		s.PartialRuns++
 	} else if status == RunStatusFailed || status == RunStatusError {
 		s.FailedRuns++
 	}
@@ -584,8 +739,8 @@ func (s *Scan) Validate() error {
 
 	switch s.ScanType {
 	case ScanTypeWorkflow:
-		if s.PipelineID == nil || s.PipelineID.IsZero() {
-			return shared.NewDomainError("VALIDATION", "pipeline_id is required for workflow type", shared.ErrValidation)
+		if s.ScanWorkflowID == nil || s.ScanWorkflowID.IsZero() {
+			return shared.NewDomainError("VALIDATION", "scan_workflow_id is required for workflow type", shared.ErrValidation)
 		}
 	case ScanTypeSingle:
 		if s.ScannerName == "" {
@@ -643,6 +798,34 @@ func (s *Scan) IsDueForExecution(now time.Time) bool {
 	return now.After(*s.NextRunAt) || now.Equal(*s.NextRunAt)
 }
 
+// SaveAsConfiguration turns an ad-hoc quick scan into a saved configuration
+// under name: it then shows in the Configurations list and can be scheduled
+// like any other. Its runs stay attached.
+func (s *Scan) SaveAsConfiguration(name string) error {
+	if !s.AdHoc {
+		return shared.NewDomainError("VALIDATION", "scan is already a saved configuration", shared.ErrValidation)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return shared.NewDomainError("VALIDATION", "name is required", shared.ErrValidation)
+	}
+	s.Name = name
+	s.AdHoc = false
+	s.UpdatedAt = time.Now()
+	return nil
+}
+
+// SkippedTarget is a target left out when the scan was saved: the refused
+// target (or asset name) and the scope refusal code (scopedom.Refusal*).
+type SkippedTarget struct {
+	Target string `json:"target"`
+	Code   string `json:"code"`
+}
+
+// MaxSkippedTargets bounds what one scan records (a scan takes up to 1000
+// targets).
+const MaxSkippedTargets = 1000
+
 // Clone creates a copy of the scan with a new ID.
 func (s *Scan) Clone(newName string) *Scan {
 	now := time.Now()
@@ -655,14 +838,17 @@ func (s *Scan) Clone(newName string) *Scan {
 		AssetGroupIDs:       make([]shared.ID, len(s.AssetGroupIDs)),
 		Targets:             make([]string, len(s.Targets)),
 		ScanType:            s.ScanType,
-		PipelineID:          s.PipelineID,
+		ScanWorkflowID:      s.ScanWorkflowID,
 		ScannerName:         s.ScannerName,
 		TargetsPerJob:       s.TargetsPerJob,
+		TargetOptions:       s.TargetOptions,
 		ScheduleType:        s.ScheduleType,
 		ScheduleCron:        s.ScheduleCron,
 		ScheduleDay:         s.ScheduleDay,
 		ScheduleTime:        s.ScheduleTime,
 		ScheduleTimezone:    s.ScheduleTimezone,
+		ScheduleRRule:       s.ScheduleRRule,
+		ScheduleRunAt:       s.ScheduleRunAt,
 		Tags:                make([]string, len(s.Tags)),
 		RunOnTenantRunner:   s.RunOnTenantRunner,
 		SensorPreference:    s.SensorPreference,

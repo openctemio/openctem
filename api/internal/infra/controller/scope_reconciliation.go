@@ -32,7 +32,7 @@ type scopeGroupReconciler interface {
 // 2. For each tenant, lists all groups with active scope rules
 // 3. Reconciles each group by re-evaluating matching assets
 //
-// Design: This is a background safety net (K8s-style eventual consistency).
+// Design: This is a background safety net (eventual consistency).
 // The primary path is real-time hooks in AssetService and AssetGroupService.
 type ScopeReconciliationController struct {
 	acRepo     accesscontrol.Repository

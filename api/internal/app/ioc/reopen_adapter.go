@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -21,7 +21,7 @@ type FindingRepo interface {
 // AuditLogger is the narrow surface the adapter uses to record the
 // reopen. *app.AuditService satisfies it structurally.
 type AuditLogger interface {
-	LogEvent(ctx context.Context, actx app.AuditContext, event app.AuditEvent) error
+	LogEvent(ctx context.Context, actx auditsvc.AuditContext, event auditsvc.AuditEvent) error
 }
 
 // reopenAdapter implements FindingReopener on top of the existing
@@ -75,13 +75,13 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 	}
 
 	if a.auditor != nil {
-		ev := app.NewSuccessEvent(audit.ActionFindingStatusChanged, audit.ResourceTypeFinding, findingID.String()).
+		ev := auditsvc.NewSuccessEvent(audit.ActionFindingStatusChanged, audit.ResourceTypeFinding, findingID.String()).
 			WithMessage(reason).
 			WithMetadata("previous_status", string(prev)).
 			WithMetadata("new_status", string(vulnerability.FindingStatusConfirmed)).
 			WithMetadata("source", "ioc_correlator").
 			WithSeverity(audit.SeverityHigh)
-		_ = a.auditor.LogEvent(ctx, app.AuditContext{TenantID: tenantID.String()}, ev)
+		_ = a.auditor.LogEvent(ctx, auditsvc.AuditContext{TenantID: tenantID.String()}, ev)
 	}
 	return true, nil
 }

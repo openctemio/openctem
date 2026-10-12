@@ -6,7 +6,7 @@ package scan
 type ScanType string
 
 const (
-	// ScanTypeWorkflow executes a multi-step pipeline workflow.
+	// ScanTypeWorkflow executes a multi-step scan workflow workflow.
 	ScanTypeWorkflow ScanType = "workflow"
 	// ScanTypeSingle executes a single scanner.
 	ScanTypeSingle ScanType = "single"
@@ -21,6 +21,11 @@ const (
 	ScheduleWeekly  ScheduleType = "weekly"
 	ScheduleMonthly ScheduleType = "monthly"
 	ScheduleCrontab ScheduleType = "crontab"
+	// ScheduleRRule: an RFC 5545 recurrence rule in the scan timezone
+	// (RFC-046 D11), in ScheduleRRule.
+	ScheduleRRule ScheduleType = "rrule"
+	// ScheduleOnce: one run at ScheduleRunAt, then none.
+	ScheduleOnce ScheduleType = "once"
 )
 
 // Status represents the scan status.
@@ -73,6 +78,7 @@ const (
 const (
 	RunStatusCompleted = "completed"
 	RunStatusSuccess   = "success"
+	RunStatusPartial   = "partial"
 	RunStatusFailed    = "failed"
 	RunStatusError     = "error"
 )

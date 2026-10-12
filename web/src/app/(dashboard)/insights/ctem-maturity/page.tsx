@@ -19,7 +19,7 @@
  *                cycle" state
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { AlertCircle, ArrowLeft, RefreshCw, ShieldOff, GaugeCircle } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { PageHeader } from '@/features/shared'
@@ -32,6 +32,7 @@ import { useCtemMaturity } from '@/features/ctem-maturity/api/use-ctem-maturity'
 import { MaturityBreakdownCard } from '@/features/ctem-maturity/components/maturity-breakdown'
 import { MaturityTrendCard } from '@/features/ctem-maturity/components/maturity-trend'
 import { StageCoverageCard } from '@/features/ctem-maturity/components/stage-coverage'
+import { useTranslation } from '@/context/i18n-provider'
 
 function LoadingState() {
   return (
@@ -60,16 +61,20 @@ function LoadingState() {
 }
 
 function ModuleDisabledState() {
+  const { t } = useTranslation()
   return (
     <EmptyState
       icon={ShieldOff}
-      title="Module not enabled"
-      description="The CTEM cycles module is not enabled for your organization, so program maturity is not available. Contact your administrator to enable it."
+      title={t('insights.maturity.moduleOffTitle', 'Module not enabled')}
+      description={t(
+        'insights.maturity.moduleOff',
+        'Program maturity needs the CTEM cycles module. Ask your administrator to enable it.'
+      )}
       action={
         <Button variant="outline" size="sm" asChild>
           <Link href="/dashboard">
             <ArrowLeft className="me-2 h-4 w-4" />
-            Back to dashboard
+            {t('insights.backToDashboard', 'Back to dashboard')}
           </Link>
         </Button>
       }
@@ -78,6 +83,7 @@ function ModuleDisabledState() {
 }
 
 export default function CTEMMaturityPage() {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useCtemMaturity()
 
   const status = (error as { statusCode?: number } | undefined)?.statusCode
@@ -93,12 +99,12 @@ export default function CTEMMaturityPage() {
       return (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Couldn&apos;t load maturity</AlertTitle>
+          <AlertTitle>{t('insights.maturity.loadFailed', 'Couldn’t load maturity')}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center gap-3">
-            <span>The maturity aggregator is temporarily unavailable.</span>
+            <span>{t('insights.maturity.loadFailedHint', 'Try again in a moment.')}</span>
             <Button variant="outline" size="sm" onClick={() => mutate()}>
               <RefreshCw className="me-2 h-4 w-4" />
-              Retry
+              {t('common.retry', 'Retry')}
             </Button>
           </AlertDescription>
         </Alert>
@@ -110,8 +116,11 @@ export default function CTEMMaturityPage() {
       return (
         <EmptyState
           icon={GaugeCircle}
-          title="No maturity data yet"
-          description="Program maturity is measured once you complete (close) a CTEM cycle. Activate a cycle, work it, and close it — this page fills in from the cycle's metrics."
+          title={t('insights.maturity.emptyTitle', 'No maturity data yet')}
+          description={t(
+            'insights.maturity.empty',
+            'Maturity is measured from closed CTEM cycles. Close a cycle to see it here.'
+          )}
         />
       )
     }
@@ -130,8 +139,11 @@ export default function CTEMMaturityPage() {
   return (
     <Main>
       <PageHeader
-        title="CTEM maturity"
-        description="Program maturity as a transparent, weighted composite across your closed CTEM cycles."
+        title={t('insights.maturity.title', 'CTEM maturity')}
+        description={t(
+          'insights.maturity.description',
+          'A weighted score across your closed CTEM cycles.'
+        )}
       />
       <div className="mt-5">{body}</div>
     </Main>

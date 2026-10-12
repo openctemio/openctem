@@ -541,14 +541,14 @@ func TestIngestFinding_StatusTransitions(t *testing.T) {
 	})
 
 	t.Run("TransitionToConfirmed", func(t *testing.T) {
-		finding.UpdateStatus(vulnerability.FindingStatusConfirmed, "", nil)
+		_ = finding.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil)
 		if finding.Status() != vulnerability.FindingStatusConfirmed {
 			t.Errorf("Expected status confirmed, got %s", finding.Status())
 		}
 	})
 
 	t.Run("TransitionToResolved", func(t *testing.T) {
-		finding.UpdateStatus(vulnerability.FindingStatusResolved, "Fixed in commit abc123", &actorID)
+		_ = finding.TransitionStatus(vulnerability.FindingStatusResolved, "Fixed in commit abc123", &actorID)
 		if finding.Status() != vulnerability.FindingStatusResolved {
 			t.Errorf("Expected status resolved, got %s", finding.Status())
 		}
@@ -565,7 +565,7 @@ func (m *MockFindingRepositoryForIngest) ListFindingGroups(_ context.Context, _ 
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *MockFindingRepositoryForIngest) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *MockFindingRepositoryForIngest) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 

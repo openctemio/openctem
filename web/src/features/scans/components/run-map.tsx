@@ -1,0 +1,121 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
+import useSWR, { useSWRConfig } from 'swr'
+import { get } from '@/lib/api/client'
+import { scanRunEndpoints } from '@/lib/api/endpoints'
+import type { RunMap as RunMapData, RunTask } from '@/lib/api/generated'
+import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
+import { useChannel } from '@/hooks/use-websocket'
+import {
+  mapEdgeLabel,
+  mapStatus,
+  mapSteps,
+  nodeBadgeLines,
+  zeroOutputWarnings,
+} from '../lib/run-map'
+import { RunStepPanel } from './run-step-panel'
+
+/**
+ * The live run map: the run drawn on the workflow version it executes, each
+ * step coloured by its state with its chunks, outputs and findings, each
+ * dependency labelled with what flowed along it (GET /scan-runs/{id}/map).
+ * Stages and graph views come from the shared WorkflowStages component.
+ * Clicking a step opens its panel: state, error, outputs and its tasks.
+ */
+export function RunMap({
+  runId,
+  refreshInterval,
+  tasks,
+  tasksTruncated,
+}: {
+  runId: string
+  refreshInterval?: number
+  /** The run's tasks as the run read returned them (the panel's task list). */
+  tasks?: RunTask[]
+  tasksTruncated?: boolean
+}) {
+  const { t } = useTranslation()
+  const [selected, setSelected] = useState<string | null>(null)
+  // Live: the run's change notices (run:{id}, at most one a second) refresh
+  // every cached read of this run (map, run, tasks, stages, timeline). The
+  // notice carries no data; polling stays as the fallback.
+  const { mutate } = useSWRConfig()
+  const runPrefix = `/api/v1/scan-runs/${encodeURIComponent(runId)}`
+  useChannel({
+    channelType: 'run',
+    channelId: runId,
+    onData: () => {
+      void mutate((key) => typeof key === 'string' && key.startsWith(runPrefix))
+    },
+  })
+  const { data, error, isLoading } = useSWR<RunMapData>(
+    scanRunEndpoints.map(runId),
+    (url: string) => get<RunMapData>(url),
+    { revalidateOnFocus: false, refreshInterval, keepPreviousData: true }
+  )
+
+  const steps = useMemo(() => mapSteps(data), [data])
+  const status = useMemo(() => mapStatus(data), [data])
+  const edgeLabel = useMemo(() => mapEdgeLabel(data), [data])
+  const badge = useMemo(() => {
+    const out: Record<string, React.ReactNode> = {}
+    for (const n of data?.nodes ?? []) {
+      out[n.step_key ?? ''] = (
+        <span className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+          {nodeBadgeLines(n, t).map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </span>
+      )
+    }
+    return out
+  }, [data, t])
+
+  const selectedNode = data?.nodes?.find((n) => n.step_key === selected)
+  const warnings = useMemo(() => zeroOutputWarnings(data, t), [data, t])
+
+  if (error) {
+    return <p className="text-sm text-muted-foreground">{t('scans.map.loadFailed')}</p>
+  }
+  if (isLoading && !data) {
+    return <p className="text-sm text-muted-foreground">{t('scans.map.loading')}</p>
+  }
+  return (
+    <div className="space-y-2">
+      {data?.scan_workflow_version ? (
+        <p className="text-xs text-muted-foreground">
+          {t('scans.map.workflowVersion', undefined, { version: data.scan_workflow_version })}
+        </p>
+      ) : null}
+      {warnings.length > 0 ? (
+        <ul
+          role="status"
+          aria-label={t('scans.map.noOutputSteps')}
+          className="space-y-0.5 text-xs text-warning"
+        >
+          {warnings.map((w) => (
+            <li key={w.key}>{w.text}</li>
+          ))}
+        </ul>
+      ) : null}
+      <WorkflowStagesView
+        steps={steps}
+        status={status}
+        badge={badge}
+        edgeLabel={edgeLabel}
+        onSelectStep={(key) => setSelected((cur) => (cur === key ? null : key))}
+      />
+      {selectedNode ? (
+        <RunStepPanel
+          runId={runId}
+          node={selectedNode}
+          tasks={tasks}
+          tasksTruncated={tasksTruncated}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
+    </div>
+  )
+}

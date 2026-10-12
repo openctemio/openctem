@@ -37,64 +37,63 @@ export type EmailVerificationMode = 'auto' | 'always' | 'never'
 
 export interface SecuritySettings {
   mfa_required: boolean
-  session_timeout_min: number
+  /** Owners and admins must use 2FA (on for new organizations). */
+  mfa_required_for_admins?: boolean
   ip_whitelist: string[]
   allowed_domains: string[]
   email_verification_mode: EmailVerificationMode
+  /**
+   * Jobs with private targets go only to sensors that enforce a sensor-local
+   * policy (api RFC-040 §5.7). Absent on APIs without it.
+   */
+  require_sensor_local_policy_for_private_targets?: boolean
+  /** research/25 D3: off unless an owner enables it; enabling is audited. */
+  allow_sensor_interactsh?: boolean
+  allow_sensor_custom_templates?: boolean
+  /** api RFC-060 §4.1: the User-Agent of the organization's scan tools ('' none). */
+  tool_http_user_agent?: string
+  /** api RFC-060 §4.1: refuse scan tools that skip TLS verification. */
+  forbid_tool_insecure_tls?: boolean
   /**
    * The caller's IP as the API sees it (read-only, GET only). Shown next to the
    * IP allowlist so an owner does not lock themselves out.
    */
   current_ip?: string
+  /** Set by the platform administrator; read-only here. */
+  sso_enforced?: boolean
+  /** Whether personal email accounts may join (api RFC-058). */
+  personal_accounts?: PersonalAccountsPolicy
+  /** Members who may sign in without SSO while it is enforced. */
+  sso_exceptions?: SSOException[]
+  /** SSO newcomers wait for an administrator's approval (api RFC-058). */
+  jit_requires_approval?: boolean
+}
+
+export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
+
+export interface SSOException {
+  user_id: string
+  reason: string
+  /** RFC 3339, at most 90 days ahead. */
+  expires_at: string
 }
 
 export interface UpdateSecuritySettingsInput {
   mfa_required?: boolean
-  session_timeout_min?: number
+  mfa_required_for_admins?: boolean
   ip_whitelist?: string[]
   allowed_domains?: string[]
   email_verification_mode?: EmailVerificationMode
-}
-
-/**
- * What members who are in no team (access group) see. Owners and admins always
- * see everything; members in a team see that team's assets either way.
- * GET/PATCH /tenants/{tenant}/settings/data-scope (owner/admin).
- */
-export type MembersWithoutGroupSee = 'everything' | 'nothing'
-
-export interface DataScopePolicy {
-  members_without_group_see: MembersWithoutGroupSee
-}
-
-// ============================================
-// API SETTINGS
-// ============================================
-
-export type WebhookEvent =
-  | 'finding.created'
-  | 'finding.resolved'
-  | 'finding.updated'
-  | 'scan.completed'
-  | 'scan.failed'
-  | 'asset.discovered'
-  | 'asset.updated'
-  | 'member.joined'
-  | 'member.removed'
-
-export interface APISettings {
-  api_key_enabled: boolean
-  webhook_url: string
-  webhook_events: WebhookEvent[]
-  /** The signing secret is write-only: the API reports only whether one is set. */
-  webhook_secret_configured?: boolean
-}
-
-export interface UpdateAPISettingsInput {
-  api_key_enabled?: boolean
-  webhook_url?: string
-  webhook_secret?: string
-  webhook_events?: string[]
+  require_sensor_local_policy_for_private_targets?: boolean
+  /** research/25 D3: off unless an owner enables it; enabling is audited. */
+  allow_sensor_interactsh?: boolean
+  allow_sensor_custom_templates?: boolean
+  tool_http_user_agent?: string
+  forbid_tool_insecure_tls?: boolean
+  personal_accounts?: PersonalAccountsPolicy
+  /** Replaces the whole list. */
+  sso_exceptions?: SSOException[]
+  jit_requires_approval?: boolean
 }
 
 // ============================================
@@ -241,17 +240,39 @@ export interface PentestConfigOption {
 }
 
 export interface PentestSettings {
-  campaign_types?: PentestConfigOption[]
-  methodologies?: PentestConfigOption[]
+  campaign_types?: PentestConfigOption[] | null
+  methodologies?: PentestConfigOption[] | null
+  /** A campaign cannot start testing without a signed authorization letter. */
+  require_authorization_before_start?: boolean
 }
+
+/** Top-level settings sections, as keyed in TenantSettings.etags. */
+export type SettingsSectionKey =
+  | 'general'
+  | 'security'
+  | 'branding'
+  | 'branch'
+  | 'ai'
+  | 'risk_scoring'
+  | 'pentest'
+  | 'asset_identity'
+  | 'asset_lifecycle'
+  | 'retest'
+  | 'vuln_matching'
 
 export interface TenantSettings {
   general: GeneralSettings
-  security: SecuritySettings
-  api: APISettings
+  /** Owners and admins only (absent for other roles). */
+  security?: SecuritySettings
   branding: BrandingSettings
-  risk_scoring: RiskScoringSettings
+  /** Owners and admins only (absent for other roles). */
+  risk_scoring?: RiskScoringSettings
   pentest?: PentestSettings
+  /**
+   * Entity tag of each section as stored. Sent back as If-Match on the
+   * section PATCH so a save never overwrites a change made since the read.
+   */
+  etags?: Partial<Record<SettingsSectionKey, string>>
 }
 
 // ============================================
@@ -300,35 +321,3 @@ export const SESSION_TIMEOUT_OPTIONS = [
   { value: 240, label: '4 hours' },
   { value: 480, label: '8 hours' },
 ] as const
-
-export const WEBHOOK_EVENTS: { value: WebhookEvent; label: string; description: string }[] = [
-  {
-    value: 'finding.created',
-    label: 'Finding Created',
-    description: 'When a new vulnerability finding is created',
-  },
-  {
-    value: 'finding.resolved',
-    label: 'Finding Resolved',
-    description: 'When a finding is marked as resolved',
-  },
-  { value: 'finding.updated', label: 'Finding Updated', description: 'When a finding is updated' },
-  {
-    value: 'scan.completed',
-    label: 'Scan Completed',
-    description: 'When a security scan completes',
-  },
-  { value: 'scan.failed', label: 'Scan Failed', description: 'When a security scan fails' },
-  {
-    value: 'asset.discovered',
-    label: 'Asset Discovered',
-    description: 'When a new asset is discovered',
-  },
-  { value: 'asset.updated', label: 'Asset Updated', description: 'When an asset is updated' },
-  {
-    value: 'member.joined',
-    label: 'Member Joined',
-    description: 'When a new member joins the team',
-  },
-  { value: 'member.removed', label: 'Member Removed', description: 'When a member is removed' },
-]

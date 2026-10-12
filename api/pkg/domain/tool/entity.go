@@ -52,6 +52,10 @@ type Tool struct {
 	VersionRegex   string // Regex to extract version from output
 	CurrentVersion string // Currently installed version
 	LatestVersion  string // Latest available version
+	// MinVersion is the oldest version the catalog accepts ("" = none).
+	// Sensors report the versions they run; the tool availability view
+	// marks a tool outdated when every online sensor is below it.
+	MinVersion string
 
 	// Configuration
 	ConfigFilePath string         // Path to config file, e.g., '/root/.config/nuclei/config.yaml'
@@ -64,6 +68,11 @@ type Tool struct {
 	// Supported input/output
 	SupportedTargets []string // 'url', 'domain', 'ip', 'file', 'repository', 'container'
 	OutputFormats    []string // 'json', 'sarif', 'csv', 'txt'
+	// OutputTypes are the asset types a report of the tool may create
+	// (tools.output_types, from the scan stage catalog in
+	// pkg/domain/stage). Read-only: no API writes it, so a tenant cannot
+	// widen what its reports may create.
+	OutputTypes []string
 
 	// Documentation
 	DocsURL   string
@@ -222,6 +231,32 @@ func (t *Tool) HasCapability(capability string) bool {
 // SupportsTarget checks if the tool supports a specific target type.
 func (t *Tool) SupportsTarget(targetType string) bool {
 	return slices.Contains(t.SupportedTargets, targetType)
+}
+
+// KindCollector is the catalog's metadata.kind of an asset collector (a source
+// a collector sensor pulls inventory from, e.g. "vcenter"; sensor tool kind
+// "collector"). Collectors are in the catalog so sensors can report them, but they
+// run on their own schedule and take no dispatched scans.
+const KindCollector = "collector"
+
+// IsCollector reports whether the tool is an asset collector, not a scanner
+// (metadata.kind = "collector"). Scans refuse it.
+func (t *Tool) IsCollector() bool {
+	k, _ := t.Metadata["kind"].(string)
+	return k == KindCollector
+}
+
+// KindConnector is the catalog's metadata.kind of a connector: a tool the
+// sensor runs against another product's API (e.g. "tenable_sc", RFC-047) on
+// connector commands, never on a dispatched scan.
+const KindConnector = "connector"
+
+// IsConnector reports whether the tool is a connector (metadata.kind =
+// "connector"). Scans refuse it: connector commands are created by the
+// integration that owns them.
+func (t *Tool) IsConnector() bool {
+	k, _ := t.Metadata["kind"].(string)
+	return k == KindConnector
 }
 
 // IsPlatformTool returns true if this is a platform-provided tool.
@@ -429,102 +464,4 @@ func (c *TenantToolConfig) Enable() {
 func (c *TenantToolConfig) Disable() {
 	c.IsEnabled = false
 	c.UpdatedAt = time.Now()
-}
-
-// ToolExecution represents a single tool execution record.
-// Used for analytics and debugging.
-type ToolExecution struct {
-	ID       shared.ID
-	TenantID shared.ID
-	ToolID   shared.ID
-	SensorID *shared.ID
-
-	// Execution context
-	PipelineRunID *shared.ID
-	StepRunID     *shared.ID
-
-	// Status
-	Status ExecutionStatus
-
-	// Input/Output
-	InputConfig   map[string]any
-	TargetsCount  int
-	FindingsCount int
-	OutputSummary map[string]any
-	ErrorMessage  string
-
-	// Timing
-	StartedAt   time.Time
-	CompletedAt *time.Time
-	DurationMs  int
-
-	CreatedAt time.Time
-}
-
-// ExecutionStatus represents the status of a tool execution.
-type ExecutionStatus string
-
-const (
-	ExecutionStatusRunning   ExecutionStatus = "running"
-	ExecutionStatusCompleted ExecutionStatus = "completed"
-	ExecutionStatusFailed    ExecutionStatus = "failed"
-	ExecutionStatusTimeout   ExecutionStatus = "timeout"
-)
-
-// IsValid checks if the execution status is valid.
-func (s ExecutionStatus) IsValid() bool {
-	switch s {
-	case ExecutionStatusRunning, ExecutionStatusCompleted, ExecutionStatusFailed, ExecutionStatusTimeout:
-		return true
-	}
-	return false
-}
-
-// NewToolExecution creates a new tool execution record.
-func NewToolExecution(
-	tenantID shared.ID,
-	toolID shared.ID,
-	sensorID *shared.ID,
-	inputConfig map[string]any,
-	targetsCount int,
-) *ToolExecution {
-	now := time.Now()
-	return &ToolExecution{
-		ID:           shared.NewID(),
-		TenantID:     tenantID,
-		ToolID:       toolID,
-		SensorID:     sensorID,
-		Status:       ExecutionStatusRunning,
-		InputConfig:  inputConfig,
-		TargetsCount: targetsCount,
-		StartedAt:    now,
-		CreatedAt:    now,
-	}
-}
-
-// Complete marks the execution as completed.
-func (e *ToolExecution) Complete(findingsCount int, outputSummary map[string]any) {
-	now := time.Now()
-	e.Status = ExecutionStatusCompleted
-	e.FindingsCount = findingsCount
-	e.OutputSummary = outputSummary
-	e.CompletedAt = &now
-	e.DurationMs = int(now.Sub(e.StartedAt).Milliseconds())
-}
-
-// Fail marks the execution as failed.
-func (e *ToolExecution) Fail(errorMessage string) {
-	now := time.Now()
-	e.Status = ExecutionStatusFailed
-	e.ErrorMessage = errorMessage
-	e.CompletedAt = &now
-	e.DurationMs = int(now.Sub(e.StartedAt).Milliseconds())
-}
-
-// Timeout marks the execution as timed out.
-func (e *ToolExecution) Timeout() {
-	now := time.Now()
-	e.Status = ExecutionStatusTimeout
-	e.CompletedAt = &now
-	e.DurationMs = int(now.Sub(e.StartedAt).Milliseconds())
 }

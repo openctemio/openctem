@@ -10,6 +10,7 @@ import useSWRInfinite, { type SWRInfiniteConfiguration } from 'swr/infinite'
 import { get } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import type { Activity, ActivityType } from '../types'
+import { retestActivity } from '../lib/retest-activity'
 
 // ============================================
 // API TYPES
@@ -124,17 +125,26 @@ function mapActivity(api: ApiFindingActivity): Activity {
   const metadata = {
     ...api.source_metadata,
     ...changes, // Include all changes data (for ai_triage and other activity types)
+    // The API's own type: several map to one ActivityType (sla_breach and
+    // auto_resolved are both "status_changed"); the feed words them apart.
+    activityType: api.activity_type,
+    actorType: api.actor_type,
+    actorId: api.actor_id,
+    actorName: api.actor_name,
+    activitySource: api.source,
     assigneeName,
     assigneeEmail,
     assigneeId,
     previousAssigneeName,
   }
 
+  const retest = retestActivity(api.activity_type, changes)
+
   return {
     id: api.id,
-    type: mapActivityType(api.activity_type),
+    type: retest?.type ?? mapActivityType(api.activity_type),
     actor,
-    content,
+    content: retest?.content ?? content,
     metadata,
     previousValue,
     newValue,
@@ -167,7 +177,7 @@ export function useFindingActivitiesInfinite(
     if (!currentTenant || !findingId) return null
 
     // Return URL with page param (1-indexed for backend)
-    return `/api/v1/findings/${findingId}/activities?page=${pageIndex + 1}&page_size=${pageSize}`
+    return `/api/v1/findings/${findingId}/activities?page=${pageIndex + 1}&per_page=${pageSize}`
   }
 
   const { data, error, isLoading, isValidating, size, setSize, mutate } =

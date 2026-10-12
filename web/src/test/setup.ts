@@ -49,6 +49,58 @@ vi.mock('next/headers', () => ({
 }))
 
 // ============================================
+// WEB STORAGE (Node >= 25)
+// ============================================
+
+// Node 25+ has its own Web Storage globals. Without --localstorage-file, its
+// `localStorage` getter returns undefined, and because the global already
+// exists, Vitest does not copy jsdom's working Storage over it. So
+// `window.localStorage` is undefined in tests on the Node we ship (node:26,
+// see web/.nvmrc). Point both globals back at the jsdom window's Storage.
+// This is a no-op on older Node, where jsdom's storage is already in place.
+{
+  const dom = (globalThis as { jsdom?: { window: Window } }).jsdom
+  for (const name of ['localStorage', 'sessionStorage'] as const) {
+    let current: unknown
+    try {
+      current = globalThis[name]
+    } catch {
+      current = undefined
+    }
+    if (dom && typeof (current as Storage | undefined)?.setItem !== 'function') {
+      const storage = dom.window[name]
+      Object.defineProperty(globalThis, name, {
+        configurable: true,
+        enumerable: true,
+        get: () => storage,
+      })
+    }
+  }
+}
+
+// Pointer capture: jsdom has none. Vaul (the phone DetailSheet) captures the
+// pointer on every press inside a drawer.
+if (typeof Element !== 'undefined' && !Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {}
+  Element.prototype.releasePointerCapture = () => {}
+  Element.prototype.hasPointerCapture = () => false
+}
+// Vaul reads `getComputedStyle(el).transform || webkitTransform || mozTransform`
+// as a string; jsdom leaves all three empty or undefined (a browser says
+// `none`). Answer on the last, non-standard one so real values still win.
+if (
+  typeof CSSStyleDeclaration !== 'undefined' &&
+  !('mozTransform' in CSSStyleDeclaration.prototype)
+) {
+  Object.defineProperty(CSSStyleDeclaration.prototype, 'mozTransform', {
+    configurable: true,
+    get() {
+      return 'none'
+    },
+  })
+}
+
+// ============================================
 // ENVIRONMENT SETUP
 // ============================================
 

@@ -1,7 +1,8 @@
 # RFC-030 — Scan work distribution: plan, chunks, leases and fair pull scheduling
 
-> Status: **Accepted for Phases 0–1** (2026-10-02; §9 decisions resolved). Phases 2–4 remain Proposed.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
+> Status: **Phases 0–1 implemented** (accepted 2026-10-02; §9 decisions resolved): command leases,
+> fair claim, per-host keys and step chunks. Phases 2–4 remain Proposed.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.
 > Builds on: [RFC-007](RFC-007-license-aware-scan-coverage.md) (rolling batch
 > coverage, batch-scoped auto-resolve), [RFC-023](RFC-023-scan-zones-and-scanners.md)
 > (zones, pinning, the doorbell), [RFC-026](RFC-026-sensor-results-ingest.md)
@@ -12,7 +13,7 @@
 > `max_concurrent_jobs` (sensor-reported ∩ admin limits), which are being
 > built separately; this RFC does not define them.
 >
-> Owner's request (2026-10-02): "When there is a scan or any command for
+> Requirement (2026-10-02): "When there is a scan or any command for
 > sensors, we need a chunking algorithm and allocation of assets, jobs, … in
 > short, the best possible load-distribution algorithm."
 >
@@ -206,7 +207,7 @@ path discards the result anyway.
 | B11 | Daemon max concurrency is hard-coded 5; the server's `max_concurrent_jobs` (admin, 1–100) is unrelated to it. | sensor `main.go:1048` | Two numbers for one fact (being fixed by the effective-capability work). |
 | B12 | Platform-mode vulnscan reports failed or killed tool runs as completed. | sensor `internal/executor/vulnscan.go:206-255` | Silent coverage loss on the platform path. |
 
-### 3.6 What happens in the cases the owner asked about
+### 3.6 What happens in the cases that motivated this RFC
 
 | Case | Today |
 |---|---|
@@ -217,16 +218,14 @@ path discards the result anyway.
 | **Rate limits per target** | None from the platform. nuclei's fixed per-process limits multiply by the slot count; two batches with targets on the same host can run at once. |
 | **Tool-specific cost** | Ignored: one `targets_per_job` per scan; repositories always 1 per job (zoned) or only the first (unzoned). |
 
-## 4. Research: what proven systems do, and what we take
+## 4. Research: proven techniques, and what we take
 
 | System | Mechanism | Taken |
 |---|---|---|
-| **Tenable (Security Center / Vulnerability Management)** | Scan zones map ranges to scanners or scanner groups; a large scan is broken into **scan chunks** that are distributed across the group's scanners as they have capacity, so no scanner owns the whole scan and a lost scanner's chunk can be re-run; per-scanner limits on concurrent scans and hosts. (Exact chunk sizes are product internals and not relied on here.) | Zones as filters (have), chunks handed out on capacity (D1–D3), per-sensor limits (D5). |
-| **Rapid7 InsightVM** | Scan engine **pools**: the console load-balances assets across engines in a pool, engines pull, assets of a failed engine re-scanned by others. | Pull + re-queue on failure (D1, D6). |
-| **Qualys** | Scanner appliances per network; scan "parallel scaling" splits large target sets across appliances; per-appliance host concurrency and bandwidth caps. | Politeness caps in the command (D9). |
+| **Zone-routed scanner pools** (common in network vulnerability scanning) | Zones map ranges to scanners or scanner groups; a large scan is split into **chunks** handed to scanners as they have capacity, engines pull, a lost engine's chunk is re-run by another; per-scanner caps on concurrent scans, hosts and bandwidth. | Zones as filters (have), chunks handed out on capacity (D1–D3), pull + re-queue on failure (D1, D6), per-sensor limits (D5), politeness caps in the command (D9). |
 | **nuclei** | `-bulk-size` (hosts in parallel per template), `-c` (templates in parallel), `-rate-limit` (global requests/s), `-rate-limit-duration`, per-host `-max-host-error`. | Chunk carries `rate_limit`/`concurrency` (D9); per-host cap stays a platform property, since nuclei cannot coordinate across sensors. |
-| **Celery / Sidekiq / SQS** | Pull with prefetch; **prefetch 1 + late ack** for long tasks (Celery `worker_prefetch_multiplier=1`, `acks_late`), visibility timeout (SQS) = lease; poison messages to a dead-letter queue after N receives. | Free-slot-bounded poll (D5), leases (D6), max attempts + poison handling (D7). |
-| **Temporal** | Activity task queues polled by workers; **heartbeat timeout** on long activities (lease), start-to-close and schedule-to-close timeouts, retries with backoff, idempotent completion. | Per-chunk timeout and run deadline (D10), lease via heartbeat (D6). |
+| **Pull-based work queues** | Pull with prefetch; **prefetch 1 + late ack** for long tasks (prefetch limit 1 with acknowledgement after completion), a visibility timeout acting as the lease; poison messages to a dead-letter queue after N receives. | Free-slot-bounded poll (D5), leases (D6), max attempts + poison handling (D7). |
+| **Durable task queues** | Activity task queues polled by workers; **heartbeat timeout** on long activities (lease), start-to-close and schedule-to-close timeouts, retries with backoff, idempotent completion. | Per-chunk timeout and run deadline (D10), lease via heartbeat (D6). |
 | **Work stealing / guided self-scheduling** (Cilk; Polychronopoulos & Kuck 1987; factoring, Hummel 1992) | Hand out large chunks first, shrinking as work runs out, so the tail is balanced without per-item overhead. | `⌈R / 2S⌉` cap (D4). |
 | **AIMD** (TCP; adaptive batch sizing in Kafka/Flink back-pressure) | Grow additively on success, cut multiplicatively on a congestion signal. | Chunk size shrinks ×0.5 on timeout/OOM, recovers additively (D4). |
 | **Fair queuing** (DRR, Shreedhar & Varghese 1995; SFQ, Goyal 1996; YARN/Slurm fair-share with decay) | Per-flow virtual time; serve the smallest; weights per class; decayed usage. | Hierarchical fair share tenant → scan (D8). |
@@ -445,6 +444,14 @@ level of the hierarchy applies, plus a per-tenant cap on leased chunks
 that `get_next_platform_job` lacks (B10). `MaxConcurrentRunsPerTenant` (50)
 stays as an admission limit; it no longer has to double as a fairness tool.
 
+**Status (RFC-046 P1.7, migration 000461):** `get_next_platform_job` orders
+the shared queue by priority class (one class up per 30 minutes queued,
+never into critical), then by the tenant's platform jobs in flight (fewest
+first), then `queue_priority` and age; the tool and capability gates (B10)
+shipped in 000251. The per-tenant cap on leased jobs is not in yet: ordering
+alone keeps a quiet tenant from waiting behind a busy one, and a cap would
+idle shared sensors when one tenant is alone.
+
 ### 5.8 Inputs replaced
 
 | Today | After |
@@ -455,7 +462,7 @@ stays as an admission limit; it no longer has to double as a fairness tool.
 | `targets_per_job` | an upper bound (`n_max`) when set; otherwise D4 |
 | `maxResolvedTargets` 10,000, `maxZoneJobsPerRun` 1,000 | 200,000 targets per run (bounded by the planner insert, ~30 MB); no job cap (chunks are cut lazily) |
 
-#### 5.8.1 The sensor's load report (owner decision 2026-10-02: "the SDK computes resources, nothing hard-coded")
+#### 5.8.1 The sensor's load report (decided 2026-10-02: "the SDK computes resources, nothing hard-coded")
 
 The SDK, not each sensor, measures the machine it runs on and derives its
 own job slots; the sensor only registers executors. On every heartbeat
@@ -534,7 +541,7 @@ the run.
 - Scan form: priority class; `targets_per_job` moves to "Advanced: max
   targets per job".
 
-### 5.12 Two queues: the platform's and the sensor's (owner decision 2026-10-02)
+### 5.12 Two queues: the platform's and the sensor's (decided 2026-10-02)
 
 "The sensor must manage its queue — or is it the platform? It must be from
 the SDK." Two layers, with one owner each:
@@ -675,19 +682,19 @@ what a command carries.
 
 ## 9. Decisions (resolved 2026-10-02)
 
-The owner decided items 1, 3, 4 and 6; items 2, 5 and 7 were left to the
-implementer and take the RFC's proposal. All seven are settled; Phases 0–1
+Items 1, 3, 4 and 6 were decided explicitly; items 2, 5 and 7 take the RFC's
+proposal. All seven are settled; Phases 0–1
 are accepted for implementation on that basis.
 
-| # | Question | Decision | By |
+| # | Question | Decision | Basis |
 |---|---|---|---|
-| 1 | Priority classes and their order (D8) | **`verify > interactive > scheduled > background`, with ageing** (§5.3). A manual rescan that verifies a P0 finding is `verify`. | owner |
-| 2 | Fairness unit on tenant sensors | **Per scan** (each scan's run is a flow), as proposed. | default |
-| 3 | Default politeness | **On by default**: `per_host = 1` (one chunk in flight per target host) and a sane per-zone rate (`max_rps`, default 300 req/s), **overridable by an administrator per scan profile**. | owner |
-| 4 | Partial runs | **Agreed.** A run that loses targets ends `partial`; successful findings are kept; **"Retry failed" re-runs only the failed chunks**, never the whole run. | owner |
-| 5 | Target cap per run | **200,000** targets per run (bounded by the planner insert). Phase 0 keeps today's caps (10,000 targets; 1,000 commands per run) because it still creates every command at trigger time; the cap is raised with the Phase 2 planner. | default |
-| 6 | Ship Phase 0.3 (fan-out of single-target scanners) early | **Yes, now, in Phase 0**: one command per target for single-target scanners outside zones too. | owner |
-| 7 | Speculative re-execution of stragglers | **Rejected**: never re-run a slow chunk on a second sensor (double load on customer assets). | default |
+| 1 | Priority classes and their order (D8) | **`verify > interactive > scheduled > background`, with ageing** (§5.3). A manual rescan that verifies a P0 finding is `verify`. | decided |
+| 2 | Fairness unit on tenant sensors | **Per scan** (each scan's run is a flow), as proposed. | RFC proposal |
+| 3 | Default politeness | **On by default**: `per_host = 1` (one chunk in flight per target host) and a sane per-zone rate (`max_rps`, default 300 req/s), **overridable by an administrator per scan profile**. | decided |
+| 4 | Partial runs | **Agreed.** A run that loses targets ends `partial`; successful findings are kept; **"Retry failed" re-runs only the failed chunks**, never the whole run. | decided |
+| 5 | Target cap per run | **200,000** targets per run (bounded by the planner insert). Phase 0 keeps today's caps (10,000 targets; 1,000 commands per run) because it still creates every command at trigger time; the cap is raised with the Phase 2 planner. | RFC proposal |
+| 6 | Ship Phase 0.3 (fan-out of single-target scanners) early | **Yes, now, in Phase 0**: one command per target for single-target scanners outside zones too. | decided |
+| 7 | Speculative re-execution of stragglers | **Rejected**: never re-run a slow chunk on a second sensor (double load on customer assets). | RFC proposal |
 
 ## Appendix A — size and pick, as code
 

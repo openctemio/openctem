@@ -52,11 +52,20 @@ func TestDashboardGetAllStats_OnePass(t *testing.T) {
 	seedDashAsset(ctx, t, db, tenant, "repository", "", "active", 20) // repo without findings; '' sub_type ignored
 	host := seedDashAsset(ctx, t, db, tenant, "host", "-", "inactive", 0)
 	otherAsset := seedDashAsset(ctx, t, db, other, "repository", "gitlab", "active", 90)
+	// Not in the inventory (RFC-054 §4.4): a name waiting for review and a
+	// rejected one are not counted.
+	for _, st := range []string{"needs_review", "rejected"} {
+		id := seedDashAsset(ctx, t, db, tenant, "subdomain", "-", "active", 10)
+		if _, err := db.ExecContext(ctx, `INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence) VALUES ($1, $2, $3, 85)`,
+			id.String(), tenant.String(), st); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	vulnID := shared.NewID()
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO vulnerabilities (id, cve_id, title, severity, cvss_score) VALUES ($1, $2, 'v', 'high', 8.0)`,
-		vulnID.String(), "CVE-2099-"+vulnID.String()[:8]); err != nil {
+		vulnID.String(), "CVE-2099-"+vulnID.String()[28:]); err != nil {
 		t.Fatalf("seed vulnerability: %v", err)
 	}
 	t.Cleanup(func() {
@@ -69,7 +78,7 @@ func TestDashboardGetAllStats_OnePass(t *testing.T) {
 	seedDashFinding(ctx, t, db, tenant, host, "low", "draft", nil) // excluded (draft)
 	seedDashFinding(ctx, t, db, other, otherAsset, "critical", "new", nil)
 
-	s, err := repo.GetAllStats(ctx, tenant)
+	s, err := repo.GetAllStats(ctx, tenant, nil)
 	if err != nil {
 		t.Fatalf("GetAllStats: %v", err)
 	}

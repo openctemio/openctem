@@ -40,7 +40,9 @@ type RelationshipRepository interface {
 	// Used by the usage-stats endpoint so admins can see which relationship
 	// types are actually being used and trim or extend the registry
 	// based on real data instead of guessing.
-	CountByType(ctx context.Context, tenantID shared.ID) (map[RelationshipType]int64, error)
+	// A non-nil scope counts only relationships whose source and target
+	// asset are both in it.
+	CountByType(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[RelationshipType]int64, error)
 
 	// ListAllEdges fetches every relationship for the tenant as lightweight
 	// graph edges. This is used by attack path scoring which needs the full
@@ -70,4 +72,7 @@ type RelationshipFilter struct {
 	Direction        string // "outgoing", "incoming", or "" for both
 	Page             int
 	PerPage          int
+	// Scope, when non-nil, keeps only relationships whose source and target
+	// asset are both in the caller's data scope.
+	Scope *shared.DataScope
 }

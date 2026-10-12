@@ -1,8 +1,12 @@
 # RFC-034 — Sensor network egress: proxies per scan zone
 
-> Status: **Proposed** (2026-10-02). Research and design only; nothing here is
-> implemented.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
+> Status: **Proposed** (2026-10-02). Phase 0 shipped on the sensor side
+> (checked 2026-10-04): `SENSOR_CONTROL_PROXY`, `SENSOR_CONTENT_PROXY`,
+> `SENSOR_SCAN_PROXY` and a proxy-aware `SafeHTTPClient` that checks the
+> target before the proxy (sdk-go#111, released in sdk-go v0.15.0; content
+> tools follow the content proxy in sensor#102). Not built: the manifest
+> `egress.control` field and Phases 1–4 (no api code yet).
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-023](RFC-023-scan-zones-and-scanners.md) (scan zones, the three
 > enforcement layers D7, the operator allow-list D8, credential tiers D12),
 > [RFC-030](RFC-030-scan-work-distribution.md) (eligibility, per-host
@@ -11,10 +15,14 @@
 > (key-bound identity, HPKE-sealed secrets, D5) and
 > [RFC-033](RFC-033-sensor-manifest.md) (manifest, policy echo,
 > `config_version`).
+> Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
+> §5.7 makes the operator allow-list and the egress veto one sensor-local
+> policy file, and extends the forwarder's destination check from proxied
+> jobs to every job of a proxy-aware tool.
 >
-> Owner's request (2026-10-02): "When sensors are used for internal systems,
-> some network zones can only be reached through a proxy; research the best
-> proxy solution."
+> Problem (2026-10-02): when sensors are used for internal systems, some
+> network zones can only be reached through a proxy. What is the best proxy
+> solution?
 
 ## 1. Answer in short
 
@@ -26,11 +34,10 @@ small forwarder inside the sensor. The forwarder holds the proxy credentials,
 fails over between the proxies, and refuses any destination outside the job's
 targets and the zone.**
 
-Enterprise scanners handle segmented networks the same way. Nessus, Qualys,
-Rapid7 and Tenable Security Center put a scanner or engine in each segment and
-map it to address ranges (§4). They document proxies only for the scanner's
-own link to its console and for updates. Tenable explicitly warns that
-scanning through NAT or application proxies distorts results (§4.1). OpenCTEM
+Segmented networks are normally handled by putting a scanner in each segment
+and mapping it to address ranges (§4); scanner proxies normally serve only the
+scanner's own link to its console and updates, and scanning through NAT or
+application proxies distorts results (§4.1). OpenCTEM
 already has the first part: scan zones
 route a network scan to the sensors that can reach it (RFC-023). This RFC adds
 the second part: a zone whose sensors reach their targets through a proxy.
@@ -70,9 +77,13 @@ a sensor reaches internal segments it cannot route to directly:
   list of equivalent paths into one segment, chosen by the administrator.
   They are not pools for spreading load or source addresses, and the design
   has no random or round-robin selection.
+  The sensor also caps how hard nuclei hits a target, whatever the platform
+  asks: `SENSOR_NUCLEI_MAX_RATE_LIMIT`, `_CONCURRENCY` and `_BULK_SIZE`
+  are ceilings a scan can only go below, and rate-limit flags are refused
+  in extra args ([RFC-038 §6.12](RFC-038-sensor-tool-settings.md)).
 - **No anonymity, no public proxy lists, no Tor.** The proxies are the
   customer's own infrastructure.
-- **No VPN or overlay network.** WireGuard, IPsec or Tailscale between the
+- **No VPN or overlay network.** WireGuard, IPsec or another VPN between the
   sensor and a segment are the customer's network team's choice. A sensor on
   such a network is "direct" for this RFC.
 - **No raw-packet scanning through proxies.** ICMP, TCP SYN, UDP and
@@ -123,45 +134,40 @@ a sensor reaches internal segments it cannot route to directly:
   down, the tools time out target by target, and the run fails with many
   per-target errors instead of one clear "zone unreachable".
 
-## 4. What enterprise scanners do
+## 4. Network facts that shape the design
 
-### 4.1 Survey
+### 4.1 Constraints
 
-| Product | How it reaches segmented networks | Proxy support (documented) | Scan traffic through the proxy? |
-|---|---|---|---|
-| **Tenable Nessus** (scanner) | One scanner per segment. In Tenable Vulnerability Management, **scanner groups** (load-balanced; "Auto-Select" routes by target) and **Networks**, which separate overlapping address spaces ("a scanner or scanner group can only belong to one network at a time"). Tenable Security Center: scan zones map scanners to ranges. | Settings → Proxy Server: host, port, username, password, auth method (auto-detect, none, Basic, Digest, NTLM), User-Agent. `nessuscli managed link --proxy-host/--proxy-port/--proxy-username/--proxy-password/--proxy-agent` for the link to the manager. | Not documented as supported. Tenable recommends against scanning through NAT or application proxies: "Data Distortion … false positives or false negatives", "Enumeration Failures". |
-| **Tenable Nessus Agent** | Runs on the host; no network scanning | `nessuscli agent link --proxy-*`; `--auto-proxy` (Windows: WPAD → PAC) | n/a |
-| **Qualys scanner appliance** | Appliance per segment; extra **VLANs** on an 802.1q trunk; a **split network** (LAN for scanning, WAN for the cloud) | Proxy with Basic or NTLM; "SSL bridging is not supported. SOCKS proxies are not supported." | Hosts "must be accessible to the Scanner Appliance". That the proxy serves only the cloud link is inferred from the LAN/WAN split; we found no single sentence saying so. |
-| **Qualys Cloud Agent** | Host agent | Proxy in `/etc/sysconfig/qualys-cloud-agent` or `/etc/environment`. **Fail closed**: "does not attempt a direct connection" when the proxy fails. | n/a |
-| **Rapid7 InsightVM / Nexpose** | Distributed **scan engines** "closer to target assets", engine **pools**. Pairing console→engine (TCP 40814) or **engine→console** (40815) "when security policies restrict inbound connections". | Console proxy for updates and the Insight platform (host, port, domain/user/password). `NSE_PROXY_URI` for engine→console, with Basic, Digest or NTLM. | No: the proxies carry the console and update channels only. An internal engine "should have all ports open between it and any assets being scanned". |
-| **CrowdStrike Falcon sensor** | EDR, no scanning | Install options APD (proxy on/off), APH (host), APP (port), documented in CrowdStrike's public deployment repos. The product docs require a login. | n/a |
-| **Microsoft Defender for Endpoint** | EDR, no scanning | Windows: WinHTTP. Automatic discovery (transparent proxy or WPAD), static `TelemetryProxyServer` (host:port, authenticated proxies not used), or `netsh winhttp`. Antivirus also accepts a PAC URL. Linux: a static proxy only (`mdatp config proxy set`). "Don't use TLS inspection for Defender cloud connections." | n/a |
-| **Semgrep Network Broker** (related pattern) | A WireGuard tunnel from the customer to Semgrep proxies inbound requests to internal SCMs | — | A reverse tunnel for one integration, not a scan path |
+- Scan engines reach segmented networks by **placement**: one scanner per
+  segment, mapped to address ranges, with load-balanced groups and separate
+  networks for overlapping address spaces.
+- A scanner's documented proxy is for its **own link to the console and for
+  updates**, configured on the scanner host or at install time, with Basic,
+  Digest or NTLM authentication; endpoint agents also use system or PAC
+  settings. Some appliances accept no SOCKS proxy and no TLS bridging.
+- **Scanning through NAT or application proxies distorts results**: false
+  positives and negatives, broken host enumeration and broken OS
+  identification.
+- Endpoint agents fail closed when their proxy fails: they do not try a
+  direct connection.
 
 ### 4.2 Patterns extracted
 
 1. **Segmentation is solved by placement, not by proxies.** Each segment gets
-   a scanner (engine, appliance). The console maps scanners to address ranges:
-   Tenable Security Center scan zones, Tenable Vulnerability Management scanner
-   groups and Networks, Rapid7 engine pools, Qualys appliances per segment.
-   OpenCTEM's scan zones are the same model (RFC-023), and this RFC keeps
-   placement as the first recommendation.
+   a scanner, and the console maps scanners to address ranges. OpenCTEM's
+   scan zones are this model (RFC-023), and this RFC keeps placement as the
+   first recommendation.
 2. **The proxy setting is per scanner, for the control and update channel.**
    It is configured on the scanner or agent host, or at install time. It is
    not pushed from the console, because the scanner needs it before it can
-   reach the console. Several products support Basic, Digest and NTLM
-   authentication there; CrowdStrike and Defender also support system or PAC
-   settings on endpoints.
-3. **No vendor documents scan traffic through a proxy as a supported path.**
-   Tenable warns against it: false positives and negatives, and broken host
-   enumeration and OS identification. Qualys proxies take no SOCKS and no SSL
-   bridging. Endpoint agents do not scan the network at all. So a proxied zone
-   is a deliberate trade-off for segments that offer nothing else. The design
-   makes the reduced fidelity visible (§6.5) and never lets the scan path
-   inherit the update proxy silently, which is what OpenCTEM does today (G1).
-4. **Outbound-only scanners suit segmented networks.** Rapid7's
-   engine-to-console mode, and Tenable's and Qualys's appliances that pull
-   their jobs, need only one outbound connection from the segment. OpenCTEM
+   reach the console.
+3. **Scan traffic through a proxy is a trade-off, not a default.** It costs
+   fidelity (§4.1), so a proxied zone is a deliberate choice for segments
+   that offer nothing else. The design makes the reduced fidelity visible
+   (§6.5) and never lets the scan path inherit the update proxy silently,
+   which is what OpenCTEM does today (G1).
+4. **Outbound-only scanners suit segmented networks.** A scanner that pulls
+   its jobs needs only one outbound connection from the segment. OpenCTEM
    sensors already work this way (RFC-023).
 
 ## 5. Proxy kinds and tool support
@@ -178,7 +184,7 @@ a sensor reaches internal segments it cannot route to directly:
 | **WPAD** | Discovery of a PAC through DHCP or DNS | CERT VU#598349: a device named "WPAD" can become everyone's proxy. Never used here. |
 | **NO_PROXY** | No standard. curl: lowercase variables only for `http_proxy`, a leading dot matches the domain, CIDR since 7.86.0. Go: uppercase first, CIDR only for IP-literal hosts. Python `urllib`: no CIDR. wget: exact suffix, no CIDR. | A host-wide `NO_PROXY` means something different to each tool, which is G1's hidden trap. The forwarder replaces it on the scan path. |
 | **Proxy authentication** | Basic, Digest, NTLM, Negotiate (Kerberos, RFC 4559). curl supports all four. | Go's transport sends only Basic (from URL userinfo) and SOCKS5 user/password. NTLM and Negotiate need a library or a local relay (O5). |
-| **TLS-inspecting proxies** | The proxy re-signs server certificates with a corporate CA | Clients trust the CA (`SSL_CERT_FILE` for Go and trivy, `REQUESTS_CA_BUNDLE` for semgrep's CLI). Microsoft advises against inspecting Defender's cloud traffic, and RFC-032 §5.2 chose request signatures over mTLS because inspection breaks client certificates. |
+| **TLS-inspecting proxies** | The proxy re-signs server certificates with a corporate CA | Clients trust the CA (`SSL_CERT_FILE` for Go and trivy, `REQUESTS_CA_BUNDLE` for semgrep's CLI). RFC-032 §5.2 chose request signatures over mTLS because inspection breaks client certificates. |
 
 ### 5.2 Go
 
@@ -241,8 +247,7 @@ Verified against each tool's documentation and source at its 2026-09/10 HEAD.
 Rules:
 
 - **The platform never sets the control path.** A setting that can cut the
-  sensor off from the platform cannot be fixed remotely. The surveyed
-  products also configure it on the host (§4.2 pattern 2).
+  sensor off from the platform cannot be fixed remotely (§4.2 pattern 2).
 - **The platform never sets a content source or content proxy.** This is
   RFC-031 D2: a compromised platform must not be able to redirect content.
 - **Scan traffic stops inheriting the control proxy implicitly.** Once a
@@ -361,11 +366,11 @@ gains:
   "allowed_tools": ["nuclei", "httpx", "naabu"],
   "egress_profiles": [{
     "id": "…", "revision": 7, "name": "Plant OT segment",
-    "endpoints": [{"scheme": "socks5h", "host": "10.40.0.5", "port": 1080},
-                  {"scheme": "socks5h", "host": "10.40.0.6", "port": 1080}],
+    "endpoints": [{"scheme": "socks5h", "host": "198.51.100.5", "port": 1080},
+                  {"scheme": "socks5h", "host": "198.51.100.6", "port": 1080}],
     "auth": "basic", "credential_ref": null,
     "ca_bundle_pem": null, "dns": "proxy",
-    "health_target": "10.40.1.10:443",
+    "health_target": "198.51.100.10:443",
     "zones": ["…zone id…"]
   }]
 }
@@ -572,6 +577,7 @@ value. The API refuses to return them, as it does for integration credentials.
 | A platform-supplied URL reaches a private or metadata address through a proxy (SSRF) | With a proxy, Go's `DialContext` connects to the **proxy**. The guard in `guardedTransport` would then check the proxy's address, not the target's. A proxy-aware `SafeHTTPClient` (G2 fix) therefore checks the **request URL** in its `Proxy` function: it resolves locally and refuses blocked addresses (`ValidateURL`) before it returns the proxy, and the dialer checks the proxy's address with the API-destination policy. If the target does not resolve locally, the guard refuses it (fail closed). Only fixed upstream hostnames compiled into the SDK (GitHub, the semgrep registry, the KEV/EPSS feeds) may skip local resolution, because the platform cannot choose them. |
 | A tampered command sends tool traffic or credentials to an attacker's proxy | Commands carry only a profile id and revision (§6.3). Endpoints come from the authenticated policy, credentials are sealed to the claiming sensor, and the sensor operator can veto (§6.4). Signed jobs (RFC-023 P3) close the rest. |
 | A malicious job sets its own proxy | Unchanged: `-proxy` and similar flags are refused in user-supplied arguments (F6), and the SDK removes the proxy variables from a proxied tool's environment. |
+| A pushed template or job turns on code execution on the sensor | Custom templates arrive in a signed, command-bound manifest the sensor verifies against a pinned tenant key, code/file/headless/JS templates are refused at upload and on the sensor, and `-code`, `-file`, `-headless`, `-esc`, `-dut` and the short `-p` proxy flag are refused in extra args ([RFC-038 §6.12](RFC-038-sensor-tool-settings.md)). |
 | TLS-inspecting proxy on the scan path | Not supported on the scan path. Inspection would change what the scanner sees, and its findings would describe the proxy. The CA bundle on a profile is for trusting an `https://` **proxy endpoint** only. It is never added to the tools' trust, and tools keep verifying targets as they do today. TLS-inspecting proxies on the control channel are supported through `SENSOR_CA_CERT_FILE` (F2). |
 | Credential leak | §6.6: write-only, sealed per command, held in forwarder memory only, never in argv, logs or the outbox. |
 | Silent changes | Every change is audited (below), changes `config_version`, and is visible on the zone. |
@@ -621,7 +627,7 @@ forwarder open `direct-tcpip` channels through an SSH connection
 - The SSH key is sealed like T2 credentials.
 - `ssh -D` gives the same result, but as an external process.
 
-This is Phase 4 and an owner decision (O7). A sensor in the segment is almost
+This is Phase 4 and an open decision (O7). A sensor in the segment is almost
 always the better answer.
 
 ### 6.11 UI
@@ -654,7 +660,7 @@ always the better answer.
 - **New scan / preview.** `POST /scan-zones/preview` returns, per zone, the
   path and the tools that will be limited or refused (`egress` member).
 - **Scan run page.** Per zone and per job, the path taken (`via
-  10.40.0.5:1080, SOCKS5, profile rev 7`), refused destinations, and
+  198.51.100.5:1080, SOCKS5, profile rev 7`), refused destinations, and
   throttled or blocked hosts. Run warnings explain `ZONE_UNREACHABLE`.
 
 ## 7. Compatibility
@@ -688,14 +694,14 @@ always the better answer.
 | Rotate through proxies or source addresses when a target throttles or blocks | Out of scope by design (§2.1). It evades the target owner's controls, and our customers scan their own estate, where a block is a signal to report, not an obstacle. |
 | Push `HTTPS_PROXY` to sensors from the platform | It mixes control and scan traffic (G1), can cut a sensor off from the platform, and cannot be scoped per zone or tool. |
 | Wire the profile into each tool's flags, with no forwarder | Credentials in argv and in N code paths. No single destination check, so scope enforcement depends on each tool's honesty. Failover and health would be reimplemented per tool. |
-| Only "put a sensor in every segment" | Still the first recommendation, and enterprise scanners do the same (§4.2). But some segments (OT, regulated enclaves, partner networks) allow only a managed proxy or bastion, and the owner asked for a proxy answer. |
+| Only "put a sensor in every segment" | Still the first recommendation (§4.2). But some segments (OT, regulated enclaves, partner networks) allow only a managed proxy or bastion, and they need a proxy answer. |
 | PAC files | They need a JavaScript engine in the sensor, and they choose a proxy per URL, which hides from the platform which path a job took. Explicit endpoint lists cover the scanner case. PAC remains possible for the control channel only (O6). |
 | Transparent interception or a VPN client in the sensor | Network-team infrastructure, not a scanner feature. A sensor behind such a network is simply "direct". |
 | SOCKS5 UDP ASSOCIATE for UDP probes | Rarely implemented by proxies and by our tools. UDP and ICMP stay "not through a proxy" (§2.1). |
 
 ## 10. Decisions
 
-### 10.1 Technical decisions taken here (no owner input needed)
+### 10.1 Technical decisions taken here
 
 - Three traffic classes with separate settings (§6.1).
 - Commands reference a profile and never carry a proxy URL (§6.3).
@@ -706,43 +712,22 @@ always the better answer.
   endpoint only (§6.8).
 - Proxied jobs are offered only to sensors that declare support (§6.3).
 
-### 10.2 Owner decisions
+### 10.2 Open decisions
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| O1 | Where do proxy settings live? | (a) platform per zone for everything; (b) sensor-local only; (c) **split**: control and content local, scan path on the platform per zone (+ per tool), host operator can veto | **(c).** The control path has to be local: the sensor needs it to reach the platform, and the surveyed products agree (§4.2). The scan path has to be central, so that it is per zone, audited and visible per run. The veto keeps RFC-023 D8. |
+| O1 | Where do proxy settings live? | (a) platform per zone for everything; (b) sensor-local only; (c) **split**: control and content local, scan path on the platform per zone (+ per tool), host operator can veto | **(c).** The control path has to be local: the sensor needs it to reach the platform (§4.2). The scan path has to be central, so that it is per zone, audited and visible per run. The veto keeps RFC-023 D8. |
 | O2 | Default for a zone with no profile | (a) `inherit`, today's behaviour; (b) `direct` (stop passing proxy variables to scanners) | **(a) now**, with the UI warning for private zones on `inherit` when a sensor has a control proxy. Revisit (b) at sensor v1.0: it fixes G1 for everyone but can break installations that scan public targets through the corporate proxy today. |
 | O3 | Run proxied jobs through the in-sensor forwarder (rather than per-tool flags)? | yes / no | **Yes** (§6.5, §9): one place for scope checks, credentials and failover. |
 | O4 | Platform-held proxy credentials | (a) sensor-local only; (b) also stored on the platform, HPKE-sealed to key-bound sensors | **(b) after RFC-032 Phase 3**, (a) until then. It is the same custody model as scan credentials (D5), so there is one mechanism to review. |
 | O5 | Proxy authentication methods | Basic and SOCKS5 user/password; + NTLM/Negotiate (Kerberos) | **Basic and SOCKS5 user/password** for the scan path. **NTLM/Negotiate only for the control proxy, and only on demand (Phase 4)**: Go has no built-in support, and the usual workaround is a local authenticating relay (cntlm or px), which we can document. |
 | O6 | PAC files and WPAD | support PAC for control; support PAC everywhere; neither | **Never WPAD. No PAC on the scan path.** PAC for the control channel only if a customer requires it (Phase 4); an explicit proxy covers the cases seen so far. |
 | O7 | SSH jump host profiles | build in Phase 4 / not at all | **Phase 4, on demand.** Recommend a sensor in the segment first. |
-| O8 | Who may manage egress profiles | (a) reuse `sensors:zones:write`; (b) new `sensors:egress:*`, admin and owner only | **(b).** A proxy decides where scan traffic and credentials go. This matches the owner's 2026-10 decision that sensor administration is admin-only. |
+| O8 | Who may manage egress profiles | (a) reuse `sensors:zones:write`; (b) new `sensors:egress:*`, admin and owner only | **(b).** A proxy decides where scan traffic and credentials go. This matches the rule that sensor administration is admin-only. |
 | O9 | A tool that cannot use a zone's proxy (raw SYN, UDP, ICMP, DNS templates) | (a) refuse that tool or part, visibly; (b) run it direct with a warning | **(a).** Going direct would scan from a path the administrator did not choose, possibly into a segment with a different policy. |
 | O10 | May the default (public) zone use a profile (the corporate egress proxy for external scans)? | yes / no | **Yes.** It is the supported way to scan the internet from a sensor whose only egress is the corporate proxy. Inspection caveats (§6.8) are shown. |
 
 ## 11. Sources
-
-Enterprise scanners and agents:
-
-- Tenable Nessus, Proxy Server settings: https://docs.tenable.com/nessus/Content/SettingsProxyServer.htm
-- Tenable Nessus CLI (`managed link --proxy-*`): https://docs.tenable.com/nessus/Content/NessusCLI.htm
-- Tenable Nessus Agent CLI (`agent link --proxy-*`, `--auto-proxy`): https://docs.tenable.com/nessus-agent/Content/NessusCLIAgent.htm
-- Tenable Nessus deployment considerations (NAT and proxies distort results): https://docs.tenable.com/nessus/Content/DeploymentConsiderations.htm
-- Tenable Vulnerability Management Networks: https://docs.tenable.com/vulnerability-management/Content/Settings/Sensors/Networks.htm
-- Tenable Vulnerability Management scanner groups: https://docs.tenable.com/vulnerability-management/Content/Settings/Sensors/ScannerGroups.htm
-- Qualys scanner appliance network requirements (proxy auth, no SOCKS, VLANs): https://docs.qualys.com/en/scanner/appliances/physical_scanner/qgsa_5120_a1/get_started/network_requirement.htm
-- Qualys virtual scanner split network (LAN/WAN): https://docs.qualys.com/en/scanner/vmware-vsphere/deployment/enable_wan.htm
-- Qualys Cloud Agent for Linux, proxy configuration: https://docs.qualys.com/en/ca/install-guide/linux/proxy_config/proxy_config.htm
-- Rapid7 scan engine communication methods: https://docs.rapid7.com/insightvm/scan-engine-communication-methods/
-- Rapid7 configuring distributed scan engines: https://docs.rapid7.com/insightvm/configuring-distributed-scan-engines/
-- Rapid7 using a proxy server: https://docs.rapid7.com/insightvm/using-a-proxy-server/
-- Rapid7 scan engine proxy to the console (`NSE_PROXY_URI`): https://docs.rapid7.com/insightvm/set-scan-engine-proxy-for-security-console/
-- Rapid7 scan engine pools: https://docs.rapid7.com/insightvm/working-with-scan-engine-pools/
-- CrowdStrike install scripts (APD/APH/APP): https://github.com/CrowdStrike/falcon-scripts/blob/main/bash/install/README.md and https://github.com/CrowdStrike/falcon-helm/blob/main/helm-charts/falcon-sensor/README.md
-- Microsoft Defender for Endpoint proxy (Windows): https://learn.microsoft.com/en-us/defender-endpoint/configure-proxy-internet
-- Microsoft Defender for Endpoint static proxy (Linux): https://learn.microsoft.com/en-us/defender-endpoint/linux-static-proxy-configuration
-- Semgrep Network Broker: https://docs.semgrep.dev/semgrep-ci/network-broker
 
 Protocols and conventions:
 

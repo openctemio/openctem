@@ -147,7 +147,7 @@ func atConfirmed(t *testing.T) *vulnerability.Finding {
 // findings:verify and this automated path must not bypass it. A human still
 // closes validated_fixed. `stood` (proof-of-fix stood → resolved) stays false.
 func TestRetest_NotDetected_DowngradesConfirmed(t *testing.T) {
-	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "safe-check"}}
+	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "nuclei", RawMeta: map[string]any{"reachable": true}}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
 	svc, repo, _ := newProofSvc(disp, cap)
 	repo.current = atConfirmed(t)
@@ -167,8 +167,10 @@ func TestRetest_NotDetected_DowngradesConfirmed(t *testing.T) {
 	}
 }
 
-func TestRetest_NotDetected_Resolves(t *testing.T) {
-	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "safe-check"}}
+// The proof-of-fix dispatch reports not detected: evidence only, no close
+// (the reachability it carries is the sensor's own claim).
+func TestRetest_NotDetected_DoesNotResolve(t *testing.T) {
+	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "nuclei", RawMeta: map[string]any{"reachable": true}}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
 	svc, repo, notif := newProofSvc(disp, cap)
 	repo.current = atFixApplied(t)
@@ -177,14 +179,14 @@ func TestRetest_NotDetected_Resolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retest: %v", err)
 	}
-	if !stood {
-		t.Fatal("fix should have stood")
+	if stood {
+		t.Fatal("a sensor-asserted not-detected must not count as a fix that stood")
 	}
-	if repo.current.Status() != vulnerability.FindingStatusResolved {
-		t.Fatalf("status = %s, want resolved", repo.current.Status())
+	if repo.current.Status() != vulnerability.FindingStatusFixApplied {
+		t.Fatalf("status = %s, want fix_applied (unchanged)", repo.current.Status())
 	}
 	if notif.calls != 0 {
-		t.Fatal("notifier must not fire when fix stood")
+		t.Fatal("notifier must not fire on a not-detected result")
 	}
 	if disp.recordedJob.ExecutorKind != KindSafeCheck {
 		t.Fatalf("dispatched kind = %q, want safe-check", disp.recordedJob.ExecutorKind)
@@ -192,7 +194,7 @@ func TestRetest_NotDetected_Resolves(t *testing.T) {
 }
 
 func TestRetest_Detected_RevertsAndNotifies(t *testing.T) {
-	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeDetected, Summary: "still exploitable"}}
+	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeDetected, ExecutorKind: "nuclei", Summary: "still exploitable"}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
 	svc, repo, notif := newProofSvc(disp, cap)
 	repo.current = atFixApplied(t)

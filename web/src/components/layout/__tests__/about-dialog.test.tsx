@@ -47,23 +47,35 @@ describe('AboutDialog', () => {
     expect(within(dialog).getAllByLabelText('Loading version')).toHaveLength(2)
   })
 
-  it('shows a development build as "<tag>-dev (commit)" with its qualifier', () => {
+  it('shows a development build as "<tag>-dev+<commit>" with its qualifier', () => {
     versions.current = {
-      web: { version: 'v0.8.0-dev', commit: '4d2f4b02', channel: 'development' },
-      api: { version: 'v0.8.0-dev', commit: 'a0a14db0', channel: 'development' },
+      web: { version: 'v0.8.0-dev+4d2f4b02', commit: '4d2f4b02', channel: 'dev' },
+      // An API from before RFC-037 still answers "<tag>-dev" and a separate commit.
+      api: { version: 'v0.8.0-dev', commit: 'a0a14db0', channel: 'dev' },
     }
     const dialog = renderAbout()
     const web = within(dialog).getByTestId('about-ui-version')
-    expect(web).toHaveTextContent('v0.8.0-dev(4d2f4b02)')
-    expect(within(web).getByText('(4d2f4b02)')).toHaveClass('font-mono')
+    // The commit is already in the version: not repeated.
+    expect(web).toHaveTextContent(/^v0\.8\.0-dev\+4d2f4b02Development build$/)
     expect(within(dialog).getByTestId('about-ui-version-channel')).toHaveTextContent(
       'Development build'
     )
-    expect(within(dialog).getByTestId('about-api-version')).toHaveTextContent(
-      'v0.8.0-dev(a0a14db0)'
-    )
+    const api = within(dialog).getByTestId('about-api-version')
+    expect(api).toHaveTextContent('v0.8.0-dev(a0a14db0)')
+    expect(within(api).getByText('(a0a14db0)')).toHaveClass('font-mono')
     expect(within(dialog).getByText('Web app')).toBeInTheDocument()
     expect(within(dialog).getByText('API')).toBeInTheDocument()
+  })
+
+  it('labels a release candidate', () => {
+    versions.current = {
+      web: { version: 'v0.9.0-rc.1', commit: '01234567', channel: 'rc' },
+      api: { version: 'v0.9.0-rc.1', commit: '01234567', channel: 'rc' },
+    }
+    const dialog = renderAbout()
+    expect(within(dialog).getByTestId('about-ui-version-channel')).toHaveTextContent(
+      'Release candidate'
+    )
   })
 
   it('labels a release build and hides an unknown commit', () => {
@@ -78,7 +90,7 @@ describe('AboutDialog', () => {
 
   it('says "unavailable" for a row that could not be read, and still renders the rest', () => {
     versions.current = {
-      web: { version: 'v0.8.0-dev', commit: '4d2f4b02', channel: 'development' },
+      web: { version: 'v0.8.0-dev', commit: '4d2f4b02', channel: 'dev' },
       api: null,
     }
     const dialog = renderAbout()
@@ -138,10 +150,11 @@ describe('useBuildVersions', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/version')
     expect(get).toHaveBeenCalledWith('/api/v1/version')
     expect(adminFetch).not.toHaveBeenCalled()
+    // An API from before RFC-037 answers "development": read as "dev".
     expect(result.current.api).toEqual({
       version: 'v0.8.0-dev',
       commit: 'a0a14db0',
-      channel: 'development',
+      channel: 'dev',
       build_time: '2026-10-02T03:00:00Z',
     })
   })

@@ -2,7 +2,7 @@
 /**
  * sensor-rename.mjs — the mechanical half of the agent -> sensor rename in the UI.
  *
- * RFC-023 §9.5 (openctemio/api docs/rfcs/RFC-023-sensor-rename-contract.md):
+ * RFC-023 §9.5 (api/docs/rfcs/RFC-023-sensor-rename-contract.md):
  * the product moved from "agent" to "sensor" everywhere except where "agent"
  * means something else. This script does the part a machine can do safely; the
  * hand edits (redirects, storage migration, audit labels, Tenable mode, IA)

@@ -128,13 +128,6 @@ export interface EnrichCVERequest {
 }
 
 /**
- * Enrichment request for multiple CVEs
- */
-export interface EnrichCVEsRequest {
-  cve_ids: string[]
-}
-
-/**
  * Enrichment result for a CVE
  */
 export interface CVEEnrichment {
@@ -142,14 +135,6 @@ export interface CVEEnrichment {
   epss?: EPSSScore
   kev?: KEVEntry
   enriched_at: string
-}
-
-/**
- * Bulk enrichment response
- */
-export interface BulkEnrichmentResponse {
-  enrichments: CVEEnrichment[]
-  not_found: string[]
 }
 
 // ============================================

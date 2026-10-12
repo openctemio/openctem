@@ -16,7 +16,6 @@ import {
   changePasswordSchema,
   oauthCallbackSchema,
   isValidEmail,
-  isValidPassword,
   getPasswordStrength,
   getPasswordStrengthLabel,
 } from './auth.schema'
@@ -59,8 +58,8 @@ describe('emailSchema', () => {
 })
 
 describe('passwordSchema', () => {
-  it('should accept valid passwords (8+ characters)', () => {
-    const validPasswords = ['password123', 'MyP@ssw0rd', 'abcdefgh', 'verylongpassword123']
+  it('should accept valid passwords (12+ characters)', () => {
+    const validPasswords = ['password1234', 'MyP@ssw0rd12', 'abcdefghijkl', 'verylongpassword123']
 
     validPasswords.forEach((password) => {
       expect(() => passwordSchema.parse(password)).not.toThrow()
@@ -68,17 +67,13 @@ describe('passwordSchema', () => {
   })
 
   it('should reject empty password', () => {
-    expect(() => passwordSchema.parse('')).toThrow('Please enter your password')
+    expect(() => passwordSchema.parse('')).toThrow('Please enter a password')
   })
 
-  it('should reject passwords shorter than 8 characters', () => {
-    const shortPasswords = ['pass', 'test', '1234567', 'abc']
-
-    shortPasswords.forEach((password) => {
-      expect(() => passwordSchema.parse(password)).toThrow(
-        'Password must be at least 8 characters long'
-      )
-    })
+  // Length and character rules are the server policy (GET /auth/providers),
+  // checked with passwordPolicyIssue; the schema keeps no copy of them.
+  it('keeps no length rule of its own', () => {
+    expect(() => passwordSchema.parse('short')).not.toThrow()
   })
 })
 
@@ -116,13 +111,15 @@ describe('loginSchema', () => {
     expect(() => loginSchema.parse(invalidData)).toThrow()
   })
 
-  it('should reject short password', () => {
-    const invalidData = {
+  // Sign-in takes the existing password as typed: accounts may have passwords
+  // set under an older, shorter minimum. The length rule applies on change.
+  it('should accept a short existing password on sign-in', () => {
+    const data = {
       email: 'test@example.com',
       password: 'short',
     }
 
-    expect(() => loginSchema.parse(invalidData)).toThrow()
+    expect(() => loginSchema.parse(data)).not.toThrow()
   })
 
   it('should reject missing fields', () => {
@@ -142,8 +139,8 @@ describe('registerSchema', () => {
       firstName: 'John',
       lastName: 'Doe',
       email: 'test@example.com',
-      password: 'password123',
-      confirmPassword: 'password123',
+      password: 'password1234',
+      confirmPassword: 'password1234',
     }
 
     expect(() => registerSchema.parse(validData)).not.toThrow()
@@ -173,13 +170,13 @@ describe('registerSchema', () => {
     expect(() => registerSchema.parse(invalidData)).toThrow()
   })
 
-  it('should reject short password', () => {
+  it('should reject an empty password', () => {
     const invalidData = {
       firstName: 'John',
       lastName: 'Doe',
       email: 'test@example.com',
-      password: 'short',
-      confirmPassword: 'short',
+      password: '',
+      confirmPassword: '',
     }
 
     expect(() => registerSchema.parse(invalidData)).toThrow()
@@ -254,10 +251,10 @@ describe('resetPasswordSchema', () => {
     expect(() => resetPasswordSchema.parse(invalidData)).toThrow('Reset token is required')
   })
 
-  it('should reject short password', () => {
+  it('should reject an empty password', () => {
     const invalidData = {
-      password: 'short',
-      confirmPassword: 'short',
+      password: '',
+      confirmPassword: '',
       token: 'valid-reset-token',
     }
 
@@ -314,11 +311,11 @@ describe('changePasswordSchema', () => {
     )
   })
 
-  it('should reject short new password', () => {
+  it('should reject an empty new password', () => {
     const invalidData = {
       currentPassword: 'oldpassword123',
-      newPassword: 'short',
-      confirmNewPassword: 'short',
+      newPassword: '',
+      confirmNewPassword: '',
     }
 
     expect(() => changePasswordSchema.parse(invalidData)).toThrow()
@@ -375,20 +372,6 @@ describe('isValidEmail', () => {
     expect(isValidEmail('missing@domain')).toBe(false)
     expect(isValidEmail('')).toBe(false)
     expect(isValidEmail('@example.com')).toBe(false)
-  })
-})
-
-describe('isValidPassword', () => {
-  it('should return true for valid passwords (8+ characters)', () => {
-    expect(isValidPassword('password123')).toBe(true)
-    expect(isValidPassword('MyP@ssw0rd')).toBe(true)
-    expect(isValidPassword('abcdefgh')).toBe(true)
-  })
-
-  it('should return false for invalid passwords', () => {
-    expect(isValidPassword('short')).toBe(false)
-    expect(isValidPassword('1234567')).toBe(false)
-    expect(isValidPassword('')).toBe(false)
   })
 })
 

@@ -34,8 +34,8 @@ export function useScopeRules(groupId: string | null, options?: { skip?: boolean
   const { data, error, isLoading, mutate } = useSWR<{
     rules: ScopeRule[]
     total_count: number
-    limit: number
-    offset: number
+    page: number
+    per_page: number
   }>(url, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30000,

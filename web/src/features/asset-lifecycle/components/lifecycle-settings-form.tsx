@@ -24,6 +24,7 @@ import {
 } from '../types'
 import { updateAssetLifecycleSettings } from '../api'
 import { DryRunDialog } from './dry-run-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** What the page header needs to render the form's Save action. */
 export interface LifecycleFormStatus {
@@ -94,14 +95,6 @@ function validate(form: FormState): string | null {
   if (!Number.isInteger(grace) || grace < MIN_GRACE_DAYS || grace > MAX_GRACE_DAYS) {
     return `Grace period must be between ${MIN_GRACE_DAYS} and ${MAX_GRACE_DAYS} days.`
   }
-  const reactGrace = Number(form.manual_reactivation_grace_days)
-  if (
-    !Number.isInteger(reactGrace) ||
-    reactGrace < MIN_THRESHOLD_DAYS ||
-    reactGrace > MAX_THRESHOLD_DAYS
-  ) {
-    return `Manual reactivation grace must be between ${MIN_THRESHOLD_DAYS} and ${MAX_THRESHOLD_DAYS} days.`
-  }
   return null
 }
 
@@ -112,6 +105,7 @@ export function LifecycleSettingsForm({
   dryRunOpen,
   onDryRunOpenChange,
 }: LifecycleSettingsFormProps) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const { mutate } = useSWRConfig()
   const [form, setForm] = React.useState<FormState>(() => toFormState(initial))
@@ -173,10 +167,11 @@ export function LifecycleSettingsForm({
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <CardTitle>Asset lifecycle worker</CardTitle>
+              <CardTitle>
+                {t('settings.assetLifecycle.staleDetection', 'Stale-asset detection')}
+              </CardTitle>
               <CardDescription>
-                Automatically flags assets as stale when no scanner or integration has re-observed
-                them within the configured threshold. Disabled by default.
+                {t('settings.assetLifecycle.offByDefault', 'Off by default.')}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -242,25 +237,6 @@ export function LifecycleSettingsForm({
                 Newly discovered assets are immune for this many days.
               </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="reactivation-grace">Manual reactivation grace (days)</Label>
-              <Input
-                id="reactivation-grace"
-                type="number"
-                min={MIN_THRESHOLD_DAYS}
-                max={MAX_THRESHOLD_DAYS}
-                value={form.manual_reactivation_grace_days}
-                onChange={(e) =>
-                  setForm((s) => ({
-                    ...s,
-                    manual_reactivation_grace_days: e.target.value,
-                  }))
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Assets reactivated manually skip the worker for this long.
-              </p>
-            </div>
           </div>
 
           <Separator />
@@ -268,8 +244,9 @@ export function LifecycleSettingsForm({
           <div className="space-y-3">
             <Label>Excluded source types</Label>
             <p className="text-xs text-muted-foreground">
-              Assets whose only sources fall into these categories will never be auto-demoted.
-              Manual and imported assets default to excluded.
+              Assets discovered this way are never auto-demoted. The category comes from how the
+              asset was discovered; assets created by hand count as manual. Manual and imported
+              assets default to excluded.
             </p>
             <div className="flex flex-wrap gap-2">
               {KNOWN_SOURCE_TYPES.map((type) => {

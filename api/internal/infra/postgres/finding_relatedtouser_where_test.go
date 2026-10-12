@@ -22,9 +22,14 @@ func TestBuildWhereClause_RelatedToUser(t *testing.T) {
 
 	where, args := r.buildWhereClause(f)
 
+	if strings.Contains(where, "owner_id") {
+		t.Errorf("WHERE still reads assets.owner_id: %s", where)
+	}
 	for _, frag := range []string{
 		"assigned_to = $",
-		"owner_id = $",
+		"FROM asset_owners oao",
+		"oao.user_id = $",
+		"oao.ownership_type IN ('primary', 'secondary')",
 		"finding_group_assignments",
 		"gm.user_id = $",
 		"g.is_active = true",

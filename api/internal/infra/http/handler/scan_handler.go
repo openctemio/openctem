@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	"github.com/go-chi/chi/v5"
 
@@ -17,7 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -32,6 +34,26 @@ type ScanHandler struct {
 	coverageStats scancoverage.CoverageStatsReader
 	validator     *validator.Validator
 	logger        *logger.Logger
+	// approvals: scan approval (RFC-073); nil when not wired.
+	approvals *ScanApprovalHandler
+}
+
+// SetApprovals wires scan approval: the list badge and the approval routes
+// under /scans.
+func (h *ScanHandler) SetApprovals(a *ScanApprovalHandler) { h.approvals = a }
+
+// Approvals returns the scan approval handler (nil when not wired).
+func (h *ScanHandler) Approvals() *ScanApprovalHandler {
+	if h == nil {
+		return nil
+	}
+	return h.approvals
+}
+
+// auditCtx is the request context carrying the caller as the actor of the
+// scan service's audit entries (see scansvc.WithAuditActor).
+func (h *ScanHandler) auditCtx(r *http.Request) context.Context {
+	return scansvc.WithAuditActor(r.Context(), middleware.GetUserID(r.Context()))
 }
 
 // NewScanHandler creates a new ScanHandler.
@@ -50,49 +72,89 @@ func NewScanHandler(service *scansvc.Service, userRepo user.Repository, coverage
 // CreateScanRequest represents the request body for creating a scan.
 // Either asset_group_id OR asset_group_ids OR targets must be provided (can have all).
 type CreateScanRequest struct {
-	Name             string         `json:"name" validate:"required,min=1,max=200"`
-	Description      string         `json:"description" validate:"max=1000"`
-	AssetGroupID     string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
-	AssetGroupIDs    []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets          []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
-	ScanType         string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName      string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig    map[string]any `json:"scanner_config"`
-	TargetsPerJob    int            `json:"targets_per_job"`
-	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay      *int           `json:"schedule_day"`
-	ScheduleTime     *string        `json:"schedule_time"`
-	Timezone         string         `json:"timezone" validate:"max=50"`
-	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     bool           `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`
+	Name          string   `json:"name" validate:"required,min=1,max=200"`
+	Description   string   `json:"description" validate:"max=1000"`
+	AssetGroupID  string   `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
+	AssetGroupIDs []string `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets       []string `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	// AssetIDs are inventory assets to scan, each by its name as the server
+	// resolves it (at most 1000 targets and assets together). An id that is
+	// not the organization's or outside the caller's scope refuses the whole
+	// request, without saying which.
+	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
+	// TargetOptions tunes how each run resolves the dynamic selectors among
+	// the targets (*.example.com, CIDRs) from the inventory (RFC-068).
+	TargetOptions *scan.TargetOptions `json:"target_options"`
+	// Intensity is the probe ceiling of every run (RFC-071): passive (no
+	// packets from the sensors to the targets), active (non-intrusive
+	// probing) or intrusive. Omitted: the tier the scanner or workflow
+	// probes at. A scanner or workflow step above it is refused
+	// (INTENSITY_EXCEEDED).
+	Intensity      string         `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any `json:"scanner_config"`
+	TargetsPerJob  int            `json:"targets_per_job"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+	// evaluated in timezone; at most every 15 minutes.
+	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay   *int    `json:"schedule_day"`
+	ScheduleTime  *string `json:"schedule_time"`
+	// RunAt (RFC 3339) is the one run of schedule_type once: between a
+	// minute and a year from now.
+	RunAt            *time.Time `json:"run_at"`
+	Timezone         string     `json:"timezone" validate:"max=50"`
+	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     bool       `json:"run_on_tenant_runner"`
+	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        string     `json:"profile_id" validate:"omitempty,uuid"`
 	// ScanZoneID pins every target to one scan zone; empty = Automatic routing.
 	ScanZoneID          string `json:"scan_zone_id" validate:"omitempty,uuid"`
 	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	// StartWhenScopeApproved saves the scan although some direct targets are
+	// refused, when every refused one is covered by a scope entry that waits
+	// for approval; the scan starts once those entries are approved, as the
+	// caller, and every gate runs again then. Any other refusal still refuses.
+	StartWhenScopeApproved bool `json:"start_when_scope_approved"`
+	// SkipRefusedTargets saves the scan with only the direct targets the
+	// scope check allows now; the others are recorded with their refusal
+	// codes in skipped_targets and on every run. Nothing the gate refuses is
+	// saved or scanned.
+	SkipRefusedTargets bool `json:"skip_refused_targets"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
 type UpdateScanRequest struct {
-	Name             string         `json:"name" validate:"omitempty,min=1,max=200"`
-	Description      string         `json:"description" validate:"max=1000"`
-	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName      string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig    map[string]any `json:"scanner_config"`
-	TargetsPerJob    *int           `json:"targets_per_job"`
-	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay      *int           `json:"schedule_day"`
-	ScheduleTime     *string        `json:"schedule_time"`
-	Timezone         string         `json:"timezone" validate:"max=50"`
-	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     *bool          `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID        *string        `json:"profile_id" validate:"omitempty"`
+	Name           string         `json:"name" validate:"omitempty,min=1,max=200"`
+	Description    string         `json:"description" validate:"max=1000"`
+	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any `json:"scanner_config"`
+	TargetsPerJob  *int           `json:"targets_per_job"`
+	// TargetOptions: omitted = unchanged (RFC-068).
+	TargetOptions *scan.TargetOptions `json:"target_options"`
+	// Intensity: omitted = unchanged (RFC-071).
+	Intensity    string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
+	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+	// evaluated in timezone; at most every 15 minutes.
+	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay   *int    `json:"schedule_day"`
+	ScheduleTime  *string `json:"schedule_time"`
+	// RunAt (RFC 3339) is the one run of schedule_type once: between a
+	// minute and a year from now.
+	RunAt            *time.Time `json:"run_at"`
+	Timezone         string     `json:"timezone" validate:"max=50"`
+	Tags             []string   `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     *bool      `json:"run_on_tenant_runner"`
+	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        *string    `json:"profile_id" validate:"omitempty"`
 	// ScanZoneID: omitted = unchanged, "" = Automatic routing, id = pin to that zone.
 	ScanZoneID          *string `json:"scan_zone_id" validate:"omitempty"`
 	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
@@ -107,6 +169,11 @@ type TriggerScanExecRequest struct {
 
 // CloneScanRequest represents the request body for cloning a scan.
 type CloneScanRequest struct {
+	Name string `json:"name" validate:"required,min=1,max=200"`
+}
+
+// SaveScanRequest names an ad-hoc quick scan that becomes a configuration.
+type SaveScanRequest struct {
 	Name string `json:"name" validate:"required,min=1,max=200"`
 }
 
@@ -132,15 +199,20 @@ type QuickScanRequest struct {
 	WorkflowID  string         `json:"workflow_id" validate:"omitempty,uuid"`
 	Config      map[string]any `json:"config"`
 	Tags        []string       `json:"tags" validate:"max=20,dive,max=50"`
+	// Intensity: the probe ceiling (RFC-071); omitted = the tier the
+	// scanner or workflow probes at.
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
 }
 
 // QuickScanResponse represents the response for quick scan.
 type QuickScanResponse struct {
-	PipelineRunID string `json:"pipeline_run_id"`
-	ScanID        string `json:"scan_id"`
-	AssetGroupID  string `json:"asset_group_id"`
-	Status        string `json:"status"`
-	TargetCount   int    `json:"target_count"`
+	ScanRunID string `json:"scan_run_id"`
+	// ScanID is the run's scan: ad hoc (unsaved) until POST /scans/{id}/save.
+	ScanID string `json:"scan_id"`
+	// AssetGroupID is always empty: quick scans no longer create an asset group.
+	AssetGroupID string `json:"asset_group_id"`
+	Status       string `json:"status"`
+	TargetCount  int    `json:"target_count"`
 }
 
 // CreateScanResponse wraps scan detail with optional compatibility warning.
@@ -148,6 +220,9 @@ type QuickScanResponse struct {
 type CreateScanResponse struct {
 	*ScanDetailResponse
 	CompatibilityWarning *AssetCompatibilityPreviewResponse `json:"compatibility_warning,omitempty"`
+	// StartsWhenScopeApproved: the scan was saved to start once the pending
+	// scope entries covering its targets are approved (do not trigger it now).
+	StartsWhenScopeApproved bool `json:"starts_when_scope_approved,omitempty"`
 }
 
 // AssetCompatibilityPreviewResponse represents asset-scanner compatibility info.
@@ -165,17 +240,30 @@ type AssetCompatibilityPreviewResponse struct {
 
 // ScanResponse represents the response for a scan.
 type ScanDetailResponse struct {
-	ID            string         `json:"id"`
-	TenantID      string         `json:"tenant_id"`
-	Name          string         `json:"name"`
-	Description   string         `json:"description,omitempty"`
-	AssetGroupID  string         `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
-	AssetGroupIDs []string       `json:"asset_group_ids,omitempty"` // Multiple asset groups
-	Targets       []string       `json:"targets,omitempty"`         // Direct targets
-	ScanType      string         `json:"scan_type"`
-	PipelineID    *string        `json:"pipeline_id,omitempty"`
-	ScannerName   string         `json:"scanner_name,omitempty"`
-	ScannerConfig map[string]any `json:"scanner_config,omitempty"`
+	// ApprovalStatus: the newest approval request of the scan (pending,
+	// approved, rejected, expired, superseded, canceled); empty when none
+	// (RFC-073). On lists only.
+	ApprovalStatus string   `json:"approval_status,omitempty"`
+	ID             string   `json:"id"`
+	TenantID       string   `json:"tenant_id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description,omitempty"`
+	AssetGroupID   string   `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
+	AssetGroupIDs  []string `json:"asset_group_ids,omitempty"` // Multiple asset groups
+	Targets        []string `json:"targets,omitempty"`         // Direct targets
+	// SkippedTargets: targets left out when the scan was saved, with the
+	// scope refusal code of each.
+	SkippedTargets []scan.SkippedTarget `json:"skipped_targets,omitempty"`
+	// TargetOptions: how each run resolves the dynamic selectors among
+	// Targets from the inventory (RFC-068).
+	TargetOptions scan.TargetOptions `json:"target_options"`
+	// Intensity is the probe ceiling of every run: passive, active or
+	// intrusive (RFC-071).
+	Intensity      string         `json:"intensity" enums:"passive,active,intrusive"`
+	ScanType       string         `json:"scan_type"`
+	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
+	ScannerName    string         `json:"scanner_name,omitempty"`
+	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
 	// ScannerConfigWarnings lists scanner_config values that look like
 	// secrets (a token, a password, an Authorization header). The config is
 	// sent to the sensor in clear inside every command, so a secret there
@@ -185,9 +273,11 @@ type ScanDetailResponse struct {
 	TargetsPerJob         int                        `json:"targets_per_job"`
 	ScheduleType          string                     `json:"schedule_type"`
 	ScheduleCron          string                     `json:"schedule_cron,omitempty"`
+	ScheduleRRule         string                     `json:"schedule_rrule,omitempty"`
 	ScheduleDay           *int                       `json:"schedule_day,omitempty"`
 	ScheduleTime          *string                    `json:"schedule_time,omitempty"`
 	ScheduleTimezone      string                     `json:"schedule_timezone"`
+	ScheduleRunAt         *string                    `json:"schedule_run_at,omitempty"` // schedule_type once
 	NextRunAt             *string                    `json:"next_run_at,omitempty"`
 	Tags                  []string                   `json:"tags,omitempty"`
 	RunOnTenantRunner     bool                       `json:"run_on_tenant_runner"`
@@ -198,16 +288,29 @@ type ScanDetailResponse struct {
 	MaxRetries            int                        `json:"max_retries"`
 	RetryBackoffSeconds   int                        `json:"retry_backoff_seconds"`
 	Status                string                     `json:"status"`
-	LastRunID             *string                    `json:"last_run_id,omitempty"`
-	LastRunAt             *string                    `json:"last_run_at,omitempty"`
-	LastRunStatus         string                     `json:"last_run_status,omitempty"`
-	TotalRuns             int                        `json:"total_runs"`
-	SuccessfulRuns        int                        `json:"successful_runs"`
-	FailedRuns            int                        `json:"failed_runs"`
-	CreatedBy             *string                    `json:"created_by,omitempty"`
-	CreatedByName         *string                    `json:"created_by_name,omitempty"`
-	CreatedAt             string                     `json:"created_at"`
-	UpdatedAt             string                     `json:"updated_at"`
+	// AdHoc: an unsaved quick scan (not listed as a configuration until saved).
+	AdHoc          bool    `json:"ad_hoc"`
+	LastRunID      *string `json:"last_run_id,omitempty"`
+	LastRunAt      *string `json:"last_run_at,omitempty"`
+	LastRunStatus  string  `json:"last_run_status,omitempty"`
+	TotalRuns      int     `json:"total_runs"`
+	SuccessfulRuns int     `json:"successful_runs"`
+	FailedRuns     int     `json:"failed_runs"`
+	// PartialRuns: runs that kept results but lost some work (RFC-046 D5).
+	PartialRuns int `json:"partial_runs"`
+	// BlockedRuns: triggers refused before anything was dispatched; each
+	// is a run with status blocked and its refusal_code.
+	BlockedRuns int `json:"blocked_runs"`
+	// LastRun is the scan's latest run: its real state (running with
+	// progress, completed, partial, failed, blocked with the reason, ...).
+	// Absent before the first run.
+	LastRun *ScanLastRunResponse `json:"last_run,omitempty"`
+	// ScanWorkflowName names the workflow a workflow scan runs.
+	ScanWorkflowName string  `json:"scan_workflow_name,omitempty"`
+	CreatedBy        *string `json:"created_by,omitempty"`
+	CreatedByName    *string `json:"created_by_name,omitempty"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
 }
 
 // ScanStatsResponse represents the response for scan statistics.
@@ -224,7 +327,7 @@ type ScanStatsResponse struct {
 
 // CreateScan handles POST /api/v1/scans
 // @Summary      Create scan
-// @Description  Create a new scan configuration with scheduling options
+// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -278,9 +381,10 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate: must have either asset_group_ids or targets
-	if len(assetGroupIDs) == 0 && len(req.Targets) == 0 {
-		apierror.BadRequest("Either asset_group_id/asset_group_ids or targets must be provided").WriteJSON(w)
+	// Validate: must have asset groups, targets or assets (asset_ids alone is
+	// a scan of picked inventory assets; the service names them).
+	if len(assetGroupIDs) == 0 && len(req.Targets) == 0 && len(req.AssetIDs) == 0 {
+		apierror.BadRequest("Either asset_group_id/asset_group_ids, targets or asset_ids must be provided").WriteJSON(w)
 		return
 	}
 
@@ -298,15 +402,20 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		AssetGroupID:        primaryAssetGroupID, // Primary for backward compat
 		AssetGroupIDs:       assetGroupIDs,       // Full list for new scans
 		Targets:             req.Targets,
+		AssetIDs:            req.AssetIDs,
+		TargetOptions:       req.TargetOptions,
+		Intensity:           req.Intensity,
 		ScanType:            req.ScanType,
-		PipelineID:          req.PipelineID,
+		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,
 		ScannerConfig:       req.ScannerConfig,
 		TargetsPerJob:       req.TargetsPerJob,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
+		ScheduleRRule:       req.ScheduleRRule,
 		ScheduleDay:         req.ScheduleDay,
 		ScheduleTime:        scheduleTime,
+		RunAt:               req.RunAt,
 		Timezone:            req.Timezone,
 		Tags:                req.Tags,
 		TenantRunner:        req.TenantRunner,
@@ -317,6 +426,9 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		MaxRetries:          req.MaxRetries,
 		RetryBackoffSeconds: req.RetryBackoffSeconds,
 		CreatedBy:           userID,
+
+		StartWhenScopeApproved: req.StartWhenScopeApproved,
+		SkipRefusedTargets:     req.SkipRefusedTargets,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)
@@ -329,6 +441,9 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	response := &CreateScanResponse{
 		ScanDetailResponse: h.toScanResponse(r.Context(), s),
 	}
+	if req.StartWhenScopeApproved {
+		response.StartsWhenScopeApproved = h.service.WaitsForScope(r.Context(), s.TenantID, s.ID)
+	}
 
 	// Check compatibility for single scanner scans with asset groups
 	if req.ScanType == "single" && req.ScannerName != "" && len(assetGroupIDs) > 0 {
@@ -340,7 +455,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if preview, err := h.service.PreviewScanCompatibility(r.Context(), req.ScannerName, groupIDs); err == nil && preview != nil {
+		if preview, err := h.service.PreviewScanCompatibility(r.Context(), s.TenantID, req.ScannerName, groupIDs); err == nil && preview != nil {
 			response.CompatibilityWarning = &AssetCompatibilityPreviewResponse{
 				IsFullyCompatible:    preview.IsFullyCompatible,
 				CompatibilityPercent: preview.CompatibilityPercent,
@@ -394,11 +509,13 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Accept       json
 // @Produce      json
 // @Param        asset_group_id  query     string  false  "Filter by asset group"
-// @Param        pipeline_id     query     string  false  "Filter by pipeline"
+// @Param        scan_workflow_id     query     string  false  "Filter by scan workflow"
 // @Param        scan_type       query     string  false  "Filter by scan type (workflow, single)"
 // @Param        schedule_type   query     string  false  "Filter by schedule type"
 // @Param        status          query     string  false  "Filter by status"
 // @Param        search          query     string  false  "Search by name"
+// @Param        include_ad_hoc  query     bool    false  "Also list unsaved quick scans (ad_hoc)"
+// @Param        sort            query     string  false  "One sort key, - for descending: name, created_at, last_run_at, next_run_at, total_runs" default(name)
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        per_page        query     int     false  "Items per page" default(20)
 // @Success      200  {object}  ListResponse[ScanDetailResponse]
@@ -408,18 +525,24 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Router       /scans [get]
 func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	input := scansvc.ListScansInput{
-		TenantID:     tenantID,
-		AssetGroupID: r.URL.Query().Get("asset_group_id"),
-		PipelineID:   r.URL.Query().Get("pipeline_id"),
-		ScanType:     r.URL.Query().Get("scan_type"),
-		ScheduleType: r.URL.Query().Get("schedule_type"),
-		Status:       r.URL.Query().Get("status"),
-		Tags:         parseQueryArray(r.URL.Query().Get("tags")),
-		Search:       r.URL.Query().Get("search"),
-		Page:         parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:      parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		TenantID:       tenantID,
+		AssetGroupID:   r.URL.Query().Get("asset_group_id"),
+		ScanWorkflowID: r.URL.Query().Get("scan_workflow_id"),
+		ScanType:       r.URL.Query().Get("scan_type"),
+		ScheduleType:   r.URL.Query().Get("schedule_type"),
+		Status:         r.URL.Query().Get("status"),
+		Tags:           parseQueryArray(r.URL.Query().Get("tags")),
+		Search:         r.URL.Query().Get("search"),
+		IncludeAdHoc:   r.URL.Query().Get("include_ad_hoc") == "true",
+		Sort:           r.URL.Query().Get("sort"),
+		Page:           page.Page,
+		PerPage:        page.PerPage,
 	}
 
 	result, err := h.service.ListScans(r.Context(), input)
@@ -432,6 +555,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	// Batch-resolve creator names in one query to avoid an N+1 (previously each
 	// row triggered its own users lookup inside toScanResponse).
 	nameByID := h.resolveScanCreatorNames(ctx, result.Data)
+	reveal := canSeeScanConfigSecrets(ctx)
 	items := make([]*ScanDetailResponse, len(result.Data))
 	for i, s := range result.Data {
 		var name *string
@@ -440,14 +564,11 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 				name = &n
 			}
 		}
-		items[i] = buildScanResponse(s, name)
+		items[i] = buildScanResponse(s, name, reveal)
 	}
+	h.enrichScanResponses(ctx, tenantID, result.Data, items)
 
 	resp := map[string]any{
-		// "items" is the historical key the UI (scans/page.tsx) reads; "data" is
-		// added as a non-breaking alias so this endpoint also matches the
-		// documented list envelope convention ({"data":[...]}) for new consumers.
-		"items":       items,
 		"data":        items,
 		"total":       result.Total,
 		"page":        result.Page,
@@ -504,14 +625,18 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		ScanID:              scanID,
 		Name:                req.Name,
 		Description:         req.Description,
-		PipelineID:          req.PipelineID,
+		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,
 		ScannerConfig:       req.ScannerConfig,
 		TargetsPerJob:       req.TargetsPerJob,
+		TargetOptions:       req.TargetOptions,
+		Intensity:           req.Intensity,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
+		ScheduleRRule:       req.ScheduleRRule,
 		ScheduleDay:         req.ScheduleDay,
 		ScheduleTime:        scheduleTime,
+		RunAt:               req.RunAt,
 		Timezone:            req.Timezone,
 		Tags:                req.Tags,
 		TenantRunner:        req.TenantRunner,
@@ -523,7 +648,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		RetryBackoffSeconds: req.RetryBackoffSeconds,
 	}
 
-	s, err := h.service.UpdateScan(r.Context(), input)
+	s, err := h.service.UpdateScan(h.auditCtx(r), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -550,7 +675,7 @@ func (h *ScanHandler) DeleteScan(w http.ResponseWriter, r *http.Request) {
 	scanID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	if err := h.service.DeleteScan(r.Context(), tenantID, scanID); err != nil {
+	if err := h.service.DeleteScan(h.auditCtx(r), tenantID, scanID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -577,7 +702,7 @@ func (h *ScanHandler) ActivateScan(w http.ResponseWriter, r *http.Request) {
 	scanID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	s, err := h.service.ActivateScan(r.Context(), tenantID, scanID)
+	s, err := h.service.ActivateScan(h.auditCtx(r), tenantID, scanID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -604,7 +729,7 @@ func (h *ScanHandler) PauseScan(w http.ResponseWriter, r *http.Request) {
 	scanID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	s, err := h.service.PauseScan(r.Context(), tenantID, scanID)
+	s, err := h.service.PauseScan(h.auditCtx(r), tenantID, scanID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -631,7 +756,7 @@ func (h *ScanHandler) DisableScan(w http.ResponseWriter, r *http.Request) {
 	scanID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	s, err := h.service.DisableScan(r.Context(), tenantID, scanID)
+	s, err := h.service.DisableScan(h.auditCtx(r), tenantID, scanID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -779,7 +904,9 @@ func formatBulkMessage(action string, successful, failed int) string {
 // @Param        request  body      TriggerScanExecRequest  false  "Trigger context"
 // @Success      201  {object}  RunResponse
 // @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error  "caller may not start this scan"
 // @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error  "SCAN_WINDOW_NEVER_OPENS: a target's scan window never opens"
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /scans/{id}/trigger [post]
@@ -799,6 +926,8 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 		ScanID:      scanID,
 		TriggeredBy: userID,
 		Context:     req.Context,
+		// A member's own "Run now": allowed on a paused scan (schedule off).
+		Interactive: true,
 	}
 
 	run, err := h.service.TriggerScan(r.Context(), input)
@@ -838,6 +967,26 @@ func (h *ScanHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// SensorOptInImpact handles GET /api/v1/scans/sensor-opt-in-impact
+// @Summary      Scans affected by the sensor opt-ins
+// @Description  The organization's switches for out-of-band callbacks (interactsh) and custom templates in sensor jobs (both off unless an owner enabled them, research/25 D3), and the scans whose scanner_config asks for either (at most 100; truncated says more exist). While a switch is off, those scans run without interactsh or are refused (custom templates).
+// @Tags         Scans
+// @Produce      json
+// @Success      200  {object}  scansvc.OptInImpact
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scans/sensor-opt-in-impact [get]
+func (h *ScanHandler) SensorOptInImpact(w http.ResponseWriter, r *http.Request) {
+	impact, err := h.service.SensorOptInImpact(r.Context(), middleware.GetTenantID(r.Context()))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(impact)
 }
 
 // CoverageStatus handles GET /api/v1/scans/coverage
@@ -912,7 +1061,7 @@ func (h *ScanHandler) CloneScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.service.CloneScan(r.Context(), tenantID, scanID, req.Name)
+	s, err := h.service.CloneScan(r.Context(), tenantID, scanID, req.Name, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -920,6 +1069,45 @@ func (h *ScanHandler) CloneScan(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), s))
+}
+
+// SaveScan handles POST /api/v1/scans/{id}/save
+// @Summary      Save a quick scan as a configuration
+// @Description  Turns an ad-hoc quick scan into a saved scan configuration with the given name ("Save as scan"). Its runs stay attached. Refused for a scan that is already a configuration.
+// @Tags         Scans
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string          true  "Quick scan ID"
+// @Param        request  body      SaveScanRequest true  "Configuration name"
+// @Success      200  {object}  ScanDetailResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scans/{id}/save [post]
+func (h *ScanHandler) SaveScan(w http.ResponseWriter, r *http.Request) {
+	scanID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	var req SaveScanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	s, err := h.service.SaveQuickScan(r.Context(), tenantID, scanID, req.Name)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), s))
 }
 
@@ -947,22 +1135,24 @@ func (h *ScanHandler) ListScanRuns(w http.ResponseWriter, r *http.Request) {
 	// Bound both params: per_page caps the SQL LIMIT (and a downstream
 	// slice pre-alloc), page caps the OFFSET — an unbounded per_page is a
 	// memory/DoS vector and a negative one is a Postgres syntax error.
-	page := parseQueryIntBounded(r.URL.Query().Get("page"), 1, 1, math.MaxInt32)
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
-	result, err := h.service.ListScanRuns(r.Context(), tenantID, scanID, page, perPage)
+	result, err := h.service.ListScanRuns(r.Context(), tenantID, scanID, page.Page, page.PerPage)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// The service hands back domain entities. pipeline.Run has exported fields
+	// The service hands back domain entities. scanrun.Run has exported fields
 	// and no json tags, so encoding it directly emits PascalCase keys ("ID",
 	// "TriggerType") while every other endpoint emits snake_case — which is why
 	// this endpoint had no consumers: anything wired to it reads undefined.
-	// Convert through the same DTO GET /pipeline-runs/{id} already uses, and key
+	// Convert through the same DTO GET /scan-runs/{id} already uses, and key
 	// the envelope "data" like the rest of our list endpoints.
-	if runs, ok := result["items"].([]*pipeline.Run); ok {
+	if runs, ok := result["items"].([]*scanrun.Run); ok {
 		names := h.resolveRunTriggerNames(r.Context(), runs...)
 		responses := make([]*RunResponse, 0, len(runs))
 		for _, run := range runs {
@@ -1032,6 +1222,71 @@ func (h *ScanHandler) GetScanRun(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(withTriggerName(toRunResponse(run), h.resolveRunTriggerNames(r.Context(), run)))
 }
 
+// ScanLastRunResponse is a scan's latest run, as the scan list shows it.
+type ScanLastRunResponse struct {
+	ID          string  `json:"id"`
+	Status      string  `json:"status"`
+	TriggerType string  `json:"trigger_type"`
+	CreatedAt   string  `json:"created_at"`
+	StartedAt   *string `json:"started_at,omitempty"`
+	CompletedAt *string `json:"completed_at,omitempty"`
+	// Progress is 0-100 for a live run: finished tasks of all tasks.
+	Progress int `json:"progress"`
+	// RefusalCode and ErrorMessage say why a blocked or failed run ended.
+	RefusalCode  string                  `json:"refusal_code,omitempty"`
+	ErrorMessage string                  `json:"error_message,omitempty"`
+	TaskSummary  *RunTaskSummaryResponse `json:"task_summary,omitempty"`
+}
+
+func toScanLastRunResponse(lr scansvc.LastRun) *ScanLastRunResponse {
+	r := lr.Run
+	if r == nil {
+		return nil
+	}
+	out := &ScanLastRunResponse{
+		ID:           r.ID.String(),
+		Status:       string(r.Status),
+		TriggerType:  string(r.TriggerType),
+		CreatedAt:    r.CreatedAt.Format(time.RFC3339),
+		Progress:     lr.Progress(),
+		RefusalCode:  r.RefusalCode,
+		ErrorMessage: r.ErrorMessage,
+	}
+	if r.StartedAt != nil {
+		v := r.StartedAt.Format(time.RFC3339)
+		out.StartedAt = &v
+	}
+	if r.CompletedAt != nil {
+		v := r.CompletedAt.Format(time.RFC3339)
+		out.CompletedAt = &v
+	}
+	if lr.Tasks != nil {
+		out.TaskSummary = toRunTaskSummaryResponse(*lr.Tasks)
+	}
+	return out
+}
+
+// enrichScanResponses adds each scan's latest run and workflow name: two
+// batch reads for the whole page, scoped to the caller's tenant.
+func (h *ScanHandler) enrichScanResponses(ctx context.Context, tenantID string, scans []*scan.Scan, items []*ScanDetailResponse) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil || len(scans) == 0 {
+		return
+	}
+	lastRuns := h.service.LastRuns(ctx, tid, scans)
+	names := h.service.ScanWorkflowNames(ctx, tid, scans)
+	approvals := h.approvals.latestStatuses(ctx, tid, scans)
+	for i, s := range scans {
+		items[i].ApprovalStatus = approvals[s.ID]
+		if lr, ok := lastRuns[s.ID]; ok {
+			items[i].LastRun = toScanLastRunResponse(lr)
+		}
+		if s.ScanWorkflowID != nil {
+			items[i].ScanWorkflowName = names[*s.ScanWorkflowID]
+		}
+	}
+}
+
 // --- Conversion Helpers ---
 
 // toScanResponse converts a domain scan to API response, enriching with the
@@ -1046,7 +1301,27 @@ func (h *ScanHandler) toScanResponse(ctx context.Context, s *scan.Scan) *ScanDet
 			createdByName = &name
 		}
 	}
-	return buildScanResponse(s, createdByName)
+	resp := buildScanResponse(s, createdByName, canSeeScanConfigSecrets(ctx))
+	h.enrichScanResponses(ctx, s.TenantID.String(), []*scan.Scan{s}, []*ScanDetailResponse{resp})
+	return resp
+}
+
+// scannerConfigFor returns the stored config, or its redacted copy.
+func scannerConfigFor(cfg map[string]any, revealSecrets bool) map[string]any {
+	if revealSecrets {
+		return cfg
+	}
+	return scan.RedactConfigSecrets(cfg)
+}
+
+// canSeeScanConfigSecrets reports whether the caller is shown scanner_config
+// values that look like credentials. Only callers who may edit scans
+// (scans:write; owners and admins always) see them, because they are the
+// ones who type and change them. Everyone else who can read a scan sees
+// those values replaced by scan.RedactedSecretValue, with the
+// scanner_config_warnings still saying which paths hold one.
+func canSeeScanConfigSecrets(ctx context.Context) bool {
+	return middleware.HasPermission(ctx, permission.ScansWrite.String())
 }
 
 // resolveScanCreatorNames batch-loads creator display names for a page of scans
@@ -1087,63 +1362,23 @@ func (h *ScanHandler) resolveScanCreatorNames(ctx context.Context, scans []*scan
 }
 
 // resolveRunTriggerNames batch-loads the display names of the users who
-// triggered these runs, keyed by user id. TriggeredBy is free text: a user id
-// for a manual trigger, otherwise "system", a schedule or a webhook name, so
-// only values that parse as an id are looked up. One query per page of runs.
-func (h *ScanHandler) resolveRunTriggerNames(ctx context.Context, runs ...*pipeline.Run) map[string]string {
-	if h.userRepo == nil || len(runs) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(runs))
-	ids := make([]shared.ID, 0, len(runs))
-	for _, run := range runs {
-		if run == nil || run.TriggeredBy == "" {
-			continue
-		}
-		if _, ok := seen[run.TriggeredBy]; ok {
-			continue
-		}
-		seen[run.TriggeredBy] = struct{}{}
-		id, err := shared.IDFromString(run.TriggeredBy)
-		if err != nil {
-			continue
-		}
-		ids = append(ids, id)
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	users, err := h.userRepo.GetByIDs(ctx, ids)
-	if err != nil {
-		h.logger.Warn("failed to batch-resolve run trigger names", "error", err)
-		return nil
-	}
-	names := make(map[string]string, len(users))
-	for _, u := range users {
-		if u == nil {
-			continue
-		}
-		name := u.Name()
-		if name == "" {
-			name = u.Email()
-		}
-		names[u.ID().String()] = name
-	}
-	return names
+// triggered these runs (runTriggerNames).
+func (h *ScanHandler) resolveRunTriggerNames(ctx context.Context, runs ...*scanrun.Run) map[string]string {
+	return runTriggerNames(ctx, h.userRepo, h.logger, runs...)
 }
 
-// withTriggerName sets TriggeredByName from a map built by
+// withTriggerName sets the trigger labels from a map built by
 // resolveRunTriggerNames. Pure.
 func withTriggerName(resp *RunResponse, names map[string]string) *RunResponse {
-	if resp != nil {
-		resp.TriggeredByName = names[resp.TriggeredBy]
-	}
-	return resp
+	return withRunTriggerLabel(resp, names)
 }
 
 // buildScanResponse converts a domain scan to API response using a pre-resolved
-// creator name (nil = unknown/omitted). Pure — no DB access.
-func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse {
+// creator name (nil = unknown/omitted). Pure — no DB access. Unless
+// revealSecrets is set, secret-looking scanner_config values are masked (see
+// canSeeScanConfigSecrets); the warnings are always computed from the stored
+// values.
+func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) *ScanDetailResponse {
 	// Handle nullable AssetGroupID
 	assetGroupID := ""
 	if !s.AssetGroupID.IsZero() {
@@ -1166,13 +1401,17 @@ func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse 
 		AssetGroupID:          assetGroupID,
 		AssetGroupIDs:         assetGroupIDs,
 		Targets:               s.Targets,
+		TargetOptions:         s.TargetOptions,
+		SkippedTargets:        s.SkippedTargets,
+		Intensity:             string(s.EffectiveIntensity()),
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
-		ScannerConfig:         s.ScannerConfig,
+		ScannerConfig:         scannerConfigFor(s.ScannerConfig, revealSecrets),
 		ScannerConfigWarnings: scan.DetectConfigSecrets(s.ScannerConfig),
 		TargetsPerJob:         s.TargetsPerJob,
 		ScheduleType:          string(s.ScheduleType),
 		ScheduleCron:          s.ScheduleCron,
+		ScheduleRRule:         s.ScheduleRRule,
 		ScheduleDay:           s.ScheduleDay,
 		ScheduleTimezone:      s.ScheduleTimezone,
 		Tags:                  s.Tags,
@@ -1182,17 +1421,20 @@ func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse 
 		MaxRetries:            s.MaxRetries,
 		RetryBackoffSeconds:   s.RetryBackoffSeconds,
 		Status:                string(s.Status),
+		AdHoc:                 s.AdHoc,
 		LastRunStatus:         s.LastRunStatus,
 		TotalRuns:             s.TotalRuns,
 		SuccessfulRuns:        s.SuccessfulRuns,
 		FailedRuns:            s.FailedRuns,
+		PartialRuns:           s.PartialRuns,
+		BlockedRuns:           s.BlockedRuns,
 		CreatedAt:             s.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:             s.UpdatedAt.Format(time.RFC3339),
 	}
 
-	if s.PipelineID != nil {
-		pid := s.PipelineID.String()
-		resp.PipelineID = &pid
+	if s.ScanWorkflowID != nil {
+		pid := s.ScanWorkflowID.String()
+		resp.ScanWorkflowID = &pid
 	}
 
 	if s.ScanZoneID != nil {
@@ -1209,6 +1451,10 @@ func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse 
 		resp.ScheduleTime = &st
 	}
 
+	if s.ScheduleRunAt != nil {
+		ra := s.ScheduleRunAt.UTC().Format(time.RFC3339)
+		resp.ScheduleRunAt = &ra
+	}
 	if s.NextRunAt != nil {
 		nra := s.NextRunAt.Format(time.RFC3339)
 		resp.NextRunAt = &nra
@@ -1274,6 +1520,13 @@ func (h *ScanHandler) handleValidationError(w http.ResponseWriter, err error) {
 // handleServiceError converts service errors to API errors.
 func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
+		// The workflow of the scan was deleted (kept for its run history).
+		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
+	case errors.Is(err, scanworkflow.ErrScanWorkflowNotFound):
+		// The scan's workflow, not the scan, is missing (or another
+		// organization's): say so.
+		apierror.New(http.StatusNotFound, apierror.Code(scanworkflow.ErrScanWorkflowNotFound.Code), "Scan workflow not found").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
@@ -1281,8 +1534,21 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		// Trigger refusals (NO_ZONE_COVERAGE, ZONE_SPLIT_REQUIRED, ...) keep
 		// their code so the client can explain them.
-		apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
-			cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
+		e := apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
+			cleanErrorMessage(err, "Invalid request"))
+		// A refusal of targets lists each with its code and fixes (RFC-054 §6.5).
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Details != nil {
+			e = e.WithDetails(de.Details)
+		}
+		if d := toolUnavailableDetails(err); d != nil {
+			e.Details = d
+		}
+		e.WriteJSON(w)
+	case scanWindowNeverOpens(err) != nil:
+		// A target's scan windows never open: 409 with its own code, naming
+		// the targets and the windows.
+		apierror.New(http.StatusConflict, apierror.Code(scansvc.CodeWindowNeverOpens), scanWindowNeverOpens(err).Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
@@ -1363,6 +1629,7 @@ func (h *ScanHandler) QuickScan(w http.ResponseWriter, r *http.Request) {
 		WorkflowID:  req.WorkflowID,
 		Config:      req.Config,
 		Tags:        req.Tags,
+		Intensity:   req.Intensity,
 		CreatedBy:   userID,
 	})
 	if err != nil {
@@ -1373,19 +1640,19 @@ func (h *ScanHandler) QuickScan(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(QuickScanResponse{
-		PipelineRunID: result.PipelineRunID,
-		ScanID:        result.ScanID,
-		AssetGroupID:  result.AssetGroupID,
-		Status:        result.Status,
-		TargetCount:   result.TargetCount,
+		ScanRunID:    result.ScanRunID,
+		ScanID:       result.ScanID,
+		AssetGroupID: result.AssetGroupID,
+		Status:       result.Status,
+		TargetCount:  result.TargetCount,
 	})
 }
 
 // OverviewStatsResponse represents the response for scan management overview stats.
 type OverviewStatsResponse struct {
-	Pipelines StatusCountsResponse `json:"pipelines"`
-	Scans     StatusCountsResponse `json:"scans"`
-	Jobs      StatusCountsResponse `json:"jobs"`
+	ScanRuns StatusCountsResponse `json:"scan_runs"`
+	Scans    StatusCountsResponse `json:"scans"`
+	Jobs     StatusCountsResponse `json:"jobs"`
 }
 
 // StatusCountsResponse represents counts by status.
@@ -1394,8 +1661,10 @@ type StatusCountsResponse struct {
 	Running   int64 `json:"running"`
 	Pending   int64 `json:"pending"`
 	Completed int64 `json:"completed"`
-	Failed    int64 `json:"failed"`
-	Canceled  int64 `json:"canceled"`
+	// Partial: runs or steps that kept results but lost some work (RFC-046 D5).
+	Partial  int64 `json:"partial"`
+	Failed   int64 `json:"failed"`
+	Canceled int64 `json:"canceled"`
 }
 
 // GetOverviewStats handles GET /api/v1/scan-management/stats
@@ -1413,19 +1682,21 @@ func (h *ScanHandler) GetOverviewStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := OverviewStatsResponse{
-		Pipelines: StatusCountsResponse{
-			Total:     stats.Pipelines.Total,
-			Running:   stats.Pipelines.Running,
-			Pending:   stats.Pipelines.Pending,
-			Completed: stats.Pipelines.Completed,
-			Failed:    stats.Pipelines.Failed,
-			Canceled:  stats.Pipelines.Canceled,
+		ScanRuns: StatusCountsResponse{
+			Total:     stats.ScanRuns.Total,
+			Running:   stats.ScanRuns.Running,
+			Pending:   stats.ScanRuns.Pending,
+			Completed: stats.ScanRuns.Completed,
+			Partial:   stats.ScanRuns.Partial,
+			Failed:    stats.ScanRuns.Failed,
+			Canceled:  stats.ScanRuns.Canceled,
 		},
 		Scans: StatusCountsResponse{
 			Total:     stats.Scans.Total,
 			Running:   stats.Scans.Running,
 			Pending:   stats.Scans.Pending,
 			Completed: stats.Scans.Completed,
+			Partial:   stats.Scans.Partial,
 			Failed:    stats.Scans.Failed,
 			Canceled:  stats.Scans.Canceled,
 		},
@@ -1434,6 +1705,7 @@ func (h *ScanHandler) GetOverviewStats(w http.ResponseWriter, r *http.Request) {
 			Running:   stats.Jobs.Running,
 			Pending:   stats.Jobs.Pending,
 			Completed: stats.Jobs.Completed,
+			Partial:   stats.Jobs.Partial,
 			Failed:    stats.Jobs.Failed,
 			Canceled:  stats.Jobs.Canceled,
 		},
@@ -1473,7 +1745,9 @@ func (h *ScanHandler) ExportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := h.service.ExportConfig(r.Context(), tid, sid)
+	data, err := h.service.ExportConfigWithOptions(h.auditCtx(r), tid, sid, scansvc.ExportOptions{
+		RedactSecrets: !canSeeScanConfigSecrets(r.Context()),
+	})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1513,7 +1787,7 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := h.service.ImportConfig(r.Context(), tid, data)
+	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1522,4 +1796,38 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), sc))
+}
+
+// ToolUnavailableDetails is the error body's details on a NO_SENSOR_FOR_TOOL
+// refusal: the tool, the workflow step that needs it, and the sensor counts
+// behind the refusal (docs/architecture/tool-availability.md).
+type ToolUnavailableDetails struct {
+	Tool            string `json:"tool"`
+	Step            string `json:"step,omitempty"`
+	Status          string `json:"status"`
+	SensorsTotal    int    `json:"sensors_total"`
+	SensorsOnline   int    `json:"sensors_online"`
+	SensorsExcluded int    `json:"sensors_excluded"`
+	ZoneID          string `json:"zone_id,omitempty"`
+}
+
+// toolUnavailableDetails returns the details of a NO_SENSOR_FOR_TOOL
+// refusal, or nil.
+func toolUnavailableDetails(err error) *ToolUnavailableDetails {
+	var tu *scansvc.ToolUnavailableError
+	if !errors.As(err, &tu) {
+		return nil
+	}
+	return &ToolUnavailableDetails{Tool: tu.Tool, Step: tu.Step, Status: tu.Status,
+		SensorsTotal: tu.SensorsTotal, SensorsOnline: tu.SensorsOnline, SensorsExcluded: tu.SensorsExcluded, ZoneID: tu.ZoneID}
+}
+
+// scanWindowNeverOpens returns the trigger refusal for targets whose scan
+// windows never open, or nil.
+func scanWindowNeverOpens(err error) *scansvc.NeverOpensError {
+	var ne *scansvc.NeverOpensError
+	if errors.As(err, &ne) {
+		return ne
+	}
+	return nil
 }

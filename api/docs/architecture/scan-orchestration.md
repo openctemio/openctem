@@ -2,6 +2,12 @@
 
 > **Last Updated**: January 20, 2026
 > **Status**: Production Ready
+>
+> **Being replaced.** The target model (Scan → Run → Task, `partial` runs,
+> rrule schedules, engines, Automations) and the current state are in
+> [scan-lifecycle.md](scan-lifecycle.md) and
+> [RFC-046](../rfcs/RFC-046-scans-redesign.md). Parts of this page predate
+> zones, leases and the P0 fixes; prefer those documents where they differ.
 
 ## Overview
 
@@ -33,7 +39,7 @@ OpenCTEM's scan orchestration system manages the complete lifecycle of security 
 │  3. STEP EXECUTION                                                           │
 │  ┌─────────────────┐                                                        │
 │  │ Pipeline Service│ ──► QueueStep() finds agent with matching tool         │
-│  │ (pipeline_      │     Creates Command with step_run_id, payload          │
+│  │ (pipeline_      │     Creates Command with scan_run_step_id, payload          │
 │  │  service.go)    │     Agent polls and executes command                   │
 │  └────────┬────────┘                                                        │
 │           │                                                                  │
@@ -127,6 +133,30 @@ func (r *AgentRepository) FindAvailableWithTool(ctx, tenantID, tool string) (*Ag
 > `health = 'online' AND last_seen_at IS NOT NULL AND current_jobs <
 > max_concurrent_jobs` and load-balances by `current_jobs ASC, total_scans ASC`.
 
+### Step commands name their scanner
+
+A pipeline or workflow step becomes a `scan` command whose payload names the
+step's tool twice: `scanner` (what the sensor SDK runs, `ScanCommandPayload`)
+and `preferred_tool` (read by the platform's tool gate, which offers the
+command only to a sensor whose effective tools include it). Direct run targets
+are copied to the top-level `targets`. Before api RFC-036 P0 only
+`preferred_tool` was sent, and every step failed on the sensor with
+`scanner not found: `. `required_capabilities` is the step's capability list;
+the queue-time step check requires it to be a subset of the tool's catalog
+capabilities, and the poll offers the command only to a sensor that
+advertises all of them.
+
+The recon tools (subfinder, dnsx, naabu, httpx, katana) ship in the sensor's
+full and platform images and take a target list, so a run of one of them is
+one command with every target, like nuclei.
+
+**System presets** (migration 000061, fixed by 000270): every step of an
+active preset names a shipped tool with catalog capabilities
+(`TestPresetPipelines_UseShippedTools`). "Web Vulnerability Scan" and "API
+Security Testing" are inactive: their tools (dalfox, sqlmap, kiterunner,
+ffuf) are not shipped and they are intrusive, which RFC-036 O3 keeps opt-in.
+Steps still do not pass outputs to the next step (RFC-036 E6, P3).
+
 ### 4. Command Execution
 
 ```
@@ -171,6 +201,32 @@ func (s *PipelineService) OnStepCompleted(ctx, pipelineRunID, stepKey string, fi
 }
 ```
 
+### 6. Editing a pipeline keeps its run history
+
+A pipeline's steps are edited in place. Every write (the builder's full save,
+`PUT /api/v1/scan-workflows/{id}` with `steps`, and the single-step add, update and
+delete endpoints) goes through one repository call, `StepRepository.MutateSteps`
+(`internal/infra/postgres/pipeline_step_mutate.go`), in one transaction:
+
+1. **Lock the pipeline** (`FOR UPDATE`, tenant-scoped; another tenant's
+   pipeline is not found). A run insert takes a `KEY SHARE` lock on the same
+   row through its foreign key, so a save and a run start never interleave.
+2. **Refuse while a run of the pipeline is pending or running**
+   (`409 PIPELINE_RUN_ACTIVE`). A running run reads the step definitions as it
+   advances, so a mid-run edit would change what the rest of that run does.
+3. **Match the saved steps to the current ones**: by the step `id` the client
+   sends, then by `step_key`. Only ids of the pipeline's own steps are
+   honored; a client-side temporary id or another pipeline's step id makes
+   the entry a new step with a server-generated id.
+4. **Update matched steps in place** (they keep their id, so their step runs
+   and chaining inputs in `scan_step_outputs` stay attached), insert new ones,
+   delete the rest.
+
+Deleting a step never deletes history: `scan_run_steps.step_id` is
+`ON DELETE SET NULL` (migration 001159), and each step run carries the step's
+`step_key`, `step_name` and `tool` as they were when it was created. The run
+detail shows a removed step's runs by that snapshot.
+
 ## Key Components
 
 ### Scan Scheduler (`api/internal/app/scan_scheduler.go`)
@@ -210,7 +266,7 @@ CREATE TABLE scans (
     id UUID PRIMARY KEY,
     tenant_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
-    pipeline_template_id UUID REFERENCES pipeline_templates(id),
+    pipeline_template_id UUID REFERENCES scan_workflows(id),
     schedule_type VARCHAR(20),  -- manual, daily, weekly, cron
     cron_expression VARCHAR(100),
     next_run_at TIMESTAMP,
@@ -218,7 +274,7 @@ CREATE TABLE scans (
 );
 
 -- Pipeline Runs
-CREATE TABLE pipeline_runs (
+CREATE TABLE scan_runs (
     id UUID PRIMARY KEY,
     tenant_id UUID NOT NULL,
     pipeline_template_id UUID NOT NULL,
@@ -231,10 +287,13 @@ CREATE TABLE pipeline_runs (
 );
 
 -- Step Runs
-CREATE TABLE step_runs (
+CREATE TABLE scan_run_steps (
     id UUID PRIMARY KEY,
-    pipeline_run_id UUID REFERENCES pipeline_runs(id),
+    scan_run_id UUID REFERENCES scan_runs(id),
+    step_id UUID REFERENCES scan_workflow_steps(id) ON DELETE SET NULL,  -- NULL once the step is removed
     step_key VARCHAR(100) NOT NULL,
+    step_name VARCHAR(255),  -- copied from the step when the step run is created
+    tool VARCHAR(100),       -- copied from the step when the step run is created
     status VARCHAR(20) DEFAULT 'pending',  -- pending, queued, running, completed, failed
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
@@ -247,8 +306,8 @@ CREATE TABLE commands (
     id UUID PRIMARY KEY,
     tenant_id UUID NOT NULL,
     agent_id UUID REFERENCES agents(id),
-    pipeline_run_id UUID REFERENCES pipeline_runs(id),
-    step_run_id UUID REFERENCES step_runs(id),
+    scan_run_id UUID REFERENCES scan_runs(id),
+    scan_run_step_id UUID REFERENCES scan_run_steps(id),
     source_type VARCHAR(20),  -- scan, pipeline
     action VARCHAR(50),
     status VARCHAR(20) DEFAULT 'pending',
@@ -276,42 +335,36 @@ ON scans(next_run_at)
 WHERE status = 'active' AND schedule_type != 'manual' AND next_run_at IS NOT NULL;
 
 -- Command lookup by step
-CREATE INDEX idx_commands_step_run_id
-ON commands(step_run_id) WHERE step_run_id IS NOT NULL;
+CREATE INDEX idx_commands_scan_run_step_id
+ON commands(scan_run_step_id) WHERE scan_run_step_id IS NOT NULL;
 ```
 
 ## Prometheus Metrics
 
-```go
-// Pipeline metrics
-var (
-    PipelineRunsTotal = prometheus.NewCounterVec(...)     // pipeline_runs_total
-    PipelineRunsInProgress = prometheus.NewGaugeVec(...)  // pipeline_runs_in_progress
-    StepRunsTotal = prometheus.NewCounterVec(...)         // step_runs_total
-)
+No metric carries a tenant, sensor, pipeline, run or user id as a label
+(RFC-046 B9, enforced by `internal/metrics/labels_test.go`); per-tenant views
+come from logs (`tenant_id`, `run_id`) and traces.
 
-// Command metrics
-var (
-    CommandsTotal = prometheus.NewCounterVec(...)         // commands_total
-    CommandsExpired = prometheus.NewCounterVec(...)       // commands_expired_total
-    CommandDuration = prometheus.NewHistogramVec(...)     // command_duration_seconds
-)
-
-// Scheduler metrics
-var (
-    ScansScheduled = prometheus.NewCounterVec(...)        // scans_scheduled_total
-)
-```
+| Metric | Labels | What |
+|---|---|---|
+| `scan_runs_total` | `status` | runs started and settled |
+| `scan_runs_in_progress` | — | runs in progress (this replica) |
+| `scan_run_steps_total` | `step_key`, `status` | step outcomes |
+| `commands_total`, `commands_expired_total` | `type`, `status` / — | command outcomes, expiries |
+| `command_claims_total` | `mode` (`claim`, `claim_n`) | commands sensors claimed |
+| `command_leases_expired_total` | — | commands re-queued after their lease ran out |
+| `scan_runs_reaped_total` | `reason` (`deadline`, `unclaimed`) | runs the timeout controller ended |
+| `scans_scheduled_total`, `scan_schedule_outcomes_total` | — / `outcome` | scheduler occurrences and what they became |
 
 ## Error Handling & Retries
 
 ### Retry Configuration
 
 ```go
-// In pipeline_steps table
+// In scan_workflow_steps table
 max_retries INT DEFAULT 3
 
-// In step_runs table
+// In scan_run_steps table
 retry_count INT DEFAULT 0
 ```
 
@@ -390,40 +443,26 @@ POST   /api/v1/scans/{id}/trigger       # Manually trigger scan
 
 ```
 GET    /api/v1/pipeline-templates       # List templates
-GET    /api/v1/pipeline-runs            # List runs
-GET    /api/v1/pipeline-runs/{id}       # Get run details
-GET    /api/v1/pipeline-runs/{id}/steps # Get step runs
+GET    /api/v1/scan-runs            # List runs
+GET    /api/v1/scan-runs/{id}       # Get run details
+GET    /api/v1/scan-runs/{id}/steps # Get step runs
 ```
 
-### Agent API
+### Sensor API (protocol v2)
 
 ```
-POST   /api/v1/agent/heartbeat          # Agent heartbeat
-GET    /api/v1/agent/commands           # Poll for commands
-POST   /api/v1/agent/commands/{id}/ack  # Acknowledge command
-POST   /api/v1/agent/commands/{id}/start     # Start execution
-POST   /api/v1/agent/commands/{id}/complete  # Complete with results
-POST   /api/v1/agent/commands/{id}/fail      # Report failure
+POST   /api/v2/sensor/heartbeat                  # Heartbeat and doorbell
+GET    /api/v2/sensor/commands                   # Poll for commands
+POST   /api/v2/sensor/commands/{id}/claim        # Claim a command
+POST   /api/v2/sensor/commands/{id}/start        # Start execution
+POST   /api/v2/sensor/commands/{id}/complete     # Complete with results
+POST   /api/v2/sensor/commands/{id}/fail         # Report failure
 ```
 
-#### Module Gating for Agent Routes
-
-Agent ingest routes are gated by the tenant's enabled modules:
-
-| Endpoint | Module Required | Notes |
-|----------|-----------------|-------|
-| `POST /heartbeat` | None | Always allowed for agent health monitoring |
-| `POST /ingest` | `scans` | Finding/asset ingestion |
-| `POST /ingest/check` | `scans` | Fingerprint deduplication |
-| `POST /ingest/sarif` | `scans` | SARIF format ingestion |
-| `GET /commands` | `scans` | Command polling |
-| `POST /commands/{id}/*` | `scans` | Command status updates |
-| `POST /scans` | `scans` | Scan session registration |
-| `PATCH /scans/{id}` | `scans` | Scan session update |
-| `GET /scans/{id}` | `scans` | Get scan session |
-| `POST /credentials/ingest` | `credentials` | Credential leak ingestion |
-
-> **Note:** The heartbeat endpoint is exempt from module gating to allow agents to report health status even if the tenant's subscription lapses. This ensures visibility into agent fleet status regardless of licensing state.
+Protocol v1 (`/api/v1/agent/*`) was retired on 2026-10-05; see
+[sensors.md](sensors.md#protocol-v2-control-plane). Tenant and module checks
+come from the sensor key; the heartbeat is never module-gated, so the fleet
+stays visible whatever the tenant's modules.
 
 ## Testing
 
@@ -452,14 +491,16 @@ POST /api/v1/scans
 # 2. Wait for scheduler to trigger (or trigger manually)
 POST /api/v1/scans/{id}/trigger
 
-# 3. Agent polls for command
-GET /api/v1/agent/commands
+# 3. Sensor polls for command
+GET /api/v2/sensor/commands
 # Returns command with step_key, preferred_tool, payload
+# (targets re-checked against the current scope first; see
+# active-probe-gate.md "Re-check at claim")
 
-# 4. Agent executes and reports
-POST /api/v1/agent/commands/{id}/ack
-POST /api/v1/agent/commands/{id}/start
-POST /api/v1/agent/commands/{id}/complete
+# 4. Sensor executes and reports
+POST /api/v2/sensor/commands/{id}/claim
+POST /api/v2/sensor/commands/{id}/start
+POST /api/v2/sensor/commands/{id}/complete
 {
   "findings_count": 15,
   "output": { "results": [...] }

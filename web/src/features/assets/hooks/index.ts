@@ -28,13 +28,6 @@ export type { AssetStatsData, AssetSearchFilters } from './use-assets'
 
 export { useAssetTags } from './use-asset-tags'
 
-// Shared hooks for asset page consolidation
-export { useAssetCRUD } from './use-asset-crud'
-export { useAssetScope } from './use-asset-scope'
-export { useAssetDialogs } from './use-asset-dialogs'
-export { useAssetExport } from './use-asset-export'
-export type { ExportFieldConfig } from './use-asset-export'
-
 // Asset ownership hooks
 export {
   useAssetOwners,
@@ -55,3 +48,18 @@ export {
 // Asset identity hooks (identifiers + renames)
 export { useAssetIdentifiers, useAssetRenames } from './use-asset-identity'
 export type { AssetRename } from './use-asset-identity'
+
+// Asset attribution (RFC-036): state, evidence and a person's decision
+export { useAssetAttribution, useDecideAttribution } from './use-asset-attribution'
+
+// Where asset values come from (RFC-069)
+export {
+  useAttributeSources,
+  useAttributeLock,
+  useReconciliationSettings,
+  saveReconciliationSettings,
+  previewReconciliationSettings,
+} from './use-attribute-sources'
+
+// Asset change timeline (RFC-069)
+export { useAssetChanges } from './use-asset-timeline'

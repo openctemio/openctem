@@ -20,7 +20,7 @@ import (
 // app root — that would cycle through app.scanner_template_service.go,
 // which itself depends on template's template.
 //
-// *app.SecretStoreService satisfies this interface at runtime.
+// *integration.SecretStoreService satisfies this interface at runtime.
 type SecretStoreDecryptor interface {
 	DecryptCredentialData(ctx context.Context, tenantID shared.ID, credentialID string) (any, error)
 }

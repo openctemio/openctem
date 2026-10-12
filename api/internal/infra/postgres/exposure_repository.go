@@ -121,14 +121,6 @@ func (r *ExposureRepository) CreateInTx(ctx context.Context, tx *sql.Tx, event *
 	return nil
 }
 
-// GetByID retrieves an exposure event by its ID.
-func (r *ExposureRepository) GetByID(ctx context.Context, id shared.ID) (*exposure.ExposureEvent, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanExposureEvent(row, id)
-}
-
 // GetByTenantAndID retrieves an exposure event by tenant and ID.
 func (r *ExposureRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*exposure.ExposureEvent, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -157,7 +149,7 @@ func (r *ExposureRepository) Update(ctx context.Context, event *exposure.Exposur
 		SET asset_id = $2, severity = $3, state = $4,
 		    description = $5, details = $6, fingerprint = $7, last_seen_at = $8,
 		    resolved_at = $9, resolved_by = $10, resolution_notes = $11, updated_at = $12
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $13
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -174,6 +166,7 @@ func (r *ExposureRepository) Update(ctx context.Context, event *exposure.Exposur
 		nullIDPtr(event.ResolvedBy()),
 		nullString(event.ResolutionNotes()),
 		event.UpdatedAt(),
+		event.TenantID().String(),
 	)
 
 	if err != nil {
@@ -192,11 +185,11 @@ func (r *ExposureRepository) Update(ctx context.Context, event *exposure.Exposur
 	return nil
 }
 
-// Delete removes an exposure event by its ID.
-func (r *ExposureRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM exposure_events WHERE id = $1`
+// Delete removes an exposure event of the tenant.
+func (r *ExposureRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM exposure_events WHERE tenant_id = $1 AND id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete exposure event: %w", err)
 	}
@@ -381,15 +374,73 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 		return nil
 	}
 
+	query, args, err := buildExposureBulkUpsert(events)
+	if err != nil {
+		return err
+	}
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to bulk upsert exposure events: %w", err)
+	}
+	return nil
+}
+
+// UpsertedExposure is one row a transactional bulk upsert wrote.
+type UpsertedExposure struct {
+	ID          string
+	TenantID    string
+	Fingerprint string
+	// Inserted is true for a new row, false for a re-sighting.
+	Inserted bool
+}
+
+// BulkUpsertInTx is BulkUpsert inside the caller's transaction, and says
+// which rows were inserted and which were re-sightings, so the caller can
+// act on new rows only in the same transaction (EASM alerts).
+func (r *ExposureRepository) BulkUpsertInTx(ctx context.Context, tx *sql.Tx, events []*exposure.ExposureEvent) ([]UpsertedExposure, error) {
+	if len(events) == 0 {
+		return nil, nil
+	}
+	query, args, err := buildExposureBulkUpsert(events)
+	if err != nil {
+		return nil, err
+	}
+	// xmax = 0 only on a freshly inserted tuple; an ON CONFLICT update locks
+	// the existing row and sets it.
+	rows, err := tx.QueryContext(ctx, query+` RETURNING id, tenant_id, fingerprint, (xmax = 0)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk upsert exposure events: %w", err)
+	}
+	defer rows.Close()
+	out := make([]UpsertedExposure, 0, len(events))
+	for rows.Next() {
+		var u UpsertedExposure
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.Fingerprint, &u.Inserted); err != nil {
+			return nil, fmt.Errorf("scan upserted exposure: %w", err)
+		}
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("upserted exposures: %w", err)
+	}
+	return out, nil
+}
+
+// buildExposureBulkUpsert builds the batch INSERT ... ON CONFLICT statement.
+func buildExposureBulkUpsert(events []*exposure.ExposureEvent) (string, []any, error) {
+	// Fold events that share a fingerprint: the statement below cannot update
+	// one row twice, and a single duplicate used to fail the whole batch.
+	rows := foldExposureBatch(events)
+
 	// Build batch INSERT query
 	const numCols = 18 // number of columns in the insert
-	valueStrings := make([]string, 0, len(events))
-	valueArgs := make([]any, 0, len(events)*numCols)
+	valueStrings := make([]string, 0, len(rows))
+	valueArgs := make([]any, 0, len(rows)*numCols)
 
-	for i, event := range events {
-		details, err := json.Marshal(event.Details())
+	for i, row := range rows {
+		event, last := row.first, row.last
+		details, err := json.Marshal(last.Details())
 		if err != nil {
-			return fmt.Errorf("failed to marshal details for event %d: %w", i, err)
+			return "", nil, fmt.Errorf("failed to marshal details for event %d: %w", i, err)
 		}
 
 		baseIdx := i * numCols
@@ -399,25 +450,27 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 		}
 		valueStrings = append(valueStrings, "("+strings.Join(placeholders, ", ")+")")
 
+		// Identity and state come from the first occurrence, the refreshed
+		// fields from the last one: the same row one-by-one upserts leave.
 		valueArgs = append(valueArgs,
 			event.ID().String(),
 			event.TenantID().String(),
 			nullIDPtr(event.AssetID()),
 			event.EventType().String(),
-			event.Severity().String(),
+			last.Severity().String(),
 			event.State().String(),
-			event.Title(),
-			nullString(event.Description()),
+			last.Title(),
+			nullString(last.Description()),
 			details,
 			event.Fingerprint(),
 			event.Source(),
-			event.FirstSeenAt(),
-			event.LastSeenAt(),
+			row.firstSeen,
+			row.lastSeen,
 			nullTime(event.ResolvedAt()),
 			nullIDPtr(event.ResolvedBy()),
 			nullString(event.ResolutionNotes()),
 			event.CreatedAt(),
-			event.UpdatedAt(),
+			last.UpdatedAt(),
 		)
 	}
 
@@ -446,12 +499,7 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 			-- severity/scores but keeps the user-set status.
 	`, strings.Join(valueStrings, ", "))
 
-	_, err := r.db.ExecContext(ctx, query, valueArgs...)
-	if err != nil {
-		return fmt.Errorf("failed to bulk upsert exposure events: %w", err)
-	}
-
-	return nil
+	return query, valueArgs, nil
 }
 
 // CountByState returns counts grouped by state for a tenant.
@@ -459,7 +507,7 @@ func (r *ExposureRepository) CountByState(ctx context.Context, tenantID shared.I
 	query := `
 		SELECT state, COUNT(*) as count
 		FROM exposure_events
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + notOfDeletedAssetSQL("exposure_events.asset_id") + `
 		GROUP BY state
 	`
 
@@ -492,7 +540,7 @@ func (r *ExposureRepository) CountBySeverity(ctx context.Context, tenantID share
 	query := `
 		SELECT severity, COUNT(*) as count
 		FROM exposure_events
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + notOfDeletedAssetSQL("exposure_events.asset_id") + `
 		GROUP BY severity
 	`
 
@@ -652,7 +700,8 @@ func (r *ExposureRepository) doScan(scan func(dest ...any) error) (*exposure.Exp
 }
 
 func (r *ExposureRepository) buildWhereClause(filter exposure.Filter) (string, []any) {
-	var conditions []string
+	// Exposures of a soft-deleted asset are history, not work: not listed.
+	conditions := []string{notOfDeletedAssetSQL("exposure_events.asset_id")}
 	var args []any
 	argIndex := 1
 
@@ -747,4 +796,75 @@ func (r *ExposureRepository) buildWhereClause(filter exposure.Filter) (string, [
 	}
 
 	return strings.Join(conditions, " AND "), args
+}
+
+// exposureBatchRow is one fingerprint of a bulk upsert after folding.
+type exposureBatchRow struct {
+	first, last         *exposure.ExposureEvent
+	firstSeen, lastSeen time.Time
+}
+
+// foldExposureBatch returns one row per (tenant, fingerprint), in order of
+// first occurrence, keeping the earliest first-seen and the latest last-seen.
+func foldExposureBatch(events []*exposure.ExposureEvent) []exposureBatchRow {
+	index := make(map[string]int, len(events))
+	rows := make([]exposureBatchRow, 0, len(events))
+	for _, e := range events {
+		k := e.TenantID().String() + "\x1f" + e.Fingerprint()
+		i, ok := index[k]
+		if !ok {
+			index[k] = len(rows)
+			rows = append(rows, exposureBatchRow{first: e, last: e, firstSeen: e.FirstSeenAt(), lastSeen: e.LastSeenAt()})
+			continue
+		}
+		r := &rows[i]
+		r.last = e
+		if e.FirstSeenAt().Before(r.firstSeen) {
+			r.firstSeen = e.FirstSeenAt()
+		}
+		if e.LastSeenAt().After(r.lastSeen) {
+			r.lastSeen = e.LastSeenAt()
+		}
+	}
+	return rows
+}
+
+// CountByStateAndSeverity counts the events a filter selects by state and by
+// severity in one query (GROUPING SETS), for a stats card that used to send
+// one COUNT per state and per severity.
+func (r *ExposureRepository) CountByStateAndSeverity(ctx context.Context, filter exposure.Filter) (map[string]int64, map[string]int64, error) {
+	// GROUPING(state) is 1 on the severity rows, so a NULL value can never be
+	// taken for the other dimension.
+	query := `SELECT GROUPING(state), COALESCE(state, ''), COALESCE(severity, ''), COUNT(*) FROM exposure_events`
+	whereClause, args := r.buildWhereClause(filter)
+	if whereClause != "" {
+		query += " WHERE " + whereClause
+	}
+	query += ` GROUP BY GROUPING SETS ((state), (severity))`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to count exposure events by state and severity: %w", err)
+	}
+	defer rows.Close()
+
+	byState := make(map[string]int64)
+	bySeverity := make(map[string]int64)
+	for rows.Next() {
+		var severityRow int
+		var state, severity string
+		var n int64
+		if err := rows.Scan(&severityRow, &state, &severity, &n); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan exposure counts: %w", err)
+		}
+		if severityRow == 1 {
+			bySeverity[severity] = n
+		} else {
+			byState[state] = n
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to read exposure counts: %w", err)
+	}
+	return byState, bySeverity, nil
 }

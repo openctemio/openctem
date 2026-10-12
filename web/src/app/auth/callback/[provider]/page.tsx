@@ -6,6 +6,8 @@
  */
 
 import { redirect } from 'next/navigation'
+import { NOT_SET_UP_PATH, SIGNUP_NOT_AVAILABLE } from '@/features/auth/lib/signup-outcome'
+import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { cookies } from 'next/headers'
 
 import {
@@ -46,29 +48,32 @@ function isValidProvider(provider: string): provider is SocialProvider {
 
 export default async function OAuthCallbackPage({ params, searchParams }: OAuthCallbackPageProps) {
   const { provider } = await params
-  const { code, state, error, error_description } = await searchParams
+  const { code, state, error } = await searchParams
 
   // Validate provider
   if (!isValidProvider(provider)) {
-    redirect(`/login?error=${encodeURIComponent('Invalid OAuth provider')}`)
+    redirect(loginErrorHref('invalid_provider'))
   }
 
   // Handle OAuth error from provider
   if (error) {
-    const errorMessage = error_description || error || 'OAuth authentication failed'
-    redirect(`/login?error=${encodeURIComponent(errorMessage)}`)
+    // error_description is the provider's free text: never echo it on /login.
+    redirect(loginErrorHref('provider_error'))
   }
 
   // Validate required parameters
   if (!code || !state) {
-    redirect(`/login?error=${encodeURIComponent('Missing OAuth parameters')}`)
+    redirect(loginErrorHref('missing_params'))
   }
 
   // Process the OAuth callback
   const result = await handleOAuthCallback(provider, code, state)
 
   if (!result.success) {
-    redirect(`/login?error=${encodeURIComponent(result.error)}`)
+    // The sign-up policy refused to create an account: the one "not set up"
+    // page, whatever the reason.
+    if (result.code === SIGNUP_NOT_AVAILABLE) redirect(NOT_SET_UP_PATH)
+    redirect(loginErrorHref('callback_failed'))
   }
 
   // Get the stored redirect destination

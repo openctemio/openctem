@@ -20,7 +20,7 @@ import { useFilteredSidebarData } from '@/lib/permissions'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { useTranslation } from '@/context/i18n-provider'
 import { commandFilter } from '@/lib/command-filter'
-import { DOCS_URL } from '@/config/help-links'
+import { DOCS_URL } from '@/lib/docs-links'
 import { ScrollArea } from './ui/scroll-area'
 
 export function CommandMenu() {
@@ -57,6 +57,7 @@ export function CommandMenu() {
                     <React.Fragment key={`${navItem.url}-${i}`}>
                       <CommandItem
                         value={navItem.title}
+                        keywords={navItem.keywords ? [...navItem.keywords] : undefined}
                         onSelect={() => {
                           runCommand(() => router.push(navItem.url.toString()))
                         }}
@@ -77,7 +78,7 @@ export function CommandMenu() {
                             // Label first so "secrets" ranks it as a label
                             // match; the section name is a keyword.
                             value={`${section.label} (${navItem.title})`}
-                            keywords={[navItem.title]}
+                            keywords={[navItem.title, ...(section.keywords ?? [])]}
                             onSelect={() => {
                               runCommand(() => router.push(section.href))
                             }}

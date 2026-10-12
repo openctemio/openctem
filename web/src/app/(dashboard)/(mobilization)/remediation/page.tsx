@@ -12,16 +12,24 @@ import {
   FacetSection,
   FacetOption,
   type MetricStripItem,
-  SeverityBadge,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
   SectionTabs,
   type RowAction,
-  DangerZone,
-  DangerZoneItem,
   FilterPanelToggle,
   FilterSheet,
+  DetailCallout,
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+  type DetailMenuItem,
 } from '@/features/shared'
 import { REMEDIATION_SECTION_TABS } from '@/config/section-tabs'
 import { Button } from '@/components/ui/button'
@@ -30,7 +38,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Progress } from '@/components/ui/progress'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { format } from 'date-fns'
@@ -55,7 +62,6 @@ import {
   Save,
   Ban,
   ExternalLink,
-  Clock,
   Hash,
   AlertCircle,
   ChevronRight,
@@ -76,8 +82,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Select,
   SelectContent,
@@ -86,14 +92,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { sanitizeExternalUrl } from '@/lib/utils'
-import { Can, Permission } from '@/lib/permissions'
+import { Permission, useHasPermission } from '@/lib/permissions'
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '@/features/remediation'
 import {
   useRemediationCampaigns,
@@ -102,12 +107,20 @@ import {
 } from '@/features/remediation/api/use-remediation-campaigns'
 import { fetchAllPages } from '@/lib/api/fetch-all-pages'
 import { CreateJiraEpicDialog } from '@/features/remediation/components/create-jira-epic-dialog'
+import { useConfirmCampaignCompletion } from '@/features/remediation/components/complete-campaign-confirm'
+import {
+  openFindingCount,
+  progressPercent,
+  type CampaignCounts,
+} from '@/features/remediation/lib/campaign-completion'
 import { FindingPickerPanel } from '@/features/remediation/components/finding-picker-dialog'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { patch, del } from '@/lib/api/client'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
+import type { FindingApiFilters } from '@/features/findings/api/finding-api.types'
 import { AssigneeSelect } from '@/features/findings/components/assignee-select'
 import { useMembers } from '@/features/organization/api/use-members'
+import { memberDisplayName } from '@/features/organization/lib/member-lifecycle'
 import { useTenant } from '@/context/tenant-provider'
 import { useHashTab } from '@/hooks/use-hash-tab'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
@@ -351,17 +364,16 @@ function getAvailableActions(status: TaskStatus) {
   }
 }
 
+const OPEN_FINDINGS_FOR_TASKS: FindingApiFilters = {
+  per_page: 100,
+  statuses: ['new', 'confirmed', 'in_progress'],
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 export default function RemediationPage() {
+  const { t } = useTranslation()
   const router = useRouter()
-
-  // API data
-  const { data: findingsData } = useFindingsApi({
-    per_page: 100,
-    statuses: ['new', 'confirmed', 'in_progress'],
-  })
-  const findings = findingsData?.data ?? []
 
   const {
     data: campaignData,
@@ -373,11 +385,13 @@ export default function RemediationPage() {
 
   // Resolve assignee UUIDs → display names via the tenant member list.
   const { currentTenant } = useTenant()
-  const { members } = useMembers(currentTenant?.id)
+  // A name map, not a picker: it must also name people who were disabled or
+  // left (marked "(deactivated)"), so it lists every status.
+  const { members } = useMembers(currentTenant?.id, { status: 'all', limit: 500 })
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>()
     for (const mem of members) {
-      if (mem.user_id) m.set(mem.user_id, mem.name || mem.email || mem.user_id)
+      if (mem.user_id) m.set(mem.user_id, memberDisplayName(mem))
     }
     return m
   }, [members])
@@ -391,6 +405,17 @@ export default function RemediationPage() {
       return t
     })
   }, [campaignData, memberNameById])
+
+  // Completing a task with findings still open asks first and says how many.
+  const { confirmCompletion, completionDialog } = useConfirmCampaignCompletion()
+  // The list's counts, used when a campaign's live counts cannot be read.
+  const listCounts = useMemo(() => {
+    const m: Record<string, CampaignCounts> = {}
+    for (const c of campaignData?.data ?? []) {
+      m[c.id] = { finding_count: c.finding_count, resolved_count: c.resolved_count }
+    }
+    return m
+  }, [campaignData])
 
   // Which campaigns each finding is linked to. A finding CAN belong to more than
   // one campaign (a finding_id may appear in several campaigns' filters — there's
@@ -468,12 +493,21 @@ export default function RemediationPage() {
   const [formData, setFormData] = useState<TaskFormData>(emptyFormData)
   const [dueDateOpen, setDueDateOpen] = useState(false)
 
+  // Open findings for the task drawer (linked-finding titles) and the task
+  // form's picker. Only those two surfaces read them, so fetch the page of 100
+  // (~130 KB) when one of them opens, not on every visit to the board.
+  const findingsNeeded = !!viewTask || !!editTask || isCreateOpen
+  const { data: findingsData } = useFindingsApi(OPEN_FINDINGS_FOR_TASKS, {
+    enabled: findingsNeeded,
+  })
+  const findings = useMemo(() => findingsData?.data ?? [], [findingsData])
+
   // Keep the open drawer in sync with the latest task data (after inline edits).
   useEffect(() => {
     setViewTask((prev) => (prev ? (tasks.find((t) => t.id === prev.id) ?? prev) : prev))
   }, [tasks])
 
-  // Inline field edit from the drawer (Jira-style): PATCH one field, refresh.
+  // Inline field edit from the drawer: PATCH one field, refresh.
   const handleInlinePatch = useCallback(
     async (task: RemediationTask, body: Record<string, unknown>) => {
       try {
@@ -626,26 +660,27 @@ export default function RemediationPage() {
       }
       const apiStatus = statusMap[action]
       if (apiStatus) {
-        try {
-          await patch(`/api/v1/remediation/campaigns/${task.id}/status`, { status: apiStatus })
-          await refreshCampaigns()
-          // Update viewTask if it's the same one
-          if (viewTask?.id === task.id) {
-            const updated = campaignData?.data?.find((c) => c.id === task.id)
-            if (updated) {
-              setViewTask({
-                ...task,
-                status: normalizeStatus(updated.status),
-              })
-            }
+        const apply = async () => {
+          try {
+            await patch(`/api/v1/remediation/campaigns/${task.id}/status`, { status: apiStatus })
+            // The open drawer follows the refreshed list (the effect that syncs
+            // viewTask with tasks). It used to be overwritten here from
+            // campaignData captured before the refresh, which put the old status
+            // back: after "Start Task" the drawer still said Open.
+            await refreshCampaigns()
+            toast.success('Task updated')
+          } catch (err) {
+            toast.error(getErrorMessage(err, `Failed to ${action} task`))
           }
-          toast.success('Task updated')
-        } catch (err) {
-          toast.error(getErrorMessage(err, `Failed to ${action} task`))
+        }
+        if (apiStatus === 'completed') {
+          await confirmCompletion([task.id], apply, listCounts)
+        } else {
+          await apply()
         }
       }
     },
-    [router, refreshCampaigns, viewTask, campaignData]
+    [router, refreshCampaigns, confirmCompletion, listCounts]
   )
 
   const handleBulkAction = useCallback(
@@ -658,13 +693,14 @@ export default function RemediationPage() {
           Completed: 'completed',
         }
         const apiStatus = statusMap[value]
-        if (apiStatus) {
-          // Some selected tasks may be in a state where this transition is illegal
-          // (e.g. an already-active task → "In Progress"). Don't let one rejection
-          // abort the batch or skip the refresh — settle all, then report the split.
+        const ids = [...selectedIds]
+        // Some selected tasks may be in a state where this transition is illegal
+        // (e.g. an already-active task → "In Progress"). Don't let one rejection
+        // abort the batch or skip the refresh — settle all, then report the split.
+        const apply = async () => {
           try {
             const results = await Promise.allSettled(
-              selectedIds.map((id) =>
+              ids.map((id) =>
                 patch(`/api/v1/remediation/campaigns/${id}/status`, { status: apiStatus })
               )
             )
@@ -681,6 +717,11 @@ export default function RemediationPage() {
             await refreshCampaigns()
           }
         }
+        if (apiStatus === 'completed') {
+          await confirmCompletion(ids, apply, listCounts)
+        } else if (apiStatus) {
+          await apply()
+        }
         setSelectedIds([])
         setSelectionEpoch((n) => n + 1)
         return
@@ -689,7 +730,7 @@ export default function RemediationPage() {
       setSelectedIds([])
       setSelectionEpoch((n) => n + 1)
     },
-    [selectedIds, refreshCampaigns]
+    [selectedIds, refreshCampaigns, confirmCompletion, listCounts]
   )
 
   const handleDelete = useCallback(async () => {
@@ -842,11 +883,6 @@ export default function RemediationPage() {
             {TASK_STATUS_LABELS[row.original.status]}
           </Badge>
         ),
-      },
-      {
-        accessorKey: 'severity',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Severity" />,
-        cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
       },
       {
         accessorKey: 'assigneeName',
@@ -1229,7 +1265,6 @@ export default function RemediationPage() {
                                     >
                                       {TASK_PRIORITY_LABELS[task.priority]}
                                     </Badge>
-                                    <SeverityBadge severity={task.severity} />
                                     {overdue && (
                                       <Badge variant="destructive" className="text-[11px]">
                                         Overdue
@@ -1346,18 +1381,20 @@ export default function RemediationPage() {
         }}
       />
 
+      {completionDialog}
+
       {/* ─── Delete Confirmation ──────────────────────────────────────── */}
       <ConfirmDialog
         open={!!deleteTask}
         onOpenChange={() => setDeleteTask(null)}
-        title="Delete task"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{deleteTask?.title}&quot;? This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.remediationTask.deleteTitle', 'Delete the task "{name}"?', {
+          name: deleteTask?.title ?? '',
+        })}
+        desc={t(
+          'confirm.remediationTask.deleteDesc',
+          'The task is deleted. Its linked findings are not changed. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />
@@ -1421,18 +1458,11 @@ function TaskDetailSheet({
   const [dueOpen, setDueOpen] = useState(false)
   const [startOpen, setStartOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
+  const [pendingUnlink, setPendingUnlink] = useState<{ id: string; title: string } | null>(null)
+  const { t } = useTranslation()
+  const canDelete = useHasPermission(Permission.RemediationWrite)
 
-  if (!task) {
-    return (
-      <Sheet open={false}>
-        <SheetContent>
-          <VisuallyHidden>
-            <SheetTitle>Task</SheetTitle>
-          </VisuallyHidden>
-        </SheetContent>
-      </Sheet>
-    )
-  }
+  if (!task) return null
 
   const overdue = checkOverdue(task)
   const due = daysUntil(task.dueDate)
@@ -1449,107 +1479,46 @@ function TaskDetailSheet({
     if (descDraft !== (task.description || '')) onPatch(task, { description: descDraft })
   }
 
-  // Get progress from API data or estimate from status
-  const taskProgress =
-    (task as unknown as Record<string, unknown>).progress != null
-      ? Number((task as unknown as Record<string, unknown>).progress)
-      : task.status === 'completed'
-        ? 100
-        : task.status === 'review'
-          ? 75
-          : task.status === 'in_progress'
-            ? 50
-            : 0
+  // Closed findings over all findings in scope (the API's number). Completing
+  // does not change it: a task completed with nothing closed reads 0%.
+  const counts = task as unknown as {
+    progress?: number
+    finding_count?: number
+    resolved_count?: number
+  }
+  const taskProgress = progressPercent(counts.progress)
+  const inScope = counts.finding_count ?? 0
+  const closed = counts.resolved_count ?? 0
+  const stillOpen = openFindingCount({ finding_count: inScope, resolved_count: closed })
+
+  const linked = task.findingIds ?? []
+  const menu: DetailMenuItem[] = [
+    { label: 'Open campaign', icon: ChevronRight, onSelect: () => onOpenCampaign(task) },
+    { label: 'Copy link', icon: ExternalLink, onSelect: () => onCopyLink(task.id) },
+    { label: 'Copy ID', icon: Hash, onSelect: () => onCopyId(task.id) },
+  ]
+  if (canDelete) {
+    menu.push({
+      label: 'Delete task',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => onDelete(task),
+    })
+  }
 
   return (
-    <Sheet open onOpenChange={() => onClose()}>
-      <SheetContent
-        className="sm:max-w-lg p-0 overflow-y-auto [&>button]:hidden"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <VisuallyHidden>
-          <SheetTitle>Task Details</SheetTitle>
-        </VisuallyHidden>
-
-        {/* Findings picker: an INLINE view that replaces the drawer body (not an
-            overlay/portal/fixed panel) so it touch-scrolls via the Sheet's own
-            overflow-y-auto. The details below are hidden while it's open. */}
-        {manageOpen && (
-          <FindingPickerPanel
-            onClose={() => setManageOpen(false)}
-            selectedIds={task.findingIds ?? []}
-            onToggle={(findingId, next) =>
-              onPatch(task, {
-                finding_filter: {
-                  finding_ids: next
-                    ? [...(task.findingIds ?? []), findingId]
-                    : (task.findingIds ?? []).filter((id) => id !== findingId),
-                },
-              })
-            }
-            findingCampaigns={findingCampaigns}
-            currentCampaignId={task.id}
-            memberNameById={memberNameById}
-          />
-        )}
-
-        <div className={manageOpen ? 'hidden' : undefined}>
-          {/* ── Header ── */}
-          <div className="p-5 border-b bg-muted/30">
-            {/* Toolbar: title left, actions right */}
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-muted-foreground">Task details</p>
-              <div className="flex items-center gap-0.5 shrink-0">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => onCopyId(task.id)}
-                    >
-                      <Hash className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Copy ID</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => onCopyLink(task.id)}
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Copy link</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => onOpenCampaign(task)}
-                    >
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Open campaign</TooltipContent>
-                </Tooltip>
-                <Separator orientation="vertical" className="h-4 mx-1" />
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Title (click to edit inline) */}
-            {editingTitle ? (
+    <DetailSheet
+      open
+      onOpenChange={(open) => !open && onClose()}
+      width="lg"
+      header={
+        <DetailHeader
+          title={
+            editingTitle ? (
               <Input
                 autoFocus
+                aria-label="Task title"
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
                 onBlur={saveTitle}
@@ -1560,27 +1529,28 @@ function TaskDetailSheet({
                     setEditingTitle(false)
                   }
                 }}
-                className="h-7 text-base font-semibold"
+                className="h-8 text-base font-semibold"
               />
             ) : (
-              <h2
-                className="text-base font-semibold leading-tight cursor-text rounded px-1 -mx-1 hover:bg-muted/50"
+              // Click to rename inline.
+              <span
+                className="-mx-1 cursor-text rounded px-1 hover:bg-muted/50"
+                title="Click to rename"
                 onClick={() => {
                   setTitleDraft(task.title)
                   setEditingTitle(true)
                 }}
               >
                 {task.title}
-              </h2>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">{task.findingTitle}</p>
-
-            {/* Badges */}
-            <div className="flex flex-wrap items-center gap-1.5 mt-3">
+              </span>
+            )
+          }
+          badges={
+            <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Badge
-                    className={`${priorityColors[task.priority]} text-xs h-5 cursor-pointer`}
+                    className={`${priorityColors[task.priority]} h-5 cursor-pointer text-xs`}
                     title="Change priority"
                   >
                     {TASK_PRIORITY_LABELS[task.priority]}
@@ -1594,140 +1564,193 @@ function TaskDetailSheet({
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Badge variant={statusVariants[task.status]} className="text-xs h-5">
+              <Badge variant={statusVariants[task.status]} className="h-5 text-xs">
                 {TASK_STATUS_LABELS[task.status]}
               </Badge>
-              <SeverityBadge severity={task.severity} />
-              {overdue && (
-                <Badge variant="destructive" className="text-xs h-5">
-                  <AlertCircle className="me-1 h-3 w-3" />
-                  Overdue
-                </Badge>
-              )}
-            </div>
-          </div>
+            </>
+          }
+          meta={[task.findingTitle]}
+          actions={
+            actions.length > 0 ? (
+              <>
+                {actions.map(({ action, label, icon: Icon }, i) => (
+                  <Button
+                    key={action}
+                    variant={i === 0 ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => onAction(action, task)}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Button>
+                ))}
+              </>
+            ) : undefined
+          }
+          menu={menu}
+          onClose={onClose}
+        />
+      }
+    >
+      {/* Findings picker: an INLINE view that replaces the drawer body (not an
+          overlay/portal/fixed panel) so it touch-scrolls in the drawer's own
+          scrolling body. The details are hidden while it is open. */}
+      {manageOpen ? (
+        <FindingPickerPanel
+          onClose={() => setManageOpen(false)}
+          selectedIds={linked}
+          onToggle={(findingId, next) =>
+            onPatch(task, {
+              finding_filter: {
+                finding_ids: next
+                  ? [...linked, findingId]
+                  : linked.filter((id) => id !== findingId),
+              },
+            })
+          }
+          findingCampaigns={findingCampaigns}
+          currentCampaignId={task.id}
+          memberNameById={memberNameById}
+        />
+      ) : (
+        <div className="space-y-5">
+          {overdue && due && (
+            <DetailCallout tone="destructive" icon={AlertCircle} title={`${due.days}d overdue`}>
+              Due {safeFormatDate(task.dueDate, { month: 'short', day: 'numeric' }) ?? '—'}. Change
+              the due date below or move the task forward.
+            </DetailCallout>
+          )}
 
-          {/* ── Content ── */}
-          <div className="p-5 space-y-4">
-            {/* Key info grid */}
-            <div className="grid grid-cols-2 gap-3">
-              <InfoCard
-                icon={<UserPlus className="h-3.5 w-3.5 text-muted-foreground" />}
-                label="Assignee"
-              >
-                {/* Inline edit (Jira-style): pick a member → PATCH assigned_to. */}
-                <AssigneeSelect
-                  variant="ghost"
-                  showFullName
-                  placeholder="Assign"
-                  value={
-                    task.assigneeId
-                      ? { id: task.assigneeId, name: task.assigneeName || 'Assigned' }
-                      : null
-                  }
-                  onChange={(user) => onPatch(task, { assigned_to: user?.id ?? '' })}
-                />
-              </InfoCard>
+          {task.status === 'completed' && stillOpen > 0 && (
+            <DetailCallout
+              tone="warning"
+              icon={AlertCircle}
+              title={`Completed with ${stillOpen} ${stillOpen === 1 ? 'finding' : 'findings'} still open`}
+            >
+              Progress counts closed findings, so it shows {taskProgress}%. Resolve the open
+              findings to close them out.
+            </DetailCallout>
+          )}
 
-              <InfoCard
-                icon={<Play className="h-3.5 w-3.5 text-muted-foreground" />}
-                label="Start Date"
-              >
-                <Popover open={startOpen} onOpenChange={setStartOpen}>
-                  <PopoverTrigger asChild>
-                    <button className="text-start rounded px-1 -mx-1 hover:bg-muted/50">
-                      <span className="text-sm font-medium">
-                        {safeFormatDate(task.startDate, { month: 'short', day: 'numeric' }) ??
-                          'Auto on start'}
-                      </span>
-                      {!task.startDate && (
-                        <span className="text-[11px] text-muted-foreground block">
-                          set when work begins
-                        </span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={task.startDate ? new Date(task.startDate) : undefined}
-                      onSelect={(date) => {
-                        setStartOpen(false)
-                        if (date) onPatch(task, { start_date: date.toISOString() })
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </InfoCard>
+          <DetailStatGrid aria-label="Key numbers">
+            <DetailStat
+              label="Progress"
+              value={`${taskProgress}%`}
+              caption={inScope > 0 ? `${closed} of ${inScope} findings closed` : undefined}
+              meter={{ value: taskProgress, max: 100, label: 'Task progress' }}
+            />
+            <DetailStat label="Linked findings" value={linked.length} />
+            {due && task.status !== 'completed' && (
+              <DetailStat
+                label={due.overdue ? 'Overdue' : 'Due in'}
+                value={`${due.days}d`}
+                tone={due.overdue ? 'destructive' : 'default'}
+              />
+            )}
+          </DetailStatGrid>
 
-              <InfoCard
-                icon={
-                  <Calendar
-                    className={`h-3.5 w-3.5 ${overdue ? 'text-destructive' : 'text-muted-foreground'}`}
-                  />
-                }
-                label="Due date"
-              >
-                <Popover open={dueOpen} onOpenChange={setDueOpen}>
-                  <PopoverTrigger asChild>
-                    <button className="text-start rounded px-1 -mx-1 hover:bg-muted/50">
-                      <span className={`text-sm font-medium ${overdue ? 'text-destructive' : ''}`}>
-                        {safeFormatDate(task.dueDate, { month: 'short', day: 'numeric' }) ??
-                          'Set date'}
-                      </span>
-                      {due && task.status !== 'completed' && (
-                        <span
-                          className={`text-[11px] block ${due.overdue ? 'text-destructive' : 'text-muted-foreground'}`}
-                        >
-                          {due.overdue ? `${due.days}d overdue` : `${due.days}d remaining`}
-                        </span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={task.dueDate ? new Date(task.dueDate) : undefined}
-                      onSelect={(date) => {
-                        setDueOpen(false)
-                        onPatch(task, { due_date: date ? date.toISOString() : null })
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </InfoCard>
-
-              {/* Validator (assigned_team) — the person who verifies the fix. Shown
-                once the task is in validation, so the fixer and the verifier are
-                explicitly different people (segregation of duties). */}
-              {task.status === 'review' && (
-                <InfoCard
-                  icon={<CheckCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                  label="Validator"
-                >
+          <DetailSections>
+            <DetailSection title="Assignment">
+              <DetailFieldGrid>
+                <DetailField label="Assignee">
+                  {/* Inline edit: pick a member → PATCH assigned_to. */}
                   <AssigneeSelect
                     variant="ghost"
                     showFullName
-                    placeholder="Assign validator"
+                    placeholder="Assign"
                     value={
-                      task.validatorId
-                        ? { id: task.validatorId, name: task.validatorName || 'Assigned' }
+                      task.assigneeId
+                        ? { id: task.assigneeId, name: task.assigneeName || 'Assigned' }
                         : null
                     }
-                    onChange={(user) => onPatch(task, { assigned_team: user?.id ?? '' })}
+                    onChange={(user) => onPatch(task, { assigned_to: user?.id ?? '' })}
                   />
-                </InfoCard>
-              )}
-            </div>
+                </DetailField>
+                {/* Validator (assigned_team) verifies the fix; shown once the task
+                    is in validation so fixer and verifier are different people. */}
+                {task.status === 'review' && (
+                  <DetailField label="Validator">
+                    <AssigneeSelect
+                      variant="ghost"
+                      showFullName
+                      placeholder="Assign validator"
+                      value={
+                        task.validatorId
+                          ? { id: task.validatorId, name: task.validatorName || 'Assigned' }
+                          : null
+                      }
+                      onChange={(user) => onPatch(task, { assigned_team: user?.id ?? '' })}
+                    />
+                  </DetailField>
+                )}
+                <DetailField label="Start date">
+                  <Popover open={startOpen} onOpenChange={setStartOpen}>
+                    <PopoverTrigger asChild>
+                      <button className="-mx-1 rounded px-1 text-start hover:bg-muted/50">
+                        <span className="text-sm font-medium">
+                          {safeFormatDate(task.startDate, { month: 'short', day: 'numeric' }) ??
+                            'Auto on start'}
+                        </span>
+                        {!task.startDate && (
+                          <span className="block text-xs text-muted-foreground">
+                            set when work begins
+                          </span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={task.startDate ? new Date(task.startDate) : undefined}
+                        onSelect={(date) => {
+                          setStartOpen(false)
+                          if (date) onPatch(task, { start_date: date.toISOString() })
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </DetailField>
+                <DetailField label="Due date">
+                  <Popover open={dueOpen} onOpenChange={setDueOpen}>
+                    <PopoverTrigger asChild>
+                      <button className="-mx-1 rounded px-1 text-start hover:bg-muted/50">
+                        <span
+                          className={`text-sm font-medium ${overdue ? 'text-destructive' : ''}`}
+                        >
+                          {safeFormatDate(task.dueDate, { month: 'short', day: 'numeric' }) ??
+                            'Set date'}
+                        </span>
+                        {due && task.status !== 'completed' && (
+                          <span
+                            className={`block text-xs ${due.overdue ? 'text-destructive' : 'text-muted-foreground'}`}
+                          >
+                            {due.overdue ? `${due.days}d overdue` : `${due.days}d remaining`}
+                          </span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={task.dueDate ? new Date(task.dueDate) : undefined}
+                        onSelect={(date) => {
+                          setDueOpen(false)
+                          onPatch(task, { due_date: date ? date.toISOString() : null })
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
 
-            {/* Description (click to edit inline) */}
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Description</p>
+            <DetailSection title="Description">
               {editingDesc ? (
                 <Textarea
                   autoFocus
+                  aria-label="Description"
                   value={descDraft}
                   onChange={(e) => setDescDraft(e.target.value)}
                   onBlur={saveDesc}
@@ -1735,7 +1758,7 @@ function TaskDetailSheet({
                 />
               ) : (
                 <p
-                  className="text-sm leading-relaxed bg-muted/30 rounded-lg p-3 cursor-text hover:bg-muted/50"
+                  className="cursor-text rounded-lg bg-muted/30 p-3 text-sm leading-relaxed hover:bg-muted/50"
                   onClick={() => {
                     setDescDraft(task.description || '')
                     setEditingDesc(true)
@@ -1746,43 +1769,37 @@ function TaskDetailSheet({
                   )}
                 </p>
               )}
-            </div>
+            </DetailSection>
 
-            {/* Linked Findings — a task can cover many; view + manage inline */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Linked Findings ({task.findingIds?.length ?? 0})
-                </p>
-                {/* A standalone modal (not a Popover nested in the drawer Sheet) so the
-                  list scrolls reliably on touch — nested Radix portals broke iOS scroll. */}
+            <DetailSection
+              title="Linked findings"
+              count={linked.length}
+              actions={
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 text-xs"
+                  className="h-7 text-xs"
                   onClick={() => setManageOpen(true)}
                 >
-                  <Plus className="me-1 h-3 w-3" /> Manage
+                  <Plus className="h-3 w-3" /> Manage
                 </Button>
-              </div>
-              {(task.findingIds?.length ?? 0) === 0 ? (
-                <p className="text-xs text-muted-foreground">No findings linked yet.</p>
+              }
+            >
+              {linked.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No findings linked yet.</p>
               ) : (
-                <div className="space-y-1">
-                  {(task.findingIds ?? []).map((id) => {
+                <ul className="divide-y rounded-lg border">
+                  {linked.map((id) => {
                     const f = findings.find((x) => x.id === id)
                     return (
-                      <div
-                        key={id}
-                        className="flex items-center gap-2 rounded bg-muted/30 px-2 py-1 text-xs"
-                      >
+                      <li key={id} className="flex items-center gap-2 px-3 py-2 text-sm">
                         <div className="min-w-0 flex-1">
-                          <span className="block truncate">{f ? f.title || f.message : id}</span>
-                          <span className="text-muted-foreground flex items-center gap-2 truncate text-[10px]">
+                          <span className="block break-words">{f ? f.title || f.message : id}</span>
+                          <span className="flex items-center gap-2 text-xs text-muted-foreground">
                             {f?.asset?.name && <span className="truncate">{f.asset.name}</span>}
                             {f?.assigned_to ? (
                               <span className="flex shrink-0 items-center gap-0.5">
-                                <UserPlus className="h-2.5 w-2.5" />
+                                <UserPlus className="h-3 w-3" />
                                 {memberNameById.get(f.assigned_to) ||
                                   f.assigned_to_user?.name ||
                                   'Assigned'}
@@ -1790,119 +1807,63 @@ function TaskDetailSheet({
                             ) : null}
                           </span>
                         </div>
-                        <button
+                        <Button
                           type="button"
-                          className="text-muted-foreground hover:text-foreground"
-                          aria-label="Unlink finding"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground"
+                          aria-label={t('confirm.remediation.unlinkFindingLabel', 'Unlink finding')}
                           onClick={() =>
-                            onPatch(task, {
-                              finding_filter: {
-                                finding_ids: (task.findingIds ?? []).filter((x) => x !== id),
-                              },
-                            })
+                            setPendingUnlink({ id, title: f ? f.title || f.message || id : id })
                           }
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </li>
                     )
                   })}
-                </div>
+                </ul>
               )}
-            </div>
+            </DetailSection>
 
-            {/* Progress */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground">Progress</p>
-                <span className="text-xs font-medium tabular-nums">{taskProgress}%</span>
-              </div>
-              <Progress value={taskProgress} className="h-1.5" />
-            </div>
-
-            <Separator />
-
-            {/* Status Actions */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Actions</p>
-              <div className="flex flex-wrap gap-2">
-                {actions.map(({ action, label, icon: Icon, variant }) => (
-                  <Button
-                    key={action}
-                    variant={variant}
-                    size="sm"
-                    className="h-8"
-                    onClick={() => onAction(action, task)}
-                  >
-                    <Icon className="me-1.5 h-3.5 w-3.5" />
-                    {label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Metadata */}
-            <div className="grid grid-cols-2 gap-3">
-              <InfoCard
-                icon={<Hash className="h-3.5 w-3.5 text-muted-foreground" />}
-                label="Task ID"
-              >
-                <p className="font-mono text-[11px] truncate">{task.id}</p>
-              </InfoCard>
-              <InfoCard
-                icon={<Clock className="h-3.5 w-3.5 text-muted-foreground" />}
-                label="Created"
-              >
-                <p className="text-sm">
+            <DetailSection title="Details">
+              <DetailFieldGrid>
+                <DetailField label="Created">
                   {safeFormatDate(task.createdAt, { month: 'short', day: 'numeric' }) ?? '--'}
-                </p>
-                {task.createdAt && (
-                  <p className="text-[11px] text-muted-foreground">{timeAgo(task.createdAt)}</p>
-                )}
-              </InfoCard>
-            </div>
-
-            <Can permission={Permission.RemediationWrite}>
-              <DangerZone as="h3">
-                <DangerZoneItem
-                  title="Delete task"
-                  description="Permanently remove this task."
-                  action={
-                    <Button variant="destructive" size="sm" onClick={() => onDelete(task)}>
-                      <Trash2 className="me-1.5 h-3.5 w-3.5" />
-                      Delete
-                    </Button>
-                  }
-                />
-              </DangerZone>
-            </Can>
-          </div>
+                  {task.createdAt && (
+                    <span className="text-muted-foreground"> ({timeAgo(task.createdAt)})</span>
+                  )}
+                </DetailField>
+                <DetailField label="Task ID" full>
+                  <DetailCopyId id={task.id} label="Task ID" />
+                </DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
+          </DetailSections>
         </div>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
-/** Small info card used in detail sheet */
-function InfoCard({
-  icon,
-  label,
-  children,
-}: {
-  icon: React.ReactNode
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="rounded-lg border p-2.5 space-y-1">
-      <div className="flex items-center gap-1.5">
-        {icon}
-        <span className="text-[11px] text-muted-foreground">{label}</span>
-      </div>
-      <div>{children}</div>
-    </div>
+      )}
+      <ConfirmDialog
+        open={pendingUnlink !== null}
+        onOpenChange={(open) => !open && setPendingUnlink(null)}
+        destructive
+        title={t('confirm.remediation.unlinkTaskTitle', 'Unlink "{name}" from this task?', {
+          name: pendingUnlink?.title ?? '',
+        })}
+        desc={t(
+          'confirm.remediation.unlinkTaskDesc',
+          'It is removed from the findings linked to "{task}". The finding itself is not changed, and you can link it again later.',
+          { task: task.title }
+        )}
+        confirmText={t('confirm.unlink', 'Unlink')}
+        handleConfirm={() => {
+          if (!pendingUnlink) return
+          onPatch(task, {
+            finding_filter: { finding_ids: linked.filter((x) => x !== pendingUnlink.id) },
+          })
+          setPendingUnlink(null)
+        }}
+      />
+    </DetailSheet>
   )
 }
 
@@ -1937,7 +1898,7 @@ function TaskFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isEdit ? <Pencil className="h-4 w-4" /> : <ListTodo className="h-4 w-4" />}
@@ -1947,163 +1908,165 @@ function TaskFormDialog({
             {isEdit ? 'Update task information' : 'Create a new remediation task'}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
-          <div className="space-y-1.5">
-            <Label htmlFor="task-title" className="text-xs">
-              Title *
-            </Label>
-            <Input
-              id="task-title"
-              placeholder="Task title"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="task-desc" className="text-xs">
-              Description
-            </Label>
-            <Textarea
-              id="task-desc"
-              placeholder="Task description"
-              rows={3}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            />
-          </div>
-          {/* Only fields the backend actually persists are shown. Severity
+        <DialogBody>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="task-title" className="text-xs">
+                Title *
+              </Label>
+              <Input
+                id="task-title"
+                placeholder="Task title"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="task-desc" className="text-xs">
+                Description
+              </Label>
+              <Textarea
+                id="task-desc"
+                placeholder="Task description"
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              />
+            </div>
+            {/* Only fields the backend actually persists are shown. Severity
               (derived from priority), Estimated Hours (no column), and the free-
               text Assignee (broken end-to-end — empty picker, dropped on save,
               never returned) were removed; a real assignee picker is a follow-up. */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Priority</Label>
-              <Select
-                value={formData.priority}
-                onValueChange={(v) => setFormData({ ...formData, priority: v as TaskPriority })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="urgent">Urgent</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Priority</Label>
+                <Select
+                  value={formData.priority}
+                  onValueChange={(v) => setFormData({ ...formData, priority: v as TaskPriority })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Due Date</Label>
+                <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-start font-normal h-9"
+                    >
+                      <CalendarIcon className="me-2 h-4 w-4" />
+                      {formData.dueDate ? format(formData.dueDate, 'PPP') : 'Select date'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <CalendarComponent
+                      mode="single"
+                      selected={formData.dueDate}
+                      onSelect={(date) => {
+                        setFormData({ ...formData, dueDate: date })
+                        setDueDateOpen(false)
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Due Date</Label>
-              <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+              <Label className="text-xs">Assignee</Label>
+              <div>
+                <AssigneeSelect
+                  variant="outline"
+                  showFullName
+                  placeholder="Assign to…"
+                  value={
+                    formData.assignedTo
+                      ? { id: formData.assignedTo, name: formData.assigneeName || 'Assigned' }
+                      : null
+                  }
+                  onChange={(user) =>
+                    setFormData({
+                      ...formData,
+                      assignedTo: user?.id ?? '',
+                      assigneeName: user?.name ?? '',
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5 min-w-0">
+              <Label className="text-xs">
+                Link Findings
+                {formData.findingIds.length > 0 ? ` (${formData.findingIds.length})` : ''}
+              </Label>
+              {/* A remediation task can cover MANY findings (one fix → many). Multi-
+                select → finding_filter.finding_ids (backend counts + resolves all). */}
+              <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
-                    className="w-full justify-start text-start font-normal h-9"
+                    className="h-9 w-full justify-between font-normal"
+                    type="button"
                   >
-                    <CalendarIcon className="me-2 h-4 w-4" />
-                    {formData.dueDate ? format(formData.dueDate, 'PPP') : 'Select date'}
+                    <span className="truncate">
+                      {formData.findingIds.length === 0
+                        ? 'Select findings…'
+                        : `${formData.findingIds.length} finding${formData.findingIds.length > 1 ? 's' : ''} selected`}
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <CalendarComponent
-                    mode="single"
-                    selected={formData.dueDate}
-                    onSelect={(date) => {
-                      setFormData({ ...formData, dueDate: date })
-                      setDueDateOpen(false)
-                    }}
-                    initialFocus
-                  />
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-1" align="start">
+                  <div className="max-h-64 overflow-y-auto">
+                    {findings.length === 0 ? (
+                      <p className="p-2 text-xs text-muted-foreground">No findings available</p>
+                    ) : (
+                      findings.map((f) => {
+                        const checked = formData.findingIds.includes(f.id)
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted"
+                            onClick={() =>
+                              setFormData({
+                                ...formData,
+                                findingIds: checked
+                                  ? formData.findingIds.filter((id) => id !== f.id)
+                                  : [...formData.findingIds, f.id],
+                              })
+                            }
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${
+                                checked
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : 'border-input'
+                              }`}
+                            >
+                              {checked && <Check className="h-3 w-3" />}
+                            </span>
+                            <span className="line-clamp-2">{f.title || f.message || f.id}</span>
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
                 </PopoverContent>
               </Popover>
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Assignee</Label>
-            <div>
-              <AssigneeSelect
-                variant="outline"
-                showFullName
-                placeholder="Assign to…"
-                value={
-                  formData.assignedTo
-                    ? { id: formData.assignedTo, name: formData.assigneeName || 'Assigned' }
-                    : null
-                }
-                onChange={(user) =>
-                  setFormData({
-                    ...formData,
-                    assignedTo: user?.id ?? '',
-                    assigneeName: user?.name ?? '',
-                  })
-                }
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5 min-w-0">
-            <Label className="text-xs">
-              Link Findings
-              {formData.findingIds.length > 0 ? ` (${formData.findingIds.length})` : ''}
-            </Label>
-            {/* A remediation task can cover MANY findings (one fix → many). Multi-
-                select → finding_filter.finding_ids (backend counts + resolves all). */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="h-9 w-full justify-between font-normal"
-                  type="button"
-                >
-                  <span className="truncate">
-                    {formData.findingIds.length === 0
-                      ? 'Select findings…'
-                      : `${formData.findingIds.length} finding${formData.findingIds.length > 1 ? 's' : ''} selected`}
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-1" align="start">
-                <div className="max-h-64 overflow-y-auto">
-                  {findings.length === 0 ? (
-                    <p className="p-2 text-xs text-muted-foreground">No findings available</p>
-                  ) : (
-                    findings.map((f) => {
-                      const checked = formData.findingIds.includes(f.id)
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted"
-                          onClick={() =>
-                            setFormData({
-                              ...formData,
-                              findingIds: checked
-                                ? formData.findingIds.filter((id) => id !== f.id)
-                                : [...formData.findingIds, f.id],
-                            })
-                          }
-                        >
-                          <span
-                            aria-hidden="true"
-                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${
-                              checked
-                                ? 'border-primary bg-primary text-primary-foreground'
-                                : 'border-input'
-                            }`}
-                          >
-                            {checked && <Check className="h-3 w-3" />}
-                          </span>
-                          <span className="line-clamp-2">{f.title || f.message || f.id}</span>
-                        </button>
-                      )
-                    })
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>
             Cancel

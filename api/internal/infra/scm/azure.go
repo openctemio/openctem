@@ -2,7 +2,6 @@ package scm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -131,7 +130,7 @@ func (c *AzureClient) GetUser(ctx context.Context) (*User, error) {
 		} `json:"authenticatedUser"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&connData); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &connData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -202,7 +201,7 @@ func (c *AzureClient) listProjects(ctx context.Context, org string, opts ListOpt
 		} `json:"value"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -317,7 +316,7 @@ func (c *AzureClient) listProjectRepositories(ctx context.Context, org, project 
 		Value []azureRepo `json:"value"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -381,7 +380,7 @@ func (c *AzureClient) getRepositoryInProject(ctx context.Context, org, project, 
 	}
 
 	var repoData azureRepo
-	if err := json.NewDecoder(resp.Body).Decode(&repoData); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &repoData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 

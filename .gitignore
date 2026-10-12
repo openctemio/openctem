@@ -24,3 +24,27 @@ go.work.sum
 # Worktrees created inside the checkout by mistake
 /.worktrees/
 /worktrees/
+
+# Generated contract files: produced by `make generate` (CI, image builds and
+# local dev), never committed, so pull requests cannot conflict on them. See
+# api/docs/development/ci-cd.md, "Generated contract files".
+/api/api/openapi/swagger.yaml
+/api/api/openapi/swagger.json
+/api/api/openapi/docs.go
+/api/api/openapi/routes.txt
+/web/src/lib/api/generated/api.types.ts
+/web/src/config/api-route-permissions.json
+/web/src/config/authz-matrix.json
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# scratch output from local test runs
+/*.out
+/*.txt
+/*.log
+/api/*.txt
+/api/*.out
+/web/*.txt
+/web/*.out

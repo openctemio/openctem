@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -23,12 +23,12 @@ const (
 )
 
 type DashboardHandler struct {
-	dashboardService *app.DashboardService
+	dashboardService *module.DashboardService
 	logger           *logger.Logger
 }
 
 // NewDashboardHandler creates a new DashboardHandler.
-func NewDashboardHandler(dashboardService *app.DashboardService, log *logger.Logger) *DashboardHandler {
+func NewDashboardHandler(dashboardService *module.DashboardService, log *logger.Logger) *DashboardHandler {
 	return &DashboardHandler{
 		dashboardService: dashboardService,
 		logger:           log,
@@ -127,46 +127,8 @@ func (h *DashboardHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-// GetGlobalStats returns dashboard statistics filtered by user's accessible tenants.
-// @Summary      Get global dashboard stats
-// @Description  Returns dashboard statistics filtered by user's accessible tenants
-// @Tags         Dashboard
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200  {object}  DashboardStatsResponse
-// @Failure      401  {object}  map[string]string
-// @Failure      500  {object}  map[string]string
-// @Router       /dashboard/stats/global [get]
-func (h *DashboardHandler) GetGlobalStats(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	// Get accessible tenant IDs from JWT claims
-	accessibleTenants := middleware.GetAccessibleTenants(ctx)
-
-	// Log for debugging
-	h.logger.Debug("fetching dashboard stats",
-		"user_id", middleware.GetUserID(ctx),
-		"accessible_tenants", accessibleTenants,
-	)
-
-	// Get stats filtered by accessible tenants
-	stats, err := h.dashboardService.GetStatsForTenants(ctx, accessibleTenants)
-	if err != nil {
-		h.logger.Error("failed to get dashboard stats", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	// Convert to response
-	response := buildDashboardResponse(stats)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
-}
-
 // buildDashboardResponse converts internal stats to API response.
-func buildDashboardResponse(stats *app.DashboardStats) DashboardStatsResponse {
+func buildDashboardResponse(stats *module.DashboardStats) DashboardStatsResponse {
 	return DashboardStatsResponse{
 		Assets: AssetStats{
 			Total:     stats.AssetCount,
@@ -191,7 +153,7 @@ func buildDashboardResponse(stats *app.DashboardStats) DashboardStatsResponse {
 	}
 }
 
-func convertFindingTrend(points []app.FindingTrendPoint) []FindingTrendPoint {
+func convertFindingTrend(points []module.FindingTrendPoint) []FindingTrendPoint {
 	result := make([]FindingTrendPoint, len(points))
 	for i, p := range points {
 		result[i] = FindingTrendPoint{
@@ -390,7 +352,7 @@ func (h *DashboardHandler) GetProcessMetrics(w http.ResponseWriter, r *http.Requ
 // @Produce      json
 // @Security     BearerAuth
 // @Param        days  query     int  false  "Window in days (1-365, default 90)"
-// @Success      200   {object}  app.ProgramMetrics
+// @Success      200   {object}  module.ProgramMetrics
 // @Failure      400   {object}  apierror.Error
 // @Failure      401   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
@@ -417,7 +379,7 @@ func (h *DashboardHandler) GetProgramMetrics(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, metrics)
 }
 
-func convertActivityItems(items []app.ActivityItem) []ActivityItem {
+func convertActivityItems(items []module.ActivityItem) []ActivityItem {
 	result := make([]ActivityItem, len(items))
 	for i, item := range items {
 		result[i] = ActivityItem{

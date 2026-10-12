@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -28,7 +30,7 @@ func NewAssetGroupRepository(db *DB) *AssetGroupRepository {
 // assetGroupSelectQuery uses LEFT JOIN with pre-aggregated findings count
 // to avoid N+1 correlated subquery execution when listing multiple groups.
 // OPTIMIZED: Changed from correlated subquery to LEFT JOIN for better performance.
-const assetGroupSelectQuery = `
+const assetGroupColumns = `
 	SELECT
 		ag.id, ag.tenant_id, ag.name, ag.description, ag.environment, ag.criticality,
 		ag.business_unit, ag.business_unit_id, ag.owner, ag.owner_email, ag.tags,
@@ -37,14 +39,96 @@ const assetGroupSelectQuery = `
 		ag.risk_score,
 		COALESCE(fc.finding_count, 0) as finding_count,
 		ag.created_at, ag.updated_at
-	FROM asset_groups ag
+	FROM `
+
+// assetGroupSelectQuery reads the stored row (every member counted).
+var assetGroupSelectQuery = func() string {
+	src, _ := groupReadSource(nil, nil)
+	return assetGroupColumns + src + "\n"
+}()
+
+// groupMembersFrom is the FROM clause for every read of a group's members:
+// asset_group_members has no tenant_id, so each member is joined to an asset
+// of the group's own tenant (alias a). A member row pointing at another
+// tenant's asset is never returned or counted. $1 is the group id.
+const groupMembersFrom = `asset_group_members agm
+		JOIN asset_groups mg ON mg.id = agm.asset_group_id
+		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = mg.tenant_id AND a.deleted_at IS NULL`
+
+// The per-kind member predicates (on assets alias a), shared by the stored
+// counters (RecalculateCounts) and the counts computed for a scoped reader.
+const (
+	groupDomainPred  = `a.asset_class = 'domain'`
+	groupWebsitePred = `a.asset_class = 'application' AND COALESCE(a.sub_type, '') NOT IN ('api', 'mobile_app')`
+	groupServicePred = `(a.asset_class IN ('service', 'web_endpoint')
+				       OR (a.asset_class = 'application' AND a.sub_type = 'api'))`
+	groupRepoPred  = `a.asset_class = 'code_repo'`
+	groupCloudPred = `(a.asset_class IN ('cloud_account', 'function', 'container', 'cluster', 'artifact_registry')
+				       OR a.asset_type = 'storage'
+				       OR (a.asset_class = 'host' AND a.sub_type = 'compute'))`
+)
+
+// groupReadSource returns the FROM source of a group read, aliased ag, with
+// the finding counts joined as fc (alias columns as assetGroupSelectQuery
+// reads them), and the args with the scope's appended.
+//
+// With a nil scope it is the stored row. With a scope (a restricted reader,
+// L-18) every count and the risk score are computed over the members in that
+// scope only, and finding_count over findings of those members: the stored
+// counters cover every member, so they would tell a restricted reader how
+// many assets (and findings) lie outside their scope. Filters and sorts on
+// ag.asset_count / ag.risk_score / finding_count then see the scoped values.
+func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
+	if scope == nil {
+		return `asset_groups ag
 	LEFT JOIN (
 		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
 		FROM asset_group_members agm
-		INNER JOIN findings f ON f.asset_id = agm.asset_id
+		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
+		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
 		GROUP BY agm.asset_group_id
-	) fc ON fc.asset_group_id = ag.id
-`
+	) fc ON fc.asset_group_id = ag.id`, args
+	}
+	at := len(args) + 1
+	memberCond, scopeArgs := dataScopeCondAt("a.id", scope, at)
+	findingCond, _ := dataScopeCondAt("f.asset_id", scope, at)
+	//nolint:gosec // G202: fixed SQL fragments and numbered placeholders only
+	src := `(
+		SELECT g.id, g.tenant_id, g.name, g.description, g.environment, g.criticality,
+			g.business_unit, g.business_unit_id, g.owner, g.owner_email, g.tags,
+			COALESCE(sc.asset_count, 0) AS asset_count,
+			COALESCE(sc.domain_count, 0) AS domain_count,
+			COALESCE(sc.website_count, 0) AS website_count,
+			COALESCE(sc.service_count, 0) AS service_count,
+			COALESCE(sc.repository_count, 0) AS repository_count,
+			COALESCE(sc.cloud_count, 0) AS cloud_count,
+			0 AS credential_count,
+			COALESCE(sc.risk_score, 0) AS risk_score,
+			g.created_at, g.updated_at
+		FROM asset_groups g
+		LEFT JOIN LATERAL (
+			SELECT COUNT(*)::int AS asset_count,
+				(COUNT(*) FILTER (WHERE ` + groupDomainPred + `))::int AS domain_count,
+				(COUNT(*) FILTER (WHERE ` + groupWebsitePred + `))::int AS website_count,
+				(COUNT(*) FILTER (WHERE ` + groupServicePred + `))::int AS service_count,
+				(COUNT(*) FILTER (WHERE ` + groupRepoPred + `))::int AS repository_count,
+				(COUNT(*) FILTER (WHERE ` + groupCloudPred + `))::int AS cloud_count,
+				AVG(a.risk_score)::integer AS risk_score
+			FROM asset_group_members agm
+			JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
+			WHERE agm.asset_group_id = g.id AND ` + memberCond + `
+		) sc ON TRUE
+	) ag
+	LEFT JOIN (
+		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
+		FROM asset_group_members agm
+		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
+		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
+		WHERE ` + findingCond + `
+		GROUP BY agm.asset_group_id
+	) fc ON fc.asset_group_id = ag.id`
+	return src, append(args, scopeArgs...)
+}
 
 func (r *AssetGroupRepository) scanAssetGroup(row interface{ Scan(...any) error }) (*assetgroup.AssetGroup, error) {
 	var (
@@ -268,8 +352,18 @@ func (r *AssetGroupRepository) List(
 	page pagination.Pagination,
 ) (pagination.Result[*assetgroup.AssetGroup], error) {
 	var conditions []string
-	var args []any
-	argNum := 1
+	source, args := groupReadSource(filter.DataScope, nil)
+	argNum := len(args) + 1
+
+	if len(filter.IDs) > 0 {
+		ids := make([]string, len(filter.IDs))
+		for i, id := range filter.IDs {
+			ids[i] = id.String()
+		}
+		conditions = append(conditions, fmt.Sprintf("ag.id = ANY($%d)", argNum))
+		args = append(args, pq.StringArray(ids))
+		argNum++
+	}
 
 	if filter.TenantID != nil {
 		conditions = append(conditions, fmt.Sprintf("ag.tenant_id = $%d", argNum))
@@ -316,18 +410,11 @@ func (r *AssetGroupRepository) List(
 	}
 
 	if filter.HasFindings != nil {
+		// finding_count follows the reader's scope (groupReadSource).
 		if *filter.HasFindings {
-			conditions = append(conditions, `EXISTS (
-				SELECT 1 FROM findings f
-				INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-				WHERE agm.asset_group_id = ag.id
-			)`)
+			conditions = append(conditions, "COALESCE(fc.finding_count, 0) > 0")
 		} else {
-			conditions = append(conditions, `NOT EXISTS (
-				SELECT 1 FROM findings f
-				INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-				WHERE agm.asset_group_id = ag.id
-			)`)
+			conditions = append(conditions, "COALESCE(fc.finding_count, 0) = 0")
 		}
 	}
 
@@ -349,7 +436,7 @@ func (r *AssetGroupRepository) List(
 	}
 
 	// Count total
-	countQuery := "SELECT COUNT(*) FROM asset_groups ag" + whereClause
+	countQuery := "SELECT COUNT(*) FROM " + source + whereClause
 	var total int64
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return pagination.Result[*assetgroup.AssetGroup]{}, fmt.Errorf("count asset groups: %w", err)
@@ -368,7 +455,7 @@ func (r *AssetGroupRepository) List(
 	}
 
 	// Query with pagination
-	query := assetGroupSelectQuery + whereClause + orderClause +
+	query := assetGroupColumns + source + whereClause + orderClause +
 		fmt.Sprintf(" LIMIT $%d OFFSET $%d", argNum, argNum+1)
 	args = append(args, page.Limit(), page.Offset())
 
@@ -398,12 +485,10 @@ func (r *AssetGroupRepository) List(
 func (r *AssetGroupRepository) Count(ctx context.Context, filter assetgroup.Filter) (int64, error) {
 	var conditions []string
 	var args []any
-	argNum := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("ag.tenant_id = $%d", argNum))
 		args = append(args, *filter.TenantID)
-		argNum++
+		conditions = append(conditions, fmt.Sprintf("ag.tenant_id = $%d", len(args)))
 	}
 
 	whereClause := ""
@@ -431,40 +516,36 @@ func (r *AssetGroupRepository) ExistsByName(ctx context.Context, tenantID shared
 }
 
 // GetStats returns aggregated statistics.
-func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID) (*assetgroup.Stats, error) {
+func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*assetgroup.Stats, error) {
+	// Totals over the groups as the reader sees them: with a scope, each
+	// group's counts, risk and findings cover only the members in it (L-18).
+	source, args := groupReadSource(scope, []any{tenantID.String()})
+	//nolint:gosec // G202: source is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT
 			COUNT(*) as total,
-			COALESCE(SUM(asset_count), 0) as total_assets,
-			COALESCE(AVG(risk_score), 0) as avg_risk_score
-		FROM asset_groups
-		WHERE tenant_id = $1
+			COALESCE(SUM(ag.asset_count), 0) as total_assets,
+			COALESCE(AVG(ag.risk_score), 0) as avg_risk_score,
+			COALESCE(SUM(fc.finding_count), 0) as total_findings
+		FROM ` + source + `
+		WHERE ag.tenant_id = $1
 	`
 
 	var stats assetgroup.Stats
 	var avgScore float64
+	var totalFindings int64
 
-	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Total,
 		&stats.TotalAssets,
 		&avgScore,
+		&totalFindings,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get stats: %w", err)
 	}
 	stats.AverageRiskScore = avgScore
-
-	// Get total findings by counting from findings table through asset_group_members
-	findingsQuery := `
-		SELECT COUNT(DISTINCT f.id)
-		FROM findings f
-		INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-		INNER JOIN asset_groups ag ON agm.asset_group_id = ag.id
-		WHERE ag.tenant_id = $1
-	`
-	if err := r.db.QueryRowContext(ctx, findingsQuery, tenantID.String()).Scan(&stats.TotalFindings); err != nil {
-		stats.TotalFindings = 0
-	}
+	stats.TotalFindings = totalFindings
 
 	// Get by environment
 	stats.ByEnvironment = make(map[assetgroup.Environment]int64)
@@ -527,46 +608,65 @@ func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID)
 	return &stats, nil
 }
 
-// AddAssets adds assets to a group using multi-row INSERT for performance.
-func (r *AssetGroupRepository) AddAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) error {
+// AddAssets adds assets to a group. Only assets of the group's own tenant
+// are inserted: the ids are matched against assets in the group's tenant in
+// the same statement, so an id of another tenant's asset (or an unknown id)
+// is never written, whatever the caller checked before. It returns how many
+// of the given ids are assets of that tenant (already a member or not).
+func (r *AssetGroupRepository) AddAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) (int, error) {
 	if len(assetIDs) == 0 {
-		return nil
+		return 0, nil
 	}
-
-	// Build multi-row INSERT to avoid N+1 (one round-trip instead of N)
-	const chunkSize = 500
-	gidStr := groupID.String()
-
-	for i := 0; i < len(assetIDs); i += chunkSize {
-		end := i + chunkSize
-		if end > len(assetIDs) {
-			end = len(assetIDs)
-		}
-		chunk := assetIDs[i:end]
-
-		valueStrings := make([]string, 0, len(chunk))
-		args := make([]any, 0, len(chunk)*2)
-		for j, assetID := range chunk {
-			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", j*2+1, j*2+2))
-			args = append(args, gidStr, assetID.String())
-		}
-
-		query := fmt.Sprintf(
-			"INSERT INTO asset_group_members (asset_group_id, asset_id) VALUES %s ON CONFLICT DO NOTHING",
-			strings.Join(valueStrings, ", "),
+	var matched int
+	err := r.db.QueryRowContext(ctx, `
+		WITH own AS (
+			SELECT ag.id AS group_id, a.id AS asset_id
+			FROM asset_groups ag
+			JOIN assets a ON a.tenant_id = ag.tenant_id AND a.deleted_at IS NULL
+			WHERE ag.id = $1 AND a.id = ANY($2::uuid[])
+		), ins AS (
+			INSERT INTO asset_group_members (asset_group_id, asset_id)
+			SELECT group_id, asset_id FROM own
+			ON CONFLICT DO NOTHING
 		)
-
-		if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
-			// A FK violation means one of the asset IDs does not exist — that's
-			// bad input (400), not a server fault.
-			if isForeignKeyViolation(err) {
-				return fmt.Errorf("%w: one or more assets do not exist", shared.ErrValidation)
-			}
-			return fmt.Errorf("add assets to group: %w", err)
-		}
+		SELECT COUNT(*) FROM own`, groupID.String(), pq.Array(memberIDStrings(assetIDs))).Scan(&matched)
+	if err != nil {
+		return 0, fmt.Errorf("add assets to group: %w", err)
 	}
+	return matched, nil
+}
 
-	return nil
+// FilterTenantAssetIDs returns the subset of assetIDs that are assets of
+// tenantID. Callers compare it with their input to refuse unknown and
+// foreign ids alike.
+func (r *AssetGroupRepository) FilterTenantAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id FROM assets WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+		tenantID.String(), pq.Array(memberIDStrings(assetIDs)))
+	if err != nil {
+		return nil, fmt.Errorf("filter tenant assets: %w", err)
+	}
+	defer rows.Close()
+	out := make([]shared.ID, 0, len(assetIDs))
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan tenant asset: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func memberIDStrings(ids []shared.ID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	return out
 }
 
 // RemoveAssets removes assets from a group.
@@ -575,13 +675,8 @@ func (r *AssetGroupRepository) RemoveAssets(ctx context.Context, groupID shared.
 		return nil
 	}
 
-	ids := make([]string, len(assetIDs))
-	for i, id := range assetIDs {
-		ids[i] = id.String()
-	}
-
 	query := "DELETE FROM asset_group_members WHERE asset_group_id = $1 AND asset_id = ANY($2)"
-	if _, err := r.db.ExecContext(ctx, query, groupID.String(), pq.StringArray(ids)); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, groupID.String(), pq.StringArray(memberIDStrings(assetIDs))); err != nil {
 		return fmt.Errorf("remove assets from group: %w", err)
 	}
 
@@ -594,8 +689,7 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 
 	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	countQuery := `
-		SELECT COUNT(*) FROM asset_group_members agm
-		JOIN assets a ON a.id = agm.asset_id
+		SELECT COUNT(*) FROM ` + groupMembersFrom + `
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond
 
 	var total int64
@@ -609,9 +703,8 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 		SELECT a.id, a.name, a.asset_type, a.status, a.risk_score,
 			   COALESCE(fc.finding_count, 0) as finding_count,
 			   a.last_seen
-		FROM asset_group_members agm
-		JOIN assets a ON a.id = agm.asset_id
-		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = a.id
+		FROM ` + groupMembersFrom + `
+		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings WHERE NOT branch_only GROUP BY asset_id) fc ON fc.asset_id = a.id
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond + `
 		ORDER BY a.name
 		LIMIT $` + strconv.Itoa(n+1) + ` OFFSET $` + strconv.Itoa(n+2)
@@ -662,47 +755,131 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 	return pagination.NewResult(assets, total, page), nil
 }
 
+// scanMemberMatchProps selects the asset properties exclusion matching reads for
+// a scan member (scope.AssetExclusionValues): its addresses and, for
+// repositories, its URLs. Only these leave the database.
+var scanMemberMatchProps = func() string {
+	keys := append(asset.AddressPropertyKeys(), "full_name", "web_url", "clone_url")
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("'%s', a.properties->'%s'", k, k)
+	}
+	return "jsonb_strip_nulls(jsonb_build_object(" + strings.Join(parts, ", ") + "))"
+}()
+
+// ListScanMembers returns one keyset page of a group's members for scan
+// dispatch. The group must belong to q.TenantID and so must every member
+// returned. Archived assets are never returned; the first page counts them.
+func (r *AssetGroupRepository) ListScanMembers(ctx context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	limit := q.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	page := &assetgroup.ScanMemberPage{}
+	first := q.AfterName == "" && q.AfterID.IsZero()
+
+	if first {
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM asset_group_members agm
+			JOIN asset_groups ag ON ag.id = agm.asset_group_id
+			JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = ag.tenant_id
+			WHERE agm.asset_group_id = $1 AND ag.tenant_id = $2 AND a.status = 'archived'`,
+			q.GroupID.String(), q.TenantID.String()).Scan(&page.ArchivedCount); err != nil {
+			return nil, fmt.Errorf("count archived group members: %w", err)
+		}
+	}
+
+	args := []any{q.GroupID.String(), q.TenantID.String(), limit}
+	cursor := ""
+	if !first {
+		cursor = ` AND (a.name, a.id) > ($4, $5)`
+		args = append(args, q.AfterName, q.AfterID.String())
+	}
+	//nolint:gosec // G202: cursor and scanMemberMatchProps are fixed SQL with numbered placeholders
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT a.id, a.name, a.asset_type, COALESCE(a.sub_type, ''), a.status, `+scanMemberMatchProps+`
+		FROM asset_group_members agm
+		JOIN asset_groups ag ON ag.id = agm.asset_group_id
+		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = ag.tenant_id
+		WHERE agm.asset_group_id = $1 AND ag.tenant_id = $2 AND a.status <> 'archived'`+cursor+`
+		ORDER BY a.name, a.id
+		LIMIT $3`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list group scan members: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			id, name, assetType, subType, status string
+			props                                []byte
+		)
+		if err := rows.Scan(&id, &name, &assetType, &subType, &status, &props); err != nil {
+			return nil, fmt.Errorf("scan group scan member: %w", err)
+		}
+		aid, err := shared.IDFromString(id)
+		if err != nil {
+			return nil, fmt.Errorf("group scan member id: %w", err)
+		}
+		m := &assetgroup.ScanMember{ID: aid, Name: name, Type: assetType, SubType: subType, Status: status}
+		if len(props) > 0 {
+			if err := json.Unmarshal(props, &m.Properties); err != nil {
+				return nil, fmt.Errorf("group scan member %s properties: %w", id, err)
+			}
+		}
+		page.Members = append(page.Members, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate group scan members: %w", err)
+	}
+	return page, nil
+}
+
 // RecalculateCounts recalculates asset counts for a group.
 // Note: finding_count is computed in real-time during SELECT queries.
 func (r *AssetGroupRepository) RecalculateCounts(ctx context.Context, groupID shared.ID) error {
+	// The per-kind counters key on assets.asset_class (derived from the
+	// stored (type, sub_type) by trg_assets_registry_class), never on alias
+	// type names, which are not stored (RFC-042 §6.3.8): website_count and
+	// credential_count were always 0.
+	//   domain_count      class domain (domains and subdomains)
+	//   website_count     class application, except mobile apps
+	//   service_count     class service and web_endpoint, plus APIs
+	//   repository_count  class code_repo
+	//   cloud_count       classes cloud_account, function, container, cluster,
+	//                     artifact_registry, plus storage and cloud compute
+	//   credential_count  0: credentials have no asset type yet (secrets are
+	//                     RFC-042 §6.3.8 O4); kept so the column stays honest
+	//nolint:gosec // G202: groupMembersFrom is a fixed SQL fragment
 	query := `
 		UPDATE asset_groups SET
 			asset_count = (
-				SELECT COUNT(*) FROM asset_group_members WHERE asset_group_id = $1
+				SELECT COUNT(*) FROM ` + groupMembersFrom + ` WHERE agm.asset_group_id = $1
 			),
 			domain_count = (
-				SELECT COUNT(*) FROM asset_group_members agm
-				JOIN assets a ON a.id = agm.asset_id
-				WHERE agm.asset_group_id = $1 AND a.asset_type = 'domain'
+				SELECT COUNT(*) FROM ` + groupMembersFrom + `
+				WHERE agm.asset_group_id = $1 AND ` + groupDomainPred + `
 			),
 			website_count = (
-				SELECT COUNT(*) FROM asset_group_members agm
-				JOIN assets a ON a.id = agm.asset_id
-				WHERE agm.asset_group_id = $1 AND a.asset_type = 'website'
+				SELECT COUNT(*) FROM ` + groupMembersFrom + `
+				WHERE agm.asset_group_id = $1 AND ` + groupWebsitePred + `
 			),
 			service_count = (
-				SELECT COUNT(*) FROM asset_group_members agm
-				JOIN assets a ON a.id = agm.asset_id
-				WHERE agm.asset_group_id = $1 AND a.asset_type IN ('api', 'service')
+				SELECT COUNT(*) FROM ` + groupMembersFrom + `
+				WHERE agm.asset_group_id = $1 AND ` + groupServicePred + `
 			),
 			repository_count = (
-				SELECT COUNT(*) FROM asset_group_members agm
-				JOIN assets a ON a.id = agm.asset_id
-				WHERE agm.asset_group_id = $1 AND a.asset_type = 'repository'
+				SELECT COUNT(*) FROM ` + groupMembersFrom + `
+				WHERE agm.asset_group_id = $1 AND ` + groupRepoPred + `
 			),
 			cloud_count = (
-				SELECT COUNT(*) FROM asset_group_members agm
-				JOIN assets a ON a.id = agm.asset_id
-				WHERE agm.asset_group_id = $1 AND a.asset_type IN ('cloud_account', 'compute', 'storage', 'serverless', 'container')
+				SELECT COUNT(*) FROM ` + groupMembersFrom + `
+				WHERE agm.asset_group_id = $1 AND ` + groupCloudPred + `
 			),
-			credential_count = (
-				SELECT COUNT(*) FROM asset_group_members agm
-				JOIN assets a ON a.id = agm.asset_id
-				WHERE agm.asset_group_id = $1 AND a.asset_type = 'credential'
-			),
+			credential_count = 0,
 			risk_score = COALESCE((
-				SELECT AVG(a.risk_score)::integer FROM asset_group_members agm
-				JOIN assets a ON a.id = agm.asset_id
+				SELECT AVG(a.risk_score)::integer FROM ` + groupMembersFrom + `
 				WHERE agm.asset_group_id = $1
 			), 0),
 			updated_at = NOW()
@@ -719,7 +896,8 @@ func (r *AssetGroupRepository) RecalculateCounts(ctx context.Context, groupID sh
 
 // GetGroupIDsByAssetID returns IDs of groups containing a specific asset.
 func (r *AssetGroupRepository) GetGroupIDsByAssetID(ctx context.Context, assetID shared.ID) ([]shared.ID, error) {
-	query := `SELECT asset_group_id FROM asset_group_members WHERE asset_id = $1`
+	// Only groups of the asset's own tenant.
+	query := `SELECT agm.asset_group_id FROM ` + groupMembersFrom + ` WHERE agm.asset_id = $1`
 
 	rows, err := r.db.QueryContext(ctx, query, assetID.String())
 	if err != nil {
@@ -751,8 +929,8 @@ func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID sha
 
 	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	countQuery := `
-		SELECT COUNT(*) FROM findings f
-		INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
+		SELECT COUNT(*) FROM ` + groupMembersFrom + `
+		INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = a.tenant_id AND NOT f.branch_only
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond
 
 	var total int64
@@ -760,11 +938,11 @@ func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID sha
 		return pagination.Result[*assetgroup.GroupFinding]{}, fmt.Errorf("count group findings: %w", err)
 	}
 
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT f.id, f.message, f.severity, f.status, f.asset_id, a.name, a.asset_type, f.created_at
-		FROM findings f
-		INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-		INNER JOIN assets a ON f.asset_id = a.id
+		FROM ` + groupMembersFrom + `
+		INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = a.tenant_id AND NOT f.branch_only
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond + `
 		ORDER BY
 			CASE f.severity
@@ -830,8 +1008,7 @@ func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID sha
 func (r *AssetGroupRepository) GetDistinctAssetTypes(ctx context.Context, groupID shared.ID) ([]string, error) {
 	query := `
 		SELECT DISTINCT a.asset_type
-		FROM asset_group_members agm
-		INNER JOIN assets a ON a.id = agm.asset_id
+		FROM ` + groupMembersFrom + `
 		WHERE agm.asset_group_id = $1
 		ORDER BY a.asset_type
 	`
@@ -872,8 +1049,7 @@ func (r *AssetGroupRepository) GetDistinctAssetTypesMultiple(ctx context.Context
 
 	query := `
 		SELECT DISTINCT a.asset_type
-		FROM asset_group_members agm
-		INNER JOIN assets a ON a.id = agm.asset_id
+		FROM ` + groupMembersFrom + `
 		WHERE agm.asset_group_id = ANY($1)
 		ORDER BY a.asset_type
 	`
@@ -900,14 +1076,15 @@ func (r *AssetGroupRepository) GetDistinctAssetTypesMultiple(ctx context.Context
 	return types, nil
 }
 
-// CountAssetsByType returns count of assets per type in a group.
-func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID shared.ID) (map[string]int64, error) {
+// CountAssetsByType returns the count of assets per stored (type, sub_type)
+// pair in a group. Scanner compatibility depends on the sub-type too
+// (RFC-042 §6.3.8): an API and a mobile app are both `application`.
+func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID shared.ID) (map[asset.TypeRef]int64, error) {
 	query := `
-		SELECT a.asset_type, COUNT(*) as count
-		FROM asset_group_members agm
-		INNER JOIN assets a ON a.id = agm.asset_id
+		SELECT a.asset_type, COALESCE(a.sub_type, ''), COUNT(*) as count
+		FROM ` + groupMembersFrom + `
 		WHERE agm.asset_group_id = $1
-		GROUP BY a.asset_type
+		GROUP BY a.asset_type, COALESCE(a.sub_type, '')
 		ORDER BY a.asset_type
 	`
 
@@ -917,14 +1094,14 @@ func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID sh
 	}
 	defer rows.Close()
 
-	counts := make(map[string]int64)
+	counts := make(map[asset.TypeRef]int64)
 	for rows.Next() {
-		var assetType string
+		var assetType, subType string
 		var count int64
-		if err := rows.Scan(&assetType, &count); err != nil {
-			continue
+		if err := rows.Scan(&assetType, &subType, &count); err != nil {
+			return nil, fmt.Errorf("scan asset type count: %w", err)
 		}
-		counts[assetType] = count
+		counts[asset.TypeRef{Type: asset.AssetType(assetType), SubType: subType}] = count
 	}
 
 	if err := rows.Err(); err != nil {

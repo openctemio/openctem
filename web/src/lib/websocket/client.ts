@@ -2,10 +2,15 @@
  * WebSocket Client
  *
  * A robust WebSocket client with:
- * - Automatic reconnection with exponential backoff
- * - Channel subscription management
+ * - Session-cookie authentication: the browser sends the httpOnly access-token
+ *   cookie on the same-origin upgrade; no credential is ever put in the URL
+ * - Automatic reconnection with exponential backoff and full jitter
+ * - Server close codes: 4401 (session ended / access changed) reconnects and
+ *   refreshes the session when needed, 4429 (too many sockets) backs off
+ * - Channel subscription management (re-subscribed after every reconnect)
  * - Connection state tracking
- * - Token-based authentication
+ *
+ * Design: api/docs/rfcs/RFC-045-websocket-auth.md.
  */
 
 import type {
@@ -16,6 +21,7 @@ import type {
   EventMessage,
   ErrorMessage,
 } from './types'
+import { WS_CLOSE } from './types'
 
 import { devLog } from '@/lib/logger'
 
@@ -25,12 +31,20 @@ import { devLog } from '@/lib/logger'
 
 /** Default reconnection settings */
 const DEFAULT_CONFIG = {
-  /** Initial reconnect delay in ms */
+  /** Base of the exponential backoff in ms */
   initialReconnectDelay: 1000,
-  /** Maximum reconnect delay in ms */
+  /** Maximum reconnect delay in ms (the backoff cap) */
   maxReconnectDelay: 30000,
-  /** Maximum number of reconnect attempts (0 = infinite) */
+  /** Maximum number of consecutive failed reconnects (0 = infinite) */
   maxReconnectAttempts: 10,
+  /** A connection must stay up this long before the backoff resets */
+  stableConnectionMs: 30000,
+  /**
+   * Spread of the reconnect after a 4401 close. Every tab's socket closes at
+   * the same access-token expiry; the jitter keeps them from reconnecting
+   * (and possibly refreshing) in the same instant.
+   */
+  authReconnectJitterMs: 3000,
   /** Ping interval in ms (keep-alive) */
   pingInterval: 30000,
   /** Pong timeout in ms (consider disconnected if no pong received) */
@@ -38,24 +52,26 @@ const DEFAULT_CONFIG = {
 }
 
 export interface WebSocketClientConfig {
-  /** WebSocket URL (e.g., ws://localhost:8080/api/v1/ws) */
+  /** WebSocket URL (e.g., wss://ctem.example.com/api/v1/ws) */
   url: string
-  /** Authentication token (sent via query param or header) */
-  token?: string
   /**
-   * Async ticket provider for single-use WS auth (F-8 ticket flow).
-   * When set, takes precedence over `token`: the client calls it
-   * before every connect/reconnect to mint a fresh 64-hex ticket and
-   * passes it as `?ticket=<value>`. One ticket is consumed per
-   * connection because the server DELs it on redemption.
+   * Refreshes the session (the access-token cookie). Called once when a
+   * reconnect after a 4401 close fails before the socket opens, which is how
+   * an expired cookie shows up (the browser exposes no handshake status).
+   * Resolve false when the session cannot be refreshed: the client then stops
+   * reconnecting.
    */
-  fetchTicket?: () => Promise<string>
+  onAuthExpired?: () => Promise<boolean>
   /** Reconnection settings */
   initialReconnectDelay?: number
   maxReconnectDelay?: number
   maxReconnectAttempts?: number
+  stableConnectionMs?: number
+  authReconnectJitterMs?: number
   pingInterval?: number
   pongTimeout?: number
+  /** Random source in [0, 1) for jitter (tests inject a fixed one). */
+  random?: () => number
   /** Callback when connection state changes */
   onStateChange?: (state: ConnectionState) => void
   /** Callback when an error occurs */
@@ -66,14 +82,26 @@ export interface WebSocketClientConfig {
   onDisconnect?: (reason?: string) => void
 }
 
+/**
+ * Full-jitter backoff (AWS Architecture Blog, "Exponential Backoff and
+ * Jitter"): a uniformly random delay in [0, min(cap, base * 2^attempt)).
+ */
+export function fullJitterDelay(
+  attempt: number,
+  base: number,
+  cap: number,
+  random: () => number = Math.random
+): number {
+  const ceiling = Math.min(cap, base * Math.pow(2, attempt))
+  return Math.floor(random() * ceiling)
+}
+
 // ============================================
 // CLIENT CLASS
 // ============================================
 
-/** Internal config type with optional token / ticket provider */
-type InternalConfig = Omit<Required<WebSocketClientConfig>, 'token' | 'fetchTicket'> & {
-  token?: string
-  fetchTicket?: () => Promise<string>
+type InternalConfig = Required<Omit<WebSocketClientConfig, 'onAuthExpired'>> & {
+  onAuthExpired?: () => Promise<boolean>
 }
 
 export class WebSocketClient {
@@ -82,8 +110,16 @@ export class WebSocketClient {
   private state: ConnectionState = 'disconnected'
   private reconnectAttempts = 0
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+  private stableTimeout: ReturnType<typeof setTimeout> | null = null
   private pingTimeout: ReturnType<typeof setTimeout> | null = null
   private pongTimeout: ReturnType<typeof setTimeout> | null = null
+
+  /** The last close was 4401 and no connection has opened since. */
+  private authExpired = false
+  /** onAuthExpired already ran for the current 4401. */
+  private authRefreshTried = false
+  /** The current socket reached OPEN. */
+  private opened = false
 
   /**
    * Active subscriptions: channel -> Set of callbacks.
@@ -103,6 +139,7 @@ export class WebSocketClient {
     this.config = {
       ...DEFAULT_CONFIG,
       ...config,
+      random: config.random ?? Math.random,
       onStateChange: config.onStateChange ?? (() => {}),
       onError: config.onError ?? ((err) => devLog.warn('[WebSocket] Error:', err)),
       onConnect: config.onConnect ?? (() => {}),
@@ -143,13 +180,26 @@ export class WebSocketClient {
     }
     this.pendingRequests.clear()
 
-    if (this.ws) {
-      this.ws.close(1000, 'Client disconnect')
-      this.ws = null
-    }
+    this.closeSocket('Client disconnect')
 
     this.setState('disconnected')
     this.config.onDisconnect?.('Client disconnect')
+  }
+
+  /**
+   * Close the current socket and open a new one at once, keeping the
+   * subscriptions (they are re-sent on open). Used when the session changes
+   * under an open socket, e.g. after switching organization: the socket is
+   * bound to the tenant of the token it was opened with.
+   */
+  reconnect(): void {
+    this.clearTimers()
+    this.reconnectAttempts = 0
+    this.authExpired = false
+    this.authRefreshTried = false
+    this.closeSocket('Reconnect')
+    this.setState('connecting')
+    this.createConnection()
   }
 
   /**
@@ -252,96 +302,102 @@ export class WebSocketClient {
     return this.state === 'connected' && this.ws?.readyState === WebSocket.OPEN
   }
 
-  /**
-   * Update authentication token
-   */
-  updateToken(token: string): void {
-    this.config.token = token
-    // Reconnect with new token if already connected
-    if (this.state === 'connected') {
-      this.disconnect()
-      this.connect()
-    }
-  }
-
   // ============================================
   // PRIVATE METHODS
   // ============================================
 
   private createConnection(): void {
-    // Resolve auth (ticket > token) asynchronously so we can mint a
-    // fresh single-use ticket per connection. The WS open itself stays
-    // synchronous inside the promise callback so setupEventHandlers can
-    // attach before any event fires.
-    const buildAndOpen = (auth: { ticket?: string; token?: string }) => {
-      const url = new URL(this.config.url)
-      if (auth.ticket) {
-        url.searchParams.set('ticket', auth.ticket)
-      } else if (auth.token) {
-        url.searchParams.set('token', auth.token)
-      }
-
-      devLog.log(
-        '[WebSocket] Connecting to:',
-        url
-          .toString()
-          .replace(/ticket=[^&]+/, 'ticket=***')
-          .replace(/token=[^&]+/, 'token=***')
-      )
-
-      try {
-        this.ws = new WebSocket(url.toString())
-        this.setupEventHandlers()
-      } catch (error) {
-        devLog.error('[WebSocket] Failed to create connection:', error)
-        this.handleError(error instanceof Error ? error : new Error(String(error)))
-      }
+    // The URL carries no credential: the browser attaches the session cookie
+    // to the same-origin upgrade.
+    devLog.log('[WebSocket] Connecting to:', this.config.url)
+    this.opened = false
+    try {
+      this.ws = new WebSocket(this.config.url)
+      this.setupEventHandlers()
+    } catch (error) {
+      devLog.error('[WebSocket] Failed to create connection:', error)
+      this.handleError(error instanceof Error ? error : new Error(String(error)))
     }
+  }
 
-    if (this.config.fetchTicket) {
-      this.config
-        .fetchTicket()
-        .then((ticket) => buildAndOpen({ ticket }))
-        .catch((error) => {
-          // Transient (e.g. 502 while the API restarts) and retried with backoff
-          // by handleError, so a warning, not an error the dev overlay shows.
-          devLog.warn('[WebSocket] Failed to fetch ticket, will retry:', error)
-          this.handleError(error instanceof Error ? error : new Error(String(error)))
-        })
-      return
+  /** Detach and close the current socket without triggering a reconnect. */
+  private closeSocket(reason: string): void {
+    const ws = this.ws
+    this.ws = null
+    if (!ws) return
+    ws.onopen = null
+    ws.onclose = null
+    ws.onerror = null
+    ws.onmessage = null
+    try {
+      ws.close(WS_CLOSE.NORMAL, reason)
+    } catch {
+      // Already closing or closed.
     }
-
-    buildAndOpen({ token: this.config.token })
   }
 
   private setupEventHandlers(): void {
-    if (!this.ws) return
+    const ws = this.ws
+    if (!ws) return
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
       devLog.log('[WebSocket] Connected')
-      this.reconnectAttempts = 0
+      this.opened = true
+      this.authExpired = false
+      this.authRefreshTried = false
       this.setState('connected')
       this.config.onConnect?.()
       this.startPingInterval()
+      // Reset the backoff only once the connection has proven stable, so a
+      // server that accepts and immediately drops does not reconnect at the
+      // base delay forever.
+      this.stableTimeout = setTimeout(() => {
+        this.reconnectAttempts = 0
+      }, this.config.stableConnectionMs)
       this.resubscribeAll()
     }
 
-    this.ws.onclose = (event) => {
+    ws.onclose = (event) => {
+      if (this.ws !== ws) return // a socket we already replaced
       devLog.log('[WebSocket] Disconnected:', event.code, event.reason)
       this.clearTimers()
+      const wasOpen = this.opened
+      this.ws = null
 
-      // Don't reconnect if closed cleanly by client
-      if (event.code === 1000) {
-        this.setState('disconnected')
-        this.config.onDisconnect?.(event.reason)
+      switch (event.code) {
+        case WS_CLOSE.NORMAL:
+          this.setState('disconnected')
+          this.config.onDisconnect?.(event.reason)
+          return
+        case WS_CLOSE.UNAUTHORIZED:
+          // Session expired, revoked or access changed. Reconnect soon: the
+          // cookie has usually been refreshed already; if not, the failed
+          // attempt below triggers one refresh.
+          this.authExpired = true
+          this.authRefreshTried = false
+          this.scheduleReconnectIn(
+            Math.floor(this.config.random() * this.config.authReconnectJitterMs)
+          )
+          return
+        case WS_CLOSE.TOO_MANY_CONNECTIONS:
+          this.scheduleReconnectIn(
+            Math.floor(this.config.maxReconnectDelay * (0.5 + this.config.random() / 2))
+          )
+          return
+      }
+
+      if (!wasOpen && this.authExpired && !this.authRefreshTried && this.config.onAuthExpired) {
+        // The reconnect after a 4401 was refused before opening: the session
+        // cookie is gone or stale. Refresh it once, then try again.
+        this.authRefreshTried = true
+        this.refreshThenReconnect(this.config.onAuthExpired)
         return
       }
 
-      // Schedule reconnect
       this.scheduleReconnect()
     }
 
-    this.ws.onerror = () => {
+    ws.onerror = () => {
       // A WebSocket error event carries no actionable detail and is always
       // followed by onclose, which owns reconnection. Log at warn (error would
       // surface in the dev overlay as a blocking issue) and let onclose retry —
@@ -350,10 +406,29 @@ export class WebSocketClient {
       this.setState('error')
     }
 
-    this.ws.onmessage = (event) => {
-      devLog.log('[DEBUG WS] Received payload:', event.data)
+    ws.onmessage = (event) => {
       this.handleMessage(event.data)
     }
+  }
+
+  private refreshThenReconnect(refresh: () => Promise<boolean>): void {
+    this.setState('reconnecting')
+    refresh()
+      .then((ok) => {
+        if (!ok) {
+          // The session cannot be renewed; the REST client sends the user
+          // to sign in. Stop here instead of retrying a dead session.
+          devLog.warn('[WebSocket] Session refresh failed; not reconnecting')
+          this.setState('error')
+          this.config.onError?.(new Error('Session expired'))
+          return
+        }
+        if (this.state === 'disconnected') return // disconnect() meanwhile
+        this.createConnection()
+      })
+      .catch((error) => {
+        this.handleError(error instanceof Error ? error : new Error(String(error)))
+      })
   }
 
   private handleMessage(data: string): void {
@@ -431,19 +506,21 @@ export class WebSocketClient {
   }
 
   private handleServerError(message: ErrorMessage): void {
-    devLog.error('[WebSocket] Server error:', message.data)
-
     const requestId = message.request_id
     if (requestId && this.pendingRequests.has(requestId)) {
       this.pendingRequests.get(requestId)!.reject(new Error(message.data.message))
       this.pendingRequests.delete(requestId)
     }
 
-    // Handle specific error codes — log as warning, not error
-    // FORBIDDEN on channel subscribe is common during page transitions
-    if (message.data.code === 'FORBIDDEN' || message.data.code === 'UNAUTHORIZED') {
-      devLog.warn('[WebSocket] Auth error on channel:', message.data.message)
+    // FORBIDDEN on channel subscribe is common during page transitions and
+    // after an organization switch; RATE_LIMITED means this tab sends too
+    // much. Neither is a crash: warn, do not error.
+    const code = message.data.code
+    if (code === 'FORBIDDEN' || code === 'UNAUTHORIZED' || code === 'RATE_LIMITED') {
+      devLog.warn('[WebSocket] Server refused a request:', code, message.data.message)
+      return
     }
+    devLog.error('[WebSocket] Server error:', message.data)
   }
 
   private handleError(error: Error): void {
@@ -464,20 +541,25 @@ export class WebSocketClient {
       return
     }
 
-    // Calculate delay with exponential backoff
-    const delay = Math.min(
-      this.config.initialReconnectDelay * Math.pow(2, this.reconnectAttempts),
-      this.config.maxReconnectDelay
+    const delay = fullJitterDelay(
+      this.reconnectAttempts,
+      this.config.initialReconnectDelay,
+      this.config.maxReconnectDelay,
+      this.config.random
     )
     this.reconnectAttempts++
 
     devLog.log(
       `[WebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts || 'unlimited'})`
     )
+    this.scheduleReconnectIn(delay)
+  }
 
+  private scheduleReconnectIn(delay: number): void {
     this.setState('reconnecting')
-
+    if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout)
     this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null
       this.createConnection()
     }, delay)
   }
@@ -513,6 +595,10 @@ export class WebSocketClient {
       clearTimeout(this.reconnectTimeout)
       this.reconnectTimeout = null
     }
+    if (this.stableTimeout) {
+      clearTimeout(this.stableTimeout)
+      this.stableTimeout = null
+    }
     if (this.pingTimeout) {
       clearInterval(this.pingTimeout)
       this.pingTimeout = null
@@ -525,7 +611,6 @@ export class WebSocketClient {
 
   private send(data: unknown): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      devLog.log('[DEBUG WS] Sending payload:', JSON.stringify(data))
       this.ws.send(JSON.stringify(data))
     }
   }

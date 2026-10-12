@@ -222,7 +222,7 @@ class Sim:
     def pick(self, chunks, s, from_queue):
         if self.fairness == "drr":
             tenants = {self.scans[c["scan"]].tenant for c in chunks}
-            t = min(tenants, key=lambda x: self.used(x))
+            t = min(tenants, key=self.used)
             c = next(c for c in chunks if self.scans[c["scan"]].tenant == t)
         else:
             c = chunks[0]

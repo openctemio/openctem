@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,6 +67,8 @@ type CreateIssueInput struct {
 	IssueType   string // "Bug", "Task", "Story"
 	Priority    string // "Highest", "High", "Medium", "Low", "Lowest"
 	Labels      []string
+	// ParentKey makes the issue a child of this issue (an epic).
+	ParentKey string
 }
 
 // CreateIssueResult contains the response from creating a Jira issue.
@@ -96,6 +100,9 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 	if len(input.Labels) > 0 {
 		fields["labels"] = input.Labels
 	}
+	if input.ParentKey != "" {
+		fields["parent"] = map[string]string{"key": input.ParentKey}
+	}
 
 	body := map[string]any{"fields": fields}
 	data, err := json.Marshal(body)
@@ -117,13 +124,13 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	respBody, err := httpsec.ReadLimited(resp.Body, maxResponseSize)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("jira api error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody)
 	}
 
 	var result CreateIssueResult
@@ -163,7 +170,7 @@ func (c *Client) GetIssueStatus(ctx context.Context, issueKey string) (string, e
 			} `json:"status"`
 		} `json:"fields"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &issue); err != nil {
 		return "", fmt.Errorf("parse response: %w", err)
 	}
 
@@ -196,12 +203,12 @@ func (c *Client) GetTransitions(ctx context.Context, issueKey string) ([]Transit
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	respBody, err := httpsec.ReadLimited(resp.Body, maxResponseSize)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("jira api error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody)
 	}
 
 	var parsed struct {
@@ -260,7 +267,7 @@ func (c *Client) DoTransition(ctx context.Context, issueKey, transitionID, comme
 	// Jira returns 204 No Content on a successful transition.
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-		return fmt.Errorf("jira transition error (status %d): %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("jira transition: %w", httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody))
 	}
 	return nil
 }
@@ -291,7 +298,7 @@ func (c *Client) AddComment(ctx context.Context, issueKey, body string) error {
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-		return fmt.Errorf("jira comment error (status %d): %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("jira comment: %w", httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody))
 	}
 	return nil
 }
@@ -344,7 +351,7 @@ func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 		if err != nil {
 			return nil, fmt.Errorf("jira api call: %w", err)
 		}
-		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		body, err := httpsec.ReadLimited(resp.Body, maxResponseSize)
 		_ = resp.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("read response: %w", err)
@@ -388,4 +395,93 @@ func (c *Client) TestConnection(ctx context.Context) error {
 		return fmt.Errorf("jira authentication failed (status %d)", resp.StatusCode)
 	}
 	return nil
+}
+
+// SiteURL is the Jira site this client talks to (scheme and host).
+func (c *Client) SiteURL() string { return c.baseURL }
+
+// Issue is a Jira issue found by SearchIssues.
+type Issue struct {
+	Key       string
+	Summary   string
+	Type      string
+	Status    string
+	BrowseURL string
+}
+
+// issueKeyRe matches a Jira issue key such as SEC-42.
+var issueKeyRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]+-\d+$`)
+
+// SearchJQL builds the JQL for a picker query: an exact key when the text is
+// one, else a text search; quotes and backslashes are escaped.
+func SearchJQL(text string) string {
+	text = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, text)
+	if len(text) > 200 {
+		text = text[:200]
+	}
+	text = strings.TrimSpace(text)
+	if issueKeyRe.MatchString(strings.ToUpper(text)) {
+		return `key = "` + strings.ToUpper(text) + `"`
+	}
+	esc := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(text)
+	if esc == "" {
+		return `ORDER BY updated DESC`
+	}
+	return `text ~ "` + esc + `" ORDER BY updated DESC`
+}
+
+// SearchIssues searches issues the credentials can see (at most max).
+func (c *Client) SearchIssues(ctx context.Context, text string, max int) ([]Issue, error) {
+	if max <= 0 || max > 50 {
+		max = 20
+	}
+	q := url.Values{}
+	q.Set("jql", SearchJQL(text))
+	q.Set("fields", "summary,issuetype,status")
+	q.Set("maxResults", strconv.Itoa(max))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/rest/api/2/search?"+q.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.SetBasicAuth(c.email, c.apiToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jira api call: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := httpsec.ReadLimited(resp.Body, maxResponseSize)
+		return nil, httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, body)
+	}
+	var out struct {
+		Issues []struct {
+			Key    string `json:"key"`
+			Fields struct {
+				Summary   string `json:"summary"`
+				IssueType struct {
+					Name string `json:"name"`
+				} `json:"issuetype"`
+				Status struct {
+					Name string `json:"name"`
+				} `json:"status"`
+			} `json:"fields"`
+		} `json:"issues"`
+	}
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &out); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	issues := make([]Issue, 0, len(out.Issues))
+	for _, i := range out.Issues {
+		issues = append(issues, Issue{
+			Key: i.Key, Summary: i.Fields.Summary, Type: i.Fields.IssueType.Name,
+			Status: i.Fields.Status.Name, BrowseURL: c.baseURL + "/browse/" + i.Key,
+		})
+	}
+	return issues, nil
 }

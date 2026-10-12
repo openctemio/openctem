@@ -1,75 +1,41 @@
 /**
- * Platform sensor API hooks: GET /api/v1/platform/stats (any member of the
- * organization; aggregate pool numbers plus this organization's queue).
+ * Platform scanning hook: GET /api/v1/platform/scanning (members who read
+ * sensors or scans). The shared platform sensors as a service, never the
+ * sensors themselves.
  */
 
 'use client'
 
-import useSWR, { type SWRConfiguration, mutate } from 'swr'
+import useSWR, { type SWRConfiguration } from 'swr'
 import { get } from './client'
-import { handleApiError } from './error-handler'
 import { platformEndpoints } from './endpoints'
-import type { PlatformStatsResponse } from './platform-types'
+import type { PlatformScanningResponse } from './platform-types'
 
 const defaultConfig: SWRConfiguration = {
   revalidateOnFocus: false,
   revalidateOnReconnect: true,
-  // Don't retry on client errors (4xx) - only retry on server/network errors
-  shouldRetryOnError: (error) => {
-    if (error?.statusCode >= 400 && error?.statusCode < 500) {
-      return false
-    }
-    return true
-  },
+  // A 4xx (no permission) is an answer, not a blip: no retry, no toast. The
+  // callers render nothing then.
+  shouldRetryOnError: (error) => !(error?.statusCode >= 400 && error?.statusCode < 500),
   errorRetryCount: 3,
-  errorRetryInterval: 1000,
   dedupingInterval: 2000,
-  onError: (error) => {
-    handleApiError(error, {
-      showToast: true,
-      logError: true,
-    })
-  },
 }
 
 export const platformKeys = {
   all: ['platform'] as const,
-  stats: () => [...platformKeys.all, 'stats'] as const,
-}
-
-/** Invalidate all platform caches. */
-export async function invalidatePlatformCache() {
-  await mutate((key) => Array.isArray(key) && key[0] === 'platform', undefined, {
-    revalidate: true,
-  })
-}
-
-/** Invalidate the platform stats cache. */
-export async function invalidatePlatformStatsCache() {
-  await mutate(platformKeys.stats(), undefined, { revalidate: true })
-}
-
-/** GET /api/v1/platform/stats. */
-export function usePlatformStats(config?: SWRConfiguration) {
-  return useSWR<PlatformStatsResponse>(
-    platformKeys.stats(),
-    () => get<PlatformStatsResponse>(platformEndpoints.stats()),
-    { ...defaultConfig, ...config }
-  )
+  scanning: () => [...platformKeys.all, 'scanning'] as const,
 }
 
 /**
- * Whether this installation has platform sensors, plus the raw stats. Read
- * the numbers through `summarizePlatformPool` (`@/features/platform`): the
- * field names overstate what they measure.
+ * Platform scanning as the organization may use it. `offered` is false while
+ * loading, on an error, and when the organization may not use it: callers
+ * then show nothing (no upsell).
  */
-export function usePlatformUsage(config?: SWRConfiguration) {
-  const { data, isLoading, error } = usePlatformStats(config)
-  return {
-    /** The installation has at least one active platform sensor. */
-    isEnabled: data?.enabled ?? false,
-    data,
-    isLoading,
-    error,
-  }
+export function usePlatformScanning(config?: SWRConfiguration) {
+  const { data, isLoading, error } = useSWR<PlatformScanningResponse>(
+    platformKeys.scanning(),
+    () => get<PlatformScanningResponse>(platformEndpoints.scanning()),
+    { ...defaultConfig, ...config }
+  )
+  return { data, offered: data?.offered === true, isLoading, error }
 }

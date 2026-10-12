@@ -19,6 +19,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogBody,
 } from '@/components/ui/alert-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
@@ -34,9 +35,9 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { useSWRConfig } from 'swr'
+import { useBootstrapContext } from '@/context/bootstrap-provider'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, isHiddenReleaseStatus } from '@/lib/permissions'
 import {
   useTenantModules,
   useUpdateTenantModules,
@@ -50,7 +51,7 @@ import type {
   ModuleToggle,
   ToggleIssue,
 } from '@/features/organization/api/use-tenant-modules'
-import { BundleSubscriptionCard } from '@/features/organization/components/bundle-subscription-card'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Details payload nested under ApiClientError.details when the backend
 // rejects a toggle because of the dependency graph. Shape mirrors
@@ -105,9 +106,10 @@ const PHASE_GROUPS: { key: string; label: string; categories: string[] }[] = [
 ]
 
 const PAGE_DESCRIPTION =
-  'Pick the products your team runs and fine-tune individual features; nothing here is destructive.'
+  'Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.'
 
 export default function ModuleManagementPage() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id
 
@@ -115,7 +117,10 @@ export default function ModuleManagementPage() {
   const { updateModules, isUpdating } = useUpdateTenantModules(tenantId)
   const { resetModules, isResetting } = useResetTenantModules(tenantId)
   const { edges: dependencyEdges } = useModuleDependencyGraph(tenantId)
-  const { mutate: globalMutate } = useSWRConfig()
+  // Sidebar, route guard and module checks read the bootstrap set.
+  const { refreshModules, data: bootstrapData } = useBootstrapContext()
+  // Modules in read-only grace (lost from the plan recently), with its end.
+  const readOnlyModules = bootstrapData?.modules?.read_only_modules
   // Subscribe to "module.updated" WS events on the tenant channel so
   // an admin in another tab (or another admin) flipping a module
   // reflects on this page within ~100ms instead of waiting for the
@@ -173,8 +178,8 @@ export default function ModuleManagementPage() {
     const core: TenantModule[] = []
     const features: TenantModule[] = []
     for (const mod of modules) {
-      // Hide deprecated modules entirely
-      if (mod.release_status === 'deprecated') continue
+      // Hide deprecated and not-yet-built modules entirely
+      if (isHiddenReleaseStatus(mod.release_status)) continue
       if (mod.is_core) {
         core.push(mod)
       } else {
@@ -258,7 +263,7 @@ export default function ModuleManagementPage() {
           await mutate(result, false)
         }
         setPendingChanges({})
-        await globalMutate('/api/v1/me/modules')
+        await refreshModules()
         toast.success('Modules updated successfully')
 
         for (const w of result?.warnings ?? []) {
@@ -276,7 +281,7 @@ export default function ModuleManagementPage() {
         toast.error(getErrorMessage(err))
       }
     },
-    [updateModules, mutate, globalMutate]
+    [updateModules, mutate, refreshModules]
   )
 
   const handleSave = useCallback(async () => {
@@ -331,12 +336,12 @@ export default function ModuleManagementPage() {
       setPendingChanges({})
       setShowResetDialog(false)
       // Invalidate sidebar module cache so changes reflect immediately
-      await globalMutate('/api/v1/me/modules')
+      await refreshModules()
       toast.success('Modules reset to defaults (all enabled)')
     } catch (err) {
       toast.error(getErrorMessage(err))
     }
-  }, [resetModules, mutate, globalMutate])
+  }, [resetModules, mutate, refreshModules])
 
   const pendingEnabled = Object.values(pendingChanges).filter(Boolean).length
   const pendingDisabled = Object.values(pendingChanges).filter((v) => !v).length
@@ -376,7 +381,7 @@ export default function ModuleManagementPage() {
   return (
     <Main>
       <PageHeader title="Modules" description={PAGE_DESCRIPTION}>
-        <Can permission={Permission.TeamUpdate}>
+        <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
           <Button
             variant="outline"
             size="sm"
@@ -384,7 +389,7 @@ export default function ModuleManagementPage() {
             disabled={isResetting}
           >
             <RotateCcw className="h-4 w-4" />
-            Reset to defaults
+            Remove my changes
           </Button>
         </Can>
       </PageHeader>
@@ -408,15 +413,6 @@ export default function ModuleManagementPage() {
           ]}
         />
       )}
-
-      {/* Products — the single control for module packaging. Pick the large
-          products this team runs; the enabled set resolves live from that
-          selection. This replaces the old one-shot "apply a preset" flow,
-          which overwrote the config and duplicated this exact catalog. The
-          manual toggles below layer on top as non-destructive overrides. */}
-      <Can permission={Permission.TeamUpdate}>
-        <BundleSubscriptionCard tenantId={tenantId} onChanged={() => mutate()} />
-      </Can>
 
       <div className="mt-5 space-y-5">
         {/* Core Modules - Collapsed by default */}
@@ -459,6 +455,7 @@ export default function ModuleManagementPage() {
                       requires={requires[mod.id]}
                       requiredBy={requiredBy[mod.id]}
                       moduleNames={moduleNames}
+                      readOnlyUntil={readOnlyModules?.[mod.id]}
                     />
                   ))}
                 </div>
@@ -519,6 +516,7 @@ export default function ModuleManagementPage() {
                             requires={requires[mod.id]}
                             requiredBy={requiredBy[mod.id]}
                             moduleNames={moduleNames}
+                            readOnlyUntil={readOnlyModules?.[mod.id]}
                           />
                         ))}
                       </div>
@@ -538,7 +536,7 @@ export default function ModuleManagementPage() {
           Save sits in a bar pinned to the bottom of the content column, shown
           only while there are unsaved changes. */}
       {isDirty && (
-        <Can permission={Permission.TeamUpdate}>
+        <Can route="PATCH /api/v1/tenants/{tenant}/settings/modules">
           <div className="sticky bottom-4 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-lg">
             <div className="text-sm tabular-nums text-muted-foreground">
               {[
@@ -565,7 +563,7 @@ export default function ModuleManagementPage() {
           a save because of the module graph. Lists the concrete modules
           the admin needs to flip before the proposed toggle will take. */}
       <AlertDialog open={!!depConflict} onOpenChange={(open) => !open && setDepConflict(null)}>
-        <AlertDialogContent className="max-w-lg">
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-muted-foreground" />
@@ -582,50 +580,52 @@ export default function ModuleManagementPage() {
                 : `${depConflict?.required?.length ?? 0} module(s) must be enabled before ${depConflict?.module_name ?? ''}`}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-3 text-sm">
-            {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
-              <div>
-                <div className="text-muted-foreground">
-                  The following{' '}
-                  <span className="font-semibold">{depConflict.blockers?.length}</span> module(s)
-                  depend on <span className="font-medium">{depConflict.module_name}</span>. You can
-                  disable them all together, or cancel and handle them manually:
+          <AlertDialogBody>
+            <div className="space-y-3 text-sm">
+              {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-muted-foreground">
+                    The following{' '}
+                    <span className="font-semibold">{depConflict.blockers?.length}</span> module(s)
+                    depend on <span className="font-medium">{depConflict.module_name}</span>. You
+                    can disable them all together, or cancel and handle them manually:
+                  </div>
+                  <ul className="mt-2 space-y-1.5">
+                    {depConflict.blockers?.map((b) => (
+                      <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium">{b.name}</div>
+                          <code className="text-xs text-muted-foreground">{b.module_id}</code>
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="mt-2 space-y-1.5">
-                  {depConflict.blockers?.map((b) => (
-                    <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium">{b.name}</div>
-                        <code className="text-xs text-muted-foreground">{b.module_id}</code>
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
-              <div>
-                <div className="text-muted-foreground">
-                  <span className="font-medium">{depConflict.module_name}</span> requires{' '}
-                  <span className="font-semibold">{depConflict.required?.length}</span> other
-                  module(s) that are currently disabled. You can enable them all together, or cancel
-                  and handle them manually:
+              )}
+              {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-muted-foreground">
+                    <span className="font-medium">{depConflict.module_name}</span> requires{' '}
+                    <span className="font-semibold">{depConflict.required?.length}</span> other
+                    module(s) that are currently disabled. You can enable them all together, or
+                    cancel and handle them manually:
+                  </div>
+                  <ul className="mt-2 space-y-1.5">
+                    {depConflict.required?.map((r) => (
+                      <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium">{r.name}</div>
+                          <code className="text-xs text-muted-foreground">{r.module_id}</code>
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="mt-2 space-y-1.5">
-                  {depConflict.required?.map((r) => (
-                    <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium">{r.name}</div>
-                        <code className="text-xs text-muted-foreground">{r.module_id}</code>
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDepConflict(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleCascadeResolve} disabled={isUpdating}>
@@ -641,9 +641,13 @@ export default function ModuleManagementPage() {
       <ConfirmDialog
         open={showResetDialog}
         onOpenChange={setShowResetDialog}
-        title="Reset modules to defaults"
-        desc="This will enable all modules for your organization. Any modules you previously disabled will be re-enabled. This action cannot be undone."
-        confirmText="Reset all"
+        title={t('confirm.modules.resetTitle', 'Remove your module changes?')}
+        desc={t(
+          'confirm.modules.resetDesc',
+          'Every module you turned on or off by hand goes back to the plan default: every module your plan includes is on again. Your changes cannot be restored.'
+        )}
+        confirmText={t('confirm.modules.reset', 'Remove changes')}
+        destructive
         isLoading={isResetting}
         handleConfirm={() => void handleReset()}
       />
@@ -665,6 +669,7 @@ function ModuleRow({
   requires = [],
   requiredBy = [],
   moduleNames = {},
+  readOnlyUntil,
 }: {
   mod: TenantModule
   isEnabled: boolean
@@ -675,19 +680,24 @@ function ModuleRow({
   requires?: DependencyEdgeWithKind[]
   requiredBy?: DependencyEdgeWithKind[]
   moduleNames?: Record<string, string>
+  /** End of the module's read-only grace, when the plan dropped it recently. */
+  readOnlyUntil?: string
 }) {
   const hasSubModules = mod.sub_modules && mod.sub_modules.length > 0
   const categoryLabel = CATEGORY_LABELS[mod.category] || mod.category
 
-  // Filter out deprecated sub-modules; keep coming_soon (shown as disabled)
+  // Deprecated and not-yet-built sub-modules are not shown.
   const visibleSubModules = hasSubModules
-    ? mod.sub_modules!.filter((sub) => sub.release_status !== 'deprecated')
+    ? mod.sub_modules!.filter((sub) => !isHiddenReleaseStatus(sub.release_status))
     : []
 
   // Count only HARD edges for the compact badges — soft edges are
   // surfaced as warnings post-save, they're noisy in the row header.
   const hardRequires = requires.filter((e) => e.type === 'hard')
   const hardRequiredBy = requiredBy.filter((e) => e.type === 'hard')
+  // Not in the organization's plan (and no platform grant): it cannot be
+  // switched on here, only by a plan change or a grant.
+  const notEntitled = !mod.is_core && mod.entitled === false
 
   return (
     <div>
@@ -709,9 +719,24 @@ function ModuleRow({
                 Beta
               </Badge>
             )}
-            {mod.release_status === 'coming_soon' && (
-              <Badge variant="outline" className="text-xs text-muted-foreground">
-                Coming soon
+            {notEntitled && readOnlyUntil && (
+              <Badge
+                variant="outline"
+                className="gap-1 text-xs text-warning"
+                title="Your plan no longer includes this module. Its data can be viewed and exported until then; changes are turned off."
+              >
+                <Lock className="h-3 w-3" />
+                Read-only until {new Date(readOnlyUntil).toLocaleDateString()}
+              </Badge>
+            )}
+            {notEntitled && !readOnlyUntil && (
+              <Badge
+                variant="outline"
+                className="gap-1 text-xs text-muted-foreground"
+                title="Your plan does not include this module. Contact your platform administrator."
+              >
+                <Lock className="h-3 w-3" />
+                Not in your plan
               </Badge>
             )}
             {hasPendingChange && (
@@ -757,7 +782,7 @@ function ModuleRow({
           <Switch
             checked={isEnabled}
             onCheckedChange={() => onToggle(mod.id, isEnabled)}
-            disabled={mod.is_core || isUpdating}
+            disabled={mod.is_core || notEntitled || isUpdating}
             aria-label={`Toggle ${mod.name}`}
           />
         </div>

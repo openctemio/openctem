@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -199,20 +200,35 @@ func (s *SMTPSender) buildMessage(msg *Message) []byte {
 
 // sendSMTP sends the email via SMTP.
 func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) error {
-	// SSRF guard: Host is tenant-configurable; block internal targets before
-	// dialing (see httpsec.ValidateHost).
-	if err := httpsec.ValidateHost(ctx, s.config.Host); err != nil {
+	// SSRF guard: Host is tenant-configurable (per-tenant SMTP), so resolve it
+	// once, refuse it if any answer is in a blocked range, and dial the vetted
+	// IP. Dialing the hostname would resolve it a second time, and a
+	// DNS-rebinding answer (TTL 0) could then point the connection at an
+	// internal address after the check passed. TLS and the SMTP greeting still
+	// use the hostname, so certificate verification is unchanged.
+	safeIP, err := resolveSMTPHost(ctx, s.config.Host)
+	if err != nil {
 		return fmt.Errorf("smtp host rejected: %w", err)
 	}
-	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
+	addr := net.JoinHostPort(safeIP.String(), strconv.Itoa(s.config.Port))
 
-	// Create connection with timeout
-	dialer := &net.Dialer{Timeout: s.config.Timeout}
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	conn, err := dialSMTP(ctx, s.config.Timeout, addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 	defer conn.Close()
+
+	// Bound the whole SMTP session, not only the dial: a relay that accepts
+	// the connection and then never answers (or trickles one byte at a time)
+	// would otherwise hold this goroutine forever. The context deadline wins
+	// when it is earlier.
+	deadline := time.Now().Add(sessionTimeout(s.config.Timeout))
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return fmt.Errorf("failed to set deadline: %w", err)
+	}
 
 	// Create SMTP client
 	client, err := smtp.NewClient(conn, s.config.Host)
@@ -264,6 +280,26 @@ func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) 
 
 	// Quit
 	return client.Quit()
+}
+
+// resolveSMTPHost and dialSMTP are the network seams of sendSMTP; tests
+// replace them to observe the dialed address without real DNS.
+var (
+	resolveSMTPHost = httpsec.ResolveSafeHost
+	dialSMTP        = func(ctx context.Context, timeout time.Duration, addr string) (net.Conn, error) {
+		d := &net.Dialer{Timeout: timeout}
+		return d.DialContext(ctx, "tcp", addr)
+	}
+)
+
+// sessionTimeout is the budget for one complete SMTP session (greeting,
+// STARTTLS, AUTH, MAIL/RCPT/DATA, QUIT): a few round trips of the dial
+// timeout.
+func sessionTimeout(dial time.Duration) time.Duration {
+	if dial <= 0 {
+		dial = 30 * time.Second
+	}
+	return 4 * dial
 }
 
 // NoOpSender is a sender that does nothing (for development/testing).
