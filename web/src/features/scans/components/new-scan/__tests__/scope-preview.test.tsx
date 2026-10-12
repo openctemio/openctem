@@ -14,7 +14,9 @@ vi.mock('@/lib/api/client', () => api)
 const perms = vi.hoisted(() => ({ scopeRead: true }))
 vi.mock('@/lib/permissions', async (orig) => {
   const actual = await orig<typeof import('@/lib/permissions')>()
-  const can = (p: string) => p !== actual.Permission.ScopeRead || perms.scopeRead
+  // A member: request_access fixes are only ever sent to non-approvers.
+  const can = (p: string) =>
+    p !== actual.Permission.ScopeApprove && (p !== actual.Permission.ScopeRead || perms.scopeRead)
   return { ...actual, useHasPermission: can, usePermissions: () => ({ can }) }
 })
 vi.mock('@/context/tenant-provider', () => ({
