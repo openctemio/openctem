@@ -30,6 +30,7 @@ export {
   type ScopeRefusal,
 } from './components/scope-check-results'
 export { ScopeCheckBadge } from './components/scope-check-badge'
+export { ScopePendingEntry } from './components/scope-pending-entry'
 export {
   ScopeChangePreview,
   consequenceText,
