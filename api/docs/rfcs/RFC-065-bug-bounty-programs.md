@@ -80,7 +80,7 @@ one.
 
 | Source | Created by | Comes into effect | Platform sensors | Max tier |
 |---|---|---|---|---|
-| `ownership` | `POST /scope/targets` (RFC-054) | tenant approval policy | under `SCOPE_ACTIVE_PROOF` (RFC-054 §8.1) | entry's `max_tier` |
+| `ownership` | `POST /scope/targets` (RFC-054) | tenant approval policy | under the platform sensor proof setting (RFC-054 §8.1) | entry's `max_tier` |
 | `self_attestation` | `POST /scope/targets` with `authorization_source` | tenant approval policy | as `ownership` | entry's `max_tier` |
 | `program` | programs routes only (§6) | the creator's attestation of the program's current terms | never (P0–P1) | `t1` (`t0` if the program forbids automated scanning) |
 | `authorization_letter` | P1 | letter + expiry (+ approvals per policy) | as `ownership` | entry's `max_tier` |
@@ -246,7 +246,7 @@ The trigger refuses platform sensors for a target that only `program`
 entries cover: an explicit `sensor_preference: platform` answers `400
 PLATFORM_SENSOR_REFUSED` naming the targets; `auto` keeps the job on the
 tenant's sensors. A target an `ownership` entry also covers is unaffected.
-This holds in every `SCOPE_ACTIVE_PROOF` mode. P2 lifts it for authoritative
+This holds whether the platform sensor proof setting is on or off. P2 lifts it for authoritative
 programs, with per-program quotas, an abuse contact, a kill switch per
 program and target, and researcher terms of use.
 
