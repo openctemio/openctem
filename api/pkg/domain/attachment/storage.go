@@ -135,6 +135,9 @@ var (
 	// cannot be used (or a file lives in a bucket no longer configured). The
 	// operation fails rather than falling back to the server-wide storage.
 	ErrStorageUnavailable = fmt.Errorf("organization file storage unavailable")
+	// ErrInfected: the malware scanner reported the file; it is not embedded
+	// or served without an explicit confirmation.
+	ErrInfected = fmt.Errorf("file flagged by the malware scanner")
 )
 
 // Validation constants

@@ -788,6 +788,11 @@ vars:
     group: "Attachment storage"
     type: string
     description: "Bucket for `s3` / `minio`. Required with those providers."
+  - name: STORAGE_CLAMD_ADDRESS
+    component: api
+    group: "Attachment storage"
+    type: string
+    description: "ClamAV daemon (`host:port` or `unix:/path`, e.g. `clamav:3310` with `docker-compose.clamav.yml`) that scans new uploads. A flagged file is kept and marked, audited `attachment.malware_detected`, and downloads only after a confirmation. Unset: no scanning."
   - name: STORAGE_ENDPOINT
     component: api
     group: "Attachment storage"
