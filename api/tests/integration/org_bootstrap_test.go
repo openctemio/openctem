@@ -187,6 +187,48 @@ func TestBootstrapAdminEmailsOwnerLink(t *testing.T) {
 	}
 }
 
+// failingOrgBootMailer can deliver (SMTP is configured) but the send fails,
+// as with an unreachable relay.
+type failingOrgBootMailer struct{ attempts int }
+
+func (m *failingOrgBootMailer) CanDeliverTo(context.Context, string) bool { return true }
+func (m *failingOrgBootMailer) SendAccountSetupEmail(context.Context, string, string, string, string, string, time.Duration) error {
+	m.attempts++
+	return errors.New("dial tcp 192.0.2.1:587: connect: connection refused")
+}
+
+// When sending the owner's email fails the link is printed once, with a
+// warning that it is a secret, and it is the link stored (hashed) on the
+// account. Without this the owner was left with no link at all.
+func TestBootstrapAdminPrintsOwnerLinkWhenEmailFails(t *testing.T) {
+	db := openConsoleDB(t)
+	o := orgBootOptions(t, db)
+	mailer := &failingOrgBootMailer{}
+	o.OrgSetupMailer = mailer
+	var out bytes.Buffer
+	if err := adminbootstrap.Run(context.Background(), db.DB, o, &out); err != nil {
+		t.Fatalf("run: %v\n%s", err, out.String())
+	}
+	if mailer.attempts != 1 {
+		t.Fatalf("send attempts = %d, want 1", mailer.attempts)
+	}
+	text := out.String()
+	if !strings.Contains(text, "could not be sent") || !strings.Contains(text, "is a secret") {
+		t.Fatalf("no failed-send warning:\n%s", text)
+	}
+	links := regexp.MustCompile(`https://ctem\.example\.com/set-password#token=(\S*)`).FindAllStringSubmatch(text, -1)
+	if len(links) != 1 || links[0][1] == "" {
+		t.Fatalf("want the link printed once with a token, got %q:\n%s", links, text)
+	}
+	var resetHash sql.NullString
+	if err := db.QueryRow(`SELECT password_reset_token FROM users WHERE email = $1`, o.OrgOwnerEmail).Scan(&resetHash); err != nil {
+		t.Fatal(err)
+	}
+	if resetHash.String != crypto.HashToken(links[0][1]) {
+		t.Fatal("the printed link is not the one stored (hashed) on the owner account")
+	}
+}
+
 // An owner email that already has an account makes that account the owner (no
 // new account, no link). A platform administrator's account is refused and
 // nothing is left behind.

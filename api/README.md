@@ -168,11 +168,13 @@ docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/re
 |----------|-------------|
 | `DB_PASSWORD` | PostgreSQL password |
 | `REDIS_PASSWORD` | Redis password |
-| `AUTH_JWT_SECRET` | JWT signing secret (min 64 chars) |
 | `APP_ENCRYPTION_KEY` | AES-256 key (64 hex chars: `openssl rand -hex 32`) |
 | `CORS_ALLOWED_ORIGINS` | Allowed CORS origins |
 | `DB_SSLMODE` | `require` or `verify-full` (the default `disable` is refused in production) |
 | `REDIS_TLS_ENABLED` | `true`; with a private CA also `REDIS_TLS_CA_FILE` |
+
+`AUTH_JWT_SECRET` (session signing secret) is optional: unset, it is derived from
+`APP_ENCRYPTION_KEY`. Set it (at least 64 characters) to rotate the two independently.
 
 `APP_ENV` defaults to `production` when unset; set `APP_ENV=development`
 explicitly for local development (`.env.example` does).
@@ -331,7 +333,6 @@ kubectl create namespace openctem
 
 kubectl create secret generic openctem-api-secrets \
   --namespace openctem \
-  --from-literal=AUTH_JWT_SECRET=$(openssl rand -base64 48) \
   --from-literal=APP_ENCRYPTION_KEY=$(openssl rand -hex 32) \
   --from-literal=DB_USER=openctem \
   --from-literal=DB_PASSWORD=$(openssl rand -hex 24) \
