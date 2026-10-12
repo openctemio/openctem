@@ -41,18 +41,15 @@ import { scopeErrorMessage } from '../lib/scope-codes'
 import { TIER_HINT, TIER_LABEL } from '../lib/scope-entry'
 import { ScopeIntrusiveSettings } from './scope-intrusive-settings'
 
+/** The platform's proof requirement (RFC-054 §8.1), as the settings show it. */
 export const ACTIVE_PROOF_TEXT: Record<string, { label: string; hint: string }> = {
   off: {
-    label: 'Off',
-    hint: 'Scans need a scope entry, seed or verified domain, not ownership proof. Intrusive (T2) probes still need a verified domain.',
+    label: 'Not required',
+    hint: 'Scans need a scope entry, seed or verified domain, not ownership proof.',
   },
   platform_sensors: {
     label: 'Platform sensors need proof',
-    hint: "Scans that run on the platform's shared sensors need every target under a verified domain of your organization. Your own sensors need a scope entry only. Intrusive (T2) probes always need a verified domain.",
-  },
-  all: {
-    label: 'Every active probe needs proof',
-    hint: 'Every active probe on an internet target needs a verified domain of your organization. Private targets routed by a scan zone are excepted.',
+    hint: "Scans that run on the platform's shared sensors need every target under a verified domain of your organization, and intrusive (T2) probes need one on any sensor. Your own sensors need a scope entry only.",
   },
 }
 
@@ -141,7 +138,11 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
   const initial = settingsToInput(saved)
   const dirty = JSON.stringify(initial) !== JSON.stringify(form)
   const admins = saved.admin_count ?? 0
-  const proof = ACTIVE_PROOF_TEXT[saved.active_proof ?? 'off'] ?? ACTIVE_PROOF_TEXT.off
+  const proofMode = saved.active_proof === 'platform_sensors' ? 'platform_sensors' : 'off'
+  const proof = {
+    label: t(`scope.settings.proof.${proofMode}.label`, ACTIVE_PROOF_TEXT[proofMode].label),
+    hint: t(`scope.settings.proof.${proofMode}.hint`, ACTIVE_PROOF_TEXT[proofMode].hint),
+  }
   const nextApprovals = effectiveApprovalsFor(form.widening_approvals, admins)
 
   const save = async () => {
@@ -181,9 +182,9 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
               hint={`From ${admins} ${admins === 1 ? 'administrator' : 'administrators'}; the requester never counts. Intrusive (T2) entries always need one.`}
             />
             <Fact
-              label="Active-probe proof"
+              label={t('scope.settings.proof.title', 'Active-probe proof')}
               value={proof.label}
-              hint={`${proof.hint} Set by the platform operator.`}
+              hint={`${proof.hint} ${t('scope.settings.proof.byOperator', 'Set by the platform operator.')}`}
               locked
             />
             <Fact

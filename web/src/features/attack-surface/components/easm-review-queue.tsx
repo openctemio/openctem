@@ -53,6 +53,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** The queue views: what is waiting, and what was rejected (for undo). */
 export const REVIEW_VIEWS: { id: string; label: string; states: AttributionState[] }[] = [
@@ -74,6 +75,7 @@ function stateOf(item: EASMReviewItem): AttributionState {
 }
 
 export function EASMReviewQueue() {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canDecide = can(Permission.AssetsWrite)
   const canAddScope = can(Permission.ScopeWrite)
@@ -417,7 +419,10 @@ export function EASMReviewQueue() {
       />
       {!canDecide && (page?.total ?? 0) > 0 && (
         <p className="text-sm text-muted-foreground">
-          You can view this queue. Deciding ownership needs the assets:write permission.
+          {t(
+            'scope.review.readOnly',
+            'You can view this queue. Deciding ownership needs permission to edit assets.'
+          )}
         </p>
       )}
     </div>
