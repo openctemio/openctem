@@ -1114,6 +1114,39 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
   `collector` (a rotated key gets `sensor.CollectorScopes()`). Until
   enrollment ships ([RFC-032](../rfcs/RFC-032-sensor-enrollment-and-identity.md)),
   the collector uses an `octs_` key and renews it like any other sensor.
+- **Grant and trust.** Its reports name no command, so they pass the push
+  ingest gate (`internal/app/ingest/quarantine.go` `admitPush`), which needs
+  two things: push ingest in the sensor's grant, and trust level `trusted`
+  (`Grant.Effective()` turns push ingest off for any sensor that is not
+  trusted).
+  - *Grant.* A sensor created with type `collector` (create API or pairing
+    approval without a chosen profile) gets the `collector` profile:
+    `collect` and `connector_sync` jobs, passive tier, no target network,
+    push ingest on (insert trigger `sensor_grants_default`, migration
+    002075; `sensor.DefaultProfileFor`). Sensors created before that keep
+    their grant; a collector still on `internal-network-scanner` needs its
+    profile changed to `collector` on its Grant.
+  - *Trust.* Trust is never automatic. A new collector starts at trust level
+    `new`, and every report is refused until an administrator promotes it,
+    either on the sensor's Grant (**Promote to Trusted**) or at creation
+    with the checkbox **Trust this collector to push asset reports**
+    (`POST /api/v1/sensors` with `"trusted": true`). The checkbox is off by
+    default, applies to type `collector` only (400 otherwise) and needs
+    `sensors:grant:widen` like any promotion; that is checked before the
+    sensor is created, so a refusal creates nothing. The promotion is
+    audited at high severity (`sensor.grant_changed`) and notifies every
+    administrator. If it fails after the sensor exists, the response says
+    `"trusted": false` and the sensor stays `new`.
+  - *Refusal.* A refused report gets error code `PUSH_INGEST_NOT_GRANTED`
+    (protocol v2 item error `push_ingest_not_granted`), whose message names
+    what is missing: the grant (`ingest.ErrPushIngestNotGranted`) or trust
+    (`ingest.ErrPushIngestUntrusted`). The sensor timeline event and the
+    `sensor.push_refused_grant` audit entry carry `missing: grant|trust`,
+    and the sensor's Grant section in the console explains the refusal for
+    a collector and links the fix.
+  - Once admitted, a collector report may create assets but never change an
+    existing one, and scope exclusions apply (see the result binding
+    section below).
 - **Protocol.** It uses protocol v2 through sdk-go `pkg/sensorkit` (hello,
   heartbeat with control block, manifest, results ingest, durable outbox,
   key renewal), with commands off. Reports go to

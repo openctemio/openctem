@@ -85,7 +85,10 @@ const (
 	DetailQuarantined      = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
 	DetailQuarantineFull   = "the report names no command and the results quarantine is full: not kept"
 	// DetailPushIngestNotGranted goes with CodePushIngestNotGranted.
-	DetailPushIngestNotGranted = "the report names no command and this sensor's grant does not allow results without a job: not kept"
+	DetailPushIngestNotGranted = "the report names no command and this sensor's grant does not allow results without a job (push ingest is off in its grant): not kept"
+	// DetailPushIngestUntrusted goes with CodePushIngestNotGranted when the
+	// grant allows push ingest but the sensor is not trusted.
+	DetailPushIngestUntrusted = "the report names no command; this sensor's grant allows results without a job, but the sensor is not trusted: not kept"
 )
 
 // Counts are asset and finding counts on the status resource.
