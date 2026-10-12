@@ -20,6 +20,8 @@ on:
       - 'go.work.sum'
       - '.github/**'
       - 'deploy/**'
+      - '!**/*.md'
+      - '!api/docs/**'
   pull_request:
     branches: [main, develop]
     paths:
@@ -29,6 +31,8 @@ on:
       - 'go.work.sum'
       - '.github/**'
       - 'deploy/**'
+      - '!**/*.md'
+      - '!api/docs/**'
   schedule:
     - cron: '0 0 * * 1' # Monday 00:00 UTC; schedules run from the default branch (main)
 

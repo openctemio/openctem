@@ -49,20 +49,34 @@ versions() {
 current="$(find "$dir" -maxdepth 1 -type f -name '*.sql' | versions)"
 lowest="$(awk 'NR == 1 {print $1}' <<<"$current")"
 
-# 1. One name per version (the .up/.down pair share it).
-dups="$(awk '{print $1}' <<<"$current" | uniq -d)"
-for v in $dups; do
-  names="$(awk -v v="$v" '$1 == v {print $3 "_" $2}' <<<"$current" | tr '\n' ' ')"
-  err "migration version $v is used more than once: ${names}- renumber one of them"
-done
-
-# 2. Added migrations must be above the base's highest version.
+added=""
 if [[ -n "$base" ]]; then
   base_list="$(git ls-tree --name-only "$base" -- "$dir/" | versions)"
   base_max="$(awk 'END {print ($1 == "" ? 0 : $1)}' <<<"$base_list")"
   # --no-renames: a file that replaces a base migration (same content under a
   # new number or name) is an addition here, not a rename to skip.
   added="$(git diff --no-renames --name-only --diff-filter=A "$base" HEAD -- "$dir/" | versions)"
+fi
+
+# 1. One name per version (the .up/.down pair share it). In warning mode
+# (pull_request), a version this change adds that the BASE also uses is the
+# same stale-number case as check 2: the merge queue renumbers it, and PR CI
+# runs the tests on a renumbered copy (pr-migration-renumber.sh). A version
+# shared by two migrations of this change, or by two base migrations, fails.
+dups="$(awk '{print $1}' <<<"$current" | uniq -d)"
+for v in $dups; do
+  names="$(awk -v v="$v" '$1 == v {print $3 "_" $2}' <<<"$current" | tr '\n' ' ')"
+  mine="$(awk -v v="$v" '$1 == v' <<<"$added" | wc -l)"
+  total="$(awk -v v="$v" '$1 == v' <<<"$current" | wc -l)"
+  if [[ "$below_base" == warning && "$mine" -eq 1 && "$total" -eq 2 ]]; then
+    warn "migration version $v is used more than once: ${names}- this change's copy is renumbered when the PR is queued"
+  else
+    err "migration version $v is used more than once: ${names}- renumber one of them"
+  fi
+done
+
+# 2. Added migrations must be above the base's highest version.
+if [[ -n "$base" ]]; then
   while read -r v name raw; do
     [[ -n "$v" ]] || continue
     if [[ "$name" == baseline ]] && (( v == lowest )); then
