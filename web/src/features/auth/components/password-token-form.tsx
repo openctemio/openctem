@@ -3,9 +3,9 @@
  *
  * Two flows share this form and the same API call
  * (POST /auth/reset-password {token, new_password}):
- * - "reset": the forgot-password email link (/reset-password?token=...)
+ * - "reset": the forgot-password email link (/reset-password#token=...)
  * - "setup": the one-time link an administrator gives a user they created
- *   (/set-password?token=...)
+ *   (/set-password#token=...)
  * Only the wording and the "get a new link" advice differ.
  */
 
@@ -30,6 +30,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { PasswordInput } from '@/components/password-input'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { resetPasswordSchema, type ResetPasswordInput } from '../schemas/auth.schema'
 import { resetPasswordAction } from '../actions/local-auth-actions'
@@ -80,13 +81,33 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
   },
 }
 
+/** Translates a mode's copy; the English text in PASSWORD_TOKEN_COPY is the fallback. */
+function useModeCopy(mode: PasswordTokenMode): ModeCopy {
+  const { t } = useTranslation()
+  const c = PASSWORD_TOKEN_COPY[mode]
+  const k = (field: string, fallback: string) =>
+    fallback ? t(`auth.passwordToken.${mode}.${field}`, fallback) : fallback
+  return {
+    title: k('title', c.title),
+    description: k('description', c.description),
+    submit: k('submit', c.submit),
+    successTitle: k('successTitle', c.successTitle),
+    successDescription: k('successDescription', c.successDescription),
+    invalidTitle: k('invalidTitle', c.invalidTitle),
+    invalidDescription: k('invalidDescription', c.invalidDescription),
+    newLink: c.newLink ? { href: c.newLink.href, label: k('newLinkLabel', c.newLink.label) } : null,
+    newLinkHint: k('newLinkHint', c.newLinkHint),
+  }
+}
+
 function isStaleLinkError(message: string) {
   const m = message.toLowerCase()
   return m.includes('expired') || m.includes('invalid')
 }
 
 export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; token: string }) {
-  const copy = PASSWORD_TOKEN_COPY[mode]
+  const copy = useModeCopy(mode)
+  const { t } = useTranslation()
 
   if (!token) {
     return (
@@ -102,7 +123,7 @@ export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; to
             ) : (
               <Link href="/login">
                 <ArrowLeft className="h-4 w-4" />
-                Back to sign in
+                {t('auth.common.backToSignIn', 'Back to sign in')}
               </Link>
             )}
           </Button>
@@ -118,7 +139,8 @@ export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; to
 }
 
 function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: string }) {
-  const copy = PASSWORD_TOKEN_COPY[mode]
+  const copy = useModeCopy(mode)
+  const { t } = useTranslation()
   const [isPending, startTransition] = useTransition()
   const [isSuccess, setIsSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -142,7 +164,10 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
         setIsSuccess(true)
         toast.success(copy.successDescription)
       } else {
-        const errorMessage = 'error' in result ? result.error : `${copy.submit} failed`
+        const errorMessage =
+          'error' in result
+            ? result.error
+            : t(`auth.passwordToken.${mode}.failed`, `${PASSWORD_TOKEN_COPY[mode].submit} failed`)
         setError(errorMessage)
         toast.error(errorMessage)
       }
@@ -163,7 +188,9 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
           <Button asChild className="w-full">
             <Link href="/login">
               <ArrowLeft className="h-4 w-4" />
-              {mode === 'setup' ? 'Sign in' : 'Back to sign in'}
+              {mode === 'setup'
+                ? t('auth.passwordToken.signIn', 'Sign in')
+                : t('auth.common.backToSignIn', 'Back to sign in')}
             </Link>
           </Button>
         </CardContent>
@@ -179,7 +206,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3">
+          <form method="post" onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3">
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>
@@ -204,10 +231,18 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{mode === 'setup' ? 'Password' : 'New password'}</FormLabel>
+                  <FormLabel>
+                    {mode === 'setup'
+                      ? t('auth.passwordToken.password', 'Password')
+                      : t('auth.passwordToken.newPassword', 'New password')}
+                  </FormLabel>
                   <FormControl>
                     <PasswordInput
-                      placeholder={mode === 'setup' ? 'Choose a password' : 'Enter new password'}
+                      placeholder={
+                        mode === 'setup'
+                          ? t('auth.passwordToken.choosePassword', 'Choose a password')
+                          : t('auth.passwordToken.enterNewPassword', 'Enter new password')
+                      }
                       autoComplete="new-password"
                       disabled={isPending}
                       {...field}
@@ -224,10 +259,12 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
               name="confirmPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Confirm password</FormLabel>
+                  <FormLabel>
+                    {t('auth.passwordToken.confirmPassword', 'Confirm password')}
+                  </FormLabel>
                   <FormControl>
                     <PasswordInput
-                      placeholder="Confirm password"
+                      placeholder={t('auth.passwordToken.confirmPassword', 'Confirm password')}
                       autoComplete="new-password"
                       disabled={isPending}
                       {...field}
@@ -250,7 +287,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
             <Button variant="link" size="sm" asChild className="mt-1">
               <Link href="/login">
                 <ArrowLeft className="h-4 w-4" />
-                Back to sign in
+                {t('auth.common.backToSignIn', 'Back to sign in')}
               </Link>
             </Button>
           </form>

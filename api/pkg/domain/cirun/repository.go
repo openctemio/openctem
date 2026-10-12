@@ -134,6 +134,15 @@ type PipelineRepository interface {
 	// suppression rules on the repository asset, skipping any already open,
 	// and returns how many it created.
 	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []RepoException) (int, error)
+	// PinOwner records ownerID for the configuration's owner name unless one
+	// is pinned already, and returns the pinned id and whether this call
+	// pinned it.
+	PinOwner(ctx context.Context, tenantID, trustConfigID shared.ID, ownerName, ownerID string) (string, bool, error)
+	// ResetOwnerPins drops the configuration's pins (they are taken again at
+	// the next admitted exchange).
+	ResetOwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) (int64, error)
+	// OwnerPins lists the configuration's pins.
+	OwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) ([]OwnerPin, error)
 	// UpsertPipeline finds the pipeline with p's key (adopting a backfilled
 	// legacy row of the same repository asset and workflow path) or creates
 	// it within the caps (ErrPipelineCap). An existing pipeline takes p's

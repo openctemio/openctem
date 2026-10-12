@@ -151,7 +151,10 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 		return nil
 	}
 
-	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.config.BaseURL, token)
+	// The token goes in the URL fragment, as for verification and invitation
+	// links: the browser never sends it to a server, so it stays out of access
+	// logs and Referer headers.
+	resetURL := fmt.Sprintf("%s/reset-password#token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), token)
 
 	data := emaildom.PasswordResetData{
 		UserName:    userName,
@@ -323,7 +326,7 @@ func (s *EmailService) CanDeliverTo(ctx context.Context, tenantID string) bool {
 
 // AccountSetupURL is the UI page that consumes a one-time set-password token.
 func (s *EmailService) AccountSetupURL(token string) string {
-	return fmt.Sprintf("%s/set-password?token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), token)
+	return fmt.Sprintf("%s/set-password#token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), token)
 }
 
 // SendAccountSetupEmail sends the one-time set-password link for an account an
