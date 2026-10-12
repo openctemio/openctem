@@ -174,7 +174,7 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		req.RedirectURI = h.oauthConfig.FrontendCallbackURL
 	}
 
-	result, err := h.oauthService.HandleCallback(r.Context(), auth.CallbackInput{
+	result, err := h.oauthService.HandleCallback(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), auth.CallbackInput{
 		Provider:    oauthProvider,
 		Code:        req.Code,
 		State:       req.State,
@@ -195,31 +195,6 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 			Email: result.User.Email(),
 			Name:  result.User.Name(),
 		},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
-}
-
-// ProvidersResponse is the response body for listing available providers.
-type ProvidersResponse struct {
-	Providers []auth.ProviderInfo `json:"providers"`
-}
-
-// ListProviders returns the list of available OAuth providers.
-// @Summary      List OAuth providers
-// @Description  Returns the configured OAuth providers. Served only when social login (OAuth) is configured on this server; otherwise the route is not registered and returns 404. GET /auth/providers is always available and reports which login methods exist.
-// @Tags         OAuth
-// @Produce      json
-// @Success      200  {object}  ProvidersResponse
-// @Failure      404  "OAuth is not configured on this server"
-// @Router       /auth/oauth/providers [get]
-func (h *OAuthHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
-	providers := h.oauthService.GetAvailableProviders()
-
-	resp := ProvidersResponse{
-		Providers: providers,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
