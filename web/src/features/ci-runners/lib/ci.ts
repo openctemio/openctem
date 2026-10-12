@@ -29,61 +29,73 @@ export interface SnippetInput {
   apiUrl: string
   tenantId: string
   audience: string
-  tools?: string
 }
 
-const DEFAULT_TOOLS = 'semgrep,betterleaks,trivy'
+/**
+ * The openctemio/ci release the GitHub and GitLab snippets pin. A release tag
+ * also pins the scanner images the workflow and templates run.
+ */
+export const CI_RELEASE = 'v0.1.0'
 
-/** A GitHub Actions job that authenticates with the job's OIDC token. */
-export function githubSnippet({
-  apiUrl,
-  tenantId,
-  audience,
-  tools = DEFAULT_TOOLS,
-}: SnippetInput): string {
+/** The capabilities the GitHub and GitLab snippets run by default. */
+const DEFAULT_CAPABILITIES = 'sast,sca,secrets,iac'
+
+/**
+ * A GitHub Actions workflow: the openctemio/ci reusable workflow runs one job
+ * per capability in parallel, reports into one run with the job's OIDC token
+ * and lets one gate job decide.
+ */
+export function githubSnippet({ apiUrl, tenantId, audience }: SnippetInput): string {
   const audLine =
-    audience && audience !== defaultAudience(tenantId)
-      ? `\n          OPENCTEM_OIDC_AUDIENCE: ${audience}`
-      : ''
-  return `permissions:
-  contents: read
-  id-token: write # the job asks GitHub for an OIDC token; no stored secret
+    audience && audience !== defaultAudience(tenantId) ? `\n      oidc-audience: ${audience}` : ''
+  return `name: OpenCTEM
+on:
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   openctem:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: OpenCTEM security scan
-        uses: docker://ghcr.io/openctemio/sensor:latest-ci
-        with:
-          args: -tools ${tools} -target . -auto-ci -push
-        env:
-          API_URL: ${apiUrl}
-          OPENCTEM_TENANT_ID: ${tenantId}${audLine}
+    uses: openctemio/ci/.github/workflows/scan.yml@${CI_RELEASE}
+    with:
+      capabilities: ${DEFAULT_CAPABILITIES}
+      api-url: ${apiUrl}
+      tenant-id: ${tenantId}${audLine}
+    permissions:
+      contents: read
+      id-token: write # the job asks GitHub for an OIDC token; no stored secret
 `
 }
 
-/** A GitLab CI job that authenticates with the job's ID token. */
-export function gitlabSnippet({
-  apiUrl,
-  tenantId,
-  audience,
-  tools = DEFAULT_TOOLS,
-}: SnippetInput): string {
-  return `openctem-security:
-  image: ghcr.io/openctemio/sensor:latest-ci
-  id_tokens:
-    OPENCTEM_ID_TOKEN: # the job's ID token; no stored secret
-      aud: ${audience}
-  variables:
-    API_URL: ${apiUrl}
-    OPENCTEM_TENANT_ID: ${tenantId}
-  script:
-    - openctemio-sensor -tools ${tools} -target . -auto-ci -push
-`
+const GITLAB_JOBS = [
+  'openctem-sast',
+  'openctem-sca',
+  'openctem-secrets',
+  'openctem-iac',
+  'openctem-gate',
+]
+
+/**
+ * A GitLab CI include of the openctemio/ci template: one job per capability
+ * with the job's ID token, and one gate job. The template asks for the
+ * default audience; a trust configuration with another audience gets each
+ * job's id_tokens overridden.
+ */
+export function gitlabSnippet({ apiUrl, tenantId, audience }: SnippetInput): string {
+  let override = ''
+  if (audience && audience !== defaultAudience(tenantId)) {
+    override =
+      `\n# This trust configuration uses its own audience.\n.openctem-audience: &openctem-audience\n  id_tokens:\n    OPENCTEM_ID_TOKEN:\n      aud: ${audience}\n` +
+      GITLAB_JOBS.map((j) => `${j}: *openctem-audience`).join('\n') +
+      '\n'
+  }
+  return `include:
+  - remote: https://raw.githubusercontent.com/openctemio/ci/${CI_RELEASE}/gitlab/templates/all.yml
+
+variables:
+  OPENCTEM_API_URL: ${apiUrl}
+  OPENCTEM_TENANT_ID: ${tenantId} # jobs use their ID token; no stored secret
+${override}`
 }
 
 // ─────────────────────────────────────────────── other CI systems ───
