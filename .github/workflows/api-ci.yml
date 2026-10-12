@@ -236,12 +236,23 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.plain-http.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.job-signer.yml config -q
           OPENCTEM_SENSOR_GATEWAY=passthrough SENSOR_PUBLIC_HOSTNAME=sensors.example.test SENSOR_PUBLIC_HOST=sensors.example.test:443 \
             docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml config -q
           # Only the gateway publishes a port.
           published="$(docker compose config --format json | jq -r '.services | to_entries[] | select(.value.ports != null and (.value.ports | length) > 0) | .key')"
           echo "services with published ports: $published"
           test "$published" = "gateway"
+          # Every image the stack pulls by default is one a release publishes
+          # (docker-publish.yml), under its current name.
+          published_names="$(yq -r '.jobs.merge.strategy.matrix.image[].name' ../../.github/workflows/docker-publish.yml)"
+          for img in $(docker compose -f docker-compose.yml -f docker-compose.job-signer.yml config --images | sort -u); do
+            case "$img" in
+              ghcr.io/openctemio/*)
+                name="${img#ghcr.io/openctemio/}"; name="${name%%:*}"
+                grep -qx "$name" <<<"$published_names" || { echo "::error::$img is not published by docker-publish.yml"; exit 1; } ;;
+            esac
+          done
           rm .env
 
       # The shards of the two DB-backed jobs below cover every package and
