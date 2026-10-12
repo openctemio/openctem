@@ -707,43 +707,18 @@ func (c *OAuthConfig) HasAnyProvider() bool {
 	return c.Google.IsConfigured() || c.GitHub.IsConfigured() || c.Microsoft.IsConfigured()
 }
 
-// SMTPConfig holds SMTP configuration for sending emails.
+// SMTPConfig is what the e-mail templates need from the deployment: the base
+// URL of links. The SMTP server itself is the platform e-mail setting in the
+// admin console (System > E-mail, RFC-079), not an environment variable.
 type SMTPConfig struct {
-	Host       string
-	Port       int
-	User       string
-	Password   string
-	From       string
-	FromName   string
-	TLS        bool
-	SkipVerify bool
-	Enabled    bool
-	BaseURL    string // Frontend base URL for email links (e.g., https://app.openctem.io)
-	Timeout    time.Duration
+	BaseURL string // Frontend base URL for email links (e.g., https://app.openctem.io)
 }
 
-// SMTPFromEnv reads the system SMTP settings (SMTP_*) on their own, for tools
-// such as bootstrap-admin that send email without loading (and validating) the
-// whole server configuration.
+// SMTPFromEnv reads SMTP_BASE_URL on its own, for tools such as bootstrap-admin
+// that send e-mail without loading (and validating) the whole server
+// configuration.
 func SMTPFromEnv() SMTPConfig {
-	return SMTPConfig{
-		Enabled:    getEnvBool("SMTP_ENABLED", false),
-		Host:       getEnv("SMTP_HOST", ""),
-		Port:       getEnvInt("SMTP_PORT", 587),
-		User:       getEnv("SMTP_USER", ""),
-		Password:   getEnv("SMTP_PASSWORD", ""),
-		From:       getEnv("SMTP_FROM", ""),
-		FromName:   getEnv("SMTP_FROM_NAME", "OpenCTEM"),
-		TLS:        getEnvBool("SMTP_TLS", true),
-		SkipVerify: getEnvBool("SMTP_SKIP_VERIFY", false),
-		BaseURL:    getEnv("SMTP_BASE_URL", publicURLOr("http://localhost:3000")), // Frontend URL for email links
-		Timeout:    getEnvDuration("SMTP_TIMEOUT", 30*time.Second),
-	}
-}
-
-// IsConfigured returns true if SMTP is properly configured.
-func (c *SMTPConfig) IsConfigured() bool {
-	return c.Enabled && c.Host != "" && c.Port > 0 && c.From != ""
+	return SMTPConfig{BaseURL: getEnv("SMTP_BASE_URL", publicURLOr("http://localhost:3000"))}
 }
 
 // KeycloakConfig holds Keycloak authentication configuration.
@@ -2199,6 +2174,9 @@ var retiredEnv = []struct{ Old, New, Hint string }{
 	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > System > Platform scanning"},
 }
 
+// smtpMoved is the hint for the SMTP_* variables.
+const smtpMoved = "unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
+
 // removedEnv lists settings that were removed without a replacement
 // variable. Startup refuses to run while one is set, saying what to do
 // instead, so an operator never believes a removed setting still applies.
@@ -2209,6 +2187,17 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	// The platform SMTP server is set in the admin console (RFC-079).
+	{"SMTP_ENABLED", smtpMoved},
+	{"SMTP_HOST", smtpMoved},
+	{"SMTP_PORT", smtpMoved},
+	{"SMTP_USER", smtpMoved},
+	{"SMTP_PASSWORD", smtpMoved},
+	{"SMTP_FROM", smtpMoved},
+	{"SMTP_FROM_NAME", smtpMoved},
+	{"SMTP_TLS", smtpMoved},
+	{"SMTP_SKIP_VERIFY", smtpMoved},
+	{"SMTP_TIMEOUT", smtpMoved},
 	{"APP_ALLOW_PLAINTEXT_CREDENTIALS", "unset it; credentials are always encrypted (development uses the key in api/.env.example)"},
 	{"CTEM_ENFORCE_COVERAGE_SLO", "unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles)"},
 	// Cookie names are fixed: the API, the web console and the gateway must
