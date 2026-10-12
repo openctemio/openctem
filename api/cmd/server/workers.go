@@ -699,6 +699,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Web evidence retention (RFC-081): screenshots after 30 days (O7),
+	// files of deleted rows, capture text after a year.
+	if svc.WebEvidence != nil {
+		w.ControllerManager.Register(controller.NewWebEvidenceRetentionController(svc.WebEvidence, 0, log))
+	}
+
 	// Weekly "what changed" digest of the attack surface (RFC-080): hourly
 	// tick, once per organization and slot, on unless the organization turns
 	// it off in its attack-surface settings.
