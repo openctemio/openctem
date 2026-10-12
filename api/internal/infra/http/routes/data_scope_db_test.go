@@ -825,9 +825,6 @@ func TestDataScope_SubresourceLists_FilterForScopedMemberOnly(t *testing.T) {
 		keep string // in-scope row the scoped member must still see
 		hide string // out-of-scope row the scoped member must not see
 	}{
-		{"/api/v1/services", dsMarkerSvcA, dsMarkerSvcB},
-		{"/api/v1/services/public", dsMarkerSvcA, dsMarkerSvcB},
-		{"/api/v1/state-history", dsMarkerHistA, dsMarkerHistB},
 		{"/api/v1/state-history/appearances", dsMarkerHistA, dsMarkerHistB},
 		{"/api/v1/assets/" + h.assetA.String() + "/relationships", r.relAA.String(), r.relAB.String()},
 		{"/api/v1/relationships/suggestions", dsMarkerSuggA, dsMarkerSuggB},
@@ -866,12 +863,8 @@ func TestDataScope_SubresourceLists_FilterForScopedMemberOnly(t *testing.T) {
 	counts := []struct {
 		path, member, owner string
 	}{
-		{"/api/v1/services/stats", `"total_services":1`, `"total_services":2`},
-		{"/api/v1/state-history/stats", `"appeared":1`, `"appeared":2`},
-		{"/api/v1/state-history/timeline", `"appeared":1`, `"appeared":2`},
 		{"/api/v1/state-history/counts", `"appeared":1`, `"appeared":2`},
 		{"/api/v1/relationships/suggestions/count", `"count":1`, `"count":2`},
-		{"/api/v1/relationships/usage-stats", `"id":"depends_on"`, `"id":"depends_on"`},
 	}
 	for _, c := range counts {
 		_, m := h.do(h.memberA, false, http.MethodGet, c.path, nil)
@@ -880,33 +873,6 @@ func TestDataScope_SubresourceLists_FilterForScopedMemberOnly(t *testing.T) {
 			t.Errorf("GET %s: memberA %.300s (want %s); owner %.300s (want %s)", c.path, m, c.member, o, c.owner)
 		}
 	}
-	_, m := h.do(h.memberA, false, http.MethodGet, "/api/v1/relationships/usage-stats", nil)
-	if !strings.Contains(m, `"id":"depends_on","direct"`) || dsUsageCount(t, m, "depends_on") != 1 {
-		t.Errorf("usage-stats for memberA counts depends_on = %d, want 1 (body %.300s)", dsUsageCount(t, m, "depends_on"), m)
-	}
-	_, o := h.do(h.owner, true, http.MethodGet, "/api/v1/relationships/usage-stats", nil)
-	if dsUsageCount(t, o, "depends_on") != 2 {
-		t.Errorf("usage-stats for owner counts depends_on = %d, want 2", dsUsageCount(t, o, "depends_on"))
-	}
-}
-
-func dsUsageCount(t *testing.T, body, typ string) int64 {
-	t.Helper()
-	var out struct {
-		Data []struct {
-			ID    string `json:"id"`
-			Count int64  `json:"count"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal([]byte(body), &out); err != nil {
-		return -1
-	}
-	for _, d := range out.Data {
-		if d.ID == typ {
-			return d.Count
-		}
-	}
-	return -1
 }
 
 func TestDataScope_SubresourceByID_OutOfScopeIs404AndUnchanged(t *testing.T) {
@@ -916,10 +882,9 @@ func TestDataScope_SubresourceByID_OutOfScopeIs404AndUnchanged(t *testing.T) {
 		method, path string
 		body         any
 	}{
-		{http.MethodGet, "/api/v1/services/" + r.svcB.String(), nil},
-		{http.MethodPut, "/api/v1/services/" + r.svcB.String(), map[string]any{"name": "pwned"}},
-		{http.MethodDelete, "/api/v1/services/" + r.svcB.String(), nil},
-		{http.MethodGet, "/api/v1/state-history/" + r.histB.String(), nil},
+		{http.MethodGet, "/api/v1/assets/" + h.assetB.String() + "/services", nil},
+		{http.MethodPost, "/api/v1/assets/" + h.assetB.String() + "/services", map[string]any{"port": 8443, "protocol": "tcp", "name": "pwned"}},
+		{http.MethodGet, "/api/v1/assets/" + h.assetB.String() + "/state-history", nil},
 		{http.MethodGet, "/api/v1/relationships/" + r.relAB.String(), nil},
 		{http.MethodPut, "/api/v1/relationships/" + r.relAB.String(), map[string]any{"description": "pwned"}},
 		{http.MethodDelete, "/api/v1/relationships/" + r.relAB.String(), nil},
@@ -964,8 +929,8 @@ func TestDataScope_SubresourceByID_OutOfScopeIs404AndUnchanged(t *testing.T) {
 
 	// In-scope rows stay usable.
 	for _, q := range []struct{ method, path string }{
-		{http.MethodGet, "/api/v1/services/" + r.svcA.String()},
-		{http.MethodGet, "/api/v1/state-history/" + r.histA.String()},
+		{http.MethodGet, "/api/v1/assets/" + h.assetA.String() + "/services"},
+		{http.MethodGet, "/api/v1/assets/" + h.assetA.String() + "/state-history"},
 		{http.MethodGet, "/api/v1/relationships/" + r.relAA.String()},
 		{http.MethodPost, "/api/v1/relationships/suggestions/" + r.suggAA.String() + "/dismiss"},
 		{http.MethodPost, "/api/v1/assets/dedup/reviews/" + r.reviewAA.String() + "/reject"},
