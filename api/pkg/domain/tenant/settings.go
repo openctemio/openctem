@@ -97,8 +97,13 @@ type BranchSettings struct {
 // purpose. The fields therefore have no omitempty: with it, a cleared list was
 // dropped on save and came back as the defaults on the next read.
 type PentestSettings struct {
+	// CampaignTypes is the list of target types a campaign picks from (a
+	// campaign may test several).
 	CampaignTypes []ConfigOption `json:"campaign_types"`
 	Methodologies []ConfigOption `json:"methodologies"`
+	// RequireAuthorizationBeforeStart: a campaign cannot start testing until
+	// its signed authorization letter is linked. Off by default.
+	RequireAuthorizationBeforeStart bool `json:"require_authorization_before_start"`
 }
 
 // ConfigOption represents a configurable option with value and label.
@@ -720,8 +725,8 @@ func DefaultSettings() Settings {
 		RiskScoring: LegacyRiskScoringSettings(),
 		Pentest: PentestSettings{
 			CampaignTypes: []ConfigOption{
-				{Value: "external", Label: "External Pentest"},
-				{Value: "internal", Label: "Internal Pentest"},
+				{Value: "external", Label: "External network"},
+				{Value: "internal", Label: "Internal network"},
 				{Value: "web_app", Label: "Web Application"},
 				{Value: "mobile", Label: "Mobile Application"},
 				{Value: "api", Label: "API Testing"},
