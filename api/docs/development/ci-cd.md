@@ -22,7 +22,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z`, opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z`, starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
-| API CI step "Changelog fragments" | PR, merge queue, push | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
+| API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
 | Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). **Security gate self-test**: the gate's unit tests and the CODEOWNERS mirror | **security-gate** |
 | Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`) | — |
@@ -102,9 +102,20 @@ re-runs on the label and turns green; queue the pull request as usual. In the
 merge queue the gate runs again (`merge_group`), finds the pull request from the
 queue branch name and reads its labels and code-scanning alerts through the API.
 
-- A later push that changes a security-sensitive file of the pull request
-  removes `security-ack` (a force-push always does); merging the base branch
-  into the pull request does not. Ack again after reviewing the new commits.
+- The ack covers the pull request's security-sensitive lines. On the label
+  event the gate records a digest of them in its comment: every added and
+  removed line (no context, no line numbers) of each file that makes the pull
+  request sensitive, taken from the diff against the merge base. A later run
+  whose digest differs removes `security-ack`; one with the same digest keeps
+  it. So merging the base branch in, rebasing, or pushing changes to other
+  files keeps the ack, while changing a sensitive line, adding a sensitive file
+  or resolving a conflict inside one drops it. Ack again after reviewing the
+  new commits. Only the comment the workflow wrote counts (a digest in anyone
+  else's comment is ignored), and in the merge queue a digest that no longer
+  matches blocks the group. An ack given before the gate recorded digests
+  falls back to the earlier rule on its next push (a push that changes a
+  sensitive file, or any force-push, removes it), and records the digest when
+  it survives.
 - A HIGH diff finding is resolved by changing the line, or, for a reviewed false
   positive, by a comment on the same line:
   `security-review: allow <RULE-ID> <reason>` (visible in the diff and in git
@@ -146,14 +157,23 @@ takes effect for pull requests opened against the base after it merges.
 ### Path filtering
 
 One rule set, in [`.github/scripts/changed.sh`](../../../.github/scripts/changed.sh),
-decides two outputs, `api` and `web`, for every workflow:
+decides the outputs `api` and `web` for every workflow (`docs` is informational):
 
 | Changed path | api | web |
 |--------------|-----|-----|
+| Documentation: `*.md` anywhere, `api/docs/**`, `.claude/**`, `web/.claude/**` | | |
 | `api/**` | ✓ | |
 | `web/**` | | ✓ |
 | Shared: root `Makefile`, `go.work*`, `.github/**`, `deploy/**` | ✓ | ✓ |
-| Anything else (root docs, `.githooks/`) | | |
+| Anything else (`.githooks/`) | | |
+
+Documentation is matched first, so an RFC, a changelog fragment or a README
+never starts the Go or web suites, also in the merge queue. A docs-only PR runs
+Docs check, Secret Scanning, Workflow Lint, the security gate and API CI's
+`changes` job (which also runs the changelog check), and the `… OK`
+aggregators pass. One exception: `api/docs/configuration/environment-variables.md`
+is generated and compared by a Go test (`TestEnvDocsUpToDate`), so it counts as
+API code. Tests: `.github/scripts/changed.test.sh` (run by Workflow Lint).
 
 The diff range depends on the event:
 
@@ -173,8 +193,8 @@ How each workflow uses the outputs:
 | CodeQL | Go when `api`, JS/TS when `web` (PR); nothing in the merge queue; both on push and weekly |
 | All-in-one CI | always starts; builds when `api` or `web` (both images are built from the whole component directory), in the merge queue and on pushes only |
 | Repository Security | always runs (secret scan diff-scoped on PR and merge queue) |
-| API Security | `on.paths`: `api/**` + shared files. Does not start at all for a web-only change |
-| Web Security | `on.paths`: `web/**` + shared files. Does not start at all for an API-only change |
+| API Security | `on.paths`: `api/**` + shared files, minus `**/*.md` and `api/docs/**`. Does not start at all for a web-only or docs-only change |
+| Web Security | `on.paths`: `web/**` + shared files, minus `**/*.md`. Does not start at all for an API-only or docs-only change |
 
 Workflows that carry a required check never use `on.<event>.paths`: a workflow
 skipped that way leaves its required checks *Pending* forever. They always start,
@@ -363,7 +383,8 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 |-----|-------|
 | *All of the rows down to Test shards are steps of one job, `API static checks`.* | |
 | Migration Safety | PRs only. Flags destructive migrations against the base. |
-| Migration Versions | `.github/scripts/check-migration-versions.sh` (tests: `check-migration-versions.test.sh`). Fails if two migrations share a version, and, on a PR or in the merge queue, if a migration the change adds is not above the base's highest version (golang-migrate silently skips lower versions on databases already past them). In the queue the base is `merge_group.base_sha`, so two queued PRs that picked the same number cannot both land: the second is told to renumber to max+1. A migration baseline (`NNNNNN_baseline`, RFC-053) may sit at or below the base's highest version when it is the lowest version left in the tree. |
+| Migration Versions | `.github/scripts/check-migration-versions.sh` (tests: `check-migration-versions.test.sh`). Fails if two migrations share a version, and, on a PR or in the merge queue, if a migration the change adds is not above the base's highest version (golang-migrate silently skips lower versions on databases already past them). In the queue the base is `merge_group.base_sha`, so two queued PRs that picked the same number cannot both land: the second is told to renumber to max+1. A migration baseline (`NNNNNN_baseline`, RFC-053) may sit at or below the base's highest version when it is the lowest version left in the tree. On a PR, a version below the base's highest, or one a base migration also uses, is only a warning: the PR's migrations are renumbered when it is queued. Two migrations of the same PR with one version still fail. |
+| Renumber this PR's clashing migrations | PR only, in `API static checks` and every DB test shard: `.github/scripts/pr-migration-renumber.sh` (tests: `pr-migration-renumber.test.sh`). CI tests the PR merged into its base; when develop has taken one of the PR's migration numbers since, the runner's copy of the PR's added migrations is renumbered above the base (in order, same width, references to the old file stems rewritten), and a byte-identical copy of a base migration (a stacked PR's inherited file) is ignored. Nothing is committed; each change is a warning annotation. The PR stays green, and the real renumber happens when the PR is queued. The merge queue and pushes never renumber: there, a clash fails `Migration Versions`. |
 | SQL Schema Drift | `api/scripts/check-sql-schema.sh`: prepares every SQL statement against a migrations-only database. |
 | Security Gates | `api/scripts/security-lint.sh` (checks out `sensor` and `sdk-go` alongside), tenant-scope analyzer, sensor vocabulary guard. |
 | OpenAPI Contract | See above. |

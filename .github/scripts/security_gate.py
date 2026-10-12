@@ -24,6 +24,7 @@ Only the Python standard library is used.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -37,6 +38,10 @@ GUIDE = "https://github.com/openctemio/openctem/blob/develop/api/docs/developmen
 SENSITIVE_LABEL = "security-sensitive"
 ACK_LABEL = "security-ack"
 COMMENT_MARKER = "<!-- security-gate -->"
+# The gate comment records which security-sensitive diff the ack covers (see
+# sensitive_digest). Only the comment the workflow itself wrote counts.
+DIGEST_MARKER = re.compile(r"<!-- security-gate:ack-digest=([0-9a-f]{64}) -->")
+BOT_LOGIN = "github-actions[bot]"
 MAX_FILES = 3000  # GitHub's pull request file list stops here
 CODEOWNERS_BEGIN = "# BEGIN security-paths (generated from .github/security-paths.yml; do not edit)"
 CODEOWNERS_END = "# END security-paths"
@@ -111,6 +116,7 @@ class ChangedFile:
     deletions: int = 0
     patch: str | None = None
     previous_filename: str | None = None
+    sha: str = ""  # blob of the head version; stands in for a patch GitHub did not send
 
 
 def counts(f: ChangedFile, removal_only: list[re.Pattern[str]]) -> bool:
@@ -251,6 +257,31 @@ def review(files: list[ChangedFile]) -> tuple[list[Finding], list[str]]:
     return findings, unreviewed
 
 
+def sensitive_digest(files: list[ChangedFile], config: dict[str, list[str]], findings: list[Finding]) -> str:
+    """Fingerprint of what an ack approves: the pull request's own changed
+    lines (added and removed, without context or hunk positions) in every file
+    that makes it security-sensitive. The file list is the diff against the
+    merge base, so merging the base branch in moves the context but not these
+    lines, and the fingerprint stays; a commit that changes a sensitive line,
+    adds a sensitive file or resolves a conflict inside one changes it. A file
+    GitHub sent no patch for is represented by its head blob, which is
+    stricter (any change to that file counts)."""
+    names = {f for fs in classify(files, config).values() for f in fs}
+    names |= {f.path for f in findings if f.severity in ("HIGH", "SENSITIVE")}
+    h = hashlib.sha256()
+    for f in sorted(files, key=lambda f: f.filename):
+        if f.filename not in names:
+            continue
+        h.update(f"file\0{f.filename}\0{f.previous_filename or ''}\0{f.status}\n".encode())
+        if f.patch is None:
+            h.update(f"blob\0{f.sha}\n".encode())
+            continue
+        for line in f.patch.splitlines():
+            if line[:1] in ("+", "-"):
+                h.update(line.encode() + b"\n")
+    return h.hexdigest()
+
+
 # --------------------------------------------------------------------------
 # CODEOWNERS mirror
 
@@ -322,10 +353,13 @@ class GitHub:
         return out
 
 
+def changed_file(f: dict) -> ChangedFile:
+    return ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
+                       f.get("patch"), f.get("previous_filename"), f.get("sha") or "")
+
+
 def pr_files(gh: GitHub, number: int) -> list[ChangedFile]:
-    return [ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
-                        f.get("patch"), f.get("previous_filename"))
-            for f in gh.paginate(f"pulls/{number}/files")]
+    return [changed_file(f) for f in gh.paginate(f"pulls/{number}/files")]
 
 
 def ack_state(gh: GitHub, number: int, labels: set[str], ackers: list[str]) -> tuple[bool, str]:
@@ -388,6 +422,7 @@ class Result:
     acked: bool = False
     ack_note: str = ""
     ack_dropped: bool = False
+    ack_digest: str = ""  # the sensitive diff the ack covers, recorded in the comment
 
     @property
     def high(self) -> list[Finding]:
@@ -421,7 +456,8 @@ def render(r: Result, repo: str, server: str) -> str:
         out.append("This pull request no longer changes a security-sensitive path.")
         return "\n".join(out) + "\n"
     if r.ack_dropped:
-        out += [f"New commits changed security-sensitive files, so the previous `{ACK_LABEL}` was removed.", ""]
+        out += [f"New commits changed the security-sensitive lines of this pull request, so the previous "
+                f"`{ACK_LABEL}` was removed. Merging the base branch alone keeps it.", ""]
     out += ["### Why this is security-sensitive", ""]
     for cat, files in sorted(r.hits.items()):
         shown = ", ".join(f"`{f}`" for f in files[:8]) + (f" and {len(files) - 8} more" if len(files) > 8 else "")
@@ -464,6 +500,8 @@ def render(r: Result, repo: str, server: str) -> str:
             f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label. The gate re-runs on the label. "
             f"Status: {r.ack_note}.", "",
             f"<sub>Path list: `.github/security-paths.yml` · [how the gate works]({GUIDE})</sub>"]
+    if r.acked and r.ack_digest:
+        out.append(f"<!-- security-gate:ack-digest={r.ack_digest} -->")
     return "\n".join(out) + "\n"
 
 
@@ -485,27 +523,64 @@ def merge_group_pr(head_ref: str) -> int:
     return int(m.group(1))
 
 
-def drop_stale_ack(gh: GitHub, event: dict, number: int, files: list[ChangedFile],
-                   config: dict[str, list[str]], labels: set[str]) -> bool:
-    """On a push to a sensitive PR, remove the ack when the new commits change a
-    sensitive file of this PR (a merge of the base branch alone does not)."""
-    if event.get("action") != "synchronize" or ACK_LABEL not in labels:
-        return False
+def push_touches_sensitive(gh: GitHub, event: dict, files: list[ChangedFile],
+                           config: dict[str, list[str]]) -> bool:
+    """For an ack without a recorded digest (given before the gate stored
+    one): does this push change a sensitive file of the PR? A force-push, a
+    rebase or a truncated comparison counts as yes."""
     before, after = event.get("before"), event.get("after")
     sensitive_here = {f for fs in classify(files, config).values() for f in fs}
     if not sensitive_here:
         return False
     cmp_ = gh.get(f"compare/{before}...{after}", ok404=True) if before and after else None
     if cmp_ is None or cmp_.get("status") not in ("ahead", "identical") or len(cmp_.get("files", [])) >= 300:
-        stale = True  # force-push or rebase: the acknowledged commits are gone
+        return True  # force-push or rebase: the acknowledged commits are gone
+    pushed = [ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
+                          None, f.get("previous_filename")) for f in cmp_.get("files", [])]
+    changed = {f for fs in classify(pushed, config).values() for f in fs}
+    return bool(changed & sensitive_here)
+
+
+def recorded_digest(comment: dict | None) -> str | None:
+    m = DIGEST_MARKER.search((comment or {}).get("body") or "")
+    return m.group(1) if m else None
+
+
+def settle_ack(gh: GitHub, event_name: str, event: dict, r: Result, digest: str, recorded: str | None,
+               files: list[ChangedFile], config: dict[str, list[str]], labels: set[str],
+               can_write: bool) -> None:
+    """Decide whether an existing `security-ack` still covers the pull request,
+    and which digest the comment records for it.
+
+    - This run is the `security-ack` label event: record the digest.
+    - The comment holds a digest: the ack stands while the sensitive diff is
+      unchanged (pushes and base-branch merges that leave those lines alone),
+      and is removed (on a read-only run: ignored) once it differs.
+    - No digest yet, and a push: the earlier rule (does the push touch a
+      sensitive file?); if it does not, record the digest.
+    - Anything else keeps the label, as before, without recording a digest.
+    """
+    if ACK_LABEL not in labels:
+        return
+    action = event.get("action")
+    if event_name == "pull_request" and action == "labeled" and (event.get("label") or {}).get("name") == ACK_LABEL:
+        r.ack_digest = digest  # the maintainer acknowledged what is there now
+        return
+    if recorded is not None:
+        if recorded == digest:
+            r.ack_digest = digest
+            return
+    elif event_name == "pull_request" and action == "synchronize":
+        if not push_touches_sensitive(gh, event, files, config):
+            r.ack_digest = digest
+            return
     else:
-        pushed = [ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
-                              None, f.get("previous_filename")) for f in cmp_.get("files", [])]
-        changed = {f for fs in classify(pushed, config).values() for f in fs}
-        stale = bool(changed & sensitive_here)
-    if stale:
-        gh.request("DELETE", f"issues/{number}/labels/{ACK_LABEL}", ok404=True)
-    return stale
+        return
+    if can_write:
+        gh.request("DELETE", f"issues/{r.number}/labels/{ACK_LABEL}", ok404=True)
+        r.ack_dropped = True
+    labels.discard(ACK_LABEL)
+    r.ack_note = f"the security-sensitive lines changed after `{ACK_LABEL}` was added; a maintainer adds it again"
 
 
 RELEASE_HEAD = re.compile(r"^release/v\d")
@@ -523,16 +598,23 @@ def release_files(gh: GitHub, pr: dict) -> list[ChangedFile] | None:
     files = cmp_.get("files", [])
     if len(files) >= 300:
         return None  # the compare API truncates; fall back to the full diff
-    return [ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
-                        f.get("patch"), f.get("previous_filename")) for f in files]
+    return [changed_file(f) for f in files]
 
 
-def upsert_comment(gh: GitHub, number: int, body: str, create: bool) -> None:
+def gate_comment(gh: GitHub, number: int) -> dict | None:
+    """The gate's own comment: it carries the marker and the workflow token
+    wrote it, so a comment someone else posts cannot plant a digest."""
     for c in gh.paginate(f"issues/{number}/comments"):
-        if COMMENT_MARKER in (c.get("body") or ""):
-            if c["body"] != body:
-                gh.request("PATCH", f"issues/comments/{c['id']}", {"body": body})
-            return
+        if COMMENT_MARKER in (c.get("body") or "") and (c.get("user") or {}).get("login") == BOT_LOGIN:
+            return c
+    return None
+
+
+def upsert_comment(gh: GitHub, number: int, existing: dict | None, body: str, create: bool) -> None:
+    if existing is not None:
+        if existing.get("body") != body:
+            gh.request("PATCH", f"issues/comments/{existing['id']}", {"body": body})
+        return
     if create:
         gh.request("POST", f"issues/{number}/comments", {"body": body})
 
@@ -566,11 +648,14 @@ def cmd_gate() -> int:
     r = Result(number)
     r.hits = classify(files, config)
     r.findings, r.unreviewed = review(files)
+    comment = gate_comment(gh, number) if r.sensitive or can_write else None
     if r.sensitive:
-        if can_write and drop_stale_ack(gh, event, number, files, config, labels):
-            labels.discard(ACK_LABEL)
-            r.ack_dropped = True
+        settle_ack(gh, event_name, event, r, sensitive_digest(files, config, r.findings),
+                   recorded_digest(comment), files, config, labels, can_write)
+        stale_note = r.ack_note
         r.acked, r.ack_note = ack_state(gh, number, labels, config["ackers"])
+        if not r.acked and stale_note:
+            r.ack_note = stale_note
         r.alerts, r.alerts_note = new_code_scanning_alerts(gh, number, pr["base"]["ref"])
         r.checks = security_checks(gh, pr["head"]["sha"])
 
@@ -589,7 +674,7 @@ def cmd_gate() -> int:
                 gh.request("POST", f"issues/{number}/labels", {"labels": [SENSITIVE_LABEL]})
             if not r.sensitive and SENSITIVE_LABEL in labels:
                 gh.request("DELETE", f"issues/{number}/labels/{SENSITIVE_LABEL}", ok404=True)
-            upsert_comment(gh, number, body, create=r.sensitive)
+            upsert_comment(gh, number, comment, body, create=r.sensitive)
         except RuntimeError as e:
             print(f"::warning::security-gate could not label or comment: {e}")
     return 0 if r.passed else 1
