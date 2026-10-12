@@ -7,6 +7,9 @@ name: Docker Publish
 #   ghcr.io/openctemio/openctem       all-in-one: API + web + the api/deploy/gateway
 #                                      Caddy gateway (GATEWAY=on: 443 only;
 #                                      GATEWAY=off: 8080+3000)
+#   ghcr.io/openctemio/openctem-gateway  the api/deploy/gateway Caddy with the
+#                                      layer4 module: sensor gRPC on 443 by ALPN
+#                                      (OPENCTEM_SENSOR_GATEWAY=alpn|passthrough)
 #   ghcr.io/openctemio/{migrations,seed,admin-cli}
 # Every image is built on a NATIVE runner per arch and smoke-tested there
 # (config arch + ELF e_machine + it executes) BEFORE it is pushed. (`ui/v*` tags imported from the old ui
@@ -104,6 +107,7 @@ jobs:
           - { name: seed, legacy: '', context: api, file: api/Dockerfile.seed, target: '' }
           - { name: admin-cli, legacy: '', context: api, file: api/Dockerfile.admin-cli, target: '' }
           - { name: openctem-web, legacy: ui, context: web, file: web/Dockerfile, target: '' }
+          - { name: openctem-gateway, legacy: '', context: api/deploy/gateway, file: api/deploy/gateway/Dockerfile, target: '' }
         platform:
           - { platform: linux/amd64, runner: ubuntu-latest, arch: amd64 }
           - { platform: linux/arm64, runner: ubuntu-24.04-arm, arch: arm64 }
@@ -141,8 +145,6 @@ jobs:
           # VERSION/COMMIT/BUILD_TIME: the API's GET /api/v1/version.
           # NEXT_PUBLIC_APP_VERSION/COMMIT: web Help > About.
           build-args: |
-            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://app.openctem.io' }}
-            NEXT_PUBLIC_AUTH_PROVIDER=${{ vars.NEXT_PUBLIC_AUTH_PROVIDER || 'local' }}
             NEXT_PUBLIC_APP_VERSION=${{ needs.prepare.outputs.version }}
             NEXT_PUBLIC_APP_COMMIT=${{ github.sha }}
             VERSION=${{ needs.prepare.outputs.version }}
@@ -180,8 +182,6 @@ jobs:
           # VERSION/COMMIT/BUILD_TIME: the API's GET /api/v1/version.
           # NEXT_PUBLIC_APP_VERSION/COMMIT: web Help > About.
           build-args: |
-            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://app.openctem.io' }}
-            NEXT_PUBLIC_AUTH_PROVIDER=${{ vars.NEXT_PUBLIC_AUTH_PROVIDER || 'local' }}
             NEXT_PUBLIC_APP_VERSION=${{ needs.prepare.outputs.version }}
             NEXT_PUBLIC_APP_COMMIT=${{ github.sha }}
             VERSION=${{ needs.prepare.outputs.version }}
@@ -221,8 +221,9 @@ jobs:
           - { name: seed, legacy: '' }
           - { name: admin-cli, legacy: '' }
           - { name: openctem-web, legacy: ui }
+          - { name: openctem-gateway, legacy: '' }
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/digests
           pattern: digests-${{ matrix.image.name }}-*
@@ -371,7 +372,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/digests
           pattern: digests-openctem-*
@@ -393,8 +394,10 @@ jobs:
           # shellcheck disable=SC2046
           docker buildx imagetools create "${args[@]}" $(printf "${IMAGE}@sha256:%s " *)
 
-  # Keyless cosign signatures (Sigstore, GitHub OIDC) + an SPDX SBOM per image.
-  # Verify with:
+  # Keyless cosign signatures (Sigstore, GitHub OIDC), an SPDX SBOM and a
+  # signed SLSA build provenance per image. Verify the provenance with:
+  #   gh attestation verify oci://ghcr.io/openctemio/openctem:vX.Y.Z --owner openctemio
+  # and the signature with:
   #   cosign verify ghcr.io/openctemio/openctem:vX.Y.Z \
   #     --certificate-identity-regexp '^https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v' \
   #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -406,13 +409,14 @@ jobs:
       contents: write
       packages: write
       id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
-        name: [openctem-api, openctem-web, openctem, migrations, seed, admin-cli]
+        name: [openctem-api, openctem-web, openctem, openctem-gateway, migrations, seed, admin-cli]
     steps:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -425,6 +429,20 @@ jobs:
         run: |
           digest=$(crane digest "$REF")
           cosign sign --yes "${REF%:*}@${digest}"
+      - name: Index digest
+        id: digest
+        env:
+          REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
+        run: echo "digest=$(crane digest "$REF")" >> "$GITHUB_OUTPUT"
+      # SLSA build provenance (this workflow, commit, runner) signed through
+      # Sigstore and stored next to the image, so a consumer can check where and
+      # from what an image was built, not only who signed it.
+      - name: Attest the build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ matrix.name }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
       - name: SBOM (SPDX JSON)
         env:
           REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
@@ -466,6 +484,7 @@ jobs:
           - { name: seed, legacy: '' }
           - { name: admin-cli, legacy: '' }
           - { name: openctem-web, legacy: ui }
+          - { name: openctem-gateway, legacy: '' }
           - { name: openctem, legacy: '' }
     steps:
       - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7

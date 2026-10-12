@@ -156,10 +156,10 @@ print_header "Section 4: State History Stats"
 
 if ! check_critical "State History Stats"; then :; else
 
-print_test "Get state history stats"
-do_request "GET" "/api/v1/state-history/stats" "" "Authorization: Bearer $ACCESS_TOKEN"
+print_test "Get the What changed totals"
+do_request "GET" "/api/v1/state-history/counts" "" "Authorization: Bearer $ACCESS_TOKEN"
 if [ "$HTTP_CODE" = "200" ]; then
-    print_success "State history stats retrieved"
+    print_success "State history totals retrieved"
 else
     print_failure "State history stats" "Got $HTTP_CODE"
 fi
@@ -172,24 +172,6 @@ fi
 print_header "Section 5: State History List"
 
 if ! check_critical "State History List"; then :; else
-
-print_test "List all state changes"
-do_request "GET" "/api/v1/state-history" "" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ]; then
-    SH_TOTAL=$(extract_json "$BODY" '.total // (.data | length) // 0')
-    print_info "Total state changes: $SH_TOTAL"
-    print_success "State history listed"
-else
-    print_failure "List state history" "Got $HTTP_CODE"
-fi
-
-print_test "List state history with filter"
-do_request "GET" "/api/v1/state-history?change_type=appeared&limit=10" "" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ]; then
-    print_success "Filtered state history listed"
-else
-    print_failure "Filtered state history" "Got $HTTP_CODE"
-fi
 
 print_test "Get state history for asset"
 if [ -n "$ASSET_ID" ] && [ "$ASSET_ID" != "null" ]; then
@@ -208,21 +190,20 @@ fi
 fi
 
 # =============================================================================
-# Section 6: Timeline
+# Section 6: Removed generic reads
 # =============================================================================
-print_header "Section 6: Timeline"
+print_header "Section 6: Removed generic reads"
 
-if ! check_critical "Timeline"; then :; else
-
-print_test "Get daily activity timeline"
-do_request "GET" "/api/v1/state-history/timeline" "" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ]; then
-    print_success "Timeline retrieved"
-else
-    print_failure "Timeline" "Got $HTTP_CODE"
-fi
-
-fi
+# The What changed views and the asset history replace them (issue #970).
+for path in /api/v1/state-history /api/v1/state-history/stats /api/v1/state-history/timeline /api/v1/state-history/compliance; do
+    print_test "GET $path is gone"
+    do_request "GET" "$path" "" "Authorization: Bearer $ACCESS_TOKEN"
+    if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "405" ]; then
+        print_success "GET $path answers $HTTP_CODE"
+    else
+        print_failure "GET $path" "Got $HTTP_CODE, want 404 or 405"
+    fi
+done
 
 # =============================================================================
 # Section 7: Appearances & Disappearances
@@ -278,14 +259,6 @@ if [ "$HTTP_CODE" = "200" ]; then
     print_success "Newly exposed assets retrieved"
 else
     print_failure "Newly exposed" "Got $HTTP_CODE"
-fi
-
-print_test "Get compliance changes"
-do_request "GET" "/api/v1/state-history/compliance" "" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ]; then
-    print_success "Compliance changes retrieved"
-else
-    print_failure "Compliance changes" "Got $HTTP_CODE"
 fi
 
 fi
