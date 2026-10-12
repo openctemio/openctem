@@ -160,7 +160,7 @@ jobs:
       - name: Set up trivy (image guard)
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
-          version: v0.68.2
+          version: v0.75.0
       - name: Image guard (size budget, non-root, no setuid, OS advisories)
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
@@ -330,7 +330,7 @@ jobs:
       - name: Set up trivy (image guard)
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
-          version: v0.68.2
+          version: v0.75.0
       - name: Image guard (size budget, non-root, no setuid, OS advisories)
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
