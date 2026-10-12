@@ -39,7 +39,8 @@ var sensorRenameProbes = []upgradeProbe{
 		  AND column_name NOT IN ('user_agent', 'actor_agent')`},
 	{area: "schema", what: "constraints still named *agent*", query: `
 		SELECT count(*) FROM pg_constraint
-		WHERE connamespace = 'public'::regnamespace AND conname LIKE '%agent%'`},
+		WHERE connamespace = 'public'::regnamespace AND conname LIKE '%agent%'
+		  AND contype <> 'n'`}, // PostgreSQL 18 names a column's NOT NULL <table>_<column>_not_null
 	{area: "schema", what: "triggers or RLS policies still named *agent*", query: `
 		SELECT (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
 		        JOIN pg_namespace n ON n.oid = c.relnamespace

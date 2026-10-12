@@ -37,6 +37,9 @@ BEGIN
                    ('licenses', 'is_osi_approved'), ('licenses', 'is_fsf_libre'),
                    ('licenses', 'is_deprecated'), ('licenses', 'limitations'))
            AND c.conname <> 'chk_tenants_members_without_group_see'
+           -- PostgreSQL 18 records a column's NOT NULL as a pg_constraint row
+           -- (contype 'n'); it goes with the column and is not a use of it.
+           AND c.contype <> 'n'
         UNION ALL
         SELECT i.indrelid::regclass::text, i.indexrelid::regclass::text, a.attname
           FROM pg_index i
