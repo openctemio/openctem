@@ -124,6 +124,7 @@ func (s *AttachmentService) purgeOne(ctx context.Context, c attachmentdom.PurgeC
 			"tenant_id", tenantID, "attachment_id", att.ID().String(),
 			"storage_key", att.StorageKey(), "error", logger.SanitizeError(fileErr))
 	}
+	s.event("purged_" + string(c.Reason))
 	s.auditPurge(ctx, c, fileErr == nil || errors.Is(fileErr, attachmentdom.ErrNotFound))
 	return true, nil
 }

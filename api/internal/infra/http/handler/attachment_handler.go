@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -368,6 +369,68 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, reader); err != nil {
 		h.logger.Warn("attachment stream interrupted", "error", err, "id", id)
 	}
+}
+
+// DownloadURL hands out a short-lived signed URL for the attachment's file in
+// its bucket, after the same checks as Download (tenant-scoped lookup, then
+// the finding/campaign/uploader rules). The URL works for 60 seconds, for
+// this one object, and forces an attachment download. A file the malware
+// scanner flagged never gets one; a storage that cannot sign (local
+// storage, an endpoint without HTTPS) or direct downloads turned off answer
+// 409 DIRECT_DOWNLOAD_UNAVAILABLE, and the caller uses Download.
+//
+// @Summary      Signed download URL for an attachment
+// @Description  A 60-second URL signed for this one file in its bucket, after the same checks as a download. 409 DIRECT_DOWNLOAD_UNAVAILABLE: download through GET /attachments/{id}.
+// @Tags         Attachments
+// @Produce      json
+// @Param        id   path      string  true  "Attachment ID"
+// @Success      200  {object}  AttachmentSignedURLResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /attachments/{id}/signed-url [get]
+func (h *AttachmentHandler) DownloadURL(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+	att, err := h.service.GetByID(r.Context(), tenantID, id)
+	if err != nil {
+		apierror.NotFound("Attachment not found").WriteJSON(w)
+		return
+	}
+	if h.accessChecker != nil {
+		if err := h.authorizeAttachment(r, att); err != nil {
+			apierror.NotFound("Attachment not found").WriteJSON(w)
+			return
+		}
+	}
+	url, expires, err := h.service.DirectDownloadURL(r.Context(), att)
+	if err != nil {
+		switch {
+		case errors.Is(err, attachment.ErrInfected):
+			apierror.New(http.StatusConflict, "MALWARE_DETECTED",
+				"The malware scanner flagged this file; download it through the API with ?confirm=malware").WriteJSON(w)
+		case errors.Is(err, attachment.ErrStorageUnavailable):
+			apierror.ServiceUnavailable("The organization's file storage cannot be reached").WriteJSON(w)
+		default:
+			apierror.New(http.StatusConflict, "DIRECT_DOWNLOAD_UNAVAILABLE",
+				"This file downloads through the API").WriteJSON(w)
+		}
+		return
+	}
+	// The signed URL is a bearer credential for one object until it expires:
+	// never cached, never sent on as a referrer.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	writeJSON(w, http.StatusOK, AttachmentSignedURLResponse{URL: url, ExpiresAt: expires.UTC()})
+}
+
+// AttachmentSignedURLResponse is a signed download URL and when it expires.
+type AttachmentSignedURLResponse struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // Delete removes an attachment and its stored file.
