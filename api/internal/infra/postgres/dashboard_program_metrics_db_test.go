@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -318,6 +319,19 @@ func TestProgramMetrics_EmptyTenantIsNotMeasured(t *testing.T) {
 			t.Fatalf("%s: want nil/nil/0 on empty tenant, got %v/%v/%d", name, d.mean, d.median, d.n)
 		}
 	}
+	for name, d := range map[string]module.DurationMetric{"mttv": m.MTTV, "time to owner": m.TimeToOwnerInternetFacing} {
+		if d.MeanHours != nil || d.MedianHours != nil || d.SampleSize != 0 || d.Unmeasured != 0 {
+			t.Fatalf("%s: want not measured on empty tenant, got %+v", name, d)
+		}
+	}
+	if cc := m.CycleCompletion; cc.RatePct != nil || cc.MeanCharterCompletionPct != nil || cc.Due != 0 {
+		t.Fatalf("cycle completion: want nil rates and no cycles, got %+v", cc)
+	}
+	for _, c := range m.ControlCoverage {
+		if c.GapPct != nil || c.Total != 0 {
+			t.Fatalf("control coverage %s: want nil gap on empty tenant, got %+v", c.Control, c)
+		}
+	}
 	oa := m.OwnerAcceptance
 	if oa.RatePct != nil || oa.Accepted+oa.Missed+oa.Pending+oa.Excluded != 0 {
 		t.Fatalf("owner acceptance: want nil rate and zero counts, got %+v", oa)
@@ -347,5 +361,214 @@ func TestProgramMetrics_WindowClamp(t *testing.T) {
 		if m.PeriodDays != 90 {
 			t.Fatalf("days=%d: want clamped to 90, got %d", days, m.PeriodDays)
 		}
+	}
+}
+
+func (f *pmFixture) priorityFinding(tenant shared.ID, class, status string, firstDetected time.Time) shared.ID {
+	f.t.Helper()
+	id := f.finding(tenant, nil, status, firstDetected, nil, nil)
+	f.exec(`UPDATE findings SET priority_class = $3 WHERE tenant_id = $1 AND id = $2`, tenant.String(), id.String(), class)
+	return id
+}
+
+// MTTV: P0/P1 findings first detected in the window, timed to their first
+// conclusive validation: {24h, 6h, 0h} → mean 10h, median 6h; one without
+// conclusive evidence is unmeasured. P2, false-positive, out-of-window and
+// other-tenant findings are ignored.
+func TestProgramMetrics_MTTV(t *testing.T) {
+	f, repo := newPMFixture(t)
+	tenant := seedTestTenant(f.ctx, t, f.db)
+	noise := seedTestTenant(f.ctx, t, f.db)
+
+	// V1: P0; an inconclusive run first, the first conclusive one 24h after
+	// detection (a later conclusive one must not win).
+	v1 := f.priorityFinding(tenant, "P0", "new", f.at(-10*pmDay))
+	f.evidence(tenant, v1, "inconclusive", f.at(-10*pmDay+1*pmHour))
+	f.evidence(tenant, v1, "detected", f.at(-10*pmDay+24*pmHour))
+	f.evidence(tenant, v1, "not_detected", f.at(-8*pmDay))
+	// V2: P1; "not reproduced" is evidence too.
+	v2 := f.priorityFinding(tenant, "P1", "resolved", f.at(-20*pmDay))
+	f.evidence(tenant, v2, "not_detected", f.at(-20*pmDay+6*pmHour))
+	// V3: evidence older than first detection (a re-detected finding) → 0h.
+	v3 := f.priorityFinding(tenant, "P0", "in_progress", f.at(-5*pmDay))
+	f.evidence(tenant, v3, "detected", f.at(-6*pmDay))
+	// V4: P0 with only an error row → unmeasured.
+	v4 := f.priorityFinding(tenant, "P0", "new", f.at(-2*pmDay))
+	f.evidence(tenant, v4, "error", f.at(-1*pmDay))
+
+	// Ignored.
+	p2 := f.priorityFinding(tenant, "P2", "new", f.at(-10*pmDay))
+	f.evidence(tenant, p2, "detected", f.at(-10*pmDay+500*pmHour))
+	fp := f.priorityFinding(tenant, "P0", "false_positive", f.at(-10*pmDay))
+	f.evidence(tenant, fp, "detected", f.at(-10*pmDay+500*pmHour))
+	old := f.priorityFinding(tenant, "P0", "new", f.at(-200*pmDay))
+	f.evidence(tenant, old, "detected", f.at(-100*pmDay))
+	// Other tenant: evidence row naming OUR finding must not count, nor its
+	// own 1000h sample.
+	f.evidence(noise, v4, "detected", f.at(-1*pmDay))
+	n1 := f.priorityFinding(noise, "P0", "new", f.at(-50*pmDay))
+	f.evidence(noise, n1, "detected", f.at(-50*pmDay+1000*pmHour))
+
+	m, err := repo.GetProgramMetrics(f.ctx, tenant, 90)
+	if err != nil {
+		t.Fatalf("GetProgramMetrics: %v", err)
+	}
+	got := m.MTTV
+	if got.SampleSize != 3 || got.Unmeasured != 1 {
+		t.Fatalf("MTTV sample/unmeasured: want 3/1, got %d/%d", got.SampleSize, got.Unmeasured)
+	}
+	assertHours(t, "MTTV mean", got.MeanHours, 10)
+	assertHours(t, "MTTV median", got.MedianHours, 6)
+}
+
+// Time to owner: {2h, 0h, 40h} → mean 14h, median 2h; one owner-less asset is
+// unmeasured; not-internet-facing, out-of-window and other-tenant assets are
+// ignored.
+func TestProgramMetrics_TimeToOwnerInternetFacing(t *testing.T) {
+	f, repo := newPMFixture(t)
+	tenant := seedTestTenant(f.ctx, t, f.db)
+	noise := seedTestTenant(f.ctx, t, f.db)
+	u := seedGroupsUser(f.ctx, t, f.db, "pm-owner.test")
+	owner := func(asset shared.ID, at time.Time) {
+		f.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assigned_at) VALUES ($1, $2, 'primary', $3)`,
+			asset.String(), u.String(), at)
+	}
+
+	a1 := f.asset(tenant, "public", false, "active", f.at(-10*pmDay), nil)
+	owner(a1, f.at(-10*pmDay+2*pmHour))
+	g := seedGroupsUser(f.ctx, t, f.db, "pm-owner2.test")
+	f.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assigned_at) VALUES ($1, $2, 'secondary', $3)`,
+		a1.String(), g.String(), f.at(-9*pmDay)) // a later second owner does not move the stop
+	a2 := f.asset(tenant, "unknown", true, "active", f.at(-5*pmDay), nil)
+	owner(a2, f.at(-6*pmDay)) // owned before discovery → 0h
+	a3 := f.asset(tenant, "public", false, "active", f.at(-30*pmDay), nil)
+	owner(a3, f.at(-30*pmDay+40*pmHour))
+	f.asset(tenant, "public", false, "active", f.at(-1*pmDay), nil) // no owner → unmeasured
+
+	priv := f.asset(tenant, "private", false, "active", f.at(-5*pmDay), nil)
+	owner(priv, f.at(-1*pmDay))
+	old := f.asset(tenant, "public", false, "active", f.at(-200*pmDay), nil)
+	owner(old, f.at(-100*pmDay))
+	n := f.asset(noise, "public", false, "active", f.at(-10*pmDay), nil)
+	owner(n, f.at(-10*pmDay+1000*pmHour))
+
+	m, err := repo.GetProgramMetrics(f.ctx, tenant, 90)
+	if err != nil {
+		t.Fatalf("GetProgramMetrics: %v", err)
+	}
+	got := m.TimeToOwnerInternetFacing
+	if got.SampleSize != 3 || got.Unmeasured != 1 {
+		t.Fatalf("time to owner sample/unmeasured: want 3/1, got %d/%d", got.SampleSize, got.Unmeasured)
+	}
+	assertHours(t, "time to owner mean", got.MeanHours, 14)
+	assertHours(t, "time to owner median", got.MedianHours, 2)
+}
+
+// Cycle completion: of 4 cycles due in the window, 2 closed on time, 1 late,
+// 1 still open → 50%; the charter completion mean covers the closed cycles
+// that have one (80 and 40 → 60). Cycles due outside the window, without an
+// end date and of another tenant are ignored.
+func TestProgramMetrics_CycleCompletion(t *testing.T) {
+	f, repo := newPMFixture(t)
+	tenant := seedTestTenant(f.ctx, t, f.db)
+	noise := seedTestTenant(f.ctx, t, f.db)
+	u := seedGroupsUser(f.ctx, t, f.db, "pm-cycle.test")
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	cycle := func(tn shared.ID, status string, end *time.Time, closedAt *time.Time, evaluation string) {
+		var e, c, ev any
+		if end != nil {
+			e = end.Format("2006-01-02")
+		}
+		if closedAt != nil {
+			c = *closedAt
+		}
+		if evaluation != "" {
+			ev = evaluation
+		}
+		f.exec(`INSERT INTO ctem_cycles (tenant_id, name, status, start_date, end_date, closed_at, created_by, charter_evaluation)
+			VALUES ($1, 'c', $2, $3::date - 30, $3::date, $4, $5, $6::jsonb)`,
+			tn.String(), status, e, c, u.String(), ev)
+	}
+	d := func(days int) *time.Time { v := today.AddDate(0, 0, days); return &v }
+
+	// On time: closed during its last day, and closed well before it.
+	cycle(tenant, "closed", d(-10), ptrT(d(-10).Add(23*pmHour)), `{"completion_rate": 80}`)
+	cycle(tenant, "closed", d(-40), d(-45), `{"completion_rate": 40}`)
+	// Late: closed the day after its end date; no measurable criteria.
+	cycle(tenant, "closed", d(-20), ptrT(d(-19).Add(1*pmHour)), `{"met": 0, "unmet": 0}`)
+	// Open: due today, still in review.
+	cycle(tenant, "review", d(0), nil, "")
+
+	// Ignored.
+	cycle(tenant, "active", d(5), nil, "")                              // due in the future
+	cycle(tenant, "closed", d(-200), d(-200), `{"completion_rate": 0}`) // due before the window
+	cycle(tenant, "planning", nil, nil, "")                             // no end date
+	cycle(noise, "active", d(-5), nil, "")                              // other tenant, open
+	cycle(noise, "closed", d(-5), d(-5), `{"completion_rate": 0}`)      // other tenant
+
+	m, err := repo.GetProgramMetrics(f.ctx, tenant, 90)
+	if err != nil {
+		t.Fatalf("GetProgramMetrics: %v", err)
+	}
+	got := m.CycleCompletion
+	if got.Due != 4 || got.ClosedOnTime != 2 || got.ClosedLate != 1 || got.Open != 1 {
+		t.Fatalf("cycle completion counts: want 4/2/1/1, got %+v", got)
+	}
+	assertHours(t, "cycle completion rate", got.RatePct, 50)
+	assertHours(t, "mean charter completion", got.MeanCharterCompletionPct, 60)
+}
+
+// Control coverage counts critical / crown-jewel assets of the control's
+// types by attribute value; everything else is ignored.
+func TestProgramMetrics_ControlCoverage(t *testing.T) {
+	f, repo := newPMFixture(t)
+	tenant := seedTestTenant(f.ctx, t, f.db)
+	noise := seedTestTenant(f.ctx, t, f.db)
+	asset := func(tn shared.ID, typ, criticality string, crown bool, status, props string, programOnly bool) {
+		f.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, is_crown_jewel, status, properties, program_only)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
+			shared.NewID().String(), tn.String(), "cc-"+shared.NewID().String(), typ, criticality, crown, status, props, programOnly)
+	}
+
+	// EDR: 2 covered (bool and string spellings), 1 lacking, 2 unknown.
+	asset(tenant, "host", "critical", false, "active", `{"has_edr": true}`, false)
+	asset(tenant, "host", "low", true, "active", `{"has_edr": "true"}`, false) // crown jewel
+	asset(tenant, "host", "critical", false, "active", `{"has_edr": false}`, false)
+	asset(tenant, "host", "critical", false, "active", `{}`, false)
+	asset(tenant, "host", "critical", false, "active", `{"has_edr": "maybe"}`, false) // not a boolean → unknown
+	// MFA: 1 lacking.
+	asset(tenant, "cloud_account", "critical", false, "active", `{"has_mfa": false}`, false)
+	// Ignored: not critical, archived, wrong type for the control, program-only, other tenant.
+	asset(tenant, "host", "high", false, "active", `{"has_edr": false}`, false)
+	asset(tenant, "host", "critical", false, "archived", `{"has_edr": false}`, false)
+	asset(tenant, "domain", "critical", false, "active", `{"has_edr": false}`, false)
+	asset(tenant, "host", "critical", false, "active", `{"has_edr": false}`, true)
+	asset(noise, "host", "critical", false, "active", `{"has_edr": false}`, false)
+	asset(noise, "storage", "critical", false, "active", `{"has_logging": false}`, false)
+
+	m, err := repo.GetProgramMetrics(f.ctx, tenant, 90)
+	if err != nil {
+		t.Fatalf("GetProgramMetrics: %v", err)
+	}
+	byControl := map[string]int{}
+	for i, c := range m.ControlCoverage {
+		byControl[c.Control] = i
+	}
+	if len(m.ControlCoverage) != 3 {
+		t.Fatalf("want 3 controls, got %+v", m.ControlCoverage)
+	}
+	edr := m.ControlCoverage[byControl["edr"]]
+	if edr.Total != 5 || edr.Covered != 2 || edr.Lacking != 1 || edr.Unknown != 2 {
+		t.Fatalf("edr: want 5/2/1/2, got %+v", edr)
+	}
+	assertHours(t, "edr gap", edr.GapPct, 60)
+	mfa := m.ControlCoverage[byControl["mfa"]]
+	if mfa.Total != 1 || mfa.Lacking != 1 {
+		t.Fatalf("mfa: want 1 total / 1 lacking, got %+v", mfa)
+	}
+	assertHours(t, "mfa gap", mfa.GapPct, 100)
+	logging := m.ControlCoverage[byControl["logging"]]
+	if logging.Total != 0 || logging.GapPct != nil {
+		t.Fatalf("logging: no critical storage → want 0 total and nil gap (not measured), got %+v", logging)
 	}
 }
