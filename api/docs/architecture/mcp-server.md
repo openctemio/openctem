@@ -233,7 +233,7 @@ bearer token:
 | Generic tools | `internal/infra/http/handler/mcp_tools.go` |
 | Pentest tools | `internal/infra/http/handler/mcp_pentest_tools.go`, `mcp_pentest_discovery.go` |
 | Results envelope, typed errors | `internal/infra/http/handler/mcp_results.go` |
-| TLP limit for AI applications | `internal/infra/http/handler/mcp_ai_policy.go`, `pkg/domain/tenant/mcp_settings.go` (`MaxTLP`), `pentest_campaigns.ai_assistants_disabled` (migration 002073) |
+| TLP limit for AI applications | `internal/infra/http/handler/mcp_ai_policy.go`, `pkg/domain/tenant/mcp_settings.go` (`MaxTLP`), `pentest_campaigns.ai_assistants_disabled` (migration 002074) |
 | Prompts | `internal/infra/http/handler/mcp_prompts.go` |
 | Write tools | `internal/infra/http/handler/mcp_write_tools.go` |
 | Pentest queries (member-scoped paging, report selection, member campaigns) | `internal/app/compliance/pentest_queries.go`, `internal/infra/postgres/pentest_campaign_stats.go` (`GetWorkCountsByIDs`) |
