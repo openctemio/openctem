@@ -86,11 +86,11 @@ func TestAssetSoftDelete_InvisibleToSearchGraphGroupsIngestAndExposures(t *testi
 	}
 
 	// Tag facets.
-	tags, err := repo.ListDistinctTags(ctx, tenant, asset.AccessScope{}, "sd-", nil, 50)
+	tags, err := repo.ListDistinctTags(ctx, tenant, asset.AccessScope{}, asset.TagListQuery{Prefix: "sd-", Limit: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tag := range tags {
+	for _, tag := range tags.Tags {
 		if tag == "sd-only-"+suffix {
 			t.Error("tag facets list a tag only the deleted asset had")
 		}
