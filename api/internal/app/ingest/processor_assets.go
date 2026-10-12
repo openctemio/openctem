@@ -63,6 +63,9 @@ type AssetProcessor struct {
 	// or updated) with the report's tool and observation time, for the
 	// freshness of their attribute classes (docs/architecture/asset-freshness.md).
 	assetsObservedCallback AssetsObservedCallback
+
+	// webEvidence stores the reserved web_evidence captures (nil = dropped).
+	webEvidence WebEvidenceRecorder
 }
 
 // AssetsDiscoveredCallback is invoked once per ingest batch with the assets the
@@ -850,6 +853,10 @@ func (p *AssetProcessor) processBatch(
 	// Step 9: Ports: address → port edges, host name → address, and ports a
 	// port scan no longer sees are closed (research/22 P0-6).
 	p.surfacePorts(ctx, tenantID, report, existingMap, mayChange)
+
+	// Step 10: Web evidence (status, title, snippet, optional screenshot) of
+	// the assets this report may change (RFC-081).
+	p.recordWebEvidence(ctx, tenantID, report, existingMap, mayChange)
 
 	// Step 8: Typed edges from related_assets (service -> the certificate
 	// it served).

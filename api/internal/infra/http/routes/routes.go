@@ -95,9 +95,13 @@ type Handlers struct {
 	EASMSettings *handler.EASMSettingsHandler
 	// EASMLookalike manages passive lookalike-domain monitoring (RFC-083)
 	EASMLookalike *handler.EASMLookalikeHandler
-	Docs          *handler.DocsHandler    // API documentation handler
-	Command       *handler.CommandHandler // nil if not initialized (no database)
-	Ingest        *handler.IngestHandler  // nil if not initialized (no database) - sensor authentication and heartbeat
+	// EASMNetworkSeed manages AS number and organization seeds (RFC-082)
+	EASMNetworkSeed *handler.EASMNetworkSeedHandler
+	// AssetWebEvidence serves an asset's web evidence and screenshots (RFC-081)
+	AssetWebEvidence *handler.AssetWebEvidenceHandler
+	Docs             *handler.DocsHandler    // API documentation handler
+	Command          *handler.CommandHandler // nil if not initialized (no database)
+	Ingest           *handler.IngestHandler  // nil if not initialized (no database) - sensor authentication and heartbeat
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
@@ -605,6 +609,7 @@ func Register(
 	// Finding evidence: masked proof per detection / retest + audited reveal.
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 
@@ -830,6 +835,12 @@ func Register(
 	}
 	if h.EASMLookalike != nil {
 		registerEASMLookalikeRoutes(router, h.EASMLookalike, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMNetworkSeed != nil {
+		registerEASMNetworkSeedRoutes(router, h.EASMNetworkSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.AssetWebEvidence != nil {
+		registerAssetWebEvidenceRoutes(router, h.AssetWebEvidence, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Command routes (tenant from JWT token)

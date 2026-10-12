@@ -242,6 +242,50 @@ export function EASMMonitoringCard() {
             )}
           </p>
         </section>
+        <section
+          className="space-y-3 md:col-span-2"
+          aria-label={t('networkSeeds.lookups.title', 'Network seed lookups')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-network-lookups" className="font-medium">
+              {t('networkSeeds.lookups.title', 'Network seed lookups')}
+            </Label>
+            <Switch
+              id="easm-network-lookups"
+              checked={!!settings.network_lookups_enabled}
+              disabled={!canSettings || busy}
+              onCheckedChange={(on) => void save({ network_lookups_enabled: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'networkSeeds.lookups.description',
+              'Your AS numbers and organization names are sent to RIPEstat to find your address ranges. Turn this off to keep them private; network seeds are then not looked up.'
+            )}
+          </p>
+        </section>
+        <section
+          className="space-y-3 md:col-span-2"
+          aria-label={t('webEvidence.settings.title', 'Screenshots of web assets')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-screenshots" className="font-medium">
+              {t('webEvidence.settings.title', 'Screenshots of web assets')}
+            </Label>
+            <Switch
+              id="easm-screenshots"
+              checked={!!settings.web_screenshots_enabled}
+              disabled={!canSettings || busy}
+              onCheckedChange={(on) => void save({ web_screenshots_enabled: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'webEvidence.settings.description',
+              'Keep the screenshots that sensors with the screenshot tool take of your web assets, for 30 days. A screenshot shows whatever the page shows, so this is off by default. Status, title and a short masked response are kept either way.'
+            )}
+          </p>
+        </section>
         <DigestSection settings={settings} disabled={!canSettings || busy} onSave={save} />
       </CardContent>
     </Card>
