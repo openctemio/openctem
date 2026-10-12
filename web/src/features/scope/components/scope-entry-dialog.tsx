@@ -244,12 +244,12 @@ export function ScopeEntryDialog({
       : t('scope.entry.permanent', 'permanent'),
   ].join(' · ')
 
-  // Domain proof (RFC-054 §8): intrusive probes always need a verified
-  // domain; platform sensors need one when the operator says so.
+  // Domain proof (RFC-054 §8.1): only when the platform requires it, for
+  // platform sensors and for intrusive probes on any sensor.
   const proofRoot =
     isDomain && name.trim() ? extractRootDomain(wildcardApex(pattern) || pattern) : ''
   const proofMode = settings?.active_proof ?? 'off'
-  const proofNeeded = !!proofRoot && (tier === 't2' || proofMode !== 'off')
+  const proofNeeded = !!proofRoot && proofMode === 'platform_sensors'
   const proofRow = proofNeeded ? domainFor(proofRoot, verifiedDomains) : undefined
   const proofMissing = proofNeeded && proofRow?.status !== 'verified'
 
@@ -596,17 +596,11 @@ export function ScopeEntryDialog({
                             'Intrusive (T2) probes also need proof that you control {domain}.',
                             { domain: proofRoot }
                           )
-                        : proofMode === 'all'
-                          ? t(
-                              'scope.entry.proofAll',
-                              'Scans also need proof that you control {domain}.',
-                              { domain: proofRoot }
-                            )
-                          : t(
-                              'scope.entry.proofPlatform',
-                              'Platform sensors also need proof that you control {domain}; your own sensors need this entry only.',
-                              { domain: proofRoot }
-                            )}
+                        : t(
+                            'scope.entry.proofPlatform',
+                            'Platform sensors also need proof that you control {domain}; your own sensors need this entry only.',
+                            { domain: proofRoot }
+                          )}
                     </p>
                     {!isRequest && (
                       <Button
