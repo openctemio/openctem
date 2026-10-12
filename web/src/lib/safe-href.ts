@@ -133,6 +133,45 @@ export function safeImageSrc(url: unknown): string | undefined {
 }
 
 /**
+ * Hosts a profile picture may load from. A person's picture is shown to
+ * teammates, so an arbitrary host could log their IP addresses and browsers
+ * (a tracking pixel). Same list as the API (api/pkg/domain/user/avatar.go),
+ * which refuses other hosts on input; this guard covers stored values.
+ */
+const AVATAR_HOSTS = new Set([
+  'avatars.githubusercontent.com',
+  'secure.gravatar.com',
+  'www.gravatar.com',
+  'gitlab.com',
+])
+const AVATAR_HOST_SUFFIXES = ['.googleusercontent.com']
+
+/**
+ * Return a profile picture URL that is safe to load, or `undefined` (the
+ * avatar then shows initials): https only, no credentials or port, on a
+ * known avatar host.
+ */
+export function safeAvatarSrc(url: unknown): string | undefined {
+  if (typeof url !== 'string' || url === '') return undefined
+  const cleaned = normalise(url)
+  if (cleaned.length > MAX_URL_LENGTH || FORBIDDEN_CHARS_RE.test(cleaned)) return undefined
+  let parsed: URL
+  try {
+    parsed = new URL(cleaned)
+  } catch {
+    return undefined
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) {
+    return undefined
+  }
+  const host = parsed.hostname.toLowerCase()
+  const allowed =
+    AVATAR_HOSTS.has(host) ||
+    AVATAR_HOST_SUFFIXES.some((s) => host.endsWith(s) && host.length > s.length)
+  return allowed ? parsed.href : undefined
+}
+
+/**
  * Return a same-origin path for an in-app `<Link>`, or `undefined`. Use it
  * where the path comes from the server (notification targets) rather than
  * from a route builder: an absolute or protocol-relative URL is refused, so
