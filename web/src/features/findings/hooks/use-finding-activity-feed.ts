@@ -6,7 +6,8 @@
  *
  * - the paged activities (GET /findings/{id}/activities) and the live channel,
  * - the comments (GET /findings/{id}/comments: text, Internal, edited, reactions),
- * - send / edit / delete a comment and toggle a reaction.
+ * - send / edit / delete a comment and toggle a reaction (a pentest finding:
+ *   through the pentest routes, open to every campaign member).
  */
 
 import { useCallback, useMemo } from 'react'
@@ -50,7 +51,10 @@ export function commentsKey(findingId: string) {
   return `/api/v1/findings/${findingId}/comments`
 }
 
-/** POST: a comment on a pentest finding by any campaign member. */
+/**
+ * A pentest finding's comment routes for any campaign member, clients
+ * included: post, edit and delete one's own comment, react.
+ */
 export function pentestCommentsKey(findingId: string) {
   return `/api/v1/pentest/findings/${findingId}/comments`
 }
@@ -136,19 +140,21 @@ export function useFindingActivityFeed(
   const editComment = useCallback(
     async (item: ActivityCommentItem, body: string) => {
       if (!findingId || !item.commentId) return
-      await put(`${commentsKey(findingId)}/${item.commentId}`, { content: body })
+      const base = pentest ? pentestCommentsKey(findingId) : commentsKey(findingId)
+      await put(`${base}/${encodeURIComponent(item.commentId)}`, { content: body })
       await refresh()
     },
-    [findingId, refresh]
+    [findingId, refresh, pentest]
   )
 
   const deleteComment = useCallback(
     async (item: ActivityCommentItem) => {
       if (!findingId || !item.commentId) return
-      await del(`${commentsKey(findingId)}/${item.commentId}`)
+      const base = pentest ? pentestCommentsKey(findingId) : commentsKey(findingId)
+      await del(`${base}/${encodeURIComponent(item.commentId)}`)
       await refresh()
     },
-    [findingId, refresh]
+    [findingId, refresh, pentest]
   )
 
   const toggleReaction = useCallback(
@@ -158,14 +164,24 @@ export function useFindingActivityFeed(
       add: boolean
     ): Promise<ActivityReaction[] | void> => {
       if (!item.commentId) throw new Error('This comment cannot take reactions yet')
-      const base = `/api/v1/comments/${encodeURIComponent(item.commentId)}/reactions`
+      const comment = encodeURIComponent(item.commentId)
+      // A pentest finding's reactions go through its pentest route (emoji
+      // in the query to remove); others through the comment route.
+      const base =
+        pentest && findingId
+          ? `${pentestCommentsKey(findingId)}/${comment}/reactions`
+          : `/api/v1/comments/${comment}/reactions`
+      const removeUrl =
+        pentest && findingId
+          ? `${base}?emoji=${encodeURIComponent(emoji)}`
+          : `${base}/${encodeURIComponent(emoji)}`
       const res = add
         ? await post<{ data?: ApiCommentReaction[] }>(base, { emoji })
-        : await del<{ data?: ApiCommentReaction[] }>(`${base}/${encodeURIComponent(emoji)}`)
+        : await del<{ data?: ApiCommentReaction[] }>(removeUrl)
       void mutateComments()
       return res && Array.isArray(res.data) ? toActivityReactions(res.data) : undefined
     },
-    [mutateComments]
+    [mutateComments, pentest, findingId]
   )
 
   const liveStatus: ActivityLiveStatus | undefined = !live
