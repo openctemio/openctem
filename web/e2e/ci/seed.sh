@@ -44,11 +44,18 @@ call() {
 }
 
 log "organization and owner"
-setup=$(docker run --rm --network "$NETWORK" -e SMTP_ENABLED=false "${ADMIN_IMAGE:?set ADMIN_IMAGE}" \
+# Capture the output even when bootstrap-admin fails, so its error is printed.
+setup=$(docker run --rm --network "$NETWORK" "${ADMIN_IMAGE:?set ADMIN_IMAGE}" \
   -db="$DATABASE_URL" \
   -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
-  -org-name="E2E Org $RUN" -org-slug="$SLUG" -org-owner-email="$EMAIL" 2>&1)
-TOKEN=$(grep -o 'set-password?token=[^[:space:]]*' <<<"$setup" | head -1 | sed 's/.*token=//')
+  -org-name="E2E Org $RUN" -org-slug="$SLUG" -org-owner-email="$EMAIL" 2>&1) || {
+  log "bootstrap-admin failed:"
+  echo "$setup" >&2
+  exit 1
+}
+# The link carries the token in the URL fragment (set-password#token=...), so it
+# never reaches a server log or a Referer header.
+TOKEN=$({ grep -o 'set-password#token=[^[:space:]]*' <<<"$setup" || true; } | head -1 | sed 's/.*token=//')
 if [[ -z "$TOKEN" ]]; then
   log "bootstrap-admin printed no set-password link:"
   echo "$setup" >&2
