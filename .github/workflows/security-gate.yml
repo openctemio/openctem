@@ -1,0 +1,104 @@
+name: Security Gate
+
+# Required check `security-gate`: a pull request that changes a path listed in
+# .github/security-paths.yml (or adds a high-risk pattern) merges only after a
+# maintainer adds the `security-ack` label and no HIGH finding is open. Every
+# other pull request passes at once. Guide: api/docs/development/ci-cd.md#security-gate.
+#
+# Safety:
+# - `pull_request` and `merge_group` only (no `pull_request_target`): fork pull
+#   requests get a read-only token, so the gate reports through the check and
+#   the job summary and skips the label and comment.
+# - The gate logic and the path list come from the BASE commit, so a pull
+#   request cannot loosen the rules it is judged by. The diff is read through
+#   the API as data; no code from the pull request runs in the gate job.
+#   (Bootstrap: while the base has no gate script yet, the PR's copy is used.)
+# - No job-level `if:` on the gate job: a skipped required job counts as
+#   passed, so the job always runs and decides in the script.
+# - Labels change on every `labeled` event and re-run the gate; the runs the
+#   gate's own label writes would trigger do not happen (GITHUB_TOKEN events
+#   start no workflows).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited, labeled, unlabeled]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gate:
+    name: security-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # label + review comment (read-only for forks)
+      issues: write # labels live on the issue side of a pull request
+      security-events: read # code-scanning alerts of the PR and the base
+      checks: read # security check results on the head commit
+    steps:
+      - name: Check out the gate from the base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          path: base
+          persist-credentials: false
+          sparse-checkout: |
+            .github/security-paths.yml
+            .github/scripts/security_gate.py
+          sparse-checkout-cone-mode: false
+
+      - name: Pick the gate source
+        id: src
+        run: |
+          if [ -f base/.github/scripts/security_gate.py ] && [ -f base/.github/security-paths.yml ]; then
+            echo "dir=base" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::the base commit has no security gate yet; using this pull request's copy (bootstrap)"
+            echo "dir=head" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the gate from this pull request (bootstrap only)
+        if: steps.src.outputs.dir == 'head'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: head
+          persist-credentials: false
+          sparse-checkout: |
+            .github/security-paths.yml
+            .github/scripts/security_gate.py
+          sparse-checkout-cone-mode: false
+
+      - name: Evaluate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GATE_DIR: ${{ steps.src.outputs.dir }}
+          INTEGRATION_BRANCH: develop # release/v* PRs are judged on what they add to develop
+        run: |
+          SECURITY_PATHS="$GATE_DIR/.github/security-paths.yml" \
+            python3 "$GATE_DIR/.github/scripts/security_gate.py" gate
+
+  self-test:
+    name: Security gate self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Unit tests
+        run: python3 .github/scripts/security_gate_test.py
+
+      - name: CODEOWNERS mirrors the path list
+        run: python3 .github/scripts/security_gate.py codeowners --check
