@@ -263,17 +263,18 @@ print_test "List commands"
 do_request "GET" "/api/v1/commands" "" "Authorization: Bearer $ACCESS_TOKEN"
 [ "$HTTP_CODE" = "200" ] && print_success "Commands listed" || print_failure "List commands" "Got $HTTP_CODE"
 
-print_test "Cancel command"
+# A single command is no longer cancelled by id: a scan run is cancelled as
+# a whole (POST /api/v1/scan-runs/{id}/cancel).
+print_test "Single-command cancel is gone"
 if [ -n "$COMMAND_ID" ] && [ "$COMMAND_ID" != "null" ]; then
     do_request "POST" "/api/v1/commands/$COMMAND_ID/cancel" "" "Authorization: Bearer $ACCESS_TOKEN"
-    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-        print_success "Command canceled"
+    if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "405" ]; then
+        print_success "Single-command cancel answers $HTTP_CODE"
     else
-        # Command may already be completed
-        print_success "Command cancel handled ($HTTP_CODE)"
+        print_failure "Single-command cancel" "Got $HTTP_CODE, want 404 or 405"
     fi
 else
-    print_skip "Cancel command (no ID)"
+    print_skip "Single-command cancel (no ID)"
 fi
 
 fi
