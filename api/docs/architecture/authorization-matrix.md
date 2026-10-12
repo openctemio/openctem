@@ -19,7 +19,7 @@ Permissions are included in the access token and checked using `middleware.Requi
 of truth is `permission.AllPermissions()` in
 `pkg/domain/permission/permission.go`; `permission.IsValid()` /
 `ParsePermission()` validate against it. As of this writing it defines
-**169 permissions**, grouped by module. Rather than hand-mirror all 169 (which
+**166 permissions**, grouped by module. Rather than hand-mirror all 166 (which
 would drift), the table below lists the module groups and the count each
 contributes — derive the exact strings from `AllPermissions()`.
 
@@ -35,13 +35,13 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
 | Attack Surface | 4 | `scope:read/write/delete`, `scope:exclusions:approve` |
 | Validation (legacy) | 4 | `validation:read/write`, `pentest:read/write` |
-| Pentest (granular) | 11 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write` |
+| Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-086) |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
 | Reports | 2 | `reports:read/write` |
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
-| **Total** | **169** | |
+| **Total** | **166** | |
 
 > There is **no `projects` module**. OpenCTEM has no `projects:*` permissions and
 > no `/api/v1/projects/*` routes; the resource hierarchy is
@@ -985,8 +985,8 @@ Inside the pentest module, campaign membership decides who sees a campaign
 
 | Role | Reads | Writes |
 |---|---|---|
-| lead | everything in the campaign | campaign, team, status, findings, retests, reports |
-| tester | everything in the campaign | creates findings; edits, changes status of and retests own or assigned findings; evidence on those |
+| lead | everything in the campaign | campaign, team, status, findings, retests, reports, which methodology checklists run (add, remove, upgrade) and their results |
+| tester | everything in the campaign | creates findings; edits, changes status of and retests own or assigned findings; evidence on those; checklist results |
 | reviewer | everything in the campaign | status, edits and retests on any finding (no delete) |
 | observer | everything in the campaign | nothing |
 | client | the campaign, its team and its **published** findings (never draft or in review) | nothing |
@@ -996,7 +996,13 @@ include unpublished work), no exports, no reports, no campaign attachments
 and no report-writing (MCP) tools. Every surface that lists or reads pentest
 findings (campaign list, the pentest findings list, the generic findings
 list and groups, single-finding reads, retests, evidence) applies the same
-rule in SQL or in `ResolveCampaignRoleForFinding`.
+rule in SQL or in `ResolveCampaignRoleForFinding`. A client does not read
+the campaign's checklists either (tester notes are internal); reports carry
+only checklist coverage counts and failed item titles.
+
+The organization's checklist templates (RFC-086) are read by anyone with
+`pentest:campaigns:read`; creating, importing, editing and archiving them
+needs `pentest:checklists:manage` (owners and admins by default).
 
 ## Organization access policy (RFC-025)
 
