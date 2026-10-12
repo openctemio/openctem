@@ -71,9 +71,10 @@ export function proofNeededFor(
   probeTier: number | undefined,
   sensorPreference: string | undefined
 ): boolean {
+  // Proof is needed only when the platform requires it (RFC-054 §8.1).
+  if (mode !== 'platform_sensors') return false
   if ((probeTier ?? 1) >= 2) return true
-  if (mode === 'all') return true
-  return mode === 'platform_sensors' && sensorPreference !== 'tenant'
+  return sensorPreference !== 'tenant'
 }
 
 interface ScopePendingEntryProps {

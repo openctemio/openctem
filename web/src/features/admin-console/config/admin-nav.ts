@@ -12,6 +12,7 @@ import {
   Radar,
   Package,
   ShieldCheck,
+  Cloud,
   UserCog,
   UserPlus,
   UserSearch,
@@ -150,6 +151,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/scan-approval',
         icon: ShieldCheck,
         keywords: ['scan', 'approval', 'governance', 'second approver', 'policy', 'scope'],
+      },
+      {
+        title: 'Platform scanning',
+        i18nKey: 'admin.nav.platformScanning',
+        url: '/admin/system/platform-scanning',
+        icon: Cloud,
+        keywords: ['platform sensors', 'verified domain', 'proof', 'ownership', 'abuse', 'scope'],
       },
       {
         title: 'Admin sign-in',
