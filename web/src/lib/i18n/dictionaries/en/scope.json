@@ -240,5 +240,17 @@
   "scope.existing.activate": "Activate",
   "scope.existing.renew": "Renew for {n} days",
   "scope.existing.done": "{pattern} updated",
-  "scope.existing.failed": "The change was not saved."
+  "scope.existing.failed": "The change was not saved.",
+  "scope.review.title": "Attack surface",
+  "scope.review.description": "Names discovery found that may be yours. Confirming records ownership; only a scope entry lets scans reach a name.",
+  "scope.review.readOnly": "You can view this queue. Deciding ownership needs permission to edit assets.",
+  "scope.cycles.title": "Cycles",
+  "scope.cycles.description": "Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by.",
+  "scope.cycles.emptyTitle": "No cycles yet",
+  "scope.cycles.empty": "Create a cycle to start.",
+  "scope.cycles.noCycleTitle": "No cycle yet",
+  "scope.cycles.noCycle": "A cycle holds the charter, the scope it freezes and the outcome it is judged by.",
+  "scope.cycles.noServices": "No business services yet. Create them under Scoping › Business services.",
+  "scope.cycles.profilesLoadFailed": "Attacker profiles could not be loaded.",
+  "scope.cycles.exclusionsLoadFailed": "Scope exclusions could not be loaded."
 }

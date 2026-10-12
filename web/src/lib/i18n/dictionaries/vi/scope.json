@@ -240,5 +240,17 @@
   "scope.existing.activate": "Kích hoạt",
   "scope.existing.renew": "Gia hạn {n} ngày",
   "scope.existing.done": "Đã cập nhật {pattern}",
-  "scope.existing.failed": "Thay đổi chưa được lưu."
+  "scope.existing.failed": "Thay đổi chưa được lưu.",
+  "scope.review.title": "Bề mặt tấn công",
+  "scope.review.description": "Các tên mà quá trình khám phá tìm thấy và có thể thuộc về bạn. Xác nhận chỉ ghi nhận quyền sở hữu; chỉ mục phạm vi mới cho phép quét tới một tên.",
+  "scope.review.readOnly": "Bạn có thể xem hàng đợi này. Quyết định quyền sở hữu cần quyền chỉnh sửa tài sản.",
+  "scope.cycles.title": "Chu kỳ",
+  "scope.cycles.description": "Lập kế hoạch và vận hành chu kỳ CTEM: điều lệ, phạm vi được cố định và kết quả dùng để đánh giá.",
+  "scope.cycles.emptyTitle": "Chưa có chu kỳ",
+  "scope.cycles.empty": "Tạo một chu kỳ để bắt đầu.",
+  "scope.cycles.noCycleTitle": "Chưa có chu kỳ",
+  "scope.cycles.noCycle": "Một chu kỳ gồm điều lệ, phạm vi được cố định và kết quả dùng để đánh giá.",
+  "scope.cycles.noServices": "Chưa có dịch vụ nghiệp vụ. Hãy tạo trong Phạm vi › Dịch vụ nghiệp vụ.",
+  "scope.cycles.profilesLoadFailed": "Không tải được hồ sơ kẻ tấn công.",
+  "scope.cycles.exclusionsLoadFailed": "Không tải được các loại trừ phạm vi."
 }
