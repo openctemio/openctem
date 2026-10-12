@@ -77,7 +77,7 @@ services:
       # user the suite gets 429s and their error toasts cover what it clicks.
       RATE_LIMIT_READ_PER_MIN: '3000'
     healthcheck:
-      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8080/health']
+      test: ['CMD', '/app/server', '-healthcheck']
       interval: 2s
       retries: 60
     depends_on:

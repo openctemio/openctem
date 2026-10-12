@@ -67,6 +67,7 @@ type Repositories struct {
 	PentestRetest         *postgres.PentestRetestRepository
 	PentestTemplate       *postgres.PentestTemplateRepository
 	PentestReport         *postgres.PentestReportRepository
+	PentestReportTemplate *postgres.PentestReportTemplateRepository
 
 	// Attachments (file upload metadata)
 	Attachment *postgres.AttachmentRepository
@@ -235,9 +236,12 @@ type Repositories struct {
 	VerifiedNames  *postgres.VerifiedDomainNameRepository
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
+	SCMApp      *postgres.SCMAppInstallationRepository
 	EASMSummary *postgres.EASMSummaryRepository
 	// EASMNetworkSeed stores AS number and organization seeds (RFC-082).
 	EASMNetworkSeed *postgres.EASMNetworkSeedRepository
+	// EASMChange reads typed attack-surface changes and claims weekly digests (RFC-080).
+	EASMChange *postgres.EASMChangeRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -360,6 +364,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		PentestRetest:         postgres.NewPentestRetestRepository(db),
 		PentestTemplate:       postgres.NewPentestTemplateRepository(db),
 		PentestReport:         postgres.NewPentestReportRepository(db),
+		PentestReportTemplate: postgres.NewPentestReportTemplateRepository(db),
 
 		// Attachments
 		Attachment: postgres.NewAttachmentRepository(db),
@@ -500,8 +505,10 @@ func newRepositories(db *postgres.DB) *Repositories {
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
 		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
+		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 		EASMNetworkSeed:  postgres.NewEASMNetworkSeedRepository(db),
+		EASMChange:       postgres.NewEASMChangeRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),
