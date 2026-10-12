@@ -31,8 +31,38 @@ services:
   # ---------------------------------------------------------------------------
   # Gateway: the only published service
   # ---------------------------------------------------------------------------
+  # Gives the gateway's volumes to its user (uid 1000) before it starts:
+  # volumes written by an older gateway that ran as root hold root-owned files,
+  # and Docker creates a missing ./ca as root. Offline, runs and exits on every
+  # `up` (a no-op once the owner is right); only CHOWN, plus DAC_READ_SEARCH
+  # to walk the gateway's own 0700 directories.
+  gateway-init:
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION}}
+    user: "0:0"
+    entrypoint: ["chown", "-R", "1000:1000", "/data", "/config", "/ca"]
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_READ_SEARCH]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${OPENCTEM_CA_EXPORT_DIR:-./ca}:/ca
+      - gateway-data:/data
+      - gateway-config:/config
+    restart: "no"
+    logging: *default-logging
+
+  # The gateway image: Caddy with the standard and layer4 modules, built with
+  # the release's Go toolchain (api/deploy/gateway/Dockerfile). Runs as uid
+  # 1000; binds 443 (and 80 with the redirect overlay) as non-root through
+  # the namespaced sysctl below, so no-new-privileges stays on and it holds
+  # no capability.
   gateway:
-    image: caddy:${CADDY_VERSION:-2.11.4-alpine}
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION}}
+    user: "1000:1000"
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    cap_drop: [ALL]
     entrypoint: ["/bin/sh", "/etc/caddy/entrypoint.sh"]
     ports:
       - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_HTTPS_PORT:-443}:443"
@@ -61,6 +91,8 @@ services:
       timeout: 5s
       retries: 3
     depends_on:
+      gateway-init:
+        condition: service_completed_successfully
       api:
         condition: service_healthy
       web:
@@ -346,6 +378,26 @@ services:
       - ssl_cert_file=/tls/server.crt
       - -c
       - ssl_key_file=/tls/postgres.key
+      # Memory and planner settings sized for a host with 8 GB (the Small
+      # size in docs install/sizing): PostgreSQL's built-in defaults
+      # (128 MB shared_buffers, random_page_cost 4 for spinning disks) make
+      # the tenant-wide aggregates read from disk and spill sorts. Scale the
+      # PG_* values with the host: shared_buffers about 25% of RAM,
+      # effective_cache_size about 70%.
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-3GB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-16MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - random_page_cost=${PG_RANDOM_PAGE_COST:-1.1}
+      - -c
+      - max_wal_size=${PG_MAX_WAL_SIZE:-2GB}
+    # Parallel queries share memory through /dev/shm (64 MB by default).
+    shm_size: ${PG_SHM_SIZE:-256m}
     environment:
       # The superuser exists for initdb and the db-roles job. With
       # least-privilege roles it is DB_SUPERUSER, separate from the API's

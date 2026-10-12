@@ -204,7 +204,6 @@ and SBOM import write it.
 | `POST /api/v1/findings` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
-| `POST /api/v1/findings/{id}/triage` | `findings:triage` |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; also `findings:approve` when either finding is a false positive or risk acceptance (service check). Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
@@ -376,7 +375,7 @@ create's target validator, exclusions, zone routing) in one call.
 > already owner/admin only (`000231`).
 >
 > **No custom role may carry them** (settings decision B1, 2026-10-04):
-> `sensors:write`, `sensors:delete`, `sensors:commands:delete`,
+> `sensors:write`, `sensors:delete`,
 > `sensors:zones:write` and `sensors:zones:delete` are admin-only
 > (`pkg/domain/permission/admin_only.go`). The role service refuses them on
 > create and update, whoever edits the role (400), and a trigger on
