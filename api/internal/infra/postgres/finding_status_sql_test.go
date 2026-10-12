@@ -60,6 +60,7 @@ var findingStatusWriters = map[string]int{
 	"finding_branch_only.go":               1, // branchOnlyExpiryFromSQL
 	"finding_coverage_autoresolve.go":      2, // autoResolveFromSQL
 	"finding_group_repository.go":          1, // UserFromStatuses($6)
+	"finding_pentest_duplicate.go":         2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
 	"finding_interop.go":                   1, // vexFalsePositiveFromSQL
 	"finding_repo_coverage_autoresolve.go": 1, // autoResolveFromSQL
 	"finding_repository.go":                9, // entity Update; UpdateStatusBatch ($6); auto-resolve x4; reopen x2; branch expiry

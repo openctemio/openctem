@@ -235,7 +235,9 @@ export function EASMRuleDialog({
                       : {
                           approvalsRequired:
                             entry?.status === 'active' ? 0 : (entry?.approvals_required ?? 0),
-                          isRequest: accept && !canApprove,
+                          // A request only when the server would not apply it
+                          // at once (Strict scan approval).
+                          isRequest: accept && !canApprove && entry?.status !== 'active',
                           stepUp: preview.step_up_required,
                         }
                   }

@@ -439,6 +439,14 @@ type wsChannelAccess struct {
 	groups *postgres.GroupRepository
 	scope  *datascope.Enforcer
 	runs   runReader // run:{id} channels (CanSeeRun); nil refuses them
+	// pentest decides pentest finding channels by campaign role (team
+	// only); nil leaves them to the data scope.
+	pentest pentestChannelChecker
+}
+
+// pentestChannelChecker is *finding.VulnerabilityService.
+type pentestChannelChecker interface {
+	PentestChannelAccess(ctx context.Context, tenantID, userID, findingID shared.ID) (pentestFinding, allowed bool)
 }
 
 // CanSeeFinding applies the Layer 2 data scope to finding and triage
@@ -455,6 +463,13 @@ func (a wsChannelAccess) CanSeeFinding(ctx context.Context, tenantID, userID, fi
 	fid, err := shared.IDFromString(findingID)
 	if err != nil {
 		return false, err // not a finding id: refuse the subscription
+	}
+	// A pentest finding is governed by its campaign: the team subscribes,
+	// a client never does (the channel carries team-only comments).
+	if a.pentest != nil {
+		if isPentest, allowed := a.pentest.PentestChannelAccess(ctx, tid, uid, fid); isPentest {
+			return allowed, nil
+		}
 	}
 	if a.scope == nil {
 		return true, nil
@@ -1353,8 +1368,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	//                    _ENDPOINT, _ACCESS_KEY, _SECRET_KEY); needed when more
 	//                    than one API replica serves attachments without a
 	//                    shared (ReadWriteMany) volume.
-	// Attachments record the provider "local" for this server-wide storage, so
-	// switching STORAGE_PROVIDER later does not move existing files.
+	// Attachments record the provider "local" for this server-wide storage
+	// whatever its driver: before switching STORAGE_PROVIDER, copy the files
+	// with `bootstrap-admin storage migrate` (file-storage.md).
 	var fileStorage attachment.FileStorage
 	switch cfg.Storage.Provider {
 	case "local", "":
@@ -1370,15 +1386,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		if err != nil {
 			return nil, fmt.Errorf("attachment storage: %w", err)
 		}
+		if err := s3Store.SetServerSideEncryption(cfg.Storage.SSE, cfg.Storage.SSEKMSKeyID); err != nil {
+			return nil, fmt.Errorf("attachment storage: %w", err)
+		}
 		fileStorage = s3Store
 		log.Info("attachment storage: S3-compatible bucket", "provider", cfg.Storage.Provider,
-			"bucket", cfg.Storage.Bucket, "endpoint", cfg.Storage.Endpoint)
+			"bucket", cfg.Storage.Bucket, "endpoint", cfg.Storage.Endpoint, "sse", cfg.Storage.SSE)
 	default:
 		// Used to fall back to local storage with only a warning, so a typo
 		// (or "gcs") silently kept files on an ephemeral container disk.
 		return nil, fmt.Errorf("unsupported STORAGE_PROVIDER %q (local, s3 or minio)", cfg.Storage.Provider)
 	}
+	fileStorage = storage.Instrument(fileStorage, storage.BackendServer)
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
+	s.Attachment.SetMetrics(storage.Metrics{})
+	s.Attachment.SetDirectDownloads(cfg.Storage.DirectDownload)
 	s.Attachment.SetTenantQuota(cfg.Storage.TenantQuotaMB << 20)
 	// Retention: evidence of deleted findings/campaigns and never-linked
 	// uploads are purged by the attachment-retention controller.
@@ -1386,6 +1408,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		OrphanGrace:       time.Duration(cfg.Storage.OrphanGraceDays) * 24 * time.Hour,
 		UnlinkedRetention: time.Duration(cfg.Storage.UnlinkedRetentionHours) * time.Hour,
 	}, s.Audit)
+	// Stored files of deleted rows (report templates, stored reports) are
+	// removed by the same sweep.
+	s.Attachment.SetBlobDeletionQueue(repos.Attachment)
+	// Report templates and stored reports live in the organization's file
+	// storage; the report-file-migration job moves rows that still hold bytes.
+	repos.PentestReport.SetFileStore(integration.NewReportFiles(s.Attachment))
+	repos.PentestReportTemplate.SetFileStore(integration.NewReportFiles(s.Attachment))
 	// Optional malware scanning of new uploads (marks, never blocks).
 	if cfg.Storage.ClamdAddress != "" {
 		clamd, err := malware.NewClamd(cfg.Storage.ClamdAddress, 0)
@@ -2457,7 +2486,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
-	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope, runs: s.ScanRun})
+	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope, runs: s.ScanRun, pentest: s.Vulnerability})
 	// The live run map: a run that changes tells its run:{id} watchers,
 	// at most once a second per run.
 	s.ScanRun.SetRunNotifier(newRunChangeThrottle(s.WebSocketHub, time.Second))

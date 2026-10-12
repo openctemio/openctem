@@ -98,3 +98,56 @@ describe('toFindingActivityItems', () => {
     expect(cs[0]).toMatchObject({ commentId: 'c1', body: 'old text' })
   })
 })
+
+describe('pentest comment visibility in the feed', () => {
+  const acts: Activity[] = [
+    {
+      id: 'a1',
+      type: 'comment',
+      actor: jamie,
+      content: 'drafted',
+      metadata: {
+        activityType: 'comment_added',
+        comment_id: 'c1',
+        client_name: 'Desktop assistant',
+      },
+      createdAt: '2026-05-11T11:00:00Z',
+    },
+  ]
+  const comments = [
+    {
+      id: 'c1',
+      finding_id: 'f',
+      author_id: 'u1',
+      content: 'drafted',
+      is_status_change: false,
+      created_at: '2026-05-11T11:00:00Z',
+      visibility: 'team',
+    },
+    {
+      id: 'c2',
+      finding_id: 'f',
+      author_id: 'u1',
+      content: 'shared',
+      is_status_change: false,
+      created_at: '2026-05-11T12:00:00Z',
+      visibility: 'client',
+    },
+  ] as ApiFindingComment[]
+
+  it('labels each comment team or client on a pentest finding, with the AI client', () => {
+    const out = toFindingActivityItems(acts, comments, { visibility: true })
+    const byId = Object.fromEntries(
+      out
+        .filter((i) => i.kind === 'comment')
+        .map((i) => [i.kind === 'comment' ? i.commentId : '', i])
+    )
+    expect(byId.c1).toMatchObject({ visibility: 'team', via: 'Desktop assistant' })
+    expect(byId.c2).toMatchObject({ visibility: 'client' })
+  })
+
+  it('shows no visibility badge on other findings', () => {
+    const out = toFindingActivityItems(acts, comments)
+    for (const i of out) if (i.kind === 'comment') expect(i.visibility).toBeUndefined()
+  })
+})
