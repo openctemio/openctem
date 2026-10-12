@@ -126,7 +126,6 @@ DELETE /api/v1/tenants/{tenant}     # Delete tenant
 
 # Member management
 GET    /api/v1/tenants/{tenant}/members
-POST   /api/v1/tenants/{tenant}/members
 PATCH  /api/v1/tenants/{tenant}/members/{id}
 POST   /api/v1/organization/members/{id}/offboard   # step-up
 
