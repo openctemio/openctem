@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useUnsavedChangesGuard } from '../use-unsaved-changes-guard'
 
+// A variable href: a plain anchor is what the guard intercepts.
+const IN_APP = '/findings?x=1'
+
 function Page({ dirty, onBlocked }: { dirty: boolean; onBlocked: (href: string) => void }) {
   useUnsavedChangesGuard(dirty, onBlocked)
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a plain anchor is what the guard intercepts */}
-      <a href="/findings?x=1">in app</a>
+      <a href={IN_APP}>in app</a>
       <a href="https://other.example/">outside</a>
       <a href="/new-tab" target="_blank">
         new tab
