@@ -186,7 +186,7 @@
   "settings.desc.my-notifications": "Which notifications you receive, and how.",
   "settings.desc.notification-channels": "Slack, Teams, Telegram and webhook alerts for the organization.",
   "settings.desc.org-general": "Organization name, branding, localization and file storage.",
-  "settings.desc.pentest-methodology": "Campaign types, testing methodologies, the finding library and report templates.",
+  "settings.desc.pentest-methodology": "Campaign types, testing methodologies, checklists, the finding library and report templates.",
   "settings.desc.plan": "Your plan, its limits and what this organization uses.",
   "settings.desc.preferences": "Theme, language, time zone and date format.",
   "settings.desc.profile": "Your name, email and avatar.",
