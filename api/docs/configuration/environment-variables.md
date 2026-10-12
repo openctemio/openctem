@@ -375,12 +375,6 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `GEMINI_API_KEY` | string | empty |  | yes | Platform key for the `gemini` provider. |
 | `OPENAI_API_KEY` | string | empty |  | yes | Platform key for the `openai` provider. |
 
-### CTEM cycles
-
-| Variable | Type | Default | Required | Secret | Description |
-|---|---|---|---|---|---|
-| `CTEM_ENFORCE_COVERAGE_SLO` | string | `unset` |  |  | `true` refuses to close a CTEM cycle whose validation coverage misses its targets. Unset: the miss is only logged. |
-
 ## Administration tools
 
 Read by the command-line tools shipped with the server (`bootstrap-admin`, `rekey`, `openctem-signer`, ...), in addition to the database variables.
@@ -539,6 +533,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AI_MAX_CONCURRENT_JOBS` | unset it; it limited nothing, AI triage jobs run on the background job queue |
 | `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > System > Sign-up) |
 | `APP_ALLOW_PLAINTEXT_CREDENTIALS` | unset it; credentials are always encrypted (development uses the key in api/.env.example) |
+| `CTEM_ENFORCE_COVERAGE_SLO` | unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles) |
 | `AUTH_ACCESS_TOKEN_COOKIE_NAME` | unset it; the session cookie is always auth_token |
 | `AUTH_REFRESH_TOKEN_COOKIE_NAME` | unset it; the refresh cookie is always refresh_token |
 | `AUTH_TENANT_COOKIE_NAME` | unset it; the organization cookie is always app_tenant |
