@@ -83,7 +83,7 @@ func (s *AttachmentService) drainBlobDeletions(ctx context.Context) int {
 				continue
 			}
 		}
-		if err := s.blobQueue.DeleteBlobDeletion(ctx, d.ID); err != nil {
+		if err := s.blobQueue.DeleteBlobDeletion(ctx, d.TenantID, d.ID); err != nil {
 			s.logger.Warn("stored file deletion not dequeued", "error", logger.SanitizeError(err))
 			continue
 		}
