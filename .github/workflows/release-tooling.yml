@@ -73,12 +73,11 @@ jobs:
           fetch-depth: 1
           fetch-tags: true
       - name: versions.yaml and its consumers agree
-        env:
-          HEAD_REF: ${{ github.head_ref }}
+        # GITHUB_HEAD_REF is the pull request's branch (empty on a push).
         run: |
           args=(--check)
           re='release/(v[0-9]+\.[0-9]+\.[0-9]+)$'
-          if [[ "$HEAD_REF" =~ ^$re ]]; then
+          if [[ "${GITHUB_HEAD_REF:-}" =~ ^$re ]]; then
             args+=(--release "${BASH_REMATCH[1]}")
           elif [ "$GITHUB_REF" = refs/heads/main ] && [[ "$(git log -1 --format=%s)" =~ ^Merge\ pull\ request\ .*\ from\ [^/]+/$re ]]; then
             args+=(--release "${BASH_REMATCH[1]}")
