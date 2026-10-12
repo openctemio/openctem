@@ -3,18 +3,16 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"strings"
+	"errors"
 
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // toolInputError is a tool argument-validation error whose message is safe to
@@ -43,6 +41,10 @@ func parseToolArgs(raw json.RawMessage, dst any) error {
 		return nil
 	}
 	if err := json.Unmarshal(raw, dst); err != nil {
+		var ie toolInputError
+		if errors.As(err, &ie) {
+			return ie
+		}
 		return toolInputError{"invalid arguments: malformed JSON"}
 	}
 	return nil
@@ -115,177 +117,15 @@ func requireActingUser(ctx context.Context) (string, error) {
 	return u, nil
 }
 
-// --- pentest report-writing DTOs ---------------------------------------------
-
-type mcpCampaignMemberDTO struct {
-	UserID string `json:"user_id"`
-	Name   string `json:"name,omitempty"`
-	Role   string `json:"role"`
-}
-
-// mcpCampaignDTO is the whitelisted projection of a pentest campaign: the report
-// header context (client, dates, scope, rules of engagement, methodology,
-// objectives, team) — never raw domain internals.
-type mcpCampaignDTO struct {
-	ID                string                 `json:"id"`
-	Name              string                 `json:"name"`
-	Targets           []string               `json:"targets"`
-	Approach          string                 `json:"approach,omitempty"`
-	Environment       string                 `json:"environment,omitempty"`
-	TLP               string                 `json:"tlp"`
-	Status            string                 `json:"status"`
-	Description       string                 `json:"description,omitempty"`
-	ClientName        string                 `json:"client_name,omitempty"`
-	StartDate         string                 `json:"start_date,omitempty"`
-	EndDate           string                 `json:"end_date,omitempty"`
-	Methodology       string                 `json:"methodology,omitempty"`
-	Objectives        []string               `json:"objectives,omitempty"`
-	ScopeItems        []map[string]any       `json:"scope_items,omitempty"`
-	RulesOfEngagement map[string]any         `json:"rules_of_engagement,omitempty"`
-	Tags              []string               `json:"tags,omitempty"`
-	Team              []mcpCampaignMemberDTO `json:"team,omitempty"`
-}
-
-func toCampaignDTO(c *pentestdom.Campaign, members []*pentestdom.CampaignMember) mcpCampaignDTO {
-	dto := mcpCampaignDTO{
-		ID:                c.ID().String(),
-		Name:              c.Name(),
-		Targets:           c.Targets(),
-		Approach:          string(c.Approach()),
-		Environment:       string(c.Environment()),
-		TLP:               string(c.TLP()),
-		Status:            string(c.Status()),
-		Description:       c.Description(),
-		ClientName:        c.ClientName(),
-		Methodology:       c.Methodology(),
-		Objectives:        c.Objectives(),
-		ScopeItems:        c.ScopeItems(),
-		RulesOfEngagement: c.RulesOfEngagement(),
-		Tags:              c.Tags(),
-	}
-	if c.StartDate() != nil {
-		dto.StartDate = c.StartDate().Format("2006-01-02")
-	}
-	if c.EndDate() != nil {
-		dto.EndDate = c.EndDate().Format("2006-01-02")
-	}
-	// Team: user_id + display name + role only. Emails are intentionally omitted
-	// so the MCP surface never leaks member PII.
-	dto.Team = make([]mcpCampaignMemberDTO, 0, len(members))
-	for _, m := range members {
-		dto.Team = append(dto.Team, mcpCampaignMemberDTO{
-			UserID: m.UserID().String(),
-			Name:   m.UserName(),
-			Role:   string(m.Role()),
-		})
-	}
-	return dto
-}
-
-// mcpPentestFindingDTO is the RICH whitelisted projection of a pentest finding
-// for report writing. Evidence and request/response captures are NEVER included
-// as raw blobs — only counts + a has_poc flag (populated by get_pentest_finding).
-type mcpPentestFindingDTO struct {
-	ID                   string   `json:"id"`
-	Title                string   `json:"title"`
-	Description          string   `json:"description,omitempty"`
-	Severity             string   `json:"severity"`
-	Status               string   `json:"status"`
-	CVSSScore            *float64 `json:"cvss_score,omitempty"`
-	CVSSVector           string   `json:"cvss_vector,omitempty"`
-	CVSSVersion          string   `json:"cvss_version,omitempty"`
-	CWE                  string   `json:"cwe,omitempty"`
-	CVE                  string   `json:"cve,omitempty"`
-	OWASPCategory        string   `json:"owasp_category,omitempty"`
-	MitreTechniqueID     string   `json:"mitre_technique_id,omitempty"`
-	StepsToReproduce     []string `json:"steps_to_reproduce,omitempty"`
-	BusinessImpact       string   `json:"business_impact,omitempty"`
-	TechnicalImpact      string   `json:"technical_impact,omitempty"`
-	RemediationGuidance  string   `json:"remediation_guidance,omitempty"`
-	ReferenceURLs        []string `json:"reference_urls,omitempty"`
-	AffectedAssets       []string `json:"affected_assets,omitempty"`
-	EvidenceCount        *int     `json:"evidence_count,omitempty"`
-	RequestResponseCount *int     `json:"request_response_count,omitempty"`
-	HasPoC               *bool    `json:"has_poc,omitempty"`
-}
-
-// mcpMetaStrings extracts a []string from a JSON-decoded []any metadata field.
-func mcpMetaStrings(meta map[string]any, key string) []string {
-	raw, ok := meta[key].([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(raw))
-	for _, v := range raw {
-		if s, ok := v.(string); ok {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func metaStr(meta map[string]any, key string) string {
-	if v, ok := meta[key].(string); ok {
-		return v
-	}
-	return ""
-}
-
-func metaCount(meta map[string]any, key string) int {
-	if raw, ok := meta[key].([]any); ok {
-		return len(raw)
-	}
-	return 0
-}
-
-// toPentestFindingDTO projects a unified pentest finding, pulling rich fields out
-// of source_metadata. When includeEvidenceMeta is true (single-finding reads),
-// evidence/request-response COUNTS and a has_poc flag are added — but never the
-// raw evidence blobs, PoC code, or captured request/response bodies.
-func toPentestFindingDTO(f *vulnerability.Finding, includeEvidenceMeta bool) mcpPentestFindingDTO {
-	meta := f.SourceMetadata()
-	dto := mcpPentestFindingDTO{
-		ID:                  f.ID().String(),
-		Title:               f.Title(),
-		Description:         f.Description(),
-		Severity:            string(f.Severity()),
-		Status:              string(f.Status()),
-		CVSSScore:           f.CVSSScore(),
-		CVSSVector:          f.CVSSVector(),
-		CVSSVersion:         metaStr(meta, "cvss_version"),
-		CVE:                 f.CVEID(),
-		OWASPCategory:       metaStr(meta, "owasp_category"),
-		MitreTechniqueID:    metaStr(meta, "mitre_technique_id"),
-		StepsToReproduce:    mcpMetaStrings(meta, "steps_to_reproduce"),
-		BusinessImpact:      metaStr(meta, "business_impact"),
-		TechnicalImpact:     metaStr(meta, "technical_impact"),
-		RemediationGuidance: metaStr(meta, "remediation_guidance"),
-		ReferenceURLs:       mcpMetaStrings(meta, "reference_urls"),
-		AffectedAssets:      mcpMetaStrings(meta, "affected_assets"),
-	}
-	if cwes := f.CWEIDs(); len(cwes) > 0 {
-		dto.CWE = cwes[0]
-	}
-	if includeEvidenceMeta {
-		ec := metaCount(meta, "evidence")
-		rc := metaCount(meta, "request_responses")
-		hasPoC := metaStr(meta, "poc_code") != ""
-		dto.EvidenceCount = &ec
-		dto.RequestResponseCount = &rc
-		dto.HasPoC = &hasPoC
-	}
-	return dto
-}
-
 // buildTools registers every read-only tool. Each executor reads its tenant from
 // the (already-authenticated) tenantID argument the dispatcher passes — never
 // from the tool's own arguments — so scope can't be widened by a caller.
 func (h *MCPHandler) buildTools() []mcpTool {
-	return []mcpTool{
+	return append([]mcpTool{
 		{
 			Name: "list_findings",
 			Description: "List this tenant's vulnerability findings. Optional filters: " +
-				"severity (critical/high/medium/low/info), status, source, free-text search.",
+				"severity (critical/high/medium/low/info), status, source, free-text search." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"severity":{"type":"string","description":"critical|high|medium|low|info"},` +
 				`"status":{"type":"string"},` +
@@ -297,8 +137,8 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		},
 		{
 			Name:         "get_finding",
-			Description:  "Get a single finding by its ID, scoped to this tenant.",
-			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
+			Description:  "Get a single finding by its ID, scoped to this tenant." + mcpUntrustedHint,
+			InputSchema:  json.RawMessage(`{"type":"object","properties":{"finding_id":{"type":"string","format":"uuid","description":"finding UUID"}},"required":["finding_id"]}`),
 			RequiredPerm: string(permission.FindingsRead),
 			call:         h.toolGetFinding,
 		},
@@ -313,7 +153,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		{
 			Name: "list_active_cves",
 			Description: "List KEV/EPSS-prioritized CVEs active in this tenant. Filters: " +
-				"kev_only (CISA Known Exploited), min_epss (0..1 exploit-probability floor), severity.",
+				"kev_only (CISA Known Exploited), min_epss (0..1 exploit-probability floor), severity." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"kev_only":{"type":"boolean"},` +
 				`"min_epss":{"type":"number","description":"0..1 EPSS floor"},` +
@@ -326,14 +166,14 @@ func (h *MCPHandler) buildTools() []mcpTool {
 			Name: "explain_finding_priority",
 			Description: "Explain why a finding has its priority (KEV / EPSS / reachability / " +
 				"severity weighting), scoped to this tenant. Read-only; does not reclassify.",
-			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
+			InputSchema:  json.RawMessage(`{"type":"object","properties":{"finding_id":{"type":"string","format":"uuid","description":"finding UUID"}},"required":["finding_id"]}`),
 			RequiredPerm: string(permission.FindingsRead),
 			call:         h.toolExplainPriority,
 		},
 		{
 			Name: "get_exposure_chains",
 			Description: "Shortest attack-path hop-chains from public entry points to assets " +
-				"carrying open KEV/critical findings (crown jewels), for this tenant.",
+				"carrying open KEV/critical findings (crown jewels), for this tenant." + mcpUntrustedHint,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 			RequiredPerm: string(permission.AssetsRead),
 			Module:       moduledom.ModuleAttackSurface,
@@ -342,7 +182,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		{
 			Name: "list_remediation_groups",
 			Description: "List remediation groups (solution families): each is the set of open " +
-				"findings one fix resolves, with finding/asset counts and severity breakdown.",
+				"findings one fix resolves, with finding/asset counts and severity breakdown." + mcpUntrustedHint,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 			RequiredPerm: string(permission.FindingsRead),
 			call:         h.toolListRemediationGroups,
@@ -350,7 +190,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		{
 			Name: "list_assets",
 			Description: "List this tenant's assets. Filters: exposure (public/private/unknown), " +
-				"criticality, free-text search.",
+				"criticality, free-text search." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"exposure":{"type":"string","description":"public|private|unknown"},` +
 				`"criticality":{"type":"string"},` +
@@ -367,76 +207,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 			Module:       moduledom.ModuleCompliance,
 			call:         h.toolCompliancePosture,
 		},
-		// --- pentest report-writing tools (campaign-membership gated) ---------
-		{
-			Name: "get_campaign",
-			Description: "Get a pentest campaign's report context: name, type, status, client, dates, " +
-				"scope items, rules of engagement, methodology, objectives, and team. Status is the phase: " +
-				"planning (no findings yet), in_progress (testing: lead and testers add findings), " +
-				"reporting (testing closed: findings reviewed, only the lead and reviewers add late findings), " +
-				"completed (report delivered: remediation and retests only), on_hold, canceled or archived. " +
-				"Requires the key owner to be a member of the campaign.",
-			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
-			RequiredPerm: string(permission.PentestCampaignsRead),
-			Module:       moduledom.ModulePentest,
-			call:         h.toolGetCampaign,
-		},
-		{
-			Name: "list_campaign_findings",
-			Description: "List a pentest campaign's findings with rich report fields (description, CVSS, " +
-				"CWE/CVE, OWASP, MITRE, steps, impacts, remediation, references, affected assets). " +
-				"Optional filters: severity, status, limit. Requires campaign membership.",
-			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
-				`"campaign_id":{"type":"string"},` +
-				`"severity":{"type":"string","description":"critical|high|medium|low|info"},` +
-				`"status":{"type":"string"},` +
-				`"limit":{"type":"integer","description":"max rows (default 25, max 100)"}},"required":["campaign_id"]}`),
-			RequiredPerm: string(permission.PentestFindingsRead),
-			Module:       moduledom.ModulePentest,
-			call:         h.toolListCampaignFindings,
-		},
-		{
-			Name: "get_pentest_finding",
-			Description: "Get one pentest finding with full report fields. Evidence and request/response " +
-				"captures are returned only as COUNTS plus a has_poc flag — never raw blobs. Requires " +
-				"campaign membership.",
-			InputSchema:  json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
-			RequiredPerm: string(permission.PentestFindingsRead),
-			Module:       moduledom.ModulePentest,
-			call:         h.toolGetPentestFinding,
-		},
-		{
-			Name: "list_retests",
-			Description: "List retests for a pentest campaign: finding title, severity, retest status " +
-				"(passed, failed, partial, inconclusive = unable to verify, with the reason in the notes), " +
-				"notes, tested_at. Requires campaign membership.",
-			InputSchema:  json.RawMessage(`{"type":"object","properties":{"campaign_id":{"type":"string"}},"required":["campaign_id"]}`),
-			RequiredPerm: string(permission.PentestRetestsRead),
-			Module:       moduledom.ModulePentest,
-			call:         h.toolListRetests,
-		},
-		{
-			Name: "list_finding_templates",
-			Description: "List reusable finding templates (name, category, severity, description, steps, " +
-				"impact, remediation). Optional filters: category, free-text search.",
-			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
-				`"category":{"type":"string"},` +
-				`"search":{"type":"string"},` +
-				`"limit":{"type":"integer"}}}`),
-			RequiredPerm: string(permission.PentestTemplatesRead),
-			Module:       moduledom.ModulePentest,
-			call:         h.toolListFindingTemplates,
-		},
-		{
-			Name: "campaign_report_stats",
-			Description: "Report statistics for a pentest campaign: finding counts by severity/status, " +
-				"average and max CVSS, and progress. Requires campaign membership.",
-			InputSchema:  json.RawMessage(`{"type":"object","properties":{"campaign_id":{"type":"string"}},"required":["campaign_id"]}`),
-			RequiredPerm: string(permission.PentestCampaignsRead),
-			Module:       moduledom.ModulePentest,
-			call:         h.toolCampaignReportStats,
-		},
-	}
+	}, h.buildPentestTools()...)
 }
 
 // --- tool executors ----------------------------------------------------------
@@ -481,24 +252,20 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 	for _, f := range res.Data {
 		out = append(out, toFindingDTO(f))
 	}
-	return map[string]any{"total": res.Total, "findings": out}, nil
-}
-
-type idArg struct {
-	ID string `json:"id"`
+	return untrustedResult(map[string]any{"findings": out}, map[string]any{"total": res.Total}), nil
 }
 
 func (h *MCPHandler) toolGetFinding(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
-	var a idArg
-	if err := json.Unmarshal(raw, &a); err != nil || a.ID == "" {
-		return nil, toolInputError{"id is required"}
-	}
-	// Scoped read: the key owner's data-scope + pentest membership apply.
-	f, err := h.findings.GetFindingWithScope(ctx, tenantID, a.ID, actingUser(ctx), false)
+	id, err := uuidArg(raw, "finding_id")
 	if err != nil {
 		return nil, err
 	}
-	return toFindingDTO(f), nil
+	// Scoped read: the key owner's data-scope + pentest membership apply.
+	f, err := h.findings.GetFindingWithScope(ctx, tenantID, id, actingUser(ctx), false)
+	if err != nil {
+		return nil, err
+	}
+	return untrustedResult(toFindingDTO(f), map[string]any{"finding_id": id}), nil
 }
 
 func (h *MCPHandler) toolFindingStats(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
@@ -560,27 +327,27 @@ func (h *MCPHandler) toolListActiveCVEs(ctx context.Context, tenantID string, ra
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"total": res.Total, "cves": res.Data}, nil
+	return untrustedResult(map[string]any{"cves": res.Data}, map[string]any{"total": res.Total}), nil
 }
 
 func (h *MCPHandler) toolExplainPriority(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
-	var a idArg
-	if err := json.Unmarshal(raw, &a); err != nil || a.ID == "" {
-		return nil, toolInputError{"id is required"}
+	id, err := uuidArg(raw, "finding_id")
+	if err != nil {
+		return nil, err
 	}
 	// Data-scope gate: ExplainFinding is tenant-only (no scope, no pentest gate),
 	// so first resolve the finding through the SAME scoped path get_finding uses.
 	// If the key's data-scope / pentest membership can't read it, this returns the
 	// not-found/denied error and we never reveal priority factors — parity with
 	// get_finding's 404 for out-of-scope findings.
-	if _, err := h.findings.GetFindingWithScope(ctx, tenantID, a.ID, actingUser(ctx), false); err != nil {
+	if _, err := h.findings.GetFindingWithScope(ctx, tenantID, id, actingUser(ctx), false); err != nil {
 		return nil, err
 	}
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, toolInputError{"invalid tenant"}
 	}
-	fid, err := shared.IDFromString(a.ID)
+	fid, err := shared.IDFromString(id)
 	if err != nil {
 		return nil, toolInputError{"invalid finding id"}
 	}
@@ -596,7 +363,11 @@ func (h *MCPHandler) toolExposureChains(ctx context.Context, tenantID string, _ 
 	if err != nil {
 		return nil, toolInputError{"invalid tenant"}
 	}
-	return h.surface.ExposureChainsForCaller(ctx, tid)
+	chains, err := h.surface.ExposureChainsForCaller(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return untrustedResult(chains, nil), nil
 }
 
 // toolListRemediationGroups lists remediation groups over the key owner's
@@ -611,7 +382,7 @@ func (h *MCPHandler) toolListRemediationGroups(ctx context.Context, tenantID str
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"total": len(groups), "groups": groups}, nil
+	return untrustedResult(map[string]any{"groups": groups}, map[string]any{"total": len(groups)}), nil
 }
 
 type assetListArgs struct {
@@ -649,7 +420,7 @@ func (h *MCPHandler) toolListAssets(ctx context.Context, tenantID string, raw js
 	for _, as := range res.Data {
 		out = append(out, toAssetDTO(as))
 	}
-	return map[string]any{"total": res.Total, "assets": out}, nil
+	return untrustedResult(map[string]any{"assets": out}, map[string]any{"total": res.Total}), nil
 }
 
 // toolCompliancePosture is an intentionally TENANT-WIDE aggregate: framework /
@@ -657,329 +428,4 @@ func (h *MCPHandler) toolListAssets(ctx context.Context, tenantID string, raw js
 // (GetComplianceStats). Gated by the compliance:frameworks:read scope.
 func (h *MCPHandler) toolCompliancePosture(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
 	return h.compliance.GetComplianceStats(ctx, tenantID)
-}
-
-// --- pentest report-writing tool executors -----------------------------------
-//
-// SECURITY: MCP keys always act with IsAdmin=false and the campaign-membership
-// gate of the key's OWNING USER. This is intentionally stricter than the REST
-// path (where a tenant admin bypasses membership): an MCP key that is not a
-// member of a campaign — or that has no owning user at all — cannot read that
-// campaign's context, findings, retests, or stats. get_pentest_finding routes
-// through the same GetFindingWithScope path the generic get_finding tool uses,
-// which asserts pentest membership + data-scope for source='pentest' findings.
-
-type campaignIDArg struct {
-	CampaignID string `json:"campaign_id"`
-}
-
-func (h *MCPHandler) toolGetCampaign(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
-	if h.pentest == nil {
-		return nil, toolInputError{"pentest reader not configured"}
-	}
-	var a idArg
-	if err := json.Unmarshal(raw, &a); err != nil || a.ID == "" {
-		return nil, toolInputError{"id is required"}
-	}
-	user, err := requireActingUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// Membership gate: non-members get ErrNotCampaignMember (→ generic "not found").
-	if err := h.pentest.CheckCampaignAccess(ctx, tenantID, a.ID, user, false); err != nil {
-		return nil, err
-	}
-	campaign, err := h.pentest.GetCampaign(ctx, tenantID, a.ID)
-	if err != nil {
-		return nil, err
-	}
-	members, err := h.pentest.ListCampaignMembers(ctx, tenantID, a.ID)
-	if err != nil {
-		// Members are enrichment; a lookup failure must not deny the campaign read.
-		h.logger.Warn("mcp get_campaign: member lookup failed", "error", err.Error())
-		members = nil
-	}
-	return toCampaignDTO(campaign, members), nil
-}
-
-type campaignFindingsArgs struct {
-	CampaignID string `json:"campaign_id"`
-	Severity   string `json:"severity"`
-	Status     string `json:"status"`
-	Limit      int    `json:"limit"`
-}
-
-// campaignViewerRole is the acting user's role in the campaign. A client sees
-// published findings only, exactly as in the web console; an unknown role
-// (lookup error) is treated as a client so the read fails closed.
-func (h *MCPHandler) campaignViewerRole(ctx context.Context, tenantID, campaignID, userID string) pentestdom.CampaignRole {
-	role, err := h.pentest.GetUserCampaignRole(ctx, tenantID, campaignID, userID)
-	if err != nil || role == "" {
-		return pentestdom.CampaignRoleClient
-	}
-	return role
-}
-
-func (h *MCPHandler) toolListCampaignFindings(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
-	if h.pentest == nil {
-		return nil, toolInputError{"pentest reader not configured"}
-	}
-	var a campaignFindingsArgs
-	if err := json.Unmarshal(raw, &a); err != nil || a.CampaignID == "" {
-		return nil, toolInputError{"campaign_id is required"}
-	}
-	user, err := requireActingUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.pentest.CheckCampaignAccess(ctx, tenantID, a.CampaignID, user, false); err != nil {
-		return nil, err
-	}
-	limit := clampLimit(a.Limit)
-	// Fetch up to the hard max, then apply the optional severity/status filters in
-	// memory and truncate to the requested limit. ListAllPentestFindings pushes a
-	// membership subquery (viewer=key owner, isAdmin=false), so this is a second,
-	// DB-level enforcement of the same campaign-membership gate.
-	res, err := h.pentest.ListAllPentestFindings(ctx, tenantID, a.CampaignID, user, "", false,
-		pagination.Pagination{Page: 1, PerPage: mcpMaxLimit})
-	if err != nil {
-		return nil, err
-	}
-	role := h.campaignViewerRole(ctx, tenantID, a.CampaignID, user)
-	sevFilter := strings.ToLower(strings.TrimSpace(a.Severity))
-	statFilter := strings.ToLower(strings.TrimSpace(a.Status))
-	out := make([]mcpPentestFindingDTO, 0, len(res.Data))
-	visible := 0
-	for _, f := range res.Data {
-		if !role.CanSeeFindingStatus(string(f.Status())) {
-			continue
-		}
-		visible++
-		if sevFilter != "" && strings.ToLower(string(f.Severity())) != sevFilter {
-			continue
-		}
-		if statFilter != "" && strings.ToLower(string(f.Status())) != statFilter {
-			continue
-		}
-		if len(out) < limit {
-			out = append(out, toPentestFindingDTO(f, false))
-		}
-	}
-	total := res.Total
-	if !role.CanSeeUnpublished() {
-		total = int64(visible)
-	}
-	return map[string]any{"total": total, "findings": out}, nil
-}
-
-func (h *MCPHandler) toolGetPentestFinding(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
-	var a idArg
-	if err := json.Unmarshal(raw, &a); err != nil || a.ID == "" {
-		return nil, toolInputError{"id is required"}
-	}
-	if _, err := requireActingUser(ctx); err != nil {
-		return nil, err
-	}
-	// Scoped read: GetFindingWithScope asserts pentest campaign-membership +
-	// data-scope for source='pentest' findings (IsAdmin=false).
-	f, err := h.findings.GetFindingWithScope(ctx, tenantID, a.ID, actingUser(ctx), false)
-	if err != nil {
-		return nil, err
-	}
-	if f == nil || f.Source() != vulnerability.FindingSourcePentest {
-		return nil, toolInputError{"pentest finding not found"}
-	}
-	if h.pentest != nil && f.PentestCampaignID() != nil {
-		role := h.campaignViewerRole(ctx, tenantID, f.PentestCampaignID().String(), actingUser(ctx))
-		if !role.CanSeeFindingStatus(string(f.Status())) {
-			return nil, toolInputError{"pentest finding not found"}
-		}
-	}
-	return toPentestFindingDTO(f, true), nil
-}
-
-type mcpRetestDTO struct {
-	FindingID       string `json:"finding_id"`
-	FindingTitle    string `json:"finding_title,omitempty"`
-	FindingSeverity string `json:"finding_severity,omitempty"`
-	Status          string `json:"status"`
-	Notes           string `json:"notes,omitempty"`
-	TestedAt        string `json:"tested_at,omitempty"`
-}
-
-func (h *MCPHandler) toolListRetests(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
-	if h.pentest == nil {
-		return nil, toolInputError{"pentest reader not configured"}
-	}
-	var a campaignIDArg
-	if err := json.Unmarshal(raw, &a); err != nil || a.CampaignID == "" {
-		return nil, toolInputError{"campaign_id is required"}
-	}
-	user, err := requireActingUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.pentest.CheckCampaignAccess(ctx, tenantID, a.CampaignID, user, false); err != nil {
-		return nil, err
-	}
-	// Build a finding_id → (title, severity) lookup from the findings the key owner
-	// can see in this campaign, to enrich retests without a separate per-retest read.
-	lookup := map[string]*vulnerability.Finding{}
-	if fres, ferr := h.pentest.ListAllPentestFindings(ctx, tenantID, a.CampaignID, user, "", false,
-		pagination.Pagination{Page: 1, PerPage: 500}); ferr == nil {
-		role := h.campaignViewerRole(ctx, tenantID, a.CampaignID, user)
-		for _, f := range fres.Data {
-			if role.CanSeeFindingStatus(string(f.Status())) {
-				lookup[f.ID().String()] = f
-			}
-		}
-	}
-	retests, err := h.pentest.ListCampaignRetests(ctx, tenantID, a.CampaignID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]mcpRetestDTO, 0, len(retests))
-	for _, rt := range retests {
-		// Only retests of findings the viewer may see (a client sees published ones).
-		if _, ok := lookup[rt.FindingID().String()]; !ok {
-			continue
-		}
-		dto := mcpRetestDTO{
-			FindingID: rt.FindingID().String(),
-			Status:    string(rt.Status()),
-			Notes:     rt.Notes(),
-		}
-		if f, ok := lookup[rt.FindingID().String()]; ok {
-			dto.FindingTitle = f.Title()
-			dto.FindingSeverity = string(f.Severity())
-		}
-		if rt.TestedAt() != nil {
-			dto.TestedAt = rt.TestedAt().Format("2006-01-02")
-		}
-		out = append(out, dto)
-	}
-	return map[string]any{"total": len(out), "retests": out}, nil
-}
-
-type templateListArgs struct {
-	Category string `json:"category"`
-	Search   string `json:"search"`
-	Limit    int    `json:"limit"`
-}
-
-type mcpTemplateDTO struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
-	Category        string   `json:"category,omitempty"`
-	Severity        string   `json:"severity"`
-	OWASPCategory   string   `json:"owasp_category,omitempty"`
-	CWE             string   `json:"cwe,omitempty"`
-	Description     string   `json:"description,omitempty"`
-	Steps           []string `json:"steps,omitempty"`
-	BusinessImpact  string   `json:"business_impact,omitempty"`
-	TechnicalImpact string   `json:"technical_impact,omitempty"`
-	Remediation     string   `json:"remediation,omitempty"`
-	IsSystem        bool     `json:"is_system"`
-}
-
-func toTemplateDTO(t *pentestdom.Template) mcpTemplateDTO {
-	return mcpTemplateDTO{
-		ID:              t.ID().String(),
-		Name:            t.Name(),
-		Category:        string(t.Category()),
-		Severity:        string(t.Severity()),
-		OWASPCategory:   t.OWASPCategory(),
-		CWE:             t.CWEID(),
-		Description:     t.Description(),
-		Steps:           t.StepsToReproduce(),
-		BusinessImpact:  t.BusinessImpact(),
-		TechnicalImpact: t.TechnicalImpact(),
-		Remediation:     t.Remediation(),
-		IsSystem:        t.IsSystem(),
-	}
-}
-
-func (h *MCPHandler) toolListFindingTemplates(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
-	if h.pentest == nil {
-		return nil, toolInputError{"pentest reader not configured"}
-	}
-	var a templateListArgs
-	if err := parseToolArgs(raw, &a); err != nil {
-		return nil, err
-	}
-	filter := pentestdom.TemplateFilter{}
-	if a.Category != "" {
-		cat, err := pentestdom.ParseTemplateCategory(a.Category)
-		if err != nil {
-			return nil, toolInputError{"invalid category"}
-		}
-		filter.Category = &cat
-	}
-	if a.Search != "" {
-		filter.Search = &a.Search
-	}
-	res, err := h.pentest.ListTemplates(ctx, tenantID, filter,
-		pagination.Pagination{Page: 1, PerPage: clampLimit(a.Limit)})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]mcpTemplateDTO, 0, len(res.Data))
-	for _, t := range res.Data {
-		out = append(out, toTemplateDTO(t))
-	}
-	return map[string]any{"total": res.Total, "templates": out}, nil
-}
-
-func (h *MCPHandler) toolCampaignReportStats(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
-	if h.pentest == nil {
-		return nil, toolInputError{"pentest reader not configured"}
-	}
-	var a campaignIDArg
-	if err := json.Unmarshal(raw, &a); err != nil || a.CampaignID == "" {
-		return nil, toolInputError{"campaign_id is required"}
-	}
-	user, err := requireActingUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.pentest.CheckCampaignAccess(ctx, tenantID, a.CampaignID, user, false); err != nil {
-		return nil, err
-	}
-	stats, err := h.pentest.GetCampaignStats(ctx, tenantID, a.CampaignID, false)
-	if err != nil || stats == nil {
-		return stats, err
-	}
-	if !h.campaignViewerRole(ctx, tenantID, a.CampaignID, user).CanSeeUnpublished() {
-		// A client's counts leave out unpublished work, as in the console:
-		// the severity totals are recounted from the findings they may see.
-		out := *stats
-		out.DraftCount, out.InReviewCount = 0, 0
-		out.TotalFindings, out.CriticalFindings, out.HighFindings = 0, 0, 0
-		out.MediumFindings, out.LowFindings, out.InfoFindings = 0, 0, 0
-		res, lerr := h.pentest.ListAllPentestFindings(ctx, tenantID, a.CampaignID, user, "", false,
-			pagination.Pagination{Page: 1, PerPage: 500})
-		if lerr != nil {
-			return nil, lerr
-		}
-		for _, f := range res.Data {
-			if !pentestdom.CampaignRoleClient.CanSeeFindingStatus(string(f.Status())) {
-				continue
-			}
-			out.TotalFindings++
-			switch strings.ToLower(string(f.Severity())) {
-			case "critical":
-				out.CriticalFindings++
-			case "high":
-				out.HighFindings++
-			case "medium":
-				out.MediumFindings++
-			case "low":
-				out.LowFindings++
-			default:
-				out.InfoFindings++
-			}
-		}
-		return &out, nil
-	}
-	return stats, nil
 }
