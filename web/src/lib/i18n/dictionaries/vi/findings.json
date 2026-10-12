@@ -13,6 +13,9 @@
   "findings.status.duplicate": "Trùng lặp",
   "findings.status.draft": "Bản nháp",
   "findings.status.in_review": "Đang rà soát",
+  "findings.pentest.clientNotice": "Quyền khách hàng: bạn xem các phát hiện đã công bố của chiến dịch này, chỉ đọc.",
+  "findings.pentest.role.client": "Khách hàng",
+  "findings.pentest.role.clientHint": "Khách hàng — phát hiện đã công bố, chỉ đọc",
   "findings.statusCategory.open": "Mở",
   "findings.statusCategory.in_progress": "Đang xử lý",
   "findings.statusCategory.closed": "Đã đóng",
@@ -21,5 +24,10 @@
   "findings.dataFlow.emptyTitle": "Không có luồng dữ liệu",
   "findings.dataFlow.empty": "Trình quét không gửi dấu vết từ nguồn tới đích cho phát hiện này. Semgrep gửi dấu vết khi chạy với --dataflow-traces.",
   "findings.dataFlow.hint": "Cách dữ liệu không tin cậy đi tới đoạn mã có lỗ hổng, từ nguồn tới đích.",
+  "findings.retest.manual.passed": "Kiểm tra lại thủ công: đã khắc phục",
+  "findings.retest.manual.failed": "Kiểm tra lại thủ công: vẫn còn lỗ hổng",
+  "findings.retest.manual.partial": "Kiểm tra lại thủ công: khắc phục một phần",
+  "findings.retest.manual.pending": "Kiểm tra lại thủ công đang chờ",
+  "findings.retest.manual.canceled": "Kiểm tra lại thủ công đã hủy",
   "findings.remediation.none": "Trình quét không đưa ra hướng khắc phục."
 }
