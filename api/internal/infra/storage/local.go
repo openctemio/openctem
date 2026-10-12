@@ -18,8 +18,8 @@ import (
 // LocalStorage stores files on the local filesystem.
 // Directory layout: {basePath}/{tenantID}/{storageKey}
 //
-// Intended for development and small self-hosted deployments.
-// For production, use S3Storage or MinIOStorage (implement the same interface).
+// Suits single-node deployments: put basePath on a persistent volume and back
+// it up. Several API replicas need a shared (ReadWriteMany) volume or S3.
 type LocalStorage struct {
 	basePath string
 }
@@ -29,15 +29,19 @@ func NewLocalStorage(basePath string) *LocalStorage {
 	return &LocalStorage{basePath: basePath}
 }
 
+// Upload streams the content to a temporary file in the tenant directory,
+// syncs it and renames it to its key, so a crash or a failed read never
+// leaves a partial file under a key. Directories are 0700 and files 0600:
+// only the API's own user reads them.
 func (s *LocalStorage) Upload(_ context.Context, tenantID, filename, _ string, reader io.Reader) (string, error) {
-	// Sanitize filename — strip path separators, limit length
-	safe := sanitizeFilename(filename)
-
+	if err := checkNamespace(tenantID); err != nil {
+		return "", err
+	}
 	// Storage key = UUID prefix + sanitized filename (unique, human-readable in filesystem)
-	key := fmt.Sprintf("%s_%s", shared.NewID().String(), safe)
+	key := fmt.Sprintf("%s_%s", shared.NewID().String(), sanitizeFilename(filename))
 
 	dir := filepath.Join(s.basePath, tenantID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create tenant dir: %w", err)
 	}
 
@@ -45,17 +49,31 @@ func (s *LocalStorage) Upload(_ context.Context, tenantID, filename, _ string, r
 	if err != nil {
 		return "", err
 	}
-	f, err := os.Create(path)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".upload-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create file: %w", err)
 	}
-	defer f.Close()
-
-	if _, err := io.Copy(f, reader); err != nil {
-		_ = os.Remove(path) // cleanup partial
+	tmpName := tmp.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tmp.Close()
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := io.Copy(tmp, reader); err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
-
+	if err := tmp.Sync(); err != nil {
+		return "", fmt.Errorf("failed to sync file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("failed to close file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return "", fmt.Errorf("failed to store file: %w", err)
+	}
+	committed = true
 	return key, nil
 }
 
@@ -163,6 +181,16 @@ func (s *LocalStorage) safePath(tenantID, key string) (string, error) {
 		return "", fmt.Errorf("tenant dir escapes base path")
 	}
 	return filepath.Join(resolved, key), nil
+}
+
+// checkNamespace refuses a namespace (a tenant id, or a fixed platform
+// namespace such as content packs') that is empty, a dot segment or holds a
+// path separator, so a key can never be written outside its namespace.
+func checkNamespace(ns string) error {
+	if ns == "" || ns == "." || ns == ".." || strings.ContainsAny(ns, "/\\\x00") {
+		return fmt.Errorf("invalid storage namespace %q", ns)
+	}
+	return nil
 }
 
 // sanitizeFilename strips path separators and control characters.

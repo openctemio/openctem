@@ -257,6 +257,9 @@ type StorageConfig struct {
 	Endpoint  string
 	AccessKey string
 	SecretKey string
+	// TenantQuotaMB bounds the attachment bytes of one organization, in MiB
+	// (STORAGE_TENANT_QUOTA_MB). 0 = no quota.
+	TenantQuotaMB int64
 }
 
 // AppConfig holds application-level configuration.
@@ -1228,6 +1231,9 @@ func Load() (*Config, error) {
 			Endpoint:  getEnv("STORAGE_ENDPOINT", ""),
 			AccessKey: getEnv("STORAGE_ACCESS_KEY", ""),
 			SecretKey: getEnv("STORAGE_SECRET_KEY", ""),
+			// 20 GiB per organization by default: it bounds what one
+			// organization can put on a shared volume or bucket.
+			TenantQuotaMB: getEnvInt64("STORAGE_TENANT_QUOTA_MB", 20480),
 		},
 		Server: ServerConfig{
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),
@@ -1573,6 +1579,9 @@ func (c *Config) Validate() error {
 // typo fails at start-up instead of the API quietly keeping files on the
 // container disk.
 func (c *Config) validateStorage() error {
+	if c.Storage.TenantQuotaMB < 0 {
+		return fmt.Errorf("STORAGE_TENANT_QUOTA_MB must be 0 (no quota) or more, got %d", c.Storage.TenantQuotaMB)
+	}
 	switch c.Storage.Provider {
 	case "", "local":
 		return nil

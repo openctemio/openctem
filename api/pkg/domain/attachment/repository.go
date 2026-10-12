@@ -17,4 +17,6 @@ type Repository interface {
 	// FindByHash returns an existing attachment with the same content hash in the same context.
 	// Returns nil, nil if no duplicate found.
 	FindByHash(ctx context.Context, tenantID shared.ID, contextType, contextID, contentHash string) (*Attachment, error)
+	// TotalSize is the number of bytes the tenant's attachments hold.
+	TotalSize(ctx context.Context, tenantID shared.ID) (int64, error)
 }
