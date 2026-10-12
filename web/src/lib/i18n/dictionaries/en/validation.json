@@ -1,3 +1,6 @@
 {
-  "validation.controls.capHint": "Findings on the linked assets are held at P2 rather than P1. The percentage is shown as the rationale only."
+  "validation.controls.capHint": "Findings on the linked assets are held at P2 rather than P1. The percentage is shown as the rationale only.",
+  "validation.cyclePolicy.saved": "Cycle policy saved",
+  "validation.cyclePolicy.enforceLabel": "Require the validation coverage SLO to close a cycle",
+  "validation.cyclePolicy.enforceHelp": "On: a cycle whose resolved findings lack validation evidence below the coverage targets cannot be closed. Off: it closes and the shortfall stays visible."
 }
