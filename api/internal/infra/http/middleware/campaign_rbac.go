@@ -25,8 +25,8 @@ type CampaignStatusQuerier interface {
 
 // CampaignRoleResolver creates a middleware that resolves the user's campaign role
 // from the database and stores it in the request context.
-// It uses the {id} URL parameter for the campaign ID.
-// Admin users bypass the DB query entirely.
+// It uses the {id} URL parameter for the campaign ID. Admins get their role
+// too (it may be empty); RequireCampaignRole still lets them through.
 func CampaignRoleResolver(roleQuerier CampaignRoleQuerier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,16 +36,13 @@ func CampaignRoleResolver(roleQuerier CampaignRoleQuerier) func(http.Handler) ht
 				return
 			}
 
-			// Admin bypass: skip DB query, no role needed
-			if IsAdmin(r.Context()) {
-				ctx := context.WithValue(r.Context(), CampaignIDKey, campaignID)
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-
 			tenantID := GetTenantID(r.Context())
 			userID := GetUserID(r.Context())
 
+			// Admins pass RequireCampaignRole without a role, but a handler
+			// that needs membership itself (test credentials) reads the role,
+			// so it is resolved for them too: an admin who is the lead is the
+			// lead. A missing role is not an error here.
 			role, _ := roleQuerier.GetUserRole(r.Context(), tenantID, campaignID, userID)
 			ctx := context.WithValue(r.Context(), CampaignRoleKey, role)
 			ctx = context.WithValue(ctx, CampaignIDKey, campaignID)
