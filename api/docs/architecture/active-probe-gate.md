@@ -90,14 +90,14 @@ Operator settings, never tenant settings:
   no `0.0.0.0/0`, `::/0`, link-local or metadata address, nothing in
   `SCOPE_DENY_EXTRA`, no public range larger than the CIDR caps.
 - **Dispatch** (the ownership gate below): a deny-listed target is refused
-  on every path (`platform_denied`); with `SCOPE_ACTIVE_PROOF=all` an
-  internet target not at or under a verified domain is refused
-  (`proof_required`).
-- **Platform sensors** (`scan/active_proof.go`): with `platform_sensors` or
-  `all`, a job goes to platform sensors only when every target is verified;
+  on every path (`platform_denied`).
+- **Platform sensors** (`scan/active_proof.go`): with the platform setting
+  "Require a verified domain before platform sensors scan a target" on
+  (Console > System > Platform scanning, default off; RFC-054 §8.1), a job
+  goes to platform sensors only when every target is verified;
   an explicit platform preference with an unproven target is refused
   (`PROOF_REQUIRED`).
-- **Intrusive scans**: a scanner whose stages are all T2 needs every target
+- **Intrusive scans** (setting on): a scanner whose stages are all T2 needs every target
   verified, at create, quick scan and every run. A workflow checks each
   intrusive (T2) step on its own: the step gets only the verified targets
   and fails (`STEP_TARGETS_REFUSED`) when none is left.
