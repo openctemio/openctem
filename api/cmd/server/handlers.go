@@ -277,6 +277,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
+	// Replays of a verified delivery are ignored for 24 hours (all replicas).
+	if deps.RedisClient != nil {
+		githubWebhookHandler.SetDeliveryGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 
 	// Finding actions handler with the CTEM Stage-4 validation runner wired.
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
