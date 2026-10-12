@@ -72,7 +72,7 @@ export default function ThreatIntelPage() {
           ) : (
             <RefreshCw className="h-4 w-4 sm:me-2" />
           )}
-          <span className="hidden sm:inline">Refresh</span>
+          <span className="sr-only sm:not-sr-only">Refresh</span>
         </Button>
       </PageHeader>
 
