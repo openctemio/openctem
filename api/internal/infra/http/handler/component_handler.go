@@ -444,6 +444,11 @@ func (h *ComponentHandler) ExportSBOM(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Router       /components/import [post]
+// MaxSBOMImportBody bounds the body of POST /components/import (one byte over
+// the SBOM limit, so an oversized document is told apart). The route declares
+// it as its body limit, which replaces the global one.
+const MaxSBOMImportBody = asset.MaxSBOMBytes + 1
+
 func (h *ComponentHandler) ImportSBOM(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	assetID := r.URL.Query().Get("asset_id")
@@ -451,7 +456,7 @@ func (h *ComponentHandler) ImportSBOM(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("asset_id query parameter is required").WriteJSON(w)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, asset.MaxSBOMBytes+1)
+	r.Body = http.MaxBytesReader(w, r.Body, MaxSBOMImportBody)
 	res, err := h.sbomImport.ImportSBOM(r.Context(), tenantID, assetID, r.Body, r.URL.Query().Get("dry_run") == "true")
 	if err != nil {
 		h.handleServiceError(w, err)
