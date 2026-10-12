@@ -40,9 +40,9 @@ func (r *AttachmentRepository) ListBlobDeletions(ctx context.Context, limit int)
 	return out, rows.Err()
 }
 
-// DeleteBlobDeletion removes a handled entry from the queue.
-func (r *AttachmentRepository) DeleteBlobDeletion(ctx context.Context, id int64) error {
-	if _, err := r.db.ExecContext(ctx, `DELETE FROM storage_blob_deletions WHERE id = $1`, id); err != nil {
+// DeleteBlobDeletion removes a handled entry of the tenant from the queue.
+func (r *AttachmentRepository) DeleteBlobDeletion(ctx context.Context, tenantID shared.ID, id int64) error {
+	if _, err := r.db.ExecContext(ctx, `DELETE FROM storage_blob_deletions WHERE tenant_id = $1 AND id = $2`, tenantID.String(), id); err != nil {
 		return fmt.Errorf("delete blob deletion: %w", err)
 	}
 	return nil

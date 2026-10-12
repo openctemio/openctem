@@ -75,5 +75,5 @@ type BlobDeletion struct {
 // BlobDeletionQueue is the queue of stored files to delete.
 type BlobDeletionQueue interface {
 	ListBlobDeletions(ctx context.Context, limit int) ([]BlobDeletion, error)
-	DeleteBlobDeletion(ctx context.Context, id int64) error
+	DeleteBlobDeletion(ctx context.Context, tenantID shared.ID, id int64) error
 }
