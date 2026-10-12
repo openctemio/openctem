@@ -78,6 +78,18 @@ sed -i 's/=v0.8.0/=v0.9.0/' "$tmp/tags/api/deploy/.env.example"
 sed -i 's/OPENCTEM_VERSION:-v0.8.0/OPENCTEM_VERSION:-v0.9.0/' "$tmp/tags/api/deploy/docker-compose.yml"
 out="$(bash "$SYNC" --check --root "$tmp/tags" 2>&1)"
 assert_contains "release newer than any tag" "platform.release v0.9.0 is newer than the newest tag v0.8.0" "$out"
+# ...except on the release branch of exactly that version.
+sed -i 's/OPENCTEM_VERSION:-v0.8.0/OPENCTEM_VERSION:-v0.9.0/' "$tmp/tags/api/deploy/docker-compose.job-signer.yml"
+assert_rc "release branch of v0.9.0 may say v0.9.0" 0 bash "$SYNC" --check --root "$tmp/tags" --release v0.9.0
+out="$(bash "$SYNC" --check --root "$tmp/tags" --release v0.9.1 2>&1)"; rc=$?
+assert_eq "release branch of another version: exit 1" 1 "$rc"
+assert_contains "release branch must name its own version" "this is the release branch of v0.9.1" "$out"
+sed -i 's/release: v0.9.0/release: v0.8.0/' "$tmp/tags/versions.yaml"
+bash "$SYNC" --root "$tmp/tags" >/dev/null 2>&1
+out="$(bash "$SYNC" --check --root "$tmp/tags" --release v0.9.0 2>&1)"; rc=$?
+assert_eq "release branch still naming the previous release: exit 1" 1 "$rc"
+assert_contains "previous release on a release branch: explained" "platform.release is 'v0.8.0'" "$out"
+assert_rc "bad --release" 2 bash "$SYNC" --check --root "$tmp/tags" --release 0.9.0
 
 # The real repository.
 REPO="$(cd "$RELEASE_DIR/../../.." && pwd)"
