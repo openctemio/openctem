@@ -178,6 +178,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ env.SOURCE_URL }}
             org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ needs.prepare.outputs.build_time }}
           # One set for every image; each Dockerfile consumes the ARGs it declares.
           # VERSION/COMMIT/BUILD_TIME: the API's GET /api/v1/version.
           # NEXT_PUBLIC_APP_VERSION/COMMIT: web Help > About.
@@ -246,14 +248,21 @@ jobs:
           for t in ${TAGS//,/ }; do args+=(-t "${IMAGE}:${t}"); done
           # shellcheck disable=SC2046
           docker buildx imagetools create "${args[@]}" $(printf "${IMAGE}@sha256:%s " *)
+      # Best effort: a refused copy (the legacy package is linked to another
+      # repository, as ui is) must not stop the release. With this step fatal,
+      # v0.9.0 published no all-in-one image, no signatures and no SBOMs.
       - name: Copy to the legacy name (transition window)
         if: matrix.image.legacy != ''
+        continue-on-error: true
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ matrix.image.name }}
           LEGACY: ${{ env.REGISTRY }}/${{ matrix.image.legacy }}
           TAGS: ${{ needs.prepare.outputs.tags }}
         run: |
-          for t in ${TAGS//,/ }; do crane copy "${IMAGE}:${t}" "${LEGACY}:${t}"; done
+          for t in ${TAGS//,/ }; do
+            crane copy "${IMAGE}:${t}" "${LEGACY}:${t}" ||
+              { echo "::warning::could not copy ${IMAGE}:${t} to ${LEGACY}:${t} (package permissions); the release continues"; exit 1; }
+          done
       - name: Summary
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ matrix.image.name }}
@@ -354,6 +363,8 @@ jobs:
             WEB_IMAGE=${{ env.REGISTRY }}/openctem-web:${{ needs.prepare.outputs.version }}
           labels: |
             org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ needs.prepare.outputs.build_time }}
           outputs: type=image,name=${{ env.REGISTRY }}/openctem,push-by-digest=true,name-canonical=true,push=true
           provenance: false
           sbom: false
