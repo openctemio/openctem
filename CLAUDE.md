@@ -29,6 +29,8 @@ modules), `migration` (database migrations), `web-change` (web console).
 - Cite old web PRs as `openctemio/ui#NNN`: a bare `#NNN` means this repository.
 - CI, required checks and images: `api/docs/development/ci-cd.md`; repo map:
   `api/docs/development/repositories.md`.
+- Never add the `security-ack` label: it is the maintainer's own decision on a
+  `security-sensitive` pull request (`api/docs/development/ci-cd.md#security-gate`).
 - No AI attribution lines in commits or PRs (enforced by `.githooks/commit-msg`).
 - Changelog: never edit `api/CHANGELOG.md` for a change; add one file
   `api/changelog.d/<short-slug>.md` (format in `api/changelog.d/README.md`).

@@ -21,7 +21,7 @@
 #                    of the GitHub API
 set -euo pipefail
 
-REQUIRED_CHECKS="${REQUIRED_CHECKS:-API CI OK,Web CI OK,CodeQL OK,All-in-one OK,Secret Scanning,Workflow Lint}"
+REQUIRED_CHECKS="${REQUIRED_CHECKS:-API CI OK,Web CI OK,CodeQL OK,All-in-one OK,Secret Scanning,Workflow Lint,security-gate}"
 
 runs_json() { # SHA -> JSON array of check runs
   if [[ -n "${CHECK_RUNS_DIR:-}" ]]; then

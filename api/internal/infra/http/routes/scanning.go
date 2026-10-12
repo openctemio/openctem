@@ -46,17 +46,14 @@ func registerCommandRoutes(
 	router.Group("/api/v1/commands", func(r Router) {
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.CommandsRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.CommandsRead))
 		// Any command's logs (research/62); a command about a finding also
 		// needs findings:read and the finding in scope (in the handler).
 		r.GET("/{id}/logs", h.GetLogs, middleware.Require(permission.CommandsRead))
 
 		// Write operations
 		r.POST("/", h.Create, middleware.Require(permission.CommandsWrite))
-		r.POST("/{id}/cancel", h.Cancel, middleware.Require(permission.CommandsWrite))
-
-		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.CommandsDelete))
+		// A single command is no longer read, canceled or deleted here: a
+		// scan run is canceled as a whole (POST /api/v1/scan-runs/{id}/cancel).
 	}, tenantMiddlewares...)
 }
 
