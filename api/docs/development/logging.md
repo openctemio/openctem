@@ -22,7 +22,6 @@ OpenCTEM uses Go's standard library `log/slog` for structured logging. The logge
 | `LOG_SAMPLING_THRESHOLD` | `100` | First N identical logs per second |
 | `LOG_SAMPLING_RATE` | `0.1` | Sample rate after threshold (0.0-1.0) |
 | `LOG_ERROR_SAMPLING_RATE` | `1.0` | Sample rate for errors (0.0-1.0) |
-| `LOG_SKIP_HEALTH` | `true` | Skip health check endpoints |
 | `LOG_SLOW_REQUEST_SECONDS` | `5` | Warn on slow requests |
 
 ### Production Settings
