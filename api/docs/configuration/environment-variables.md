@@ -108,7 +108,6 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `AUTH_ACCESS_TOKEN_COOKIE_NAME` | string | `auth_token` |  |  | Name of the access-token cookie. The gateway's routing rule and the web console expect `auth_token`; change all three together or not at all. |
 | `AUTH_ACCESS_TOKEN_DURATION` | duration | `15m` |  |  | Access token lifetime. |
 | `AUTH_COOKIE_DOMAIN` | string | empty |  |  | `Domain` attribute of session cookies. Unset: the current host only. |
 | `AUTH_COOKIE_SAMESITE` | string | `lax` |  |  | `strict`, `lax` or `none` (`none` needs `AUTH_COOKIE_SECURE=true`). |
@@ -126,17 +125,14 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `AUTH_PASSWORD_REQUIRE_UPPERCASE` | bool | `true` |  |  | Require an uppercase letter. |
 | `AUTH_PASSWORD_RESET_DURATION` | duration | `1h` |  |  | Lifetime of a password reset link. |
 | `AUTH_PROVIDER` | string | `local` |  |  | `local` (built-in email and password), `oidc` (an external Keycloak realm) or `hybrid` (both). Up to v0.8.0 the default was `oidc`: an installation that relied on that must now set `AUTH_PROVIDER=oidc`. |
-| `AUTH_REFRESH_TOKEN_COOKIE_NAME` | string | `refresh_token` |  |  | Name of the refresh-token cookie. |
 | `AUTH_REFRESH_TOKEN_DURATION` | duration | `168h` |  |  | Refresh token lifetime (7 days). |
 | `AUTH_REQUIRE_EMAIL_VERIFICATION` | bool | `true` |  |  | Require a verified email address. Production refuses `false` with `local` or `hybrid`. |
 | `AUTH_SESSION_DURATION` | duration | `720h` |  |  | Session lifetime (30 days). |
-| `AUTH_TENANT_COOKIE_NAME` | string | `app_tenant` |  |  | Name of the cookie holding the selected organization. |
 
 ### Organizations and scope guardrails
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SCOPE_ACTIVE_PROOF` | string | empty |  |  | When an active probe needs a verified domain of the organization: `off`, `platform_sensors` (jobs on shared platform sensors) or `all`. Intrusive probes always need one. Unset: `off`. |
 | `SCOPE_DENY_EXTRA` | list | empty |  |  | Comma-separated domains and CIDRs that no organization may target, in addition to the built-in deny list (for example the platform's own names and ranges). |
 | `SCOPE_MAX_PUBLIC_CIDR_V4` | int | `16` |  |  | Largest public IPv4 range (prefix length) one scope entry may cover. Private ranges are not capped. |
 | `SCOPE_MAX_PUBLIC_CIDR_V6` | int | `32` |  |  | Largest public IPv6 range one scope entry may cover. |
@@ -310,6 +306,15 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
+| `GITHUB_APP_ID` | int | empty |  |  | The GitHub App's numeric id (RFC-077). With the slug, client id and secret, private key and webhook secret it turns on the gate check and pull request comments; a partial configuration leaves the app off and is logged. |
+| `GITHUB_APP_SLUG` | string | empty |  |  | The GitHub App's URL name, used for its install link. |
+| `GITHUB_APP_CLIENT_ID` | string | empty |  |  | The GitHub App's OAuth client id (binding an installation to an organization). |
+| `GITHUB_APP_CLIENT_SECRET` | string | empty |  | yes | The GitHub App's OAuth client secret. |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | path | empty |  |  | File holding the GitHub App's private key (PEM). Preferred over `GITHUB_APP_PRIVATE_KEY`. |
+| `GITHUB_APP_PRIVATE_KEY` | string | empty |  | yes | The GitHub App's private key (PEM) itself, when a file cannot be mounted. |
+| `GITHUB_APP_WEBHOOK_SECRET` | string | empty |  | yes | HMAC secret of the GitHub App's webhook deliveries. |
+| `GITHUB_APP_API_URL` | url | empty |  |  | GitHub API base URL for GitHub Enterprise Server. Unset: api.github.com. |
+| `GITHUB_APP_WEB_URL` | url | empty |  |  | GitHub web base URL for GitHub Enterprise Server. Unset: github.com. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE` | string | `unset` |  |  | `1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
 
@@ -508,6 +513,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AGENT_LB_MAX_DISK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS` |
 | `AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS` |
 | `SENSOR_TRANSPORT_V3_ENABLED` | rename it to `SENSOR_TRANSPORT_V3=auto|off` |
+| `SCOPE_ACTIVE_PROOF` | rename it to `` |
 | `APP_DEBUG` | unset it; it switched nothing on (use LOG_LEVEL=debug outside production) |
 | `GRPC_PORT` | unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR |
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
@@ -524,4 +530,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `SMTP_SKIP_VERIFY` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `SMTP_TIMEOUT` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `APP_ALLOW_PLAINTEXT_CREDENTIALS` | unset it; credentials are always encrypted (development uses the key in api/.env.example) |
+| `AUTH_ACCESS_TOKEN_COOKIE_NAME` | unset it; the session cookie is always auth_token |
+| `AUTH_REFRESH_TOKEN_COOKIE_NAME` | unset it; the refresh cookie is always refresh_token |
+| `AUTH_TENANT_COOKIE_NAME` | unset it; the organization cookie is always app_tenant |
 | `JIRA_WEBHOOK_SECRET` | unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate |

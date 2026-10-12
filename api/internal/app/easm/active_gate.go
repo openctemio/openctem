@@ -73,10 +73,8 @@ type ActiveGate struct {
 	// dangling backs the takeover exception (takeover_gate.go); nil admits
 	// nothing.
 	dangling ActiveGateDangling
-	// guardrails deny targets the platform does not allow (RFC-054 §8.2);
-	// proofAll requires a verified domain for every active probe (§8.1).
+	// guardrails deny targets the platform does not allow (RFC-054 §8.2).
 	guardrails *scopedom.Guardrails
-	proofAll   bool
 	// tiers answers whether a tenant's entry tier ceilings are in force
 	// (only in the Strict scan approval mode, RFC-073 §6); nil enforces
 	// them for every tenant.
@@ -93,10 +91,9 @@ type TierPolicy interface {
 // covers its targets at every tier.
 func (g *ActiveGate) SetTierPolicy(p TierPolicy) { g.tiers = p }
 
-// WithPlatformPolicy sets the operator's guardrails and whether every active
-// probe needs a verified domain (SCOPE_ACTIVE_PROOF=all).
-func (g *ActiveGate) WithPlatformPolicy(gr scopedom.Guardrails, proofAll bool) *ActiveGate {
-	g.guardrails, g.proofAll = &gr, proofAll
+// WithPlatformPolicy sets the operator's guardrails.
+func (g *ActiveGate) WithPlatformPolicy(gr scopedom.Guardrails) *ActiveGate {
+	g.guardrails = &gr
 	return g
 }
 
@@ -572,11 +569,8 @@ func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, tar
 					return nil, err
 				}
 			}
-			switch _, ok := auth.Covers(t); {
-			case !ok:
+			if _, ok := auth.Covers(t); !ok {
 				out[t] = attribution.StateUnattributed
-			case g.proofAll && !auth.Verified(t):
-				out[t] = attribution.StateProofRequired
 			}
 		}
 	}
@@ -649,9 +643,6 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			}
 		}
 		if _, ok := auth.Covers(a.Name()); ok {
-			if g.proofAll && !auth.Verified(a.Name()) {
-				out[id] = attribution.StateProofRequired
-			}
 			continue
 		}
 		if recorded {

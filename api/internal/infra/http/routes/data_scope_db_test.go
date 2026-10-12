@@ -65,6 +65,10 @@ type dsHarness struct {
 	t   *testing.T
 	db  *sql.DB
 	srv *httptest.Server
+	// router and enforcer let a test walk the registered routes or mount a
+	// handler without the route guard.
+	router   Router
+	enforcer *datascope.Enforcer
 
 	// memberFree and memberStrict have no scope row; memberFull has none
 	// either but holds a has_full_data_access role.
@@ -229,6 +233,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 		r.GET("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	}, buildTokenTenantMiddlewares(auth, nil)...)
 
+	h.router, h.enforcer = router, enforcer
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(h.srv.Close)
 	return h

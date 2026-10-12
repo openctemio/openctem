@@ -45,9 +45,8 @@ type UnifiedAuthConfig struct {
 	// stop working on the next request instead of when they expire. A lookup
 	// error fails open (logged): the token still expires on its own.
 	RevokedSessions RevokedSessionChecker
-	// CookieName is the access-token cookie (AUTH_ACCESS_TOKEN_COOKIE_NAME,
-	// matching the web's NEXT_PUBLIC_AUTH_COOKIE_NAME). Empty means
-	// DefaultAccessTokenCookieName. The WebSocket upgrade is the browser
+	// CookieName is the access-token cookie, the same fixed name the web
+	// console sets. Empty means DefaultAccessTokenCookieName. The WebSocket upgrade is the browser
 	// request that reaches the API with this cookie (RFC-045).
 	CookieName string
 }

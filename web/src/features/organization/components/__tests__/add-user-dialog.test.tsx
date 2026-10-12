@@ -81,7 +81,7 @@ describe('AddUserDialog', () => {
         role_ids: ['r1'],
       })
     )
-    expect(await screen.findByTestId('setup-link')).toHaveTextContent('/set-password?token=tok-xyz')
+    expect(await screen.findByTestId('setup-link')).toHaveTextContent('/set-password#token=tok-xyz')
     expect(onCreated).toHaveBeenCalled()
   })
 
