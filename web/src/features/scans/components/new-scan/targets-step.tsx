@@ -196,7 +196,7 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
 
       {/* Coverage level (research/48 §6.7) */}
       {showCoverage && typedTargets.length > 0 && (
-        <fieldset className="space-y-2 rounded-lg border p-3">
+        <fieldset className="min-w-0 space-y-2 rounded-lg border p-3">
           <legend className="px-1 text-sm font-medium">{t('scans.targets.coverage')}</legend>
           <RadioGroup
             value={coverage}

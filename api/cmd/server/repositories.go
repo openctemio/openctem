@@ -197,17 +197,19 @@ type Repositories struct {
 	UserMFA *postgres.UserMFARepository
 
 	// Admin (Platform Admin)
-	Admin         *postgres.AdminRepository
-	SignupPolicy  *postgres.SignupPolicyRepository
-	ScanPolicy    *postgres.ScanPolicyRepository
-	ScanApproval  *postgres.ScanApprovalRepository
-	AccessRequest *postgres.AccessRequestRepository
-	Plan          *postgres.PlanRepository
-	IdleLifecycle *postgres.IdleLifecycleRepository
-	AdminAuditLog *postgres.AuditLogRepository
-	AdminOrg      *postgres.AdminOrganizationRepository
-	AdminConsole  *postgres.AdminConsoleRepository
-	PlatformIdP   *postgres.PlatformIdPRepository
+	Admin        *postgres.AdminRepository
+	SignupPolicy *postgres.SignupPolicyRepository
+	// PlatformSetting stores the other console settings (RFC-079).
+	PlatformSetting *postgres.PlatformSettingRepository
+	ScanPolicy      *postgres.ScanPolicyRepository
+	ScanApproval    *postgres.ScanApprovalRepository
+	AccessRequest   *postgres.AccessRequestRepository
+	Plan            *postgres.PlanRepository
+	IdleLifecycle   *postgres.IdleLifecycleRepository
+	AdminAuditLog   *postgres.AuditLogRepository
+	AdminOrg        *postgres.AdminOrganizationRepository
+	AdminConsole    *postgres.AdminConsoleRepository
+	PlatformIdP     *postgres.PlatformIdPRepository
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -238,6 +240,10 @@ type Repositories struct {
 	CIRun       *postgres.CIRunRepository
 	SCMApp      *postgres.SCMAppInstallationRepository
 	EASMSummary *postgres.EASMSummaryRepository
+	// EASMLookalike stores lookalike watches and candidates (RFC-083).
+	EASMLookalike *postgres.EASMLookalikeRepository
+	// EASMNetworkSeed stores AS number and organization seeds (RFC-082).
+	EASMNetworkSeed *postgres.EASMNetworkSeedRepository
 	// AssetWebEvidence stores web assets' captures (RFC-081).
 	AssetWebEvidence *postgres.AssetWebEvidenceRepository
 	// EASMChange reads typed attack-surface changes and claims weekly digests (RFC-080).
@@ -472,17 +478,18 @@ func newRepositories(db *postgres.DB) *Repositories {
 		UserMFA:      postgres.NewUserMFARepository(db),
 
 		// Admin (Platform Admin)
-		Admin:         postgres.NewAdminRepository(db),
-		SignupPolicy:  postgres.NewSignupPolicyRepository(db),
-		ScanPolicy:    postgres.NewScanPolicyRepository(db),
-		ScanApproval:  postgres.NewScanApprovalRepository(db),
-		AccessRequest: postgres.NewAccessRequestRepository(db),
-		Plan:          postgres.NewPlanRepository(db),
-		IdleLifecycle: postgres.NewIdleLifecycleRepository(db),
-		AdminAuditLog: postgres.NewAuditLogRepository(db),
-		AdminOrg:      postgres.NewAdminOrganizationRepository(db),
-		AdminConsole:  postgres.NewAdminConsoleRepository(db),
-		PlatformIdP:   postgres.NewPlatformIdPRepository(db),
+		Admin:           postgres.NewAdminRepository(db),
+		SignupPolicy:    postgres.NewSignupPolicyRepository(db),
+		PlatformSetting: postgres.NewPlatformSettingRepository(db),
+		ScanPolicy:      postgres.NewScanPolicyRepository(db),
+		ScanApproval:    postgres.NewScanApprovalRepository(db),
+		AccessRequest:   postgres.NewAccessRequestRepository(db),
+		Plan:            postgres.NewPlanRepository(db),
+		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
+		AdminAuditLog:   postgres.NewAuditLogRepository(db),
+		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
+		AdminConsole:    postgres.NewAdminConsoleRepository(db),
+		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
 
 		// Target Mappings
 		TargetMapping: postgres.NewTargetMappingRepository(db),
@@ -507,6 +514,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CIRun:            postgres.NewCIRunRepository(db),
 		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
+		EASMLookalike:    postgres.NewEASMLookalikeRepository(db),
+		EASMNetworkSeed:  postgres.NewEASMNetworkSeedRepository(db),
 		AssetWebEvidence: postgres.NewAssetWebEvidenceRepository(db),
 		EASMChange:       postgres.NewEASMChangeRepository(db),
 

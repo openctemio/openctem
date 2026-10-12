@@ -138,7 +138,7 @@ func retiredOrRemoved(name string) bool {
 //
 //   - Not in the registry and close to a registered name (edit distance at
 //     most 3): refused with a "did you mean" hint. This is the dangerous case,
-//     a typo such as SMTP_PASWORD or AUTH_COOKIE_SECUR that would otherwise be
+//     a typo such as REDIS_PASWORD or AUTH_COOKIE_SECUR that would otherwise be
 //     ignored and leave a default in place.
 //   - Not in the registry and not close to any name: returned as a warning
 //     (logged at startup, printed by -check-config). Such a name usually

@@ -76,6 +76,17 @@ func registerVersionRoute(router Router, authMiddleware Middleware) {
 	router.GET("/api/v1/version", handler.Version, authMiddleware)
 }
 
+// registerLegalRoute registers GET /api/v1/legal: the operator's legal
+// information (links to the terms and privacy policy, the built-in legal
+// pages' values, the security.txt contact), public on purpose because the web
+// console shows it before sign-in. Nothing secret is stored there (RFC-079).
+func registerLegalRoute(router Router, h *handler.AdminLegalHandler) {
+	if h == nil {
+		return
+	}
+	router.GET("/api/v1/legal", h.Public)
+}
+
 // registerDocsRoutes registers the API documentation (the OpenAPI spec and
 // the API reference page). The public documentation lives on the docs site,
 // so in production the API serves:

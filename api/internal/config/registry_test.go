@@ -319,8 +319,8 @@ func TestCheckEnvironment(t *testing.T) {
 		wantErr  []string
 		wantWarn []string
 	}{
-		{"clean", []string{"SMTP_PASSWORD=x", "PATH=/bin", "HOME=/root"}, nil, nil},
-		{"typo is refused with a suggestion", []string{"SMTP_PASWORD=hunter2"}, []string{"SMTP_PASWORD (did you mean SMTP_PASSWORD?)"}, nil},
+		{"clean", []string{"REDIS_PASSWORD=x", "PATH=/bin", "HOME=/root"}, nil, nil},
+		{"typo is refused with a suggestion", []string{"REDIS_PASWORD=hunter2"}, []string{"REDIS_PASWORD (did you mean REDIS_PASSWORD?)"}, nil},
 		{"unrelated name under a prefix only warns", []string{"AI_AGENT=claude"}, nil, []string{"AI_AGENT is set but not read by the API"}},
 		{"kubernetes service links are ignored", []string{"REDIS_SERVICE_HOST=10.0.0.1", "REDIS_PORT_6379_TCP_ADDR=10.0.0.1", "REDIS_PORT=tcp://10.0.0.1:6379"}, nil, nil},
 		{"bad int", []string{"SERVER_PORT=eighty"}, []string{"SERVER_PORT is not an integer"}, nil},
@@ -351,7 +351,7 @@ func TestCheckEnvironment(t *testing.T) {
 
 // A refusal names the variable, never its value: values may be secrets.
 func TestCheckEnvironment_NeverPrintsValues(t *testing.T) {
-	_, err := checkEnvironment(Registry(), []string{"SMTP_PASWORD=hunter2-secret", "SERVER_PORT=s3cr3t-value"})
+	_, err := checkEnvironment(Registry(), []string{"REDIS_PASWORD=hunter2-secret", "SERVER_PORT=s3cr3t-value"})
 	if err == nil {
 		t.Fatal("want an error")
 	}
