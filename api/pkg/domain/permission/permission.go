@@ -358,7 +358,7 @@ const (
 	PentestTemplatesWrite  Permission = "pentest:templates:write"
 	PentestReportsWrite    Permission = "pentest:reports:write"
 	// PentestChecklistsManage creates, imports, edits and archives the
-	// organization's methodology checklist templates (RFC-086). Testers use
+	// organization's methodology checklist templates (RFC-087). Testers use
 	// templates with campaign permissions; this is the pentest manager's.
 	PentestChecklistsManage Permission = "pentest:checklists:manage"
 )

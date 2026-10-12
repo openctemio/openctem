@@ -1,4 +1,9 @@
 {
+  "settings.pentest.authorizationHint": "Require a signed authorization letter, linked to the campaign, before testing can start.",
+  "settings.pentest.authorizationTitle": "Authorization letter",
+  "settings.pentest.requireAuthorization": "Campaigns cannot start without a signed authorization letter",
+  "settings.pentest.targetTypes": "Target types",
+  "settings.pentest.targetTypesHint": "What a campaign can test. A campaign picks one or more of these.",
   "settings.pentest.addMethodology": "Add methodology",
   "settings.pentest.addType": "Add type",
   "settings.pentest.campaignTypes": "Campaign types",
