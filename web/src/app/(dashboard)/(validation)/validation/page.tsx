@@ -20,8 +20,9 @@ import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules
 import {
   useAdaptedAllPentestFindings,
   useAdaptedCampaigns,
+  useAdaptedPentestFindingPage,
+  RETEST_PENDING_STATUSES,
 } from '@/features/pentest/api/use-pentest-api'
-import { getRetestableFindings } from '@/features/pentest/components/pentest-retests-section'
 import { campaignHref } from '@/features/pentest/lib/campaign-links'
 import { useControlTests, useSimulations } from '@/features/simulation/api/use-simulation-api'
 import { useHasPermission, Permission } from '@/lib/permissions'
@@ -67,7 +68,12 @@ export default function ValidationOverviewPage() {
 
   const campaigns = useMemo(() => campaignsData?.data ?? [], [campaignsData])
   const findings = useMemo(() => findingsData?.data ?? [], [findingsData])
-  const retestsDue = useMemo(() => getRetestableFindings(findings).length, [findings])
+  // Counted on the server over every finding the viewer may see, not over
+  // the one page of findings loaded above.
+  const { data: retestsDueData } = useAdaptedPentestFindingPage(
+    pentestOn ? { statuses: RETEST_PENDING_STATUSES, perPage: 1 } : null
+  )
+  const retestsDue = retestsDueData?.total ?? 0
   const openCampaigns = campaigns.filter(
     (c) => c.status === 'in_progress' || c.status === 'planning'
   ).length
